@@ -1,15 +1,48 @@
-# Local Mesh Node App
+# CITINET — Highland Park Local Commons
 
-A mobile-first web application for local mesh network communities. This app provides a social platform for community members to connect, share updates, and discover local businesses and events.
+**Digital infrastructure for hyperlocal communities. Owned by neighbors, not corporations.**
 
-## Features
+## Vision
 
-- Welcome screen with animated local network branding
-- Dashboard with featured content carousel
-- Community feed with image, video, and text posts
-- Category filtering
-- Mobile-optimized interface with glassmorphism design
-- Dark mode support
+CITINET meets users where they are — with familiar, polished UX patterns borrowed from the apps billions already use (Meta, TikTok, Google, Amazon). But it offers something fundamentally different: **local ownership, transparent governance, and freedom from algorithmic manipulation.**
+
+We're not trying to reinvent how people interact with apps. We're reinventing **what those apps are for** and **who controls them.**
+
+### Design Philosophy: Familiar Interface, Revolutionary Purpose
+
+**What we borrow from commercial apps:**
+- Clean, modern design language (OpenAI, Meta aesthetic)
+- Intuitive navigation patterns users already understand
+- Mobile-first, responsive layouts
+- Smooth animations and polished micro-interactions
+
+**What we reject:**
+- Algorithmic feeds designed to maximize engagement
+- Surveillance-based business models
+- Extractive data practices
+- Corporate ownership of community infrastructure
+
+**The result:** An app that feels as natural to use as Instagram or Twitter, but serves your actual neighbors instead of distant shareholders.
+
+## The Long-Term Vision
+
+This MVP is the first step toward **decentralized hyperlocal internet infrastructure**:
+
+1. **Phase 1 (Current):** Web-based civic platform for local communities
+2. **Phase 2:** Physical mesh network nodes that community members can install as access points
+3. **Phase 3:** True peer-to-peer local internet — resilient, community-owned, surveillance-free
+
+Users will eventually be able to set up physical nodes in their homes and businesses, creating a mesh network that provides internet access independent of traditional ISPs. This app is the social layer that makes that infrastructure meaningful and useful.
+
+## Current Features
+
+- **Civic onboarding flow** — orientation, not signup
+- **Local Commons dashboard** — see what's happening in your neighborhood
+- **Chronological feed** — no algorithms, no ranking, no manipulation
+- **Community discussions** — organized by type (Discussion, Announcement, Project, Request)
+- **Network status** — see active members and node health
+- **Privacy by default** — pseudonyms welcome, no tracking, local-only visibility
+- **Responsive design** — desktop sidebar navigation, mobile bottom bar
 
 ## Getting Started
 

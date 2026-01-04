@@ -33,13 +33,6 @@ const featuredItems: FeaturedItem[] = [
   }
 ];
 
-const typeColors = {
-  event: 'bg-purple-500',
-  announcement: 'bg-blue-500',
-  marketplace: 'bg-pink-500',
-  community: 'bg-green-500'
-};
-
 export function FeaturedCarousel() {
   const sliderRef = useRef<Slider>(null);
 
@@ -50,35 +43,36 @@ export function FeaturedCarousel() {
     slidesToShow: 1,
     slidesToScroll: 1,
     autoplay: true,
-    autoplaySpeed: 4000,
+    autoplaySpeed: 5000,
     arrows: false,
+    pauseOnHover: true,
     customPaging: () => (
-      <div className="w-2 h-2 rounded-full bg-white/40 hover:bg-white/60 transition-colors mt-4" />
+      <div className="w-2 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-200" />
     ),
-    dotsClass: 'slick-dots !bottom-3 flex items-center justify-center gap-2'
+    dotsClass: 'slick-dots !bottom-4 flex items-center justify-center gap-2'
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-full overflow-hidden">
       <Slider ref={sliderRef} {...settings}>
         {featuredItems.map((item) => (
-          <div key={item.id} className="px-1">
-            <div className="relative w-full h-48 md:h-64 lg:h-80 rounded-2xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600">
+          <div key={item.id} className="px-0.5 sm:px-1">
+            <div className="relative w-full h-56 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer group">
               <img 
                 src={item.imageUrl} 
                 alt={item.title}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
               
-              <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 text-white">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 md:px-3 md:py-1 rounded-md text-xs md:text-sm uppercase tracking-wide ${typeColors[item.type]}`}>
+              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 text-white">
+                <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                  <span className="px-2.5 py-1 rounded-md text-xs font-medium uppercase tracking-wide bg-purple-500/90 backdrop-blur-sm ring-1 ring-white/20">
                     {item.type}
                   </span>
                 </div>
-                <h3 className="mb-1 text-lg md:text-xl lg:text-2xl font-bold">{item.title}</h3>
-                <p className="text-white/90 text-sm md:text-base">{item.description}</p>
+                <h3 className="mb-1 sm:mb-2 text-lg sm:text-xl md:text-2xl font-semibold tracking-tight">{item.title}</h3>
+                <p className="text-white/90 text-sm md:text-base font-light">{item.description}</p>
               </div>
             </div>
           </div>

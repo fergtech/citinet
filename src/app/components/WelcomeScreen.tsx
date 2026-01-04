@@ -44,27 +44,33 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
         </motion.div>
 
         {/* Headline */}
-        <h1 className="text-white mb-4 max-w-sm tracking-tight" style={{ fontSize: '2.5rem', lineHeight: '1.1', fontWeight: 900 }}>
-          Your Network Belongs to You
+        <h1 className="text-white mb-4 max-w-sm" style={{ fontSize: '2.5rem', lineHeight: '1.15', fontWeight: 600, letterSpacing: '-0.02em' }}>
+          Digital Infrastructure
+          <br />
+          <span className="text-white/80 font-medium">for Highland Park</span>
         </h1>
 
         {/* Subtext */}
-        <p className="text-white/90 mb-8">
-          Join the Highland Park Internet.<br />
-          Secure, local, owned by us.
+        <p className="text-white/90 mb-8 font-light leading-relaxed text-base">
+          A local network owned by neighbors,<br />
+          not corporations.<br />
+          <br />
+          <span className="text-sm text-white/70">
+          No surveillance. No algorithms. No extraction.
+          </span>
         </p>
 
         {/* Join Now Button */}
         <button
           onClick={onGetStarted}
-          className="w-full bg-white text-purple-600 py-4 rounded-2xl shadow-lg hover:bg-white/95 transition-colors mb-3"
+          className="w-full bg-white text-purple-600 py-4 rounded-2xl font-semibold shadow-lg hover:bg-white/95 transition-all hover:scale-[1.02] active:scale-95 mb-3"
         >
-          Join Now
+          Enter Highland Park
         </button>
 
         {/* Disclaimer */}
-        <p className="text-white/70 text-sm">
-          By joining, you agree to the Community Manifesto.
+        <p className="text-white/70 text-sm font-light">
+          Entering this network means participating in shared civic space.
         </p>
       </div>
     </div>
