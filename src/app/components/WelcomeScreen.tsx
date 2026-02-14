@@ -1,11 +1,12 @@
-import { MapPin } from 'lucide-react';
+import { MapPin, Network, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface WelcomeScreenProps {
-  onGetStarted: () => void;
+  onJoinNetwork: () => void;
+  onCreateNetwork: () => void;
 }
 
-export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
+export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden flex flex-col items-center justify-center p-6">
       {/* Background Vector Pattern */}
@@ -24,53 +25,83 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
 
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
-        <h2 className="text-white tracking-tight">citinet</h2>
+        <h2 className="text-white tracking-tight">[citinet]</h2>
       </div>
 
       {/* Center Content */}
-      <div className="flex flex-col items-center text-center z-10 max-w-md">
-        {/* Icon Container with Location Label */}
+      <div className="flex flex-col items-center text-center z-10 max-w-2xl w-full">
+        {/* Icon Container */}
         <motion.div
-          className="mb-6"
+          className="mb-8"
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         >
-          <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center mb-4">
+          <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center">
             <MapPin className="w-16 h-16 text-white" strokeWidth={2} />
-          </div>
-          <div className="px-4 py-1.5 rounded-full bg-white/90 backdrop-blur-sm">
-            <span className="text-purple-600">Highland Park</span>
           </div>
         </motion.div>
 
         {/* Headline */}
-        <h1 className="text-white mb-4 max-w-sm" style={{ fontSize: '2.5rem', lineHeight: '1.15', fontWeight: 600, letterSpacing: '-0.02em' }}>
+        <h1 className="text-white mb-4 max-w-xl text-5xl leading-tight font-semibold tracking-tight">
           Digital Infrastructure
           <br />
-          <span className="text-white/80 font-medium">for Highland Park</span>
+          <span className="text-white/90 font-medium">for Hyperlocal Communities</span>
         </h1>
 
         {/* Subtext */}
-        <p className="text-white/90 mb-8 font-light leading-relaxed text-base">
-          A local network owned by neighbors,<br />
-          not corporations.<br />
-          <br />
-          <span className="text-sm text-white/70">
-          No surveillance. No algorithms. No extraction.
-          </span>
+        <p className="text-white/90 mb-10 font-light leading-relaxed text-base max-w-md">
+          Community-owned networks.<br />
+          No mega-corporations. No central servers.
         </p>
 
-        {/* Join Now Button */}
-        <button
-          onClick={onGetStarted}
-          className="w-full bg-white text-purple-600 py-4 rounded-2xl font-semibold shadow-lg hover:bg-white/95 transition-all hover:scale-[1.02] active:scale-95 mb-3"
-        >
-          Enter Highland Park
-        </button>
+        {/* Two Path Options */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+          {/* Join Existing Network */}
+          <motion.button
+            onClick={onJoinNetwork}
+            className="group bg-white dark:bg-zinc-900/78 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left border-2 border-transparent hover:border-purple-300 dark:hover:border-purple-600"
+            whileHover={{ y: -4 }}
+          >
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-4">
+              <Network className="w-6 h-6 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+              Join Your Local Network
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Find and connect to an existing citinet node in your neighborhood
+            </p>
+            <div className="mt-4 flex items-center gap-2 text-purple-600 dark:text-purple-400 font-semibold text-sm group-hover:gap-3 transition-all">
+              <span>Scan for networks</span>
+              <span>→</span>
+            </div>
+          </motion.button>
 
-        {/* Disclaimer */}
-        <p className="text-white/70 text-sm font-light">
-          Entering this network means participating in shared civic space.
+          {/* Create New Node */}
+          <motion.button
+            onClick={onCreateNetwork}
+            className="group bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left border-2 border-white/20 hover:border-white/40"
+            whileHover={{ y: -4 }}
+          >
+            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4">
+              <Plus className="w-6 h-6 text-white" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">
+              Start a New Community Node
+            </h3>
+            <p className="text-sm text-white/90 leading-relaxed">
+              Be the first in your neighborhood to launch a local mesh network
+            </p>
+            <div className="mt-4 flex items-center gap-2 text-white font-semibold text-sm group-hover:gap-3 transition-all">
+              <span>Create your node</span>
+              <span>→</span>
+            </div>
+          </motion.button>
+        </div>
+
+        {/* Footer Note */}
+        <p className="text-white/70 text-sm font-light mt-8">
+          Participating in citinet means joining shared civic digital space
         </p>
       </div>
     </div>

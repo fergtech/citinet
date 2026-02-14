@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Send, ArrowLeft, Phone, Video, Info, Users } from 'lucide-react';
+import { Search, Send, ArrowLeft, Phone, Video, Info, Users, Home } from 'lucide-react';
 
 interface Message {
   id: number;
@@ -162,7 +162,8 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
             <div className="flex items-center gap-3">
               <button
                 onClick={onBack}
-                className="md:hidden w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                title="Back to Dashboard"
               >
                 <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
               </button>

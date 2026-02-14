@@ -182,6 +182,7 @@ export function VendorProfileScreen({ vendor, vendorListings, onBack, onItemClic
           <button
             onClick={onBack}
             className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+            aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5 text-slate-900 dark:text-white" />
           </button>
@@ -244,7 +245,7 @@ export function VendorProfileScreen({ vendor, vendorListings, onBack, onItemClic
               </div>
 
               {/* Contact Button */}
-              <button className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl">
+              <button title="Contact Vendor" className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl">
                 Contact Vendor
               </button>
             </div>

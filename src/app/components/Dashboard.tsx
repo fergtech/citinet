@@ -1,6 +1,6 @@
 import {
   Users, MessageCircle, Settings, Radio, Store,
-  Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock
+  Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench
 } from 'lucide-react';
 import { ReactNode } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
@@ -31,6 +31,11 @@ function NavigationCard({ icon, label, onClick }: NavigationCardProps) {
 }
 
 export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps) {
+  // Get node name from sessionStorage
+  const nodeName = typeof window !== 'undefined' 
+    ? sessionStorage.getItem('citinet-node-name') || 'Highland Park'
+    : 'Highland Park';
+
   // Mock data for civic features
   const nodeStatus = {
     activeMembers: 47,
@@ -100,7 +105,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative">
       {/* Subtle mesh grid background pattern */}
-      <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.08] pointer-events-none z-0">
+      <div className="fixed inset-0 opacity-[0.03] dark:opacity-[0.08] pointer-events-none z-0">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <pattern id="dashboard-mesh" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
@@ -121,7 +126,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             </div>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{userName}</h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400">Highland Park</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">{nodeName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-3">
@@ -158,6 +163,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             </button>
 
             <button
+              onClick={() => onNavigate('toolkit')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
+            >
+              <Wrench className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Discover</span>
+            </button>
+
+            <button
               onClick={() => onNavigate('network')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
@@ -174,79 +187,26 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             </button>
           </div>
 
-          {/* Node Status Mini Card - Wireframe Mesh Design */}
-          <div className="mt-6 relative overflow-hidden bg-slate-950 dark:bg-black rounded-2xl p-5 border border-slate-800 dark:border-zinc-800 group">
-            {/* Animated mesh grid background */}
-            <div className="absolute inset-0 opacity-20">
-              <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <pattern id="mesh-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgb(139, 92, 246)" strokeWidth="0.5" opacity="0.3"/>
-                  </pattern>
-                  <linearGradient id="mesh-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="rgb(139, 92, 246)" stopOpacity="0.1"/>
-                    <stop offset="100%" stopColor="rgb(59, 130, 246)" stopOpacity="0.1"/>
-                  </linearGradient>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#mesh-grid)"/>
-                <rect width="100%" height="100%" fill="url(#mesh-gradient)"/>
-              </svg>
+          {/* Node Status - Simplified */}
+          <div className="mt-6 relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 rounded-xl p-4 border border-slate-800/50">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Live Status</span>
             </div>
 
-            {/* 3D wireframe nodes */}
-            <div className="absolute top-3 right-3 w-16 h-16 opacity-40 group-hover:opacity-60 transition-opacity">
-              <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-                {/* Connected node dots */}
-                <circle cx="32" cy="12" r="2.5" fill="rgb(168, 85, 247)" className="animate-pulse"/>
-                <circle cx="16" cy="32" r="2.5" fill="rgb(59, 130, 246)"/>
-                <circle cx="48" cy="32" r="2.5" fill="rgb(139, 92, 246)"/>
-                <circle cx="32" cy="52" r="2.5" fill="rgb(59, 130, 246)" className="animate-pulse" style={{animationDelay: '0.5s'}}/>
-                {/* Connection lines */}
-                <line x1="32" y1="12" x2="16" y2="32" stroke="rgb(139, 92, 246)" strokeWidth="1" opacity="0.5"/>
-                <line x1="32" y1="12" x2="48" y2="32" stroke="rgb(139, 92, 246)" strokeWidth="1" opacity="0.5"/>
-                <line x1="16" y1="32" x2="32" y2="52" stroke="rgb(139, 92, 246)" strokeWidth="1" opacity="0.5"/>
-                <line x1="48" y1="32" x2="32" y2="52" stroke="rgb(139, 92, 246)" strokeWidth="1" opacity="0.5"/>
-              </svg>
-            </div>
-            
-            <div className="relative">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse ring-2 ring-green-400/20"/>
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Node Status</span>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-slate-500 mb-1">Active Members</div>
+                <div className="text-2xl font-bold text-white tabular-nums">{nodeStatus.activeMembers}</div>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex items-end justify-between group/stat hover:translate-x-0.5 transition-transform">
-                  <div>
-                    <div className="text-sm text-slate-500 mb-0.5 font-light">Members</div>
-                    <div className="text-3xl font-bold text-white tracking-tight tabular-nums">{nodeStatus.activeMembers}</div>
-                  </div>
-                  <div className="h-8 w-12 mb-1">
-                    <svg viewBox="0 0 48 32" className="w-full h-full opacity-30 group-hover/stat:opacity-50 transition-opacity">
-                      <polyline points="0,24 8,20 16,22 24,12 32,16 40,8 48,10" fill="none" stroke="rgb(139, 92, 246)" strokeWidth="2"/>
-                    </svg>
-                  </div>
-                </div>
+              <div className="h-px bg-slate-800"/>
 
-                <div className="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent"/>
-
-                <div className="flex items-end justify-between group/stat hover:translate-x-0.5 transition-transform">
-                  <div>
-                    <div className="text-sm text-slate-500 mb-0.5 font-light">Online</div>
-                    <div className="text-3xl font-bold text-white tracking-tight tabular-nums">{nodeStatus.onlineNow}</div>
-                  </div>
-                  <div className="flex items-center gap-1 mb-2">
-                    <div className="w-1 h-4 bg-purple-500/30 rounded-full"/>
-                    <div className="w-1 h-6 bg-purple-500/50 rounded-full"/>
-                    <div className="w-1 h-3 bg-purple-500/40 rounded-full"/>
-                    <div className="w-1 h-5 bg-purple-500/60 rounded-full"/>
-                  </div>
-                </div>
+              <div>
+                <div className="text-xs text-slate-500 mb-1">Online Now</div>
+                <div className="text-2xl font-bold text-white tabular-nums">{nodeStatus.onlineNow}</div>
               </div>
             </div>
-
-            {/* Bottom accent line */}
-            <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/50 to-transparent"/>
           </div>
         </nav>
 
@@ -273,12 +233,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                   {userName}
                 </h1>
                 <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-                  Highland Park Local Commons
+                  {nodeName} Local Commons
                 </p>
               </div>
               <button
                 onClick={() => onNavigate('settings')}
                 className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                aria-label="Open settings"
               >
                 <Settings className="w-5 h-5 text-slate-700 dark:text-slate-300" />
               </button>
@@ -290,7 +251,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
         <div className="hidden md:block bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
           <div className="px-8 py-5">
             <h1 className="text-slate-900 dark:text-white font-semibold text-2xl tracking-tight">
-              Highland Park Local Commons
+              {nodeName} Local Commons
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
               What's happening in your neighborhood
@@ -475,6 +436,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               icon={<Store className="w-5 h-5" />}
               label="Local Exchange"
               onClick={() => onNavigate('marketplace')}
+            />
+            <NavigationCard
+              icon={<Wrench className="w-5 h-5" />}
+              label="Discover"
+              onClick={() => onNavigate('toolkit')}
             />
             <NavigationCard
               icon={<Radio className="w-5 h-5" />}

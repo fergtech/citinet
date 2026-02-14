@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ArrowRight, Shield, Users, FileText, Check, User, Tag } from 'lucide-react';
+import { AmbientNodeMap } from './AmbientNodeMap';
 
 interface NodeEntryFlowProps {
   onComplete: (userData: UserNodeData) => void;
@@ -231,12 +232,17 @@ export function NodeEntryFlow({ onComplete, locationName }: NodeEntryFlowProps) 
                 <Users className="w-8 h-8 text-white" />
               </div>
               <h1 className="text-3xl md:text-4xl font-semibold text-slate-900 dark:text-white tracking-tight">
-                Your Role in the Network
+                Your Role in the Node
               </h1>
               <p className="text-base text-slate-600 dark:text-slate-300 font-light max-w-xl mx-auto">
-                You are entering civic infrastructure. How do you want to participate?<br />
-                <span className="text-sm text-slate-500 dark:text-slate-400">This doesn't lock features—it orients your experience.</span>
+                This network already exists. You are joining something living.<br />
+                <span className="text-sm text-slate-500 dark:text-slate-400">You are one of many, not alone.</span>
               </p>
+            </div>
+
+            {/* Ambient Node Map - Emotional Priming */}
+            <div className="w-full h-80 md:h-96 mb-8">
+              <AmbientNodeMap nodeName={locationName} />
             </div>
 
             {/* Role Cards */}
