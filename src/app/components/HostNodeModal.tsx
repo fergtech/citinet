@@ -1,4 +1,4 @@
-import { X, Server, CheckCircle2, Zap, Wifi, Download, Settings, ChevronDown } from 'lucide-react';
+import { X, CheckCircle2, Zap, Wifi, Download, Settings, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 interface HostNodeModalProps {
@@ -49,6 +49,7 @@ export function HostNodeModal({ isOpen, onClose }: HostNodeModalProps) {
         <div className="relative px-8 pt-10 pb-8 bg-white dark:bg-zinc-900">
           <button
             onClick={onClose}
+            aria-label="Close host node modal"
             className="absolute top-5 right-5 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
           >
             <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />

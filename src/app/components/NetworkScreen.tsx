@@ -32,6 +32,7 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
+              aria-label="Back to previous screen"
               className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
             >
               <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />

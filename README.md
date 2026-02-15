@@ -1,7 +1,7 @@
-# Citizens Inter-networking (Citinet)
+# Citizens Internet Project (Citinet)
 ## Local Mesh Node Application
 
-**Digital infrastructure for hyperlocal communities. Owned by neighbors, not corporations.**
+**Digital infrastructure for hyperlocal communities. Owned by citizens, not corporations.**
 
 ## What Is Citinet?
 

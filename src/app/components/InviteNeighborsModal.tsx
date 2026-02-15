@@ -32,6 +32,7 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
         <div className="relative p-6 bg-gradient-to-br from-purple-600 to-blue-600 text-white">
           <button
             onClick={onClose}
+            aria-label="Close invite neighbors modal"
             className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all backdrop-blur-sm"
           >
             <X className="w-4 h-4 text-white" />

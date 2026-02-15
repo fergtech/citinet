@@ -35,6 +35,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
         <div className="relative p-6 bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-zinc-800 dark:to-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">
           <button
             onClick={onClose}
+            aria-label="Close node details modal"
             className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/80 dark:bg-zinc-900/80 hover:bg-white dark:hover:bg-zinc-900 flex items-center justify-center transition-all"
           >
             <X className="w-4 h-4 text-slate-700 dark:text-slate-300" />
