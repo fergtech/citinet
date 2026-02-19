@@ -75,12 +75,17 @@ class HubService {
       return { success: true, info, status };
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        return { success: false, error: 'Connection timed out' };
+        return { success: false, error: 'Connection timed out — hub may not be running yet.' };
       }
-      return { 
-        success: false, 
-        error: 'Could not reach hub — it may not be running yet, or CORS is blocking the request.' 
-      };
+      const msg = err instanceof Error ? err.message : String(err);
+      // TypeError: Failed to fetch → typically CORS or network unreachable
+      if (msg.includes('Failed to fetch')) {
+        return {
+          success: false,
+          error: 'Could not reach hub — the tunnel may not be active, or CORS is blocking the request. Try opening the URL directly in a new tab to check.',
+        };
+      }
+      return { success: false, error: `Connection failed: ${msg}` };
     }
   }
 
