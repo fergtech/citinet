@@ -1,13 +1,16 @@
 import {
   Users, MessageCircle, Settings, Radio, Store,
-  Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench
+  Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
+  RefreshCw, Loader2, Check, WifiOff, Link2,
 } from 'lucide-react';
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
+import { useHub, useHubStatus } from '../context/HubContext';
 
 interface DashboardProps {
   userName?: string;
   onNavigate: (screen: string) => void;
+  onLogout?: () => void;
 }
 
 interface NavigationCardProps {
@@ -30,17 +33,61 @@ function NavigationCard({ icon, label, onClick }: NavigationCardProps) {
   );
 }
 
-export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps) {
-  // Get node name from sessionStorage
-  const nodeName = typeof window !== 'undefined' 
-    ? sessionStorage.getItem('citinet-node-name') || 'Highland Park'
-    : 'Highland Park';
+export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: DashboardProps) {
+  const { currentHub, currentUser, updateTunnelUrl } = useHub();
+  const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
 
-  // Mock data for civic features
+  // Tunnel reconnect state
+  const [showTunnelInput, setShowTunnelInput] = useState(false);
+  const [tunnelInput, setTunnelInput] = useState('');
+  const [tunnelUpdating, setTunnelUpdating] = useState(false);
+  const [tunnelError, setTunnelError] = useState('');
+  const [tunnelSuccess, setTunnelSuccess] = useState(false);
+
+  const handleTunnelReconnect = async () => {
+    if (!tunnelInput.trim()) return;
+    setTunnelUpdating(true);
+    setTunnelError('');
+    setTunnelSuccess(false);
+    const result = await updateTunnelUrl(tunnelInput.trim());
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      setTunnelInput('');
+      setTimeout(() => {
+        setShowTunnelInput(false);
+        setTunnelSuccess(false);
+      }, 1500);
+    } else {
+      setTunnelError(result.error || 'Could not reach hub');
+    }
+  };
+
+  const handleForceUpdateUrl = async () => {
+    if (!tunnelInput.trim()) return;
+    setTunnelUpdating(true);
+    setTunnelError('');
+    setTunnelSuccess(false);
+    const result = await updateTunnelUrl(tunnelInput.trim(), true);
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      setTunnelInput('');
+      setTimeout(() => {
+        setShowTunnelInput(false);
+        setTunnelSuccess(false);
+      }, 1500);
+    }
+  };
+
+  // Use hub context for real data, fall back to props/defaults
+  const nodeName = currentHub?.name || 'Community';
+  const displayName = currentUser?.displayName || userName;
+
   const nodeStatus = {
-    activeMembers: 47,
-    onlineNow: 12,
-    signalStrength: 'Strong'
+    activeMembers: currentHub?.meta?.activeMembers ?? 0,
+    onlineNow: currentHub?.meta?.onlineNow ?? 0,
+    signalStrength: currentHub?.connectionStatus === 'connected' ? 'Strong' : currentHub?.connectionStatus === 'connecting' ? 'Weak' : 'Offline'
   };
 
   const recentDiscussions = [
@@ -122,16 +169,81 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
         <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg">
-              {userName.charAt(0).toUpperCase()}
+              {displayName.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{userName}</h2>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{displayName}</h2>
               <p className="text-xs text-slate-600 dark:text-slate-400">{nodeName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-3">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-slate-600 dark:text-slate-400">Connected to local node</span>
+          {/* Connection status + reconnect */}
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${dotColor} ${currentHub?.connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+              <span className="text-xs text-slate-600 dark:text-slate-400 flex-1">{statusLabel}</span>
+              <button
+                onClick={() => { setShowTunnelInput(!showTunnelInput); setTunnelError(''); setTunnelSuccess(false); }}
+                className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                title="Update tunnel URL"
+                aria-label="Update tunnel URL"
+              >
+                <Link2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+              </button>
+            </div>
+
+            {/* Tunnel URL input */}
+            {showTunnelInput && (
+              <div className="space-y-2 pt-1">
+                {currentHub?.tunnelUrl && (
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate font-mono">
+                    {currentHub.tunnelUrl}
+                  </p>
+                )}
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    value={tunnelInput}
+                    onChange={(e) => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleTunnelReconnect()}
+                    placeholder="New tunnel URL..."
+                    className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:border-transparent focus:outline-none"
+                    disabled={tunnelUpdating}
+                  />
+                  <button
+                    onClick={handleTunnelReconnect}
+                    disabled={tunnelUpdating || !tunnelInput.trim()}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
+                  >
+                    {tunnelUpdating ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : tunnelSuccess ? (
+                      <Check className="w-3 h-3" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
+                {tunnelError && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
+                    {tunnelInput.trim() && (
+                      <button
+                        onClick={handleForceUpdateUrl}
+                        className="text-[10px] text-purple-500 dark:text-purple-400 underline hover:no-underline shrink-0"
+                      >
+                        Save anyway
+                      </button>
+                    )}
+                  </div>
+                )}
+                {tunnelSuccess && (
+                  <p className="text-[10px] text-green-500 dark:text-green-400">Reconnected!</p>
+                )}
+                {connectionStatus === 'unreachable' && !tunnelInput && (
+                  <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — enter the new tunnel URL to reconnect.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -163,6 +275,22 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             </button>
 
             <button
+              onClick={() => onNavigate('neighbors')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
+            >
+              <Users className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Neighbors</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('files')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
+            >
+              <FolderOpen className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Files</span>
+            </button>
+
+            <button
               onClick={() => onNavigate('toolkit')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
@@ -187,7 +315,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             </button>
           </div>
 
-          {/* Node Status - Simplified */}
+          {/* Node Status - Simplified
           <div className="mt-6 relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 rounded-xl p-4 border border-slate-800/50">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
@@ -207,11 +335,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 <div className="text-2xl font-bold text-white tabular-nums">{nodeStatus.onlineNow}</div>
               </div>
             </div>
-          </div>
+          </div> */}
         </nav>
 
-        {/* Settings at Bottom */}
-        <div className="p-4 border-t border-slate-200/50 dark:border-zinc-800/50">
+        {/* Settings & Leave at Bottom */}
+        <div className="p-4 border-t border-slate-200/50 dark:border-zinc-800/50 space-y-1">
           <button
             onClick={() => onNavigate('settings')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
@@ -219,6 +347,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             <Settings className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
             <span className="text-sm font-medium text-slate-900 dark:text-white">Settings</span>
           </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left group"
+            >
+              <LogOut className="w-5 h-5 text-slate-500 dark:text-slate-400 group-hover:text-red-500 dark:group-hover:text-red-400" />
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-red-600 dark:group-hover:text-red-400">Leave Hub</span>
+            </button>
+          )}
         </div>
       </aside>
 
@@ -230,10 +367,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-slate-900 dark:text-white font-semibold text-2xl mb-1 tracking-tight">
-                  {userName}
+                  {displayName}
                 </h1>
                 <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-                  {nodeName} Local Commons
+                  {nodeName}
                 </p>
               </div>
               <button
@@ -243,7 +380,68 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               >
                 <Settings className="w-5 h-5 text-slate-700 dark:text-slate-300" />
               </button>
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center justify-center transition-colors"
+                  aria-label="Leave hub"
+                >
+                  <LogOut className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                </button>
+              )}
             </div>
+
+            {/* Mobile: connection status + reconnect */}
+            {connectionStatus === 'unreachable' && (
+              <div className="mt-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <WifiOff className="w-4 h-4 text-orange-500" />
+                  <span className="text-xs font-medium text-orange-700 dark:text-orange-300 flex-1">Hub unreachable</span>
+                  <button
+                    onClick={() => setShowTunnelInput(!showTunnelInput)}
+                    className="text-[10px] font-medium text-purple-600 dark:text-purple-400 underline"
+                  >
+                    Update URL
+                  </button>
+                </div>
+                {showTunnelInput && (
+                  <div className="space-y-2">
+                    <div className="flex gap-1.5">
+                      <input
+                        type="url"
+                        value={tunnelInput}
+                        onChange={(e) => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleTunnelReconnect()}
+                        placeholder="New tunnel URL..."
+                        className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/50 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                        disabled={tunnelUpdating}
+                      />
+                      <button
+                        onClick={handleTunnelReconnect}
+                        disabled={tunnelUpdating || !tunnelInput.trim()}
+                        className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
+                      >
+                        {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    {tunnelError && (
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-red-500 flex-1">{tunnelError}</p>
+                        {tunnelInput.trim() && (
+                          <button
+                            onClick={handleForceUpdateUrl}
+                            className="text-[10px] text-purple-500 underline hover:no-underline shrink-0"
+                          >
+                            Save anyway
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {tunnelSuccess && <p className="text-[10px] text-green-500">Reconnected!</p>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -251,10 +449,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
         <div className="hidden md:block bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
           <div className="px-8 py-5">
             <h1 className="text-slate-900 dark:text-white font-semibold text-2xl tracking-tight">
-              {nodeName} Local Commons
+              {nodeName}
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-              What's happening in your neighborhood
+              Welcome to the new internet, owned and operated by our local community.
             </p>
           </div>
         </div>

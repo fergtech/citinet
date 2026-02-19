@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from '
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
-import { NodeEntryFlow, UserNodeData } from './components/NodeEntryFlow';
+import { NodeEntryFlow } from './components/NodeEntryFlow';
 import { Dashboard } from './components/Dashboard';
 import { Feed } from './components/Feed';
 import { NetworkScreen } from './components/NetworkScreen';
@@ -13,8 +13,13 @@ import { VendorProfileScreen, mockVendors } from './components/VendorProfileScre
 import { marketItems } from './data/marketplaceData';
 import { MessagesScreen } from './components/MessagesScreen';
 import { ToolkitScreen } from './components/ToolkitScreen';
+import { FilesScreen } from './components/FilesScreen';
+import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
+import { HubProvider, useHub } from './context/HubContext';
+import { hubService } from './services/hubService';
+import type { Hub, HubUser } from './types/hub';
 
 const screenTitles: Record<string, string> = {
   community: 'Community',
@@ -34,61 +39,61 @@ const screenDescriptions: Record<string, string> = {
   'become-sponsor': 'Promote your business to the local mesh community.'
 };
 
-// Helper to get and set user data in localStorage
-const getUserData = (): UserNodeData | null => {
-  const data = localStorage.getItem('citinet-user-data');
-  return data ? JSON.parse(data) : null;
-};
-
-const setUserData = (data: UserNodeData) => {
-  localStorage.setItem('citinet-user-data', JSON.stringify(data));
-};
-
-// Helper to get and set selected node in localStorage
-const getSelectedNode = (): { nodeId: string; nodeName: string } | null => {
-  const data = localStorage.getItem('citinet-selected-node');
-  return data ? JSON.parse(data) : null;
-};
-
-const setSelectedNode = (nodeId: string, nodeName: string) => {
-  localStorage.setItem('citinet-selected-node', JSON.stringify({ nodeId, nodeName }));
-};
+// ──────────────────────────────────────────────
+// Public Routes (no hub context required)
+// ──────────────────────────────────────────────
 
 function WelcomeRoute() {
   const navigate = useNavigate();
+  const { currentHub, currentUser } = useHub();
+
+  // If user is already connected to a hub and registered, redirect to their hub portal
+  useEffect(() => {
+    if (currentHub?.slug && currentUser?.username) {
+      navigate(`/${currentHub.slug}`, { replace: true });
+    }
+  }, [currentHub, currentUser, navigate]);
   
   const handleJoinNetwork = () => {
-    navigate('/discover-node');
+    navigate('/join');
   };
 
   const handleCreateNetwork = () => {
-    navigate('/create-node');
+    navigate('/create');
   };
 
   return <WelcomeScreen onJoinNetwork={handleJoinNetwork} onCreateNetwork={handleCreateNetwork} />;
 }
 
-function NodeDiscoveryRoute() {
+function JoinHubRoute() {
   const navigate = useNavigate();
+  const { onHubJoined } = useHub();
   
-  const handleNodeFound = (nodeId: string, nodeName: string) => {
-    setSelectedNode(nodeId, nodeName);
-    navigate('/node-entry');
+  const handleHubFound = (hubSlug: string, _hubName: string, hub: Hub) => {
+    onHubJoined(hub);
+    // User already signed up with username/password in the join flow —
+    // go directly to the hub dashboard.
+    navigate(`/${hubSlug}`, { replace: true });
   };
 
   const handleBack = () => {
     navigate('/');
   };
 
-  return <NodeDiscoveryScreen onNodeFound={handleNodeFound} onBack={handleBack} />;
+  return <NodeDiscoveryScreen onNodeFound={handleHubFound} onBack={handleBack} />;
 }
 
-function NodeCreationRoute() {
+function CreateHubRoute() {
   const navigate = useNavigate();
+  const { onHubJoined } = useHub();
   
-  const handleComplete = (nodeId: string, nodeName: string) => {
-    setSelectedNode(nodeId, nodeName);
-    navigate('/node-entry');
+  const handleComplete = async (_nodeId: string, nodeName: string) => {
+    // When creating a hub, the user enters hub info (name, location)
+    // but the actual hub runs on physical hardware. The wizard just collects
+    // the info and saves a local connection record.
+    const hub = await hubService.joinHub('', { name: nodeName, node_id: '' });
+    onHubJoined(hub);
+    navigate(`/${hub.slug}/onboard`);
   };
 
   const handleBack = () => {
@@ -98,79 +103,136 @@ function NodeCreationRoute() {
   return <NodeCreationWizard onComplete={handleComplete} onBack={handleBack} />;
 }
 
-function NodeEntryRoute() {
-  const navigate = useNavigate();
-  const selectedNode = getSelectedNode();
-  const locationName = selectedNode?.nodeName || 'Highland Park';
+// ──────────────────────────────────────────────
+// Hub-Scoped Routes (require :hubSlug param)
+// ──────────────────────────────────────────────
 
-  const handleNodeEntryComplete = (data: UserNodeData) => {
-    setUserData(data);
-    navigate('/dashboard');
+function HubOnboardRoute() {
+  const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  const { onOnboardingComplete } = useHub();
+  
+  const connection = hubSlug ? hubService.getHubConnection(hubSlug) : null;
+  const hubName = connection?.hub?.name || hubSlug || 'Community Hub';
+
+  // If already onboarded, redirect to hub dashboard
+  useEffect(() => {
+    if (hubSlug && hubService.isOnboarded(hubSlug)) {
+      navigate(`/${hubSlug}`, { replace: true });
+    }
+  }, [hubSlug, navigate]);
+
+  const handleOnboardingComplete = async (data: HubUser) => {
+    if (!hubSlug) return;
+    await hubService.completeOnboarding(hubSlug, data);
+    onOnboardingComplete(hubSlug, data);
+    navigate(`/${hubSlug}`);
   };
 
-  return <NodeEntryFlow onComplete={handleNodeEntryComplete} locationName={locationName} />;
+  return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} />;
 }
 
-function DashboardRoute() {
+function HubDashboardRoute() {
   const navigate = useNavigate();
-  const userData = getUserData();
-  const selectedNode = getSelectedNode();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  const { currentHub, currentUser, leaveHub, loading } = useHub();
+
+  // If the hub slug was corrected (e.g., API returned the real hub name),
+  // redirect to the canonical URL
+  useEffect(() => {
+    if (loading) return;
+    if (currentHub?.slug && hubSlug && currentHub.slug !== hubSlug) {
+      navigate(`/${currentHub.slug}`, { replace: true });
+    }
+  }, [currentHub?.slug, hubSlug, loading, navigate]);
+
+  // Redirect to join if user has no account for this hub
+  useEffect(() => {
+    if (loading) return;
+    if (hubSlug && !hubService.isOnboarded(hubSlug) && !currentHub?.slug) {
+      navigate(`/join`, { replace: true });
+    }
+  }, [hubSlug, currentHub?.slug, loading, navigate]);
 
   const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
+    navigate(`/${hubSlug}/${screen}`);
   };
 
-  // Store node name in a way Dashboard can access it
-  const nodeName = selectedNode?.nodeName || 'Highland Park';
-  // Save to sessionStorage for Dashboard to access
+  const handleLogout = () => {
+    const slug = currentHub?.slug || hubSlug;
+    if (slug) {
+      leaveHub(slug);
+    }
+    navigate('/', { replace: true });
+  };
+
+  const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
+  const nodeName = currentHub?.name || hubSlug || 'Community Hub';
+  
+  // Store for components that still read from sessionStorage
   if (typeof window !== 'undefined') {
     sessionStorage.setItem('citinet-node-name', nodeName);
   }
 
-  return <Dashboard userName={userData?.displayName || 'Neighbor'} onNavigate={handleNavigate} />;
+  return <Dashboard userName={userName} onNavigate={handleNavigate} onLogout={handleLogout} />;
 }
 
-function FeedRoute() {
+function HubFeedRoute() {
   const navigate = useNavigate();
-  return <Feed onBack={() => navigate('/dashboard')} />;
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  return <Feed onBack={() => navigate(`/${hubSlug}`)} />;
 }
 
-function MessagesRoute() {
+function HubNeighborsRoute() {
   const navigate = useNavigate();
-  return <MessagesScreen onBack={() => navigate('/dashboard')} />;
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  return <NeighborsScreen onBack={() => navigate(`/${hubSlug}`)} />;
 }
 
-function NetworkRoute() {
+function HubFilesRoute() {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  return <FilesScreen onBack={() => navigate(`/${hubSlug}`)} />;
+}
+
+function HubMessagesRoute() {
+  const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  return <MessagesScreen onBack={() => navigate(`/${hubSlug}`)} />;
+}
+
+function HubNetworkRoute() {
+  const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
   const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
+    navigate(`/${hubSlug}/${screen}`);
   };
 
-  return <NetworkScreen onBack={() => navigate('/dashboard')} onNavigate={handleNavigate} />;
+  return <NetworkScreen onBack={() => navigate(`/${hubSlug}`)} onNavigate={handleNavigate} />;
 }
 
-function MarketplaceRoute() {
+function HubMarketplaceRoute() {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
   const handleVendorClick = (vendorId: string) => {
-    navigate(`/vendor/${vendorId}`);
+    navigate(`/${hubSlug}/vendor/${vendorId}`);
   };
 
-  return <MarketplaceScreen onBack={() => navigate('/dashboard')} onVendorClick={handleVendorClick} />;
+  return <MarketplaceScreen onBack={() => navigate(`/${hubSlug}`)} onVendorClick={handleVendorClick} />;
 }
 
-function VendorProfileRoute() {
+function HubVendorProfileRoute() {
   const navigate = useNavigate();
-  const { vendorId } = useParams<{ vendorId: string }>();
+  const { hubSlug, vendorId } = useParams<{ hubSlug: string; vendorId: string }>();
   
   const vendor = mockVendors.find(v => v.id === vendorId);
   
   if (!vendor) {
-    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate('/marketplace')} />;
+    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate(`/${hubSlug}/marketplace`)} />;
   }
   
-  // Get all marketplace items for this vendor
   const vendorListings = marketItems
     .filter(item => item.vendorId === vendorId)
     .map(item => ({
@@ -183,52 +245,80 @@ function VendorProfileRoute() {
     }));
   
   const handleItemClick = (_itemId: string) => {
-    // Navigate back to marketplace with selected item
-    navigate('/marketplace');
+    navigate(`/${hubSlug}/marketplace`);
   };
 
   return (
     <VendorProfileScreen
       vendor={vendor}
       vendorListings={vendorListings}
-      onBack={() => navigate('/marketplace')}
+      onBack={() => navigate(`/${hubSlug}/marketplace`)}
       onItemClick={handleItemClick}
     />
   );
 }
 
-function ToolkitRoute() {
+function HubToolkitRoute() {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
   const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
+    navigate(`/${hubSlug}/${screen}`);
   };
 
-  return <ToolkitScreen onBack={() => navigate('/dashboard')} onNavigate={handleNavigate} />;
+  return <ToolkitScreen onBack={() => navigate(`/${hubSlug}`)} onNavigate={handleNavigate} />;
 }
 
-function MySubmissionsRoute() {
+function HubMySubmissionsRoute() {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
-  return <MySubmissionsScreen onBack={() => navigate('/toolkit')} />;
+  return <MySubmissionsScreen onBack={() => navigate(`/${hubSlug}/toolkit`)} />;
 }
 
-function ModerationQueueRoute() {
+function HubModerationQueueRoute() {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
-  return <ModerationQueueScreen onBack={() => navigate('/toolkit')} />;
+  return <ModerationQueueScreen onBack={() => navigate(`/${hubSlug}/toolkit`)} />;
 }
 
-function PlaceholderRoute({ screen }: { screen: string }) {
+function HubPlaceholderRoute({ screen }: { screen: string }) {
   const navigate = useNavigate();
+  const { hubSlug } = useParams<{ hubSlug: string }>();
   
   return (
     <PlaceholderScreen
       title={screenTitles[screen] || 'Screen'}
       description={screenDescriptions[screen]}
-      onBack={() => navigate('/dashboard')}
+      onBack={() => navigate(`/${hubSlug}`)}
     />
   );
+}
+
+// ──────────────────────────────────────────────
+// Hub Guard: validates the :hubSlug param
+// ──────────────────────────────────────────────
+
+function HubGuard({ children }: { children: React.ReactNode }) {
+  const { hubSlug } = useParams<{ hubSlug: string }>();
+  const { currentHub, loading } = useHub();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Don't make redirect decisions until context has loaded from storage
+    if (loading) return;
+    if (!hubSlug) return;
+    // If the context has a hub (possibly re-keyed to a new slug), let the
+    // dashboard route handle redirecting to the canonical slug.
+    if (currentHub) return;
+    // No hub in context AND nothing in storage — truly unknown slug
+    if (!hubService.getHubConnection(hubSlug)) {
+      navigate('/', { replace: true });
+    }
+  }, [hubSlug, currentHub, loading, navigate]);
+
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -252,34 +342,41 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="w-full">
-        <Routes>
-          <Route path="/" element={<WelcomeRoute />} />
-          <Route path="/discover-node" element={<NodeDiscoveryRoute />} />
-          <Route path="/create-node" element={<NodeCreationRoute />} />
-          <Route path="/node-entry" element={<NodeEntryRoute />} />
-          <Route path="/dashboard" element={<DashboardRoute />} />
-          <Route path="/feed" element={<FeedRoute />} />
-          <Route path="/messages" element={<MessagesRoute />} />
-          <Route path="/network" element={<NetworkRoute />} />
-          <Route path="/marketplace" element={<MarketplaceRoute />} />
-          <Route path="/vendor/:vendorId" element={<VendorProfileRoute />} />
-          <Route path="/toolkit" element={<ToolkitRoute />} />
-          <Route path="/toolkit/my-submissions" element={<MySubmissionsRoute />} />
-          <Route path="/toolkit/moderation" element={<ModerationQueueRoute />} />
-          
-          {/* Placeholder routes */}
-          <Route path="/community" element={<PlaceholderRoute screen="community" />} />
-          <Route path="/settings" element={<PlaceholderRoute screen="settings" />} />
-          <Route path="/post" element={<PlaceholderRoute screen="post" />} />
-          <Route path="/chat" element={<PlaceholderRoute screen="chat" />} />
-          <Route path="/signal" element={<PlaceholderRoute screen="signal" />} />
-          <Route path="/become-sponsor" element={<PlaceholderRoute screen="become-sponsor" />} />
-          
-          {/* Catch-all redirect */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </div>
+      <HubProvider>
+        <div className="w-full">
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<WelcomeRoute />} />
+            <Route path="/join" element={<JoinHubRoute />} />
+            <Route path="/create" element={<CreateHubRoute />} />
+            
+            {/* Hub-scoped routes: citinet.vercel.app/:hubSlug/* */}
+            <Route path="/:hubSlug/onboard" element={<HubGuard><HubOnboardRoute /></HubGuard>} />
+            <Route path="/:hubSlug" element={<HubGuard><HubDashboardRoute /></HubGuard>} />
+            <Route path="/:hubSlug/feed" element={<HubGuard><HubFeedRoute /></HubGuard>} />
+            <Route path="/:hubSlug/neighbors" element={<HubGuard><HubNeighborsRoute /></HubGuard>} />
+            <Route path="/:hubSlug/files" element={<HubGuard><HubFilesRoute /></HubGuard>} />
+            <Route path="/:hubSlug/messages" element={<HubGuard><HubMessagesRoute /></HubGuard>} />
+            <Route path="/:hubSlug/network" element={<HubGuard><HubNetworkRoute /></HubGuard>} />
+            <Route path="/:hubSlug/marketplace" element={<HubGuard><HubMarketplaceRoute /></HubGuard>} />
+            <Route path="/:hubSlug/vendor/:vendorId" element={<HubGuard><HubVendorProfileRoute /></HubGuard>} />
+            <Route path="/:hubSlug/toolkit" element={<HubGuard><HubToolkitRoute /></HubGuard>} />
+            <Route path="/:hubSlug/toolkit/my-submissions" element={<HubGuard><HubMySubmissionsRoute /></HubGuard>} />
+            <Route path="/:hubSlug/toolkit/moderation" element={<HubGuard><HubModerationQueueRoute /></HubGuard>} />
+            
+            {/* Hub placeholder routes */}
+            <Route path="/:hubSlug/community" element={<HubGuard><HubPlaceholderRoute screen="community" /></HubGuard>} />
+            <Route path="/:hubSlug/settings" element={<HubGuard><HubPlaceholderRoute screen="settings" /></HubGuard>} />
+            <Route path="/:hubSlug/post" element={<HubGuard><HubPlaceholderRoute screen="post" /></HubGuard>} />
+            <Route path="/:hubSlug/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />
+            <Route path="/:hubSlug/signal" element={<HubGuard><HubPlaceholderRoute screen="signal" /></HubGuard>} />
+            <Route path="/:hubSlug/become-sponsor" element={<HubGuard><HubPlaceholderRoute screen="become-sponsor" /></HubGuard>} />
+            
+            {/* Catch-all redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+      </HubProvider>
     </BrowserRouter>
   );
 }

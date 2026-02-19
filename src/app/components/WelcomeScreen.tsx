@@ -1,10 +1,13 @@
-import { MapPin, Network, Plus } from 'lucide-react';
+import { MapPin, Network, Plus, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface WelcomeScreenProps {
   onJoinNetwork: () => void;
   onCreateNetwork: () => void;
 }
+
+// Simple desktop detection (not perfect, but covers most cases)
+const isDesktop = typeof window !== 'undefined' && !/Mobi|Android|iPad|iPhone/i.test(navigator.userAgent);
 
 export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
   return (
@@ -23,10 +26,26 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
         <rect width="100%" height="100%" fill="url(#mesh-pattern)" />
       </svg>
 
+
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
         <h2 className="text-white tracking-tight">[citinet]</h2>
       </div>
+
+      {/* Top Right Download Button (Desktop only) */}
+      {isDesktop && (
+        <div className="absolute top-6 right-6">
+          <a
+            href="https://github.com/fergtech/citinet-client/releases/download/v1.0.0/citinet.exe"
+            className="flex items-center gap-2 bg-white/90 text-blue-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-white transition border border-blue-200 hover:border-blue-400"
+            download
+            title="Download Citinet Desktop Client for Windows"
+          >
+            <Download className="w-5 h-5" />
+            Download Desktop Client
+          </a>
+        </div>
+      )}
 
       {/* Center Content */}
       <div className="flex flex-col items-center text-center z-10 max-w-2xl w-full">
@@ -36,16 +55,16 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         >
-          <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center">
-            <MapPin className="w-16 h-16 text-white" strokeWidth={2} />
+          <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
+            <MapPin className="w-16 h-16 text-white" strokeWidth={2} /> 
           </div>
         </motion.div>
 
         {/* Headline */}
         <h1 className="text-white mb-4 max-w-xl text-5xl leading-tight font-semibold tracking-tight">
-          Digital Infrastructure
+          Decentralized. Local.
           <br />
-          <span className="text-white/90 font-medium">for Hyperlocal Communities</span>
+          <span className="text-white/90 font-medium">Citizens' Internet.</span>
         </h1>
 
         {/* Subtext */}

@@ -1,4 +1,4 @@
-import { ArrowLeft, Search, Home, Menu, Grid3x3, List, SlidersHorizontal, X, MapPin } from 'lucide-react';
+import { ArrowLeft, Search, Home, Menu, Grid3x3, List, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { MarketItemDetailModal } from './MarketItemDetailModal';
 import { marketItems, type MarketItem } from '../data/marketplaceData';
@@ -52,6 +52,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
+              title="Back"
               className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
@@ -59,8 +60,9 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
             <h2 className="text-slate-900 dark:text-white text-xl font-semibold flex-1">Market</h2>
             
             {/* Mobile Filter Toggle */}
-            <button 
+            <button
               onClick={() => setShowFilters(!showFilters)}
+              title="Toggle filters"
               className="md:hidden w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
             >
               <SlidersHorizontal className="w-5 h-5 text-slate-700 dark:text-slate-300" />
@@ -70,22 +72,24 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
             <div className="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('grid')}
+                title="Grid view"
                 className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}
               >
                 <Grid3x3 className="w-4 h-4 text-slate-700 dark:text-slate-300" />
               </button>
               <button
                 onClick={() => setViewMode('list')}
+                title="List view"
                 className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-zinc-700' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}
               >
                 <List className="w-4 h-4 text-slate-700 dark:text-slate-300" />
               </button>
             </div>
 
-            <button className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+            <button title="Home" className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
               <Home className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             </button>
-            <button className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+            <button title="Menu" className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
               <Menu className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             </button>
           </div>
@@ -151,6 +155,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                   value={priceRange[1]}
                   onChange={(e) => setPriceRange([0, parseInt(e.target.value)])}
                   className="w-full"
+                  title="Maximum price"
                 />
                 <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
                   <span>$0</span>
@@ -171,6 +176,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                   value={maxDistance}
                   onChange={(e) => setMaxDistance(parseFloat(e.target.value))}
                   className="w-full"
+                  title="Maximum distance"
                 />
                 <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
                   <span>Nearby</span>
@@ -185,6 +191,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
+                title="Sort by"
                 className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               >
                 <option value="distance">Nearest First</option>

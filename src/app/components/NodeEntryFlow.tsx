@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { ArrowRight, Shield, Users, FileText, Check, User, Tag } from 'lucide-react';
 import { AmbientNodeMap } from './AmbientNodeMap';
+import type { HubUser } from '../types/hub';
+
+// Kept for backward compatibility
+export type UserNodeData = HubUser;
 
 interface NodeEntryFlowProps {
-  onComplete: (userData: UserNodeData) => void;
+  onComplete: (userData: HubUser) => void;
   locationName: string;
-}
-
-export interface UserNodeData {
-  displayName: string;
-  tags: string[];
-  role: string;
-  agreedToManifesto: boolean;
 }
 
 const availableTags = [
@@ -91,6 +88,7 @@ export function NodeEntryFlow({ onComplete, locationName }: NodeEntryFlowProps) 
 
   const handleComplete = () => {
     onComplete({
+      username: displayName.toLowerCase().replace(/\s+/g, ''),
       displayName,
       tags: selectedTags,
       role: selectedRole,

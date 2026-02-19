@@ -14,6 +14,7 @@ export function PlaceholderScreen({ title, description, onBack }: PlaceholderScr
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
+            title="Back"
             className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center hover:bg-accent transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-foreground" />

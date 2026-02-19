@@ -1,5 +1,7 @@
 import { X, Copy, Check, Users } from 'lucide-react';
 import { useState } from 'react';
+import { useHub } from '../context/HubContext';
+import { hubService } from '../services/hubService';
 
 interface InviteNeighborsModalProps {
   isOpen: boolean;
@@ -8,9 +10,11 @@ interface InviteNeighborsModalProps {
 
 export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalProps) {
   const [copied, setCopied] = useState(false);
+  const { currentHub } = useHub();
   
-  // Mock invite URL
-  const inviteUrl = 'https://citinet.local/join/2a8f9d3c';
+  const hubSlug = currentHub?.slug || 'community';
+  const inviteUrl = hubService.getInviteUrl(hubSlug);
+  const memberCount = currentHub?.meta?.activeMembers ?? currentHub?.memberCount ?? 0;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(inviteUrl)}`;
 
   const handleCopy = async () => {
@@ -103,7 +107,7 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 text-center">
               <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-1">
-                47
+                {memberCount > 0 ? memberCount : '—'}
               </div>
               <p className="text-xs text-purple-700 dark:text-purple-400">Current Members</p>
             </div>

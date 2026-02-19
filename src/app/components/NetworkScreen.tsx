@@ -6,9 +6,11 @@ import { SignalDiagnosticsModal } from './SignalDiagnosticsModal';
 import { InviteNeighborsModal } from './InviteNeighborsModal';
 import { HostNodeModal } from './HostNodeModal';
 import { EmergencySignalModal } from './EmergencySignalModal';
+import { useHub, useHubStatus } from '../context/HubContext';
 
 interface NetworkScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 export function NetworkScreen({ onBack }: NetworkScreenProps) {
@@ -19,10 +21,16 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
   const [hostNodeOpen, setHostNodeOpen] = useState(false);
   const [emergencySignalOpen, setEmergencySignalOpen] = useState(false);
 
-  const activeMembers = 47;
-  const onlineNow = 12;
+  const { currentHub } = useHub();
+  const { status, label: statusLabel, dotColor } = useHubStatus();
+
+  // Use hub meta if available, otherwise mock data
+  const activeMembers = currentHub?.meta?.activeMembers ?? 47;
+  const onlineNow = currentHub?.meta?.onlineNow ?? 12;
   const targetUsers = 100;
   const progress = (activeMembers / targetUsers) * 100;
+  const hubName = currentHub?.name || 'Community Hub';
+  const tunnelUrl = currentHub?.tunnelUrl || '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
@@ -125,14 +133,18 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Cloud Instance</h3>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">{hubName}</h3>
                   <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-xs font-medium text-green-700 dark:text-green-400">ONLINE</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
+                    <span className="text-xs font-medium text-green-700 dark:text-green-400">{statusLabel.toUpperCase()}</span>
                   </div>
                 </div>
                 <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-                  Connected to citinet cloud
+                  {tunnelUrl ? (
+                    <span className="font-mono text-xs break-all">{tunnelUrl}</span>
+                  ) : (
+                    'No tunnel URL configured'
+                  )}
                 </p>
               </div>
             </div>

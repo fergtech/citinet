@@ -67,6 +67,7 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
             )}
             <button
               onClick={onClose}
+              title="Close"
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm flex items-center justify-center hover:bg-white dark:hover:bg-zinc-800 transition-colors shadow-lg"
             >
               <X className="w-5 h-5 text-slate-900 dark:text-white" />
@@ -82,7 +83,7 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
                   <h2 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">
                     {item.title}
                   </h2>
-                  <button className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                  <button title="Save to favorites" className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
                     <Heart className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                   </button>
                 </div>
@@ -165,10 +166,10 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
                   <MessageCircle className="w-5 h-5" />
                   Contact Seller
                 </button>
-                <button className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                <button title="Share listing" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
                   <Share2 className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 </button>
-                <button className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                <button title="Report listing" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
                   <Flag className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 </button>
               </div>
