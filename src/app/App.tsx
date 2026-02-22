@@ -53,34 +53,30 @@ function WelcomeRoute() {
       navigate(`/${currentHub.slug}`, { replace: true });
     }
   }, [currentHub, currentUser, navigate]);
-  
-  const handleJoinNetwork = () => {
-    navigate('/join');
-  };
 
-  const handleCreateNetwork = () => {
-    navigate('/create');
-  };
-
-  return <WelcomeScreen onJoinNetwork={handleJoinNetwork} onCreateNetwork={handleCreateNetwork} />;
+  return (
+    <WelcomeScreen
+      onJoinNetwork={() => navigate('/join')}
+      onCreateNetwork={() => navigate('/create')}
+    />
+  );
 }
 
 function JoinHubRoute() {
   const navigate = useNavigate();
   const { onHubJoined } = useHub();
-  
+
   const handleHubFound = (hubSlug: string, _hubName: string, hub: Hub) => {
     onHubJoined(hub);
-    // User already signed up with username/password in the join flow —
-    // go directly to the hub dashboard.
     navigate(`/${hubSlug}`, { replace: true });
   };
 
-  const handleBack = () => {
-    navigate('/');
-  };
-
-  return <NodeDiscoveryScreen onNodeFound={handleHubFound} onBack={handleBack} />;
+  return (
+    <NodeDiscoveryScreen
+      onNodeFound={handleHubFound}
+      onBack={() => navigate('/')}
+    />
+  );
 }
 
 function CreateHubRoute() {

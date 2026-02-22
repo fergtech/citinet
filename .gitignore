@@ -7,7 +7,7 @@ node_modules/
 coverage/
 
 # Production
-dist/
+dev-dist/
 build/
 
 # Misc

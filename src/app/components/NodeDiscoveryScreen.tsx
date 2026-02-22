@@ -1,7 +1,24 @@
-import { useState, useEffect } from 'react';
-import { Link2, ArrowLeft, Loader2, CheckCircle, AlertCircle, Globe, User, Lock, Eye, EyeOff, LogIn, Mail } from 'lucide-react';
-import { motion } from 'motion/react';
+/**
+ * NodeDiscoveryScreen — unified hub join flow
+ *
+ * Two ways to join, one screen:
+ *  1. Browse the citinet.cloud hub directory (top section)
+ *  2. Enter a hub URL directly (bottom section, always visible)
+ *
+ * Selecting a hub from the directory OR entering a URL triggers the same
+ * probe → auth flow.
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import {
+  ArrowLeft, Loader2, CheckCircle, AlertCircle,
+  Globe, User, Lock, Eye, EyeOff, LogIn, Mail,
+  RefreshCw, Wifi, WifiOff, Users, MapPin, ChevronDown,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useSearchParams } from 'react-router-dom';
 import { hubService } from '../services/hubService';
+import { registryService, type RegistryHub } from '../services/registryService';
 import type { Hub, HubInfoResponse, HubStatusResponse } from '../types/hub';
 
 interface NodeDiscoveryScreenProps {
@@ -9,7 +26,7 @@ interface NodeDiscoveryScreenProps {
   onBack: () => void;
 }
 
-type JoinStep = 'input' | 'probing' | 'auth' | 'error';
+type JoinStep = 'browse' | 'probing' | 'auth' | 'error';
 type AuthMode = 'signup' | 'login';
 
 const HUB_URL_HISTORY_KEY = 'hubUrlHistory';
@@ -17,37 +34,41 @@ const HUB_URL_HISTORY_KEY = 'hubUrlHistory';
 function getHubUrlHistory(): string[] {
   try {
     const raw = localStorage.getItem(HUB_URL_HISTORY_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
 }
 
 function addHubUrlToHistory(url: string) {
   const trimmed = url.trim();
   if (!trimmed) return;
-  let history = getHubUrlHistory();
-  // Remove duplicates, keep most recent first
-  history = [trimmed, ...history.filter(u => u !== trimmed)].slice(0, 10);
+  const history = [trimmed, ...getHubUrlHistory().filter(u => u !== trimmed)].slice(0, 10);
   localStorage.setItem(HUB_URL_HISTORY_KEY, JSON.stringify(history));
 }
 
 export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreenProps) {
-  const [step, setStep] = useState<JoinStep>('input');
-  const [authMode, setAuthMode] = useState<AuthMode>('signup');
-  const [tunnelUrl, setTunnelUrl] = useState('');
-  const [urlHistory, setUrlHistory] = useState<string[]>([]);
-    // Load URL history on mount
-    useEffect(() => {
-      setUrlHistory(getHubUrlHistory());
-    }, []);
+  const [searchParams] = useSearchParams();
 
+  // ── Step state ──
+  const [step, setStep] = useState<JoinStep>('browse');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
+
+  // ── Directory state ──
+  const [registryHubs, setRegistryHubs] = useState<RegistryHub[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(true);
+  const [registryRefreshKey, setRegistryRefreshKey] = useState(0);
+
+  // ── URL input state ──
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState(() => searchParams.get('url') ?? '');
+  const [urlHistory, setUrlHistory] = useState<string[]>([]);
+
+  // ── Probe state ──
+  const [probingHubName, setProbingHubName] = useState('');
   const [probeInfo, setProbeInfo] = useState<HubInfoResponse | null>(null);
   const [probeStatus, setProbeStatus] = useState<HubStatusResponse | null>(null);
   const [probeError, setProbeError] = useState('');
 
-  // Auth fields
+  // ── Auth state ──
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -56,32 +77,56 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const [joining, setJoining] = useState(false);
   const [authError, setAuthError] = useState('');
 
+  const urlInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch registry on mount / refresh
+  useEffect(() => {
+    let cancelled = false;
+    setRegistryLoading(true);
+    registryService.getHubs().then((hubs) => {
+      if (cancelled) return;
+      setRegistryHubs(hubs);
+      setRegistryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [registryRefreshKey]);
+
+  // Load URL history + handle ?url= pre-fill from directory
+  useEffect(() => {
+    setUrlHistory(getHubUrlHistory());
+    const prefilledUrl = searchParams.get('url');
+    if (prefilledUrl) {
+      setTunnelUrl(prefilledUrl);
+      setUrlOpen(true);
+      // Auto-probe after a brief paint delay
+      const t = setTimeout(() => handleProbeUrl(prefilledUrl), 150);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Helpers ──
+
   const isValidUrl = (url: string): boolean => {
     const trimmed = url.trim();
     if (!trimmed) return false;
     try {
-      const withProtocol = trimmed.startsWith('http') ? trimmed : `https://${trimmed}`;
-      new URL(withProtocol);
+      new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   };
 
-  const handleProbe = async () => {
-    if (!isValidUrl(tunnelUrl)) return;
-
-    // Save to history
-    addHubUrlToHistory(tunnelUrl);
+  const handleProbeUrl = async (url: string) => {
+    if (!isValidUrl(url)) return;
+    addHubUrlToHistory(url);
     setUrlHistory(getHubUrlHistory());
-
+    setProbingHubName('');
     setStep('probing');
     setProbeError('');
     setProbeInfo(null);
     setProbeStatus(null);
 
-    const result = await hubService.probeHub(tunnelUrl);
-
+    const result = await hubService.probeHub(url);
     if (result.success && result.info) {
       setProbeInfo(result.info);
       setProbeStatus(result.status || null);
@@ -92,10 +137,18 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     }
   };
 
+  const handleProbeDirectoryHub = async (hub: RegistryHub) => {
+    setProbingHubName(hub.name);
+    setTunnelUrl(hub.tunnel_url);
+    await handleProbeUrl(hub.tunnel_url);
+  };
+
   const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
   const canSubmit = authMode === 'login'
     ? (probeInfo != null && username.trim().length >= 2 && password.length >= 1)
-    : (probeInfo != null && username.trim().length >= 2 && password.length >= 4 && password === confirmPassword && isValidEmail(email));
+    : (probeInfo != null && username.trim().length >= 2 && password.length >= 4
+        && password === confirmPassword && isValidEmail(email));
 
   const switchAuthMode = (mode: AuthMode) => {
     setAuthMode(mode);
@@ -106,19 +159,12 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
   const handleAuth = async () => {
     if (!canSubmit || !probeInfo) return;
-
     setJoining(true);
     setAuthError('');
 
     try {
-      // 1. Save the hub connection
-      const hub = await hubService.joinHub(
-        tunnelUrl,
-        probeInfo,
-        probeStatus || undefined
-      );
+      const hub = await hubService.joinHub(tunnelUrl, probeInfo, probeStatus || undefined);
 
-      // 2. Register or login
       if (authMode === 'signup') {
         await hubService.registerUser(hub.slug, {
           username: username.trim(),
@@ -132,23 +178,33 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
         });
       }
 
-      // 3. Navigate to hub portal
       onNodeFound(hub.slug, hub.name, hub);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setAuthError(
         authMode === 'login'
-          ? msg.includes('401') || msg.toLowerCase().includes('invalid')
+          ? (msg.includes('401') || msg.toLowerCase().includes('invalid'))
             ? 'Invalid username or password.'
             : `Login failed: ${msg}`
-          : msg.includes('409') || msg.toLowerCase().includes('exists')
+          : (msg.includes('409') || msg.toLowerCase().includes('exists'))
             ? 'Username already taken. Try logging in instead.'
             : `Failed to create account: ${msg}`
       );
-      console.error('Auth error:', err);
     } finally {
       setJoining(false);
     }
+  };
+
+  const resetToBrowse = () => {
+    setStep('browse');
+    setProbeInfo(null);
+    setProbeStatus(null);
+    setProbeError('');
+    setAuthError('');
+    setUsername('');
+    setPassword('');
+    setEmail('');
+    setConfirmPassword('');
   };
 
   return (
@@ -165,374 +221,447 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
       </svg>
 
       {/* Header */}
-      <div className="relative z-10 p-6">
+      <div className="relative z-10 p-6 flex items-center justify-between">
         <button
-          onClick={step === 'auth' || step === 'error' ? () => { setStep('input'); setAuthError(''); } : onBack}
+          onClick={step === 'auth' || step === 'error' ? resetToBrowse : onBack}
           className="flex items-center gap-2 text-white hover:text-white/80 transition-colors"
         >
           <ArrowLeft className="w-5 h-5" />
           <span className="font-medium">{step === 'auth' || step === 'error' ? 'Back' : 'Home'}</span>
         </button>
+
+        {step === 'browse' && (
+          <button
+            onClick={() => setRegistryRefreshKey(k => k + 1)}
+            disabled={registryLoading}
+            className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors text-sm disabled:opacity-40"
+          >
+            <RefreshCw className={`w-4 h-4 ${registryLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-2xl">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 relative z-10"
-          >
-            {/* ───── Step 1: URL Input ───── */}
-            {step === 'input' && (
-              <>
-                <div className="text-center mb-8">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mx-auto mb-4">
-                    <Link2 className="w-8 h-8 text-white" />
-                  </div>
-                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-                    Join a Hub
-                  </h2>
-                  <p className="text-slate-600 dark:text-slate-400">
-                    Enter the URL shared by your hub host to connect
-                  </p>
+      <div className="flex-1 flex flex-col p-4 pb-8 relative z-10">
+        <div className="w-full max-w-lg mx-auto flex flex-col gap-4">
+
+          {/* ───── Step: Browse / Input ───── */}
+          {step === 'browse' && (
+            <>
+              <div className="text-center mb-2">
+                <h2 className="text-2xl font-bold text-white">Join a Hub</h2>
+                <p className="text-white/75 text-sm mt-1">Browse available hubs or enter a URL directly</p>
+              </div>
+
+              {/* ── Hub Directory ── */}
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden">
+                <div className="px-5 pt-5 pb-3 border-b border-slate-100 dark:border-zinc-800">
+                  <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
+                    Available Hubs
+                    <span className="ml-2 text-xs font-normal text-slate-400 dark:text-zinc-500">
+                      via citinet.cloud
+                    </span>
+                  </h3>
                 </div>
 
-                <div className="space-y-6">
-                  {/* URL Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Hub URL
-                    </label>
-                    <div className="relative">
-                      <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        type="url"
-                        value={tunnelUrl}
-                        onChange={(e) => setTunnelUrl(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbe()}
-                        placeholder="e.g., abc123.trycloudflare.com"
-                        className="w-full pl-12 pr-4 py-4 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-sm"
-                        autoFocus
-                        list="hub-url-history"
-                      />
-                      <datalist id="hub-url-history">
-                        {urlHistory.map((url, i) => (
-                          <option value={url} key={i} />
-                        ))}
-                      </datalist>
+                <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                  {registryLoading && (
+                    <div className="flex items-center justify-center gap-3 py-8 text-slate-400 dark:text-zinc-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Fetching hubs…</span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                      This is the cloudflared tunnel URL from the hub you want to join. Ask your hub host for this link.
-                    </p>
-                  </div>
+                  )}
 
-                  {/* How it works */}
-                  <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-5 border border-blue-200/50 dark:border-blue-700/50">
-                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">How hub joining works</h4>
-                    <ol className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
-                      <li className="flex items-start gap-2">
-                        <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">1</span>
-                        <span>A hub host shares their tunnel URL with the community</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">2</span>
-                        <span>Enter the URL and we'll connect to the hub</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">3</span>
-                        <span>Create your account with a username and password to join</span>
-                      </li>
-                    </ol>
-                  </div>
+                  {!registryLoading && registryHubs.length === 0 && (
+                    <div className="px-5 py-6 text-center">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        No hubs registered yet on citinet.cloud.
+                      </p>
+                      <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">
+                        Enter a URL below to connect directly.
+                      </p>
+                    </div>
+                  )}
 
-                  {/* Coming soon: hub directory */}
-                  <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 border border-slate-200 dark:border-zinc-700">
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      <strong className="font-semibold">Coming soon:</strong> A public hub directory where you can browse and join hubs without needing a URL.
-                    </p>
-                  </div>
-
-                  {/* Connect Button */}
-                  <button
-                    onClick={handleProbe}
-                    disabled={!isValidUrl(tunnelUrl)}
-                    className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 ${
-                      isValidUrl(tunnelUrl)
-                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
-                        : 'bg-slate-300 dark:bg-zinc-700 cursor-not-allowed opacity-50'
-                    }`}
-                  >
-                    Connect to Hub
-                  </button>
+                  {!registryLoading && registryHubs.map((hub) => (
+                    <DirectoryHubRow
+                      key={hub.id}
+                      hub={hub}
+                      onJoin={() => handleProbeDirectoryHub(hub)}
+                    />
+                  ))}
                 </div>
-              </>
-            )}
+              </div>
 
-            {/* ───── Step 2: Probing ───── */}
-            {step === 'probing' && (
-              <div className="text-center py-12">
-                <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
-                  Connecting to Hub
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400">
-                  Attempting to reach the hub at {hubService.normalizeTunnelUrl(tunnelUrl)}...
+              {/* ── URL Input (collapsible) ── */}
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden">
+                <button
+                  onClick={() => {
+                    setUrlOpen(o => !o);
+                    if (!urlOpen) setTimeout(() => urlInputRef.current?.focus(), 150);
+                  }}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                      <Globe className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Have a hub URL?</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Enter it directly to connect</p>
+                    </div>
+                  </div>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${urlOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {urlOpen && (
+                    <motion.div
+                      key="url-panel"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-5 pb-5 pt-1 space-y-3 border-t border-slate-100 dark:border-zinc-800">
+                        <div className="relative">
+                          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input
+                            ref={urlInputRef}
+                            type="url"
+                            value={tunnelUrl}
+                            onChange={(e) => setTunnelUrl(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbeUrl(tunnelUrl)}
+                            placeholder="e.g., hub.citinet.cloud or abc123.trycloudflare.com"
+                            className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-xs"
+                            list="hub-url-history"
+                          />
+                          <datalist id="hub-url-history">
+                            {urlHistory.map((url, i) => <option value={url} key={i} />)}
+                          </datalist>
+                        </div>
+                        <button
+                          onClick={() => handleProbeUrl(tunnelUrl)}
+                          disabled={!isValidUrl(tunnelUrl)}
+                          className={`w-full py-3 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
+                            isValidUrl(tunnelUrl)
+                              ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow hover:shadow-md active:scale-95'
+                              : 'bg-slate-200 dark:bg-zinc-700 cursor-not-allowed opacity-50'
+                          }`}
+                        >
+                          Connect to Hub
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </>
+          )}
+
+          {/* ───── Step: Probing ───── */}
+          {step === 'probing' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+                Connecting to Hub
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
+                {probingHubName
+                  ? <>Reaching <strong>{probingHubName}</strong>…</>
+                  : <>Reaching {hubService.normalizeTunnelUrl(tunnelUrl)}…</>
+                }
+              </p>
+            </motion.div>
+          )}
+
+          {/* ───── Step: Auth ───── */}
+          {step === 'auth' && probeInfo && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-6 relative z-10"
+            >
+              {/* Hub confirmed banner */}
+              <div className="text-center mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle className="w-7 h-7 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+                  {authMode === 'login' ? `Log into ${probeInfo.name || 'Hub'}` : `Join ${probeInfo.name || 'Hub'}`}
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {authMode === 'login' ? 'Sign in with your existing account' : 'Create a new account to join'}
                 </p>
               </div>
-            )}
 
-            {/* ───── Step 3: Auth (signup or login) ───── */}
-            {step === 'auth' && probeInfo && (
-              <>
-                {/* Hub Status Banner */}
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-8 h-8 text-white" />
+              {/* Hub info card */}
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-5">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-4 h-4 text-white" />
                   </div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                    {authMode === 'login' ? `Log into ${probeInfo.name || 'Hub'}` : `Join ${probeInfo.name || 'Hub'}`}
-                  </h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    {authMode === 'login'
-                      ? 'Sign in with your existing account'
-                      : 'Create a new account to join this community'
-                    }
-                  </p>
-                </div>
-
-                {/* Hub Info Card */}
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-6">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-green-900 dark:text-green-300">{probeInfo.name}</h4>
-                      {probeInfo.location && (
-                        <p className="text-xs text-green-700 dark:text-green-400">{probeInfo.location}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs mt-3">
-                    {probeInfo.node_type && (
-                      <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                        <div className="font-bold text-green-900 dark:text-green-200 capitalize">{probeInfo.node_type}</div>
-                        <div className="text-green-700 dark:text-green-400">Type</div>
-                      </div>
-                    )}
-                    {probeStatus?.user_count !== undefined && (
-                      <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                        <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.user_count}</div>
-                        <div className="text-green-700 dark:text-green-400">Members</div>
-                      </div>
-                    )}
-                    {probeStatus?.online !== undefined && (
-                      <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                        <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.online ? 'Yes' : 'No'}</div>
-                        <div className="text-green-700 dark:text-green-400">Online</div>
-                      </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-green-900 dark:text-green-300">{probeInfo.name}</h4>
+                    {probeInfo.location && (
+                      <p className="text-xs text-green-700 dark:text-green-400">{probeInfo.location}</p>
                     )}
                   </div>
                 </div>
+                <div className="grid grid-cols-3 gap-2 text-xs mt-3">
+                  {probeInfo.node_type && (
+                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
+                      <div className="font-bold text-green-900 dark:text-green-200 capitalize">{probeInfo.node_type}</div>
+                      <div className="text-green-700 dark:text-green-400">Type</div>
+                    </div>
+                  )}
+                  {probeStatus?.user_count !== undefined && (
+                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
+                      <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.user_count}</div>
+                      <div className="text-green-700 dark:text-green-400">Members</div>
+                    </div>
+                  )}
+                  {probeStatus?.online !== undefined && (
+                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
+                      <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.online ? 'Yes' : 'No'}</div>
+                      <div className="text-green-700 dark:text-green-400">Online</div>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                {/* Auth Mode Toggle */}
-                <div className="flex rounded-xl bg-slate-100 dark:bg-zinc-800 p-1 mb-6">
+              {/* Auth mode toggle */}
+              <div className="flex rounded-xl bg-slate-100 dark:bg-zinc-800 p-1 mb-5">
+                {(['signup', 'login'] as AuthMode[]).map((mode) => (
                   <button
-                    onClick={() => switchAuthMode('signup')}
-                    className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
-                      authMode === 'signup'
+                    key={mode}
+                    onClick={() => switchAuthMode(mode)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                      authMode === mode
                         ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                         : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                     }`}
                   >
-                    <User className="w-4 h-4" />
-                    New Account
+                    {mode === 'signup' ? <><User className="w-3.5 h-3.5" /> New Account</> : <><LogIn className="w-3.5 h-3.5" /> Log In</>}
                   </button>
-                  <button
-                    onClick={() => switchAuthMode('login')}
-                    className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
-                      authMode === 'login'
-                        ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
-                  >
-                    <LogIn className="w-4 h-4" />
-                    Existing Account
-                  </button>
-                </div>
+                ))}
+              </div>
 
-                <div className="space-y-4">
-                  {/* Username */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                      Username
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
-                        placeholder={authMode === 'login' ? 'Your username' : 'Choose a username'}
-                        className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors"
-                        maxLength={30}
-                        autoFocus
-                      />
-                    </div>
-                    {username.length > 0 && username.trim().length < 2 && (
-                      <p className="text-xs text-red-500 mt-1">Username must be at least 2 characters</p>
-                    )}
+              <div className="space-y-3">
+                {/* Username */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Username</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
+                      placeholder={authMode === 'login' ? 'Your username' : 'Choose a username'}
+                      className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                      maxLength={30}
+                      autoFocus
+                    />
                   </div>
-
-                  {/* Email (signup only) */}
-                  {authMode === 'signup' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                        Email
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="your@email.com"
-                          className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors"
-                        />
-                      </div>
-                      {email.length > 0 && !isValidEmail(email) && (
-                        <p className="text-xs text-red-500 mt-1">Enter a valid email address</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Password */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder={authMode === 'login' ? 'Your password' : 'Choose a password'}
-                        className="w-full pl-11 pr-12 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors"
-                        onKeyDown={(e) => e.key === 'Enter' && authMode === 'login' && canSubmit && handleAuth()}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(prev => !prev)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    {authMode === 'signup' && password.length > 0 && password.length < 4 && (
-                      <p className="text-xs text-red-500 mt-1">Password must be at least 4 characters</p>
-                    )}
-                  </div>
-
-                  {/* Confirm Password (signup only) */}
-                  {authMode === 'signup' && (
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                        Confirm Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && canSubmit && handleAuth()}
-                          placeholder="Confirm your password"
-                          className={`w-full pl-11 pr-4 py-3 border-2 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors ${
-                            confirmPassword && confirmPassword !== password
-                              ? 'border-red-300 dark:border-red-700'
-                              : 'border-slate-200 dark:border-zinc-700'
-                          }`}
-                        />
-                      </div>
-                      {confirmPassword && confirmPassword !== password && (
-                        <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
-                      )}
-                    </div>
+                  {username.length > 0 && username.trim().length < 2 && (
+                    <p className="text-xs text-red-500 mt-1">At least 2 characters</p>
                   )}
                 </div>
 
-                {/* Error Message */}
-                {authError && (
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mt-4">
-                    <p className="text-xs text-red-700 dark:text-red-300">{authError}</p>
+                {/* Email (signup only) */}
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                      />
+                    </div>
+                    {email.length > 0 && !isValidEmail(email) && (
+                      <p className="text-xs text-red-500 mt-1">Enter a valid email</p>
+                    )}
                   </div>
                 )}
 
-                {/* Tunnel URL display */}
-                <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-3 border border-slate-200 dark:border-zinc-700 mt-4">
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Hub URL</div>
-                  <div className="font-mono text-xs text-slate-900 dark:text-white break-all">
-                    {hubService.normalizeTunnelUrl(tunnelUrl)}
+                {/* Password */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={authMode === 'login' ? 'Your password' : 'Choose a password'}
+                      className="w-full pl-10 pr-10 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                      onKeyDown={(e) => e.key === 'Enter' && authMode === 'login' && canSubmit && handleAuth()}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
+                  {authMode === 'signup' && password.length > 0 && password.length < 4 && (
+                    <p className="text-xs text-red-500 mt-1">At least 4 characters</p>
+                  )}
                 </div>
 
-                {/* Submit Button */}
-                <button
-                  onClick={handleAuth}
-                  disabled={!canSubmit || joining}
-                  className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 mt-6 ${
-                    canSubmit && !joining
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
-                      : 'bg-slate-300 dark:bg-zinc-700 cursor-not-allowed opacity-50'
-                  }`}
-                >
-                  {joining ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      {authMode === 'login' ? 'Logging in...' : 'Creating Account...'}
-                    </>
-                  ) : (
-                    authMode === 'login' ? 'Log In & Join' : 'Create Account & Join'
-                  )}
-                </button>
-
-                {/* Switch mode hint */}
-                <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-4">
-                  {authMode === 'signup' ? (
-                    <>Already have an account? <button onClick={() => switchAuthMode('login')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Log in</button></>
-                  ) : (
-                    <>New here? <button onClick={() => switchAuthMode('signup')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Create an account</button></>
-                  )}
-                </p>
-              </>
-            )}
-
-            {/* ───── Error State ───── */}
-            {step === 'error' && (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
-                  Something went wrong
-                </h3>
-                <p className="text-slate-600 dark:text-slate-400 mb-6">
-                  {probeError || 'An unexpected error occurred. Please try again.'}
-                </p>
-                <button
-                  onClick={() => setStep('input')}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 transition-colors"
-                >
-                  Try Again
-                </button>
+                {/* Confirm Password (signup only) */}
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Confirm Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && canSubmit && handleAuth()}
+                        placeholder="Confirm your password"
+                        className={`w-full pl-10 pr-3 py-3 border-2 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm ${
+                          confirmPassword && confirmPassword !== password
+                            ? 'border-red-300 dark:border-red-700'
+                            : 'border-slate-200 dark:border-zinc-700'
+                        }`}
+                      />
+                    </div>
+                    {confirmPassword && confirmPassword !== password && (
+                      <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </motion.div>
+
+              {authError && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 mt-4">
+                  <p className="text-xs text-red-700 dark:text-red-300">{authError}</p>
+                </div>
+              )}
+
+              {/* Hub URL display */}
+              <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-3 border border-slate-200 dark:border-zinc-700 mt-4">
+                <div className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Connecting to</div>
+                <div className="font-mono text-xs text-slate-900 dark:text-white break-all">
+                  {hubService.normalizeTunnelUrl(tunnelUrl)}
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                onClick={handleAuth}
+                disabled={!canSubmit || joining}
+                className={`w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-5 ${
+                  canSubmit && !joining
+                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                    : 'bg-slate-300 dark:bg-zinc-700 cursor-not-allowed opacity-50'
+                }`}
+              >
+                {joining ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" />{authMode === 'login' ? 'Logging in…' : 'Creating Account…'}</>
+                ) : (
+                  authMode === 'login' ? 'Log In & Join' : 'Create Account & Join'
+                )}
+              </button>
+
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-3">
+                {authMode === 'signup'
+                  ? <>Already have an account? <button onClick={() => switchAuthMode('login')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Log in</button></>
+                  : <>New here? <button onClick={() => switchAuthMode('signup')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Create an account</button></>
+                }
+              </p>
+            </motion.div>
+          )}
+
+          {/* ───── Step: Error ───── */}
+          {step === 'error' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-7 h-7 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
+                Couldn't reach hub
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-xs mx-auto">
+                {probeError || 'An unexpected error occurred. Please try again.'}
+              </p>
+              <button
+                onClick={resetToBrowse}
+                className="px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 transition-colors"
+              >
+                Try Another Hub
+              </button>
+            </motion.div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Directory Hub Row
+// ──────────────────────────────────────────────
+
+function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
+  const isOnline = hub.online !== false;
+  return (
+    <div className="flex items-center gap-3 px-5 py-4">
+      {/* Status dot */}
+      <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'}`} />
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-sm text-slate-900 dark:text-white truncate">{hub.name}</span>
+          {isOnline
+            ? <Wifi className="w-3 h-3 text-green-500 flex-shrink-0" />
+            : <WifiOff className="w-3 h-3 text-slate-400 flex-shrink-0" />
+          }
+        </div>
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          {hub.location && (
+            <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <MapPin className="w-3 h-3" />{hub.location}
+            </span>
+          )}
+          {hub.member_count !== undefined && (
+            <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500">
+              <Users className="w-3 h-3" />{hub.member_count}
+            </span>
+          )}
+        </div>
+        {hub.description && (
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">{hub.description}</p>
+        )}
+      </div>
+
+      {/* Join button */}
+      <button
+        onClick={onJoin}
+        className="flex-shrink-0 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all active:scale-95"
+      >
+        Join
+      </button>
     </div>
   );
 }

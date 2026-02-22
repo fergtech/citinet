@@ -1,4 +1,4 @@
-import { MapPin, Network, Plus, Download } from 'lucide-react';
+import { Network, Plus, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface WelcomeScreenProps {
@@ -16,7 +16,6 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
       <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="mesh-pattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-            {/* Curved flowing lines */}
             <path d="M 0 100 Q 50 50 100 100 T 200 100" stroke="white" strokeWidth="1.5" fill="none" />
             <path d="M 0 150 Q 50 100 100 150 T 200 150" stroke="white" strokeWidth="1.5" fill="none" />
             <ellipse cx="100" cy="100" rx="80" ry="40" stroke="white" strokeWidth="1" fill="none" opacity="0.5" />
@@ -25,7 +24,6 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
         </defs>
         <rect width="100%" height="100%" fill="url(#mesh-pattern)" />
       </svg>
-
 
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
@@ -56,7 +54,22 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         >
           <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
-            <MapPin className="w-16 h-16 text-white" strokeWidth={2} /> 
+            {/* Citinet mesh logo mark */}
+            <svg viewBox="0 0 64 64" className="w-20 h-20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="32" cy="32" r="6" fill="white" />
+              <circle cx="10" cy="20" r="4" fill="white" opacity="0.7" />
+              <circle cx="54" cy="20" r="4" fill="white" opacity="0.7" />
+              <circle cx="10" cy="44" r="4" fill="white" opacity="0.7" />
+              <circle cx="54" cy="44" r="4" fill="white" opacity="0.7" />
+              <circle cx="32" cy="6"  r="4" fill="white" opacity="0.5" />
+              <circle cx="32" cy="58" r="4" fill="white" opacity="0.5" />
+              <line x1="32" y1="26" x2="14" y2="22" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="32" y1="26" x2="50" y2="22" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="32" y1="38" x2="14" y2="42" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="32" y1="38" x2="50" y2="42" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="32" y1="26" x2="32" y2="10"  stroke="white" strokeWidth="1.5" opacity="0.5" />
+              <line x1="32" y1="38" x2="32" y2="54"  stroke="white" strokeWidth="1.5" opacity="0.5" />
+            </svg>
           </div>
         </motion.div>
 
@@ -88,10 +101,10 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
               Join Your Local Network
             </h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-              Find and connect to an existing citinet node in your neighborhood
+              Browse available community hubs or connect directly with a hub URL
             </p>
             <div className="mt-4 flex items-center gap-2 text-purple-600 dark:text-purple-400 font-semibold text-sm group-hover:gap-3 transition-all">
-              <span>Scan for networks</span>
+              <span>Find a hub</span>
               <span>→</span>
             </div>
           </motion.button>

@@ -6,11 +6,11 @@
  * hubs through their tunnel URLs.
  * 
  * Current: Users join by entering the hub's cloudflared tunnel URL.
- * Future: A centralized registry at citinet.io will list available hubs.
- * 
+ * Future: A centralized registry at registry.citinet.cloud lists available hubs.
+ *
  * Routing:
  *   Current: citinet.vercel.app/:hubSlug
- *   Future:  :hubSlug.citinet.io
+ *   Future:  citinet.cloud/:hubSlug
  */
 
 export interface Hub {

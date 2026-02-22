@@ -15,7 +15,7 @@ export default defineConfig({
       manifest: {
         name: 'citinet - Local Mesh Network',
         short_name: 'citinet',
-        description: 'Local mesh network community platform for Highland Park. Secure, local, owned by us.',
+        description: 'Community-owned mesh network platform. Decentralized, local, secure — powered by citinet.cloud.',
         theme_color: '#9333ea',
         background_color: '#ffffff',
         display: 'standalone',

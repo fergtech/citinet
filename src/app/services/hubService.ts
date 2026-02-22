@@ -3,8 +3,8 @@
  * 
  * Manages hub connections, persistence, and API communication.
  * Currently uses localStorage + direct fetch to hub tunnel URLs.
- * 
- * Future: Will integrate with centralized hub registry at citinet.io
+ *
+ * Future: Will integrate with centralized hub registry at citinet.cloud
  */
 
 import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment } from '../types/hub';
@@ -469,8 +469,7 @@ class HubService {
 
   /** Get the web app URL for a hub */
   getHubPortalUrl(hubSlug: string): string {
-    // Current: citinet.vercel.app/:hubSlug
-    // Future: :hubSlug.citinet.io
+    // Current: citinet.vercel.app/:hubSlug  |  Future: citinet.cloud/:hubSlug
     const baseUrl = window.location.origin;
     return `${baseUrl}/${hubSlug}`;
   }
