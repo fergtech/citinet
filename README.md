@@ -242,3 +242,8 @@ npm run build
 ## License
 
 See ATTRIBUTIONS.md for third-party licenses and credits.
+
+## Related Citinet Repositories
+
+- [citinet-client](https://github.com/fergtech/citinet-client): Installable client to allow hub creation and network contribution by users
+- [citinet-info](https://github.com/fergtech/citinet-info): The informational companion site to the Citinet project
