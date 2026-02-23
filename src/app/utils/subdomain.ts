@@ -28,7 +28,13 @@ export function getHubUrl(slug: string): string {
   return `https://${slug}.citinet.cloud`;
 }
 
-/** Hard-navigates to a hub's citinet.cloud subdomain. */
-export function navigateToHub(slug: string): void {
-  window.location.href = getHubUrl(slug);
+/** Hard-navigates to a hub's citinet.cloud subdomain.
+ *  Pass `connection` to bootstrap the hub's localStorage on first visit
+ *  (required because localStorage is origin-scoped). */
+export function navigateToHub(slug: string, connection?: object): void {
+  const url = new URL(getHubUrl(slug));
+  if (connection) {
+    url.searchParams.set('_cc', btoa(JSON.stringify(connection)));
+  }
+  window.location.href = url.toString();
 }

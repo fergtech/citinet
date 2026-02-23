@@ -47,6 +47,26 @@ export function HubProvider({ children }: { children: ReactNode }) {
 
     const slug = getSubdomain();
     if (slug) {
+      // Bootstrap localStorage from URL param when navigating from start.citinet.cloud
+      // (localStorage is origin-scoped — start and hub subdomains can't share it directly)
+      const params = new URLSearchParams(window.location.search);
+      const encoded = params.get('_cc');
+      if (encoded) {
+        try {
+          const conn = JSON.parse(atob(encoded));
+          const hubs = hubService.getAllHubConnections();
+          hubs[slug] = conn;
+          localStorage.setItem('citinet-hubs', JSON.stringify(hubs));
+          hubService.setActiveHub(slug);
+        } catch {
+          // ignore malformed param
+        }
+        // Clean the param from the URL without reloading
+        params.delete('_cc');
+        const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, '', clean);
+      }
+
       // Hub mode (e.g. riverdale.citinet.cloud) — load connection by subdomain slug
       const connection = hubService.getHubConnection(slug);
       if (connection) {

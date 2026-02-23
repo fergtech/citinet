@@ -60,7 +60,8 @@ function JoinHubRoute() {
 
   const handleHubFound = (hubSlug: string, _hubName: string, hub: Hub) => {
     onHubJoined(hub);
-    navigateToHub(hubSlug);
+    const connection = hubService.getHubConnection(hubSlug);
+    navigateToHub(hubSlug, connection ?? { hub });
   };
 
   return (
@@ -78,7 +79,8 @@ function CreateHubRoute() {
   const handleComplete = async (_nodeId: string, nodeName: string) => {
     const hub = await hubService.joinHub('', { name: nodeName, node_id: '' });
     onHubJoined(hub);
-    navigateToHub(hub.slug);
+    const connection = hubService.getHubConnection(hub.slug);
+    navigateToHub(hub.slug, connection ?? { hub });
   };
 
   return <NodeCreationWizard onComplete={handleComplete} onBack={() => navigate('/')} />;
