@@ -39,7 +39,7 @@ interface RegistryResponse {
   updated_at: string;
 }
 
-const REGISTRY_URL = 'https://registry.citinet.cloud/hubs';
+const REGISTRY_URL = 'https://registry.citinet.cloud';
 const FETCH_TIMEOUT_MS = 10_000;
 
 class RegistryService {
@@ -52,7 +52,7 @@ class RegistryService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-      const res = await fetch(REGISTRY_URL, {
+      const res = await fetch(`${REGISTRY_URL}/hubs`, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
@@ -88,7 +88,7 @@ class RegistryService {
     hub: Omit<RegistryHub, 'registered_at' | 'last_seen'>,
   ): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch(REGISTRY_URL, {
+      const res = await fetch(`${REGISTRY_URL}/hubs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,7 +117,7 @@ class RegistryService {
     hubId: string,
   ): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch(`${REGISTRY_URL}/${encodeURIComponent(hubId)}`, {
+      const res = await fetch(`${REGISTRY_URL}/hubs/${encodeURIComponent(hubId)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${apiToken}` },
       });
