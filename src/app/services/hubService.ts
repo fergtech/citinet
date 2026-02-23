@@ -469,9 +469,7 @@ class HubService {
 
   /** Get the web app URL for a hub */
   getHubPortalUrl(hubSlug: string): string {
-    // Current: citinet.vercel.app/:hubSlug  |  Future: citinet.cloud/:hubSlug
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/${hubSlug}`;
+    return `https://${hubSlug}.citinet.cloud`;
   }
 
   /** Get the invite URL for a hub */

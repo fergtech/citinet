@@ -8,6 +8,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { Hub, HubConnectionStatus, HubUser } from '../types/hub';
 import { hubService } from '../services/hubService';
+import { getSubdomain, navigateToHub } from '../utils/subdomain';
 
 interface HubContextValue {
   /** Current hub connection (null if not connected to any hub) */
@@ -40,16 +41,20 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [joinedHubs, setJoinedHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Initialize: load hub data from localStorage, migrate legacy data
+  // Initialize: load hub data from the subdomain (hub mode) or skip (onboarding mode)
   useEffect(() => {
-    // Try migrating legacy data first
     hubService.migrateLegacyData();
 
-    const activeConnection = hubService.getActiveHubConnection();
-    if (activeConnection) {
-      setCurrentHub(activeConnection.hub);
-      setCurrentUser(activeConnection.user);
+    const slug = getSubdomain();
+    if (slug) {
+      // Hub mode (e.g. riverdale.citinet.cloud) — load connection by subdomain slug
+      const connection = hubService.getHubConnection(slug);
+      if (connection) {
+        setCurrentHub(connection.hub);
+        setCurrentUser(connection.user);
+      }
     }
+    // On start.citinet.cloud, no hub context is needed — onboarding handles hub selection
     setJoinedHubs(hubService.getJoinedHubs());
     setLoading(false);
   }, []);
@@ -84,6 +89,11 @@ export function HubProvider({ children }: { children: ReactNode }) {
   }, [currentHub?.slug, currentHub?.tunnelUrl]);
 
   const switchHub = useCallback((slug: string) => {
+    if (getSubdomain()) {
+      // In hub mode, switching hubs = navigating to their subdomain
+      navigateToHub(slug);
+      return;
+    }
     const connection = hubService.getHubConnection(slug);
     if (connection) {
       hubService.setActiveHub(slug);

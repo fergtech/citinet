@@ -6,9 +6,10 @@
  * Hubs self-register via the Tauri desktop client's Admin → Public Access panel.
  *
  * Registry API (registry.citinet.cloud):
- *   GET  /hubs            → { hubs: RegistryHub[], updated_at: string }
- *   POST /hubs            → register / update a hub (called by Tauri client)
- *   DELETE /hubs/:id      → deregister (called by Tauri client)
+ *   GET  /hubs              → { hubs: RegistryHub[], updated_at: string }
+ *   GET  /hubs/by-slug/:slug → single hub lookup by slug
+ *   POST /hubs              → register / update a hub (called by Tauri client)
+ *   DELETE /hubs/:id        → deregister (called by Tauri client)
  */
 
 export interface RegistryHub {
@@ -72,6 +73,29 @@ class RegistryService {
         console.warn('[registry] unreachable:', err);
       }
       return [];
+    }
+  }
+
+  /**
+   * Look up a single hub by its citinet.cloud slug.
+   * Used by hub-mode pages to resolve the subdomain → tunnel URL.
+   * Returns null if not found or registry unreachable.
+   */
+  async getHubBySlug(slug: string): Promise<RegistryHub | null> {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      const res = await fetch(
+        `${REGISTRY_URL}/hubs/by-slug/${encodeURIComponent(slug)}`,
+        { signal: controller.signal, headers: { Accept: 'application/json' } },
+      );
+      clearTimeout(timer);
+
+      if (!res.ok) return null;
+      return await res.json() as RegistryHub;
+    } catch {
+      return null;
     }
   }
 
