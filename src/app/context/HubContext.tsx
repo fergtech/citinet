@@ -8,6 +8,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { Hub, HubConnectionStatus, HubUser } from '../types/hub';
 import { hubService } from '../services/hubService';
+import { registryService } from '../services/registryService';
 import { getSubdomain, navigateToHub } from '../utils/subdomain';
 
 interface HubContextValue {
@@ -73,6 +74,18 @@ export function HubProvider({ children }: { children: ReactNode }) {
         setCurrentHub(connection.hub);
         setCurrentUser(connection.user);
       }
+
+      // Refresh tunnel URL from registry in the background.
+      // Quick tunnels rotate on restart — registry always has the current URL.
+      registryService.getHubBySlug(slug).then(registryHub => {
+        if (!registryHub?.tunnel_url) return;
+        const stored = hubService.getHubConnection(slug);
+        if (stored && stored.hub.tunnelUrl !== registryHub.tunnel_url) {
+          hubService.updateTunnelUrl(slug, registryHub.tunnel_url, true).then(updatedHub => {
+            setCurrentHub(updatedHub);
+          }).catch(() => {});
+        }
+      });
     }
     // On start.citinet.cloud, no hub context is needed — onboarding handles hub selection
     setJoinedHubs(hubService.getJoinedHubs());
