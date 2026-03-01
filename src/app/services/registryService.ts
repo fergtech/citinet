@@ -3,7 +3,7 @@
  *
  * Fetches the public hub listing from https://registry.citinet.cloud/hubs.
  * The registry is a Cloudflare Worker backed by KV storage.
- * Hubs self-register via the Tauri desktop client's Admin → Public Access panel.
+ * Hubs self-register via their admin panel (Public Access section).
  *
  * Registry API (registry.citinet.cloud):
  *   GET  /hubs              → { hubs: RegistryHub[], updated_at: string }
@@ -101,8 +101,7 @@ class RegistryService {
 
   /**
    * Register or update a hub in the public registry.
-   * Called from the Tauri desktop app after a tunnel is set up.
-   * Requires the Cloudflare API token to be stored in the hub's SQLite DB.
+   * Called from the hub's admin panel after a tunnel is set up.
    *
    * @param apiToken  - Cloudflare API token (passed from Tauri backend)
    * @param hub       - Hub registration payload

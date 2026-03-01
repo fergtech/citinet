@@ -26,13 +26,15 @@ Citinet provides an alternative — not by reinventing the entire Internet from 
 
 ## This Application's Role
 
-This Local Mesh Node Application is the **social layer** and **user interface** for Citinet. It provides:
+This web portal is the **primary interface** for the Citinet network. It runs entirely in the browser — no installation required. It provides:
 
-- **Familiar, polished UX** borrowed from apps billions already use (Meta, TikTok, Google)
-- **Local ownership** and transparent governance instead of corporate control
-- **Community-hosted spaces** for discussions, events, and local exchange
+- **Hub discovery** — browse the public hub directory and join any community hub
+- **Hub interface** — once connected, access your community's files, discussions, and members
+- **Onboarding** — guided flow for both joining existing hubs and setting up new ones
+- **Familiar, polished UX** — feels natural without surveillance or algorithmic manipulation
 - **Privacy by default** — pseudonyms welcome, no tracking, local-only visibility
-- **The software foundation** for physical mesh network infrastructure
+
+Community members never need to install anything. Hub operators run the hub stack (Docker Compose) on their own machine, and members access it through this web app at `{name}.citinet.cloud`.
 
 We're not trying to reinvent how people interact with apps. We're reinventing **what those apps are for** and **who controls them.**
 
@@ -68,15 +70,9 @@ Nodes communicate as peers.
 - Centralized data, power, control, surveillance
 
 ### Citinet Micro–Data Point Architecture
-A functional Citinet node requires only:
-- 5- or 8-port network switch
-- Raspberry Pi
-- PC tower/workstation
-- Ethernet cables
-- Citinet OS
-- Optional Wi-Fi extender
+A hub can run on almost any hardware you already own — a spare PC, a laptop, a mini PC, or a single-board computer like a Raspberry Pi. A home server or small VPS works equally well. There's no specialized equipment required, and no custom OS to install.
 
-**This setup provides:** local cloud services, social networking, messaging, storage, hosting, community identity, admin tools, and future mesh capabilities.
+**What you get:** local cloud services, social networking, messaging, file storage, community identity, and future mesh capabilities — running on hardware you own, in a space you control.
 
 ### Citinet Node Locations
 - homes, apartments, dorms
@@ -88,17 +84,16 @@ Each becomes part of the Citinet mesh.
 
 ## Development Roadmap
 
-This application is the first step toward **decentralized hyperlocal internet infrastructure**:
-
-1. **Phase 1 (✅ Complete):** Web-based civic platform for local communities
-   - Two-path onboarding (join or create)
-   - Node discovery and creation
-   - Multi-node support
-   - Full navigation system
-2. **Phase 2 (Next):** Physical mesh network nodes that community members can install as access points
-3. **Phase 3 (Future):** True peer-to-peer local internet — resilient, community-owned, surveillance-free
-
-Users will eventually be able to set up physical nodes in their homes and businesses, creating a mesh network that provides internet access independent of traditional ISPs. This app is the social layer that makes that infrastructure meaningful and useful.
+1. **Phase 1 (✅ Complete):** Core web portal — hub discovery, join flow, hub interface
+   - Two-path onboarding (join or create a hub)
+   - Hub directory with registry integration
+   - Subdomain-based hub routing (`{slug}.citinet.cloud`)
+   - Multi-hub support via localStorage
+2. **Phase 2 (✅ Complete):** Stable hub connectivity — Tailscale Funnel + custom domain tunnels
+   - Any gateway supported (Tailscale, Cloudflare, reverse proxy)
+   - IPv4 + IPv6 hub reachability
+3. **Phase 3 (In Progress):** Web-based hub admin panel — manage hub settings, users, and tunnels from the browser
+4. **Phase 4 (Future):** Personal node sync, federation (ActivityPub, Matrix), offline-capable hub-served web app
 
 ## Why Citinet Matters
 
@@ -245,5 +240,6 @@ See ATTRIBUTIONS.md for third-party licenses and credits.
 
 ## Related Citinet Repositories
 
-- [citinet-client](https://github.com/fergtech/citinet-client): Installable client to allow hub creation and network contribution by users
+- [citinet-client](https://github.com/fergtech/citinet-client): Hub management desktop app (Windows, for hub operators)
 - [citinet-info](https://github.com/fergtech/citinet-info): The informational companion site to the Citinet project
+- [citinet-registry](https://github.com/fergtech/citinet-registry): Hub registry Cloudflare Worker

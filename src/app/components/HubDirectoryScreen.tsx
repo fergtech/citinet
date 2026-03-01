@@ -189,7 +189,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
           {/* Footer note */}
           {!loading && hubs.length > 0 && (
             <p className="text-center text-white/50 text-xs mt-6">
-              Hub admins: register your hub via the desktop client's Admin → Public Access panel.
+              Hub admins: register your hub from its admin panel.
             </p>
           )}
         </div>

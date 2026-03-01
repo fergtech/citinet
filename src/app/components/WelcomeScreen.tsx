@@ -1,13 +1,10 @@
-import { Network, Plus, Download, MapPin } from 'lucide-react';
+import { Network, Plus, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface WelcomeScreenProps {
   onJoinNetwork: () => void;
   onCreateNetwork: () => void;
 }
-
-// Simple desktop detection (not perfect, but covers most cases)
-const isDesktop = typeof window !== 'undefined' && !/Mobi|Android|iPad|iPhone/i.test(navigator.userAgent);
 
 export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
   return (
@@ -29,21 +26,6 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
       <div className="absolute top-6 left-6">
         <h2 className="text-white tracking-tight">[citinet]</h2>
       </div>
-
-      {/* Top Right Download Button (Desktop only) */}
-      {isDesktop && (
-        <div className="absolute top-6 right-6">
-          <a
-            href="https://github.com/fergtech/citinet-client/releases/download/v0.1.0/citinet.exe"
-            className="flex items-center gap-2 bg-white/90 text-blue-700 font-semibold px-4 py-2 rounded-lg shadow hover:bg-white transition border border-blue-200 hover:border-blue-400"
-            download
-            title="Download Citinet Desktop Client for Windows"
-          >
-            <Download className="w-5 h-5" />
-            Download Desktop Client
-          </a>
-        </div>
-      )}
 
       {/* Center Content */}
       <div className="flex flex-col items-center text-center z-10 max-w-2xl w-full">
