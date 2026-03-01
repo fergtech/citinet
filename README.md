@@ -26,7 +26,7 @@ Citinet provides an alternative — not by reinventing the entire Internet from 
 
 ## This Application's Role
 
-This web portal is the **primary interface** for the Citinet network. It runs entirely in the browser — no installation required. It provides:
+This web portal is the **current interface prototype** for the Citinet network. It runs entirely in the browser — no installation required. It provides:
 
 - **Hub discovery** — browse the public hub directory and join any community hub
 - **Hub interface** — once connected, access your community's files, discussions, and members
@@ -34,7 +34,7 @@ This web portal is the **primary interface** for the Citinet network. It runs en
 - **Familiar, polished UX** — feels natural without surveillance or algorithmic manipulation
 - **Privacy by default** — pseudonyms welcome, no tracking, local-only visibility
 
-Community members never need to install anything. Hub operators run the hub stack (Docker Compose) on their own machine, and members access it through this web app at `{name}.citinet.cloud`.
+Community members never need to install anything. Hub operators run the hub stack (Docker Compose) on their own machine, and members access it through this web app at `{name}.citinet.xyz`.
 
 We're not trying to reinvent how people interact with apps. We're reinventing **what those apps are for** and **who controls them.**
 
@@ -84,16 +84,28 @@ Each becomes part of the Citinet mesh.
 
 ## Development Roadmap
 
-1. **Phase 1 (✅ Complete):** Core web portal — hub discovery, join flow, hub interface
+1. **Phase 1 (In progress):** Local end-to-end validation — local hub services + browser portal flow
+   - Local hub stack running on operator machine
+   - Browser onboarding flow can connect to a reachable hub endpoint
+   - User auth/onboarding works against hub API (`/api/auth/register`, `/api/auth/login`)
+   - Hub interface loads with live hub context after join
+2. **Phase 2 (In progress):** Core web portal foundation — hub discovery, join flow, hub interface UX
    - Two-path onboarding (join or create a hub)
    - Hub directory with registry integration
-   - Subdomain-based hub routing (`{slug}.citinet.cloud`)
+   - Subdomain-based hub routing (`{slug}.citinet.xyz`)
    - Multi-hub support via localStorage
-2. **Phase 2 (✅ Complete):** Stable hub connectivity — Tailscale Funnel + custom domain tunnels
+3. **Phase 3 (Planned):** Stable hub-stack connectivity — tunnels, routing, and end-to-end reliability
    - Any gateway supported (Tailscale, Cloudflare, reverse proxy)
-   - IPv4 + IPv6 hub reachability
-3. **Phase 3 (In Progress):** Web-based hub admin panel — manage hub settings, users, and tunnels from the browser
-4. **Phase 4 (Future):** Personal node sync, federation (ActivityPub, Matrix), offline-capable hub-served web app
+   - IPv4 + IPv6 hub reachability (ongoing validation)
+4. **Phase 4 (Planned):** Web-based hub admin panel — manage hub settings, users, and tunnels from the browser
+5. **Phase 5 (Future):** Personal node sync, federation (ActivityPub, Matrix), offline-capable hub-served web app
+
+### Current Status (March 2026)
+
+- **Mission 1 (active now):** Prove reliable local flow from running hub services on a system to browser connection and use through this portal.
+- **Mission 2 (next):** Live web capabilities — production domain setup (`citinet.xyz`), registry/discovery reliability, and public routing hardening.
+- `citinet.xyz` is purchased but not yet connected to Vercel/GitHub auto-deploy and not yet the guaranteed production entrypoint.
+- End-to-end connection between the web portal and the complete Citinet stack is not yet guaranteed across all environments.
 
 ## Why Citinet Matters
 
@@ -110,9 +122,9 @@ It returns independence, decentralization, locality, privacy, and public digital
 
 ## Current Features
 
-### Phase 1 - Core Platform (✅ Complete)
+### Phase 1 - Core Platform (Implemented Scope)
 - **Two-path onboarding** — join existing network or create your own
-- **Node discovery** — scan for nearby citinet nodes
+- **Hub discovery** — browse registry-listed hubs and connect via direct hub URL
 - **Node creation wizard** — step-by-step setup for new community nodes
 - **Civic onboarding flow** — orientation, not signup
 - **Local Commons dashboard** — see what's happening in your neighborhood
