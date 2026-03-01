@@ -260,7 +260,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
                     Available Hubs
                     <span className="ml-2 text-xs font-normal text-slate-400 dark:text-zinc-500">
-                      via citinet.cloud
+                      from registry
                     </span>
                   </h3>
                 </div>
@@ -336,7 +336,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                             value={tunnelUrl}
                             onChange={(e) => setTunnelUrl(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbeUrl(tunnelUrl)}
-                            placeholder="e.g., hub.citinet.cloud or abc123.trycloudflare.com"
+                            placeholder="e.g., https://myhub.tailXXX.ts.net or https://abc123.trycloudflare.com"
                             className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-xs"
                             list="hub-url-history"
                           />

@@ -4,7 +4,7 @@
  * Manages hub connections, persistence, and API communication.
  * Currently uses localStorage + direct fetch to hub tunnel URLs.
  *
- * Future: Will integrate with centralized hub registry at citinet.cloud
+ * Future: Will integrate with centralized hub registry
  */
 
 import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment } from '../types/hub';
@@ -467,9 +467,15 @@ class HubService {
   // URL Helpers
   // ──────────────────────────────────────────────
 
-  /** Get the web app URL for a hub */
+  /** Get the web app URL for a hub (localhost for dev) */
   getHubPortalUrl(hubSlug: string): string {
-    return `https://${hubSlug}.citinet.cloud`;
+    // For local dev
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      return `http://localhost:${window.location.port}?hub=${hubSlug}`;
+    }
+    // Production: construct subdomain URL
+    const baseDomain = typeof window !== 'undefined' ? window.location.hostname.split('.').slice(-2).join('.') : 'citinet.xyz';
+    return `https://${hubSlug}.${baseDomain}`;
   }
 
   /** Get the invite URL for a hub */

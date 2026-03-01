@@ -2,15 +2,15 @@
  * Hub Types for Citinet
  * 
  * A "hub" is a citinet community node — a locally-operated micro data center
- * exposed to the internet via a cloudflared tunnel. The web app connects to
- * hubs through their tunnel URLs.
+ * exposed to the internet via a tunnel (Tailscale, Cloudflare, etc.).
+ * The web app connects to hubs through their tunnel URLs.
  * 
- * Current: Users join by entering the hub's cloudflared tunnel URL.
- * Future: A centralized registry at registry.citinet.cloud lists available hubs.
+ * Current: Users join by entering the hub's tunnel URL.
+ * Future: A centralized registry lists available hubs for discovery.
  *
  * Routing:
- *   Current: citinet.vercel.app/:hubSlug
- *   Future:  citinet.cloud/:hubSlug
+ *   Current: localhost:3000 or citinet.xyz
+ *   Future:  subdomain routing for multi-hub support
  */
 
 export interface Hub {

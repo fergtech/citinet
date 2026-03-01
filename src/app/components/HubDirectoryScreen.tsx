@@ -103,8 +103,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Hub Directory</h1>
             <p className="text-white/80 text-sm">
-              Active community hubs registered on{' '}
-              <span className="font-semibold text-white">citinet.cloud</span>
+              Active community hubs from the registry
             </p>
           </div>
 
@@ -126,7 +125,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
           {loading && (
             <div className="text-center py-16">
               <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-white/80 text-sm">Fetching hubs from citinet.cloud…</p>
+              <p className="text-white/80 text-sm">Fetching hubs from registry…</p>
             </div>
           )}
 

@@ -34,7 +34,7 @@ export function getHubUrl(slug: string): string {
   return `https://${slug}.${baseDomain}`;
 }
 
-/** Hard-navigates to a hub's citinet.cloud subdomain.
+/** Hard-navigates to a hub's subdomain (or query param for localhost).
  *  Pass `connection` to bootstrap the hub's localStorage on first visit
  *  (required because localStorage is origin-scoped). */
 export function navigateToHub(slug: string, connection?: object): void {

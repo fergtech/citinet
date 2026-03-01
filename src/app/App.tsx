@@ -41,7 +41,7 @@ const screenDescriptions: Record<string, string> = {
 };
 
 // ──────────────────────────────────────────────
-// Onboarding Mode Routes (start.citinet.cloud)
+// Onboarding Mode Routes (no hub selected)
 // ──────────────────────────────────────────────
 
 function WelcomeRoute() {
@@ -87,7 +87,7 @@ function CreateHubRoute() {
 }
 
 // ──────────────────────────────────────────────
-// Hub Mode Routes (hubname.citinet.cloud/*)
+// Hub Mode Routes (hub selected via subdomain or query param)
 // Hub slug comes from the subdomain, not URL params.
 // ──────────────────────────────────────────────
 

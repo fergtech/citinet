@@ -1,15 +1,15 @@
 /**
  * Registry Service for Citinet
  *
- * Fetches the public hub listing from https://registry.citinet.cloud/hubs.
+ * Fetches the public hub listing from the registry API.
  * The registry is a Cloudflare Worker backed by KV storage.
  * Hubs self-register via their admin panel (Public Access section).
  *
- * Registry API (registry.citinet.cloud):
+ * Registry API:
  *   GET  /hubs              → { hubs: RegistryHub[], updated_at: string }
  *   GET  /hubs/by-slug/:slug → single hub lookup by slug
- *   POST /hubs              → register / update a hub (called by Tauri client)
- *   DELETE /hubs/:id        → deregister (called by Tauri client)
+ *   POST /hubs              → register / update a hub (called by admin panel)
+ *   DELETE /hubs/:id        → deregister (called by admin panel)
  */
 
 export interface RegistryHub {
