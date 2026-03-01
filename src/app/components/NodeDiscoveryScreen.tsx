@@ -276,7 +276,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   {!registryLoading && registryHubs.length === 0 && (
                     <div className="px-5 py-6 text-center">
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No hubs registered yet on citinet.cloud.
+                        No hubs registered yet.
                       </p>
                       <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">
                         Enter a URL below to connect directly.
