@@ -15,7 +15,7 @@ export default defineConfig({
       manifest: {
         name: 'citinet - Local Mesh Network',
         short_name: 'citinet',
-        description: 'Community-owned mesh network platform. Decentralized, local, secure — powered by citinet.cloud.',
+        description: 'Community-owned mesh network platform. Decentralized, local, secure.',
         theme_color: '#9333ea',
         background_color: '#ffffff',
         display: 'standalone',
