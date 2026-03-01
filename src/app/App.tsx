@@ -17,6 +17,7 @@ import { FilesScreen } from './components/FilesScreen';
 import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
+import { HubSetupScreen } from './components/HubSetupScreen';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub } from './utils/subdomain';
@@ -84,6 +85,11 @@ function CreateHubRoute() {
   };
 
   return <NodeCreationWizard onComplete={handleComplete} onBack={() => navigate('/')} />;
+}
+
+function HubSetupRoute() {
+  const navigate = useNavigate();
+  return <HubSetupScreen onBack={() => navigate('/')} />;
 }
 
 // ──────────────────────────────────────────────
@@ -257,6 +263,7 @@ function HubPlaceholderRoute({ screen }: { screen: string }) {
 function HubGuard({ children }: { children: React.ReactNode }) {
   const { currentHub, loading } = useHub();
   const hubSlug = getSubdomain();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (loading) return;
@@ -265,7 +272,7 @@ function HubGuard({ children }: { children: React.ReactNode }) {
       // Not joined: send to onboarding
       navigate('/');
     }
-  }, [currentHub, loading, hubSlug]);
+  }, [currentHub, loading, hubSlug, navigate]);
 
   return <>{children}</>;
 }
@@ -280,6 +287,7 @@ function OnboardingModeRoutes() {
       <Route path="/" element={<WelcomeRoute />} />
       <Route path="/join" element={<JoinHubRoute />} />
       <Route path="/create" element={<CreateHubRoute />} />
+      <Route path="/hub-setup" element={<HubSetupRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

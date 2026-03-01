@@ -13,8 +13,25 @@ export function getSubdomain(): string | null {
   const forced = (import.meta.env.VITE_FORCE_HUB_SLUG as string | undefined) ?? '';
   if (forced) return forced;
 
-  // Mission 1: Always return null on localhost (no multi-subdomain support yet)
+  // Mission 1: ?hub= query param is set by navigateToHub() on initial hard-navigation.
+  // Cache it in sessionStorage so it survives client-side React Router navigation
+  // (navigate('/onboard') strips query params, losing ?hub=slug).
+  const hub = new URLSearchParams(window.location.search).get('hub');
+  if (hub) {
+    sessionStorage.setItem('citinet-active-hub', hub);
+    return hub;
+  }
+
+  // Survived a client-side navigation — read from session cache
+  const cached = sessionStorage.getItem('citinet-active-hub');
+  if (cached) return cached;
+
   return null;
+}
+
+/** Call when the user explicitly leaves a hub so the session cache is cleared. */
+export function clearSubdomainCache(): void {
+  sessionStorage.removeItem('citinet-active-hub');
 }
 
 /** Returns the full URL for a hub slug (localhost-only for Mission 1). */

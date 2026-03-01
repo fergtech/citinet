@@ -9,7 +9,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import type { Hub, HubConnectionStatus, HubUser } from '../types/hub';
 import { hubService } from '../services/hubService';
 import { registryService } from '../services/registryService';
-import { getSubdomain, navigateToHub } from '../utils/subdomain';
+import { getSubdomain, navigateToHub, clearSubdomainCache } from '../utils/subdomain';
 
 interface HubContextValue {
   /** Current hub connection (null if not connected to any hub) */
@@ -146,6 +146,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
 
   const leaveHub = useCallback((slug: string) => {
     hubService.leaveHub(slug);
+    clearSubdomainCache();
     setJoinedHubs(hubService.getJoinedHubs());
     
     if (currentHub?.slug === slug) {

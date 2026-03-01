@@ -45,56 +45,136 @@ When navigating between different hub subdomains, connection data is base64-enco
 
 ## Hub Operator Setup Flow (Mission 1)
 
-**Phase 1: Hub Setup**
+**Phase 1: Hub Setup via Web App**
 ```
-Hub operator visits local web app (localhost:3000)
+Hub operator visits web portal (localhost:3000, future: citinet.xyz)
     → Clicks "Create Hub" wizard
-    → Enters hub name, location, visibility choice
-    → Downloads setup package (docker-compose.yml + scripts + guides)
-    → Extracts files, runs setup scripts:
-        - Scripts check for Docker (install if missing)
-        - Scripts check for Tailscale (install if missing)
-        - Scripts verify system prerequisites
-    → Operator runs: docker-compose up -d
-        - Hub stack starts (API, database, storage, messaging)
-        - Hub API listens on localhost:9090
-    → Operator configures public access gateway:
-        - Tailscale Funnel → https://hubname.tailXXXX.ts.net (recommended)
-        - Cloudflare Tunnel → custom domain
-        - Reverse proxy / local-only
+    → Step 1: Enters hub name, location, ZIP code, description
+    → Step 2: Chooses visibility option:
+        - Try Local First (recommended, can enable public access later)
+        - Public via Tailscale Funnel (requires Tailscale account)
+        - Public via Cloudflare Tunnel (requires Cloudflare account)
+        - Local Network Only (no internet exposure)
+    → Step 3: Downloads setup package (3 files):
+        - docker-compose.yml (hub stack services)
+        - .env.example (configuration template)
+        - README.txt (setup instructions)
+    → Step 4: Reviews quick start guide
 ```
 
-**Phase 2: Browser Connection**
+**Phase 2: Local Hub Installation**
+```
+Operator extracts downloaded files to folder (e.g., ~/citinet-hub)
+    → Copies .env.example to .env
+    → Edits .env with hub details:
+        HUB_NAME="Highland Park Community"
+        HUB_SLUG="highland-park"
+        HUB_LOCATION="Los Angeles, CA"
+        DB_PASSWORD="<strong_password>"
+        JWT_SECRET="<random_64_char_string>"
+    → (Optional) Runs setup script: npm run hub:setup
+        - Checks for Docker installation
+        - Checks for Tailscale installation (if public access desired)
+        - Validates network configuration
+        - Verifies .env file exists and is configured
+    → Starts hub stack: docker-compose up -d
+        - Pulls Docker images (first run only, ~2-3 minutes)
+        - Starts 4 services: citinet-api, citinet-db, citinet-storage, citinet-redis
+        - Hub API listens on localhost:9090
+    → Verifies hub is running: curl http://localhost:9090/health
+        - Should return 200 OK
+```
+
+**Phase 3: Public Access Gateway (Optional)**
+```
+If operator chose public access in wizard:
+
+Option A: Tailscale Funnel (Recommended)
+    → Installs Tailscale: https://tailscale.com/download
+    → Authenticates: tailscale login
+    → Enables Funnel: tailscale funnel 9090
+    → Gets public URL: https://<machine-name>.tail<id>.ts.net
+    → Adds TUNNEL_URL=<url> to .env
+    → Restarts API: docker-compose restart citinet-api
+
+Option B: Cloudflare Tunnel
+    → Installs cloudflared
+    → Creates tunnel: cloudflared tunnel create <hub-slug>
+    → Configures routing: cloudflared tunnel route dns <hub-slug> <subdomain>
+    → Runs tunnel: cloudflared tunnel run <hub-slug>
+    → Adds TUNNEL_URL=<url> to .env
+    → Restarts API: docker-compose restart citinet-api
+
+Option C: Local-Only
+    → No additional setup required
+    → Hub only accessible from LAN (e.g., http://192.168.1.x:9090)
+```
+
+**Phase 4: Browser Connection**
 ```
 Community member visits web app (future: citinet.xyz, current: localhost:3000)
     → Clicks "Join a Hub"
     → Enters hub tunnel URL (e.g., https://myhub.tailXXXX.ts.net)
-   Hub Stack Architecture
-
-**Services Defined in docker-compose.yml:**
-- `citinet-api` — Hub API (Node.js/Express or Go), port 9090
-- `citinet-db` — PostgreSQL database (users, messages, files metadata)
-- `citinet-storage` — MinIO object storage (S3-compatible, file uploads)
-- `citinet-redis` — Redis (sessions, WebSocket pub/sub, optional)
-
-**Environment Configuration (.env):**
-- `HUB_NAME`, `HUB_SLUG`, `HUB_LOCATION`
-- `API_PORT=9090`
-- `DB_PASSWORD`, `STORAGE_ACCESS_KEY`, `JWT_SECRET`
-- Optional: `TAILSCALE_AUTHKEY`, `CLOUDFLARE_TUNNEL_TOKEN`
-
----
-
-##  → Web app probes hub API (/api/info, /api/status)
+    → Web app probes hub API (/api/info, /api/status)
     → User authenticates (signup or login)
     → HubContext stores connection in localStorage
     → User lands in hub dashboard → can browse feed, network, marketplace
 ```
 
-**Phase 3: Multi-Hub Support**
+**Phase 5: Multi-Hub Support**
 - Users can join multiple hubs (each hub connection stored separately)
 - Switch between hubs via sidebar/nav
 - LocalStorage key: `citinet-hubs` (JSON object of hub connections)
+
+---
+
+## Hub Stack Architecture
+
+**Services Defined in docker-compose.yml:**
+- `citinet-api` — Hub API (Node.js/Express or Go), port 9090
+  - Handles authentication, user management, posts, messages, marketplace
+  - Environment variables from .env file
+  - Health check endpoint: /health
+  - Depends on: citinet-db, citinet-storage, citinet-redis
+- `citinet-db` — PostgreSQL database (users, messages, files metadata)
+  - Port 5432 (internal), volume: citinet-db-data
+  - Migrations: ./hub-api/migrations (run on first start)
+- `citinet-storage` — MinIO object storage (S3-compatible, file uploads)
+  - API port 9000, Console port 9001
+  - Volume: citinet-storage-data
+  - Access via S3 SDK (compatible with AWS SDK)
+- `citinet-redis` — Redis (sessions, WebSocket pub/sub, optional)
+  - Port 6379 (internal), volume: citinet-redis-data
+  - Used for real-time features (chat, notifications)
+
+**Environment Configuration (.env):**
+- `HUB_NAME`, `HUB_SLUG`, `HUB_LOCATION` — Hub identity
+- `HUB_VISIBILITY` — public, community, or private
+- `API_PORT=9090` — Hub API port
+- `DB_PASSWORD`, `STORAGE_ACCESS_KEY`, `JWT_SECRET` — Security credentials
+- `CORS_ORIGIN` — Allowed browser origins (* for development)
+- `TUNNEL_URL` — Public URL (optional, for Tailscale/Cloudflare tunnel)
+- `REGISTRY_URL` — Hub registry endpoint (optional, for auto-registration)
+
+**Setup Scripts (scripts/ folder):**
+- `setup-hub.js` — Main orchestrator, runs all checks and guides setup
+- `checks/docker.js` — Verifies Docker and Docker Compose installed
+- `checks/tailscale.js` — Verifies Tailscale installed (optional)
+- `checks/network.js` — Checks port availability and internet connectivity
+- `install/docker.sh`, `install/docker.ps1` — Docker installers (Linux/Mac/Windows)
+- `install/tailscale.sh`, `install/tailscale.ps1` — Tailscale installers
+- `lib/utils.js` — Shared utilities (command execution, OS detection, formatting)
+
+**NPM Scripts:**
+- `npm run hub:setup` — Run setup checks and validation
+- `npm run hub:verify` — Re-verify prerequisites after changes
+- `npm run hub:package` — Generate setup ZIP for distribution (future)
+
+**Setup File Distribution:**
+- Files served from `public/setup/` folder (static assets)
+- Deployed to Vercel/hosting provider alongside web app
+- Users download directly from: `https://citinet.xyz/setup/docker-compose.yml`
+- Alternative: Clone from GitHub (`git clone https://github.com/fergtech/citinet.git`)
 
 ---
 

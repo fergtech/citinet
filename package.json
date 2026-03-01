@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "hub:setup": "node scripts/setup-hub.js",
+    "hub:verify": "node scripts/setup-hub.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

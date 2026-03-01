@@ -235,6 +235,169 @@ If you see "localhost refused to connect":
 npm run build
 ```
 
+---
+
+## For Hub Operators
+
+Want to run your own Citinet hub for your community? Here's how.
+
+### What You Need
+
+- **Hardware:** Any computer (desktop, laptop, mini PC, or Raspberry Pi 4+)
+- **OS:** Windows, macOS, or Linux
+- **Software:** Docker Desktop (or Docker Engine + Docker Compose)
+- **Internet:** Stable connection (10 Mbps+ recommended)
+- **Optional:** Tailscale or Cloudflare account for public access
+
+### Quick Start
+
+**1. Get Setup Files**
+
+Visit the web portal (when deployed: `citinet.xyz`, currently: `localhost:3000`):
+   - Click "Create Hub"
+   - Complete the wizard (name, location, visibility)
+   - Download the setup package (docker-compose.yml + .env.example + README.txt)
+
+**2. Configure Your Hub**
+
+```bash
+# Extract files to a folder
+cd ~/citinet-hub
+
+# Copy template and edit with your details
+cp .env.example .env
+nano .env  # or use any text editor
+
+# Required settings:
+# HUB_NAME="Highland Park Community"
+# HUB_SLUG="highland-park"
+# HUB_LOCATION="Los Angeles, CA"
+# DB_PASSWORD="<strong_password>"
+# JWT_SECRET="<random_64_char_string>"
+```
+
+**3. Verify Prerequisites (Optional)**
+
+```bash
+npm run hub:setup
+```
+
+This checks for Docker, Tailscale, and validates your configuration. Installs missing dependencies if needed.
+
+**4. Start Your Hub**
+
+```bash
+docker-compose up -d
+```
+
+Wait 30-60 seconds for services to start, then verify:
+
+```bash
+curl http://localhost:9090/health
+# Should return: 200 OK
+```
+
+**5. Make It Public (Optional)**
+
+**Option A: Tailscale Funnel (Recommended)**
+
+```bash
+# Install Tailscale: https://tailscale.com/download
+tailscale login
+tailscale funnel 9090
+
+# Copy your public URL (e.g., https://my-machine.tail<id>.ts.net)
+# Add to .env: TUNNEL_URL=<your-url>
+docker-compose restart citinet-api
+```
+
+**Option B: Cloudflare Tunnel**
+
+```bash
+# Install cloudflared, create and configure tunnel
+cloudflared tunnel create my-hub
+cloudflared tunnel route dns my-hub hub.example.com
+cloudflared tunnel run my-hub
+
+# Add to .env: TUNNEL_URL=https://hub.example.com
+docker-compose restart citinet-api
+```
+
+**Option C: Local Network Only**
+
+No additional setup needed. Hub accessible at `http://<your-local-ip>:9090` on your LAN.
+
+### Hub Management
+
+**View logs:**
+```bash
+docker-compose logs -f citinet-api
+```
+
+**Stop hub:**
+```bash
+docker-compose down
+```
+
+**Update hub:**
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+**Check service status:**
+```bash
+docker-compose ps
+```
+
+### Hub Services
+
+Your hub runs 4 Docker containers:
+
+- **citinet-api** (port 9090) — Hub API and authentication
+- **citinet-db** (PostgreSQL) — Data storage
+- **citinet-storage** (MinIO) — File uploads (S3-compatible)
+- **citinet-redis** — Real-time features (chat, notifications)
+
+**Access MinIO Console:** `http://localhost:9001`
+
+### Troubleshooting
+
+**Port 9090 already in use?**
+```bash
+# Change API_PORT in .env
+API_PORT=9091
+docker-compose restart
+```
+
+**Services keep restarting?**
+```bash
+# Check logs
+docker-compose logs citinet-api
+
+# Verify .env has no "changeme" values
+grep "changeme" .env
+```
+
+**Can't connect from browser?**
+```bash
+# Verify health endpoint
+curl http://localhost:9090/health
+
+# Check firewall
+# Windows: Allow port 9090 in Windows Defender Firewall
+# Linux: sudo ufw allow 9090
+```
+
+### Getting Help
+
+- **Full documentation:** [INFRASTRUCTURE.md](INFRASTRUCTURE.md)
+- **Setup guide:** public/setup/README.txt (included in download)
+- **Community support:** [GitHub Discussions](https://github.com/fergtech/citinet/discussions)
+- **Report issues:** [GitHub Issues](https://github.com/fergtech/citinet/issues)
+
+---
+
 ## Technology Stack
 
 - React 18.3
