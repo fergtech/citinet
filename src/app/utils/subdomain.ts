@@ -1,8 +1,8 @@
 /**
- * Subdomain utilities for citinet.cloud hub routing.
+ * Subdomain utilities for hub routing.
  *
- * On start.citinet.cloud:      getSubdomain() → null          (onboarding mode)
- * On riverdale.citinet.cloud:  getSubdomain() → 'riverdale'   (hub mode)
+ * Local dev:  getSubdomain() → null or forced slug via VITE_FORCE_HUB_SLUG
+ * Production: getSubdomain() → subdomain slug when deployed to custom domain
  *
  * Dev escape hatch: VITE_FORCE_HUB_SLUG=mytest npm run dev
  */
@@ -23,9 +23,15 @@ export function getSubdomain(): string | null {
   return null;
 }
 
-/** Returns the full citinet.cloud URL for a hub slug. */
+/** Returns the full URL for a hub slug (localhost for dev, custom domain in production). */
 export function getHubUrl(slug: string): string {
-  return `https://${slug}.citinet.cloud`;
+  // For local dev, return localhost with slug as query param or path
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `http://localhost:${window.location.port}?hub=${slug}`;
+  }
+  // Production: construct subdomain URL based on current domain
+  const baseDomain = window.location.hostname.split('.').slice(-2).join('.');
+  return `https://${slug}.${baseDomain}`;
 }
 
 /** Hard-navigates to a hub's citinet.cloud subdomain.

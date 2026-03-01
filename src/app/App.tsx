@@ -135,7 +135,7 @@ function HubDashboardRoute() {
   const handleLogout = () => {
     const slug = currentHub?.slug || hubSlug;
     if (slug) leaveHub(slug);
-    window.location.href = 'https://start.citinet.cloud';
+    navigate('/');
   };
 
   const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
@@ -263,7 +263,7 @@ function HubGuard({ children }: { children: React.ReactNode }) {
     if (currentHub) return;
     if (hubSlug && !hubService.getHubConnection(hubSlug)) {
       // Not joined: send to onboarding
-      window.location.href = 'https://start.citinet.cloud';
+      navigate('/');
     }
   }, [currentHub, loading, hubSlug]);
 

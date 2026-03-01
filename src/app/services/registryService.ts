@@ -40,7 +40,9 @@ interface RegistryResponse {
   updated_at: string;
 }
 
-const REGISTRY_URL = 'https://registry.citinet.cloud';
+// Registry URL - set to null for Mission 1 (local-only development)
+// Future: Make this configurable via environment variable
+const REGISTRY_URL = null; // 'https://registry.citinet.xyz' when deployed
 const FETCH_TIMEOUT_MS = 10_000;
 
 class RegistryService {
@@ -49,6 +51,10 @@ class RegistryService {
    * Returns an empty array if the registry is unreachable (graceful fallback).
    */
   async getHubs(): Promise<RegistryHub[]> {
+    if (!REGISTRY_URL) {
+      console.warn('[registry] disabled for local development');
+      return [];
+    }
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -77,12 +83,14 @@ class RegistryService {
   }
 
   /**
-   * Look up a single hub by its citinet.cloud slug.
+   * Look up a single hub by its slug.
    * Used by hub-mode pages to resolve the subdomain → tunnel URL.
    * Returns null if not found or registry unreachable.
    */
-  async getHubBySlug(slug: string): Promise<RegistryHub | null> {
-    try {
+  async getHubBySlug(slug: string): Promise<RegistryHub | null> {    if (!REGISTRY_URL) {
+      console.warn('[registry] disabled for local development');
+      return null;
+    }    try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
