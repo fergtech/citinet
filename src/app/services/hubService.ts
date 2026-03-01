@@ -467,15 +467,11 @@ class HubService {
   // URL Helpers
   // ──────────────────────────────────────────────
 
-  /** Get the web app URL for a hub (localhost for dev) */
+  /** Get the web app URL for a hub (localhost-only for Mission 1) */
   getHubPortalUrl(hubSlug: string): string {
-    // For local dev
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      return `http://localhost:${window.location.port}?hub=${hubSlug}`;
-    }
-    // Production: construct subdomain URL
-    const baseDomain = typeof window !== 'undefined' ? window.location.hostname.split('.').slice(-2).join('.') : 'citinet.xyz';
-    return `https://${hubSlug}.${baseDomain}`;
+    // Mission 1: localhost-only, no hardcoded domains
+    const port = typeof window !== 'undefined' ? window.location.port : '3000';
+    return `http://localhost:${port}?hub=${hubSlug}`;
   }
 
   /** Get the invite URL for a hub */

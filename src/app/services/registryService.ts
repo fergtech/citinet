@@ -41,8 +41,8 @@ interface RegistryResponse {
 }
 
 // Registry URL - set to null for Mission 1 (local-only development)
-// Future: Make this configurable via environment variable
-const REGISTRY_URL = null; // 'https://registry.citinet.xyz' when deployed
+// Future: Make this configurable via environment variable when deploying
+const REGISTRY_URL = null;
 const FETCH_TIMEOUT_MS = 10_000;
 
 class RegistryService {

@@ -5,12 +5,12 @@
  * exposed to the internet via a tunnel (Tailscale, Cloudflare, etc.).
  * The web app connects to hubs through their tunnel URLs.
  * 
- * Current: Users join by entering the hub's tunnel URL.
- * Future: A centralized registry lists available hubs for discovery.
+ * Mission 1: Users join by entering the hub's tunnel URL, web app runs on localhost:3000
+ * Mission 2: Deploy web app to custom domain with hub discovery registry
  *
  * Routing:
- *   Current: localhost:3000 or citinet.xyz
- *   Future:  subdomain routing for multi-hub support
+ *   Current: localhost:3000 (Mission 1 - local development only)
+ *   Future:  Custom domain with subdomain or query-param routing
  */
 
 export interface Hub {

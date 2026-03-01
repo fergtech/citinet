@@ -1,37 +1,26 @@
 /**
  * Subdomain utilities for hub routing.
  *
- * Local dev:  getSubdomain() → null or forced slug via VITE_FORCE_HUB_SLUG
- * Production: getSubdomain() → subdomain slug when deployed to custom domain
+ * Mission 1 (localhost): Uses VITE_FORCE_HUB_SLUG to simulate hub mode
+ * Mission 2 (production): Will support actual subdomain routing
  *
- * Dev escape hatch: VITE_FORCE_HUB_SLUG=mytest npm run dev
+ * Dev mode: VITE_FORCE_HUB_SLUG=mytest npm run dev
  */
 
-/** Returns the hub slug from the current hostname, or null if on start/www/localhost. */
+/** Returns the hub slug from environment variable (Mission 1 localhost-only). */
 export function getSubdomain(): string | null {
+  // Mission 1: Only use forced slug for testing, no subdomain parsing
   const forced = (import.meta.env.VITE_FORCE_HUB_SLUG as string | undefined) ?? '';
   if (forced) return forced;
 
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') return null;
-
-  const parts = host.split('.');
-  if (parts.length >= 3) {
-    const sub = parts[0];
-    if (sub !== 'start' && sub !== 'www' && sub !== 'registry') return sub;
-  }
+  // Mission 1: Always return null on localhost (no multi-subdomain support yet)
   return null;
 }
 
-/** Returns the full URL for a hub slug (localhost for dev, custom domain in production). */
+/** Returns the full URL for a hub slug (localhost-only for Mission 1). */
 export function getHubUrl(slug: string): string {
-  // For local dev, return localhost with slug as query param or path
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `http://localhost:${window.location.port}?hub=${slug}`;
-  }
-  // Production: construct subdomain URL based on current domain
-  const baseDomain = window.location.hostname.split('.').slice(-2).join('.');
-  return `https://${slug}.${baseDomain}`;
+  // Mission 1: localhost-only, no production URLs
+  return `http://localhost:${window.location.port}?hub=${slug}`;
 }
 
 /** Hard-navigates to a hub's subdomain (or query param for localhost).
