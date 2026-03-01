@@ -2,7 +2,7 @@
  * NodeDiscoveryScreen — unified hub join flow
  *
  * Two ways to join, one screen:
- *  1. Browse the citinet.cloud hub directory (top section)
+ *  1. Browse the hub directory (top section)
  *  2. Enter a hub URL directly (bottom section, always visible)
  *
  * Selecting a hub from the directory OR entering a URL triggers the same

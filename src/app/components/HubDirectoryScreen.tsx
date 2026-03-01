@@ -1,7 +1,7 @@
 /**
  * HubDirectoryScreen
  *
- * Fetches and displays all publicly registered hubs from the citinet.cloud registry.
+ * Fetches and displays all publicly registered hubs from the registry.
  * Users can browse available hubs and click "Join" to be taken directly into
  * the connection flow with the hub URL pre-filled.
  */
