@@ -137,18 +137,29 @@ export function NeighborsScreen({ onBack }: NeighborsScreenProps) {
         )}
 
         {/* Error State */}
-        {error && !loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <AlertCircle className="w-8 h-8 mb-3 text-red-400" />
-            <p className="text-sm text-red-400 mb-3">{error}</p>
-            <button
-              onClick={loadMembers}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
+        {error && !loading && (() => {
+          const isOffline = error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out');
+          return isOffline ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <Users className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">No neighbors yet</p>
+              <p className="text-xs mt-1 text-slate-400 dark:text-slate-500 text-center max-w-xs">
+                Other members will appear here once they join the hub.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+              <AlertCircle className="w-8 h-8 mb-3 text-red-400" />
+              <p className="text-sm text-red-400 mb-3">{error}</p>
+              <button
+                onClick={loadMembers}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Empty State */}
         {!loading && !error && sortedMembers.length === 0 && (

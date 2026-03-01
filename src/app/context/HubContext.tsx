@@ -32,6 +32,8 @@ interface HubContextValue {
   onHubJoined: (hub: Hub) => void;
   /** Update the tunnel URL when it rotates */
   updateTunnelUrl: (newUrl: string, skipProbe?: boolean) => Promise<{ ok: boolean; error?: string }>;
+  /** Update the current user's local profile */
+  updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>) => HubUser | null;
 }
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -176,6 +178,19 @@ export function HubProvider({ children }: { children: ReactNode }) {
     setJoinedHubs(hubService.getJoinedHubs());
   }, []);
 
+  const updateUserProfile = useCallback((
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>
+  ): HubUser | null => {
+    if (!currentHub?.slug) return null;
+    try {
+      const updatedUser = hubService.updateUserProfile(currentHub.slug, updates);
+      setCurrentUser(updatedUser);
+      return updatedUser;
+    } catch {
+      return null;
+    }
+  }, [currentHub?.slug]);
+
   const updateTunnelUrl = useCallback(async (newUrl: string, skipProbe = false): Promise<{ ok: boolean; error?: string }> => {
     if (!currentHub?.slug) return { ok: false, error: 'No active hub' };
     try {
@@ -204,6 +219,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       onOnboardingComplete,
       onHubJoined,
       updateTunnelUrl,
+      updateUserProfile,
     }}>
       {children}
     </HubContext.Provider>

@@ -67,6 +67,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const [probeInfo, setProbeInfo] = useState<HubInfoResponse | null>(null);
   const [probeStatus, setProbeStatus] = useState<HubStatusResponse | null>(null);
   const [probeError, setProbeError] = useState('');
+  const [skipProbe, setSkipProbe] = useState(false);
 
   // ── Auth state ──
   const [username, setUsername] = useState('');
@@ -201,10 +202,26 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     setProbeStatus(null);
     setProbeError('');
     setAuthError('');
+    setSkipProbe(false);
     setUsername('');
     setPassword('');
     setEmail('');
     setConfirmPassword('');
+  };
+
+  /** Skip the probe and go straight to auth with a name derived from the URL */
+  const handleConnectAnyway = () => {
+    const normalized = hubService.normalizeTunnelUrl(tunnelUrl);
+    let guessedName = 'Hub';
+    try {
+      const host = new URL(normalized).hostname;
+      guessedName = host.split('.')[0] || 'Hub';
+    } catch { /* ignore */ }
+    setProbeInfo({ name: guessedName, node_id: '' });
+    setProbeStatus(null);
+    setSkipProbe(true);
+    setStep('auth');
+    setAuthMode('login'); // likely re-joining, default to login
   };
 
   return (
@@ -390,21 +407,40 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               animate={{ opacity: 1, y: 0 }}
               className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-6 relative z-10"
             >
-              {/* Hub confirmed banner */}
+              {/* Hub confirmed / skip-probe banner */}
               <div className="text-center mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mx-auto mb-3">
-                  <CheckCircle className="w-7 h-7 text-white" />
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${
+                  skipProbe
+                    ? 'bg-amber-100 dark:bg-amber-900/30'
+                    : 'bg-gradient-to-br from-green-500 to-emerald-600'
+                }`}>
+                  {skipProbe
+                    ? <WifiOff className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+                    : <CheckCircle className="w-7 h-7 text-white" />
+                  }
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
                   {authMode === 'login' ? `Log into ${probeInfo.name || 'Hub'}` : `Join ${probeInfo.name || 'Hub'}`}
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {authMode === 'login' ? 'Sign in with your existing account' : 'Create a new account to join'}
+                  {skipProbe
+                    ? 'Hub not reachable right now — enter your credentials to try'
+                    : authMode === 'login' ? 'Sign in with your existing account' : 'Create a new account to join'
+                  }
                 </p>
               </div>
 
-              {/* Hub info card */}
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-5">
+              {/* Skip-probe warning */}
+              {skipProbe && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-4">
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Hub wasn't reachable during the check. Your credentials will be sent directly — this will work once the hub is back online.
+                  </p>
+                </div>
+              )}
+
+              {/* Hub info card — only when we have real probe data */}
+              {!skipProbe && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-5">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
                     <CheckCircle className="w-4 h-4 text-white" />
@@ -436,7 +472,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                     </div>
                   )}
                 </div>
-              </div>
+              </div>}
 
               {/* Auth mode toggle */}
               <div className="flex rounded-xl bg-slate-100 dark:bg-zinc-800 p-1 mb-5">
@@ -601,15 +637,41 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
                 Couldn't reach hub
               </h3>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 max-w-xs mx-auto">
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-4 max-w-xs mx-auto">
                 {probeError || 'An unexpected error occurred. Please try again.'}
               </p>
-              <button
-                onClick={resetToBrowse}
-                className="px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 transition-colors"
-              >
-                Try Another Hub
-              </button>
+
+              {/* Localhost hint for Tailscale URLs when on the same machine */}
+              {tunnelUrl.includes('.ts.net') || tunnelUrl.includes('tailscale') ? (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-5 text-left">
+                  <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Hub owner on this machine?</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    If you're on the same machine as the hub, use{' '}
+                    <button
+                      onClick={() => { setTunnelUrl('http://localhost:9090'); setStep('browse'); setUrlOpen(true); }}
+                      className="font-mono underline hover:no-underline"
+                    >
+                      http://localhost:9090
+                    </button>
+                    {' '}instead. The Tailscale URL is for external access.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleConnectAnyway}
+                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-purple-700 transition-colors"
+                >
+                  Connect Anyway
+                </button>
+                <button
+                  onClick={resetToBrowse}
+                  className="w-full px-6 py-3 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-sm"
+                >
+                  Try a Different URL
+                </button>
+              </div>
             </motion.div>
           )}
         </div>

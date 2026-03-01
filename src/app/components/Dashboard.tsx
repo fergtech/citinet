@@ -1,7 +1,7 @@
 import {
   Users, MessageCircle, Settings, Radio, Store,
   Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
-  RefreshCw, Loader2, Check, WifiOff, Link2,
+  RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield,
 } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
@@ -83,6 +83,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   // Use hub context for real data, fall back to props/defaults
   const nodeName = currentHub?.name || 'Community';
   const displayName = currentUser?.displayName || userName;
+  // isAdmin: explicit flag (new sessions) OR effectively-local hub (Mission 1).
+  // 'https://' is the malformed URL stored by the old empty-URL bug; treat it as local too.
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
 
   const nodeStatus = {
     activeMembers: currentHub?.meta?.activeMembers ?? 0,
@@ -171,9 +176,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg">
               {displayName.charAt(0).toUpperCase()}
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{displayName}</h2>
-              <p className="text-xs text-slate-600 dark:text-slate-400">{nodeName}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{displayName}</h2>
+                {isAdmin && (
+                  <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{nodeName}</p>
             </div>
           </div>
           {/* Connection status + reconnect */}
@@ -338,15 +348,24 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div> */}
         </nav>
 
-        {/* Settings & Leave at Bottom */}
+        {/* Bottom nav: Account, Hub Admin, Leave */}
         <div className="p-4 border-t border-slate-200/50 dark:border-zinc-800/50 space-y-1">
           <button
-            onClick={() => onNavigate('settings')}
+            onClick={() => onNavigate('account')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
           >
-            <Settings className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-            <span className="text-sm font-medium text-slate-900 dark:text-white">Settings</span>
+            <User className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+            <span className="text-sm font-medium text-slate-900 dark:text-white">My Account</span>
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => onNavigate('hub-management')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left group"
+            >
+              <Shield className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Hub Admin</span>
+            </button>
+          )}
           {onLogout && (
             <button
               onClick={onLogout}

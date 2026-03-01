@@ -399,8 +399,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           </div>
         )}
 
-        {/* Error */}
-        {error && !loading && (
+        {/* Error — only show red banner for non-connectivity errors */}
+        {error && !loading && !error.includes('Failed to fetch') && !error.includes('tunnel') && !error.includes('timed out') && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 mb-6">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
@@ -418,8 +418,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           </div>
         )}
 
-        {/* Empty state */}
-        {!loading && !error && activeFiles.length === 0 && (
+        {/* Empty state — shown when no files, or when hub is not yet reachable (treat as empty) */}
+        {!loading && activeFiles.length === 0 && (!error || error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out')) && (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400 dark:text-slate-500">
             {tab === 'my-drive' ? (
               <>

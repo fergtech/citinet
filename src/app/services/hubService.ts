@@ -44,10 +44,12 @@ class HubService {
       }
 
       const raw = await infoRes.json();
-      // Normalize: the API returns node_name, we use name internally
+      // Normalize: hub API may return node_name, name, or hub_name
       const info: HubInfoResponse = {
         ...raw,
-        name: raw.node_name || raw.name || '',
+        name: raw.node_name || raw.name || raw.hub_name || '',
+        location: raw.location || raw.hub_location || '',
+        description: raw.description || raw.hub_description || '',
       };
 
       // 2. Fetch /api/status — live stats (uptime, storage_used, online, user_count)
@@ -293,6 +295,19 @@ class HubService {
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
   }
 
+  /** Update profile fields for the current user on a hub (stored locally) */
+  updateUserProfile(
+    hubSlug: string,
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>
+  ): HubUser {
+    const connections = this.getAllHubConnections();
+    const connection = connections[hubSlug];
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    Object.assign(connection.user, updates);
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+    return connection.user;
+  }
+
   /** Remove a hub connection */
   leaveHub(slug: string): void {
     const connections = this.getAllHubConnections();
@@ -532,10 +547,7 @@ class HubService {
 
     const response = await fetch(`${connection.hub.tunnelUrl}/api/members`, { headers });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Failed to list members (${response.status})`);
-    }
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
 
     const data = await response.json();
     // Accept both { members: [...] } and plain array
@@ -574,10 +586,7 @@ class HubService {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
 
     const response = await fetch(`${tunnelUrl}/api/conversations`, { headers });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Failed to list conversations (${response.status})`);
-    }
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
 
     const data = await response.json();
     const rawConvos: any[] = Array.isArray(data) ? data : (data.conversations || []);
@@ -842,10 +851,7 @@ class HubService {
 
     const response = await fetch(`${connection.hub.tunnelUrl}/api/files`, { headers });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Failed to list files (${response.status})`);
-    }
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
 
     const data = await response.json();
     // Accept both { files: [...] } and plain array
@@ -890,10 +896,7 @@ class HubService {
       body: formData,
     });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(body || `Upload failed (${response.status})`);
-    }
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
 
     const data = await response.json();
     return {
@@ -1022,6 +1025,37 @@ class HubService {
   // ──────────────────────────────────────────────
   // Private: Storage helpers
   // ──────────────────────────────────────────────
+
+  /** Parse an error response into a human-readable message. Never surfaces raw HTML. */
+  private async parseErrorResponse(response: Response, hubSlug?: string): Promise<never> {
+    if (response.status === 401 && hubSlug) {
+      this.clearAuthToken(hubSlug);
+      throw new Error('Session expired — please log in again.');
+    }
+    const ct = response.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      try {
+        const json = await response.json();
+        throw new Error(json.error || json.message || `Request failed (${response.status})`);
+      } catch (e) {
+        if (e instanceof Error && e.message !== '') throw e;
+      }
+    }
+    const text = await response.text();
+    if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+      throw new Error(`Server error (${response.status})`);
+    }
+    throw new Error(text || `Request failed (${response.status})`);
+  }
+
+  /** Clear the stored auth token for a hub (called when a 401 is received). */
+  clearAuthToken(hubSlug: string): void {
+    const connections = this.getAllHubConnections();
+    if (connections[hubSlug]?.user) {
+      delete connections[hubSlug].user.authToken;
+      localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+    }
+  }
 
   private saveHub(hub: Hub): void {
     const connections = this.getAllHubConnections();

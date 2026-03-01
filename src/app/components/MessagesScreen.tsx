@@ -440,19 +440,29 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
     );
   }
 
-  // ── render: error ─────────────────────────────────────
+  // ── render: error (network/connectivity vs real error) ────
   if (error) {
+    const isOffline = error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out');
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
-          <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <p className="text-sm text-red-500 mb-4">{error}</p>
-          <button
-            onClick={() => loadConversations()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" /> Retry
-          </button>
+          <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
+          {isOffline ? (
+            <>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No messages yet</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Messages will appear here once the hub API is reachable and other members join.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-red-500 mb-4">{error}</p>
+              <button
+                onClick={() => loadConversations()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" /> Retry
+              </button>
+            </>
+          )}
         </div>
       </div>
     );

@@ -18,6 +18,8 @@ import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
 import { HubSetupScreen } from './components/HubSetupScreen';
+import { AccountScreen } from './components/AccountScreen';
+import { HubManagementScreen } from './components/HubManagementScreen';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub } from './utils/subdomain';
@@ -78,7 +80,17 @@ function CreateHubRoute() {
   const { onHubJoined } = useHub();
 
   const handleComplete = async (_nodeId: string, nodeName: string) => {
-    const hub = await hubService.joinHub('', { name: nodeName, node_id: '' });
+    // Probe the local hub API so we get real info and a 'connected' status
+    const localUrl = 'http://localhost:9090';
+    const probe = await hubService.probeHub(localUrl).catch(() => ({ success: false as const }));
+    const fallbackInfo = { name: nodeName, node_id: `local-${Date.now()}` };
+    const hub = await hubService.joinHub(
+      localUrl,
+      probe.success ? (probe.info ?? fallbackInfo) : fallbackInfo,
+      probe.success ? probe.status : undefined,
+    );
+    // Mark this user as hub creator so onboarding can stamp them as admin
+    sessionStorage.setItem('citinet-creator-for', hub.slug);
     onHubJoined(hub);
     const connection = hubService.getHubConnection(hub.slug);
     navigateToHub(hub.slug, connection ?? { hub });
@@ -113,8 +125,12 @@ function HubOnboardRoute() {
 
   const handleOnboardingComplete = async (data: HubUser) => {
     if (!hubSlug) return;
-    await hubService.completeOnboarding(hubSlug, data);
-    onOnboardingComplete(hubSlug, data);
+    // Hub creator gets admin flag stamped automatically
+    const isCreator = sessionStorage.getItem('citinet-creator-for') === hubSlug;
+    if (isCreator) sessionStorage.removeItem('citinet-creator-for');
+    const finalData: HubUser = isCreator ? { ...data, isAdmin: true } : data;
+    await hubService.completeOnboarding(hubSlug, finalData);
+    onOnboardingComplete(hubSlug, finalData);
     navigate('/');
   };
 
@@ -141,7 +157,9 @@ function HubDashboardRoute() {
   const handleLogout = () => {
     const slug = currentHub?.slug || hubSlug;
     if (slug) leaveHub(slug);
-    navigate('/');
+    // Hard reload to origin — clears the render-time subdomain capture
+    // so the app re-enters OnboardingModeRoutes at the welcome screen.
+    window.location.href = window.location.origin + '/';
   };
 
   const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
@@ -245,6 +263,16 @@ function HubModerationQueueRoute() {
   return <ModerationQueueScreen onBack={() => navigate('/toolkit')} />;
 }
 
+function HubAccountRoute() {
+  const navigate = useNavigate();
+  return <AccountScreen onBack={() => navigate('/')} />;
+}
+
+function HubManagementRoute() {
+  const navigate = useNavigate();
+  return <HubManagementScreen onBack={() => navigate('/')} />;
+}
+
 function HubPlaceholderRoute({ screen }: { screen: string }) {
   const navigate = useNavigate();
   return (
@@ -314,6 +342,8 @@ function HubModeRoutes() {
       <Route path="/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />
       <Route path="/signal" element={<HubGuard><HubPlaceholderRoute screen="signal" /></HubGuard>} />
       <Route path="/become-sponsor" element={<HubGuard><HubPlaceholderRoute screen="become-sponsor" /></HubGuard>} />
+      <Route path="/account" element={<HubGuard><HubAccountRoute /></HubGuard>} />
+      <Route path="/hub-management" element={<HubGuard><HubManagementRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

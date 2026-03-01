@@ -78,6 +78,12 @@ export interface HubUser {
   hubUserId?: string;
   /** Authentication token for this hub */
   authToken?: string;
+  /** Whether this user is a hub admin */
+  isAdmin?: boolean;
+  /** User's email address */
+  email?: string;
+  /** User's location/neighborhood */
+  location?: string;
 }
 
 /** What we store per hub in localStorage */

@@ -8,7 +8,7 @@ version: '3.8'
 services:
   # Hub API Server
   citinet-api:
-    image: node:20-alpine
+    image: ghcr.io/fergtech/citinet-api:latest
     container_name: citinet-api
     restart: unless-stopped
     ports:
@@ -26,29 +26,19 @@ services:
       - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY}
       - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY}
       - STORAGE_BUCKET=${STORAGE_BUCKET:-hub-files}
-      - REDIS_URL=redis://citinet-redis:6379
-      - JWT_SECRET=${JWT_SECRET}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
-      - REGISTRY_URL=${REGISTRY_URL:-}
       - TUNNEL_URL=${TUNNEL_URL:-}
-    volumes:
-      - ./hub-api:/app
-      - /app/node_modules
-    working_dir: /app
-    command: sh -c "npm install && npm start"
     depends_on:
       citinet-db:
         condition: service_healthy
       citinet-storage:
         condition: service_healthy
-      citinet-redis:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 20s
     networks:
       - citinet-network
 
@@ -63,10 +53,9 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      - citinet-db-data:/var/lib/postgresql/data
-      - ./hub-api/migrations:/docker-entrypoint-initdb.d:ro
+      - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U citinet -d citinet"]
       interval: 10s
@@ -87,10 +76,10 @@ services:
       - MINIO_ROOT_PASSWORD=${STORAGE_SECRET_KEY}
       - MINIO_BROWSER=${MINIO_BROWSER:-on}
     volumes:
-      - citinet-storage-data:/data
+      - ${DATA_DIR:-./data}/files:/data
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -100,16 +89,16 @@ services:
     networks:
       - citinet-network
 
-  # Redis (Sessions, WebSocket pub/sub, caching)
+  # Redis (Sessions, caching)
   citinet-redis:
     image: redis:7-alpine
     container_name: citinet-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
-      - citinet-redis-data:/data
+      - ${DATA_DIR:-./data}/redis:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -121,11 +110,3 @@ services:
 networks:
   citinet-network:
     driver: bridge
-
-volumes:
-  citinet-db-data:
-    driver: local
-  citinet-storage-data:
-    driver: local
-  citinet-redis-data:
-    driver: local
