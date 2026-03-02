@@ -181,6 +181,20 @@ async function initDb() {
         value TEXT         NOT NULL DEFAULT ''
       )
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_featured (
+        id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        type           VARCHAR(10)  NOT NULL DEFAULT 'post',
+        ref_id         UUID         REFERENCES hub_posts(id) ON DELETE CASCADE,
+        title          VARCHAR(200) NOT NULL,
+        caption        TEXT,
+        category_label VARCHAR(50),
+        image_url      TEXT,
+        display_order  INT          NOT NULL DEFAULT 0,
+        created_by     UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at     TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
   } finally {
     client.release();
   }
@@ -1027,6 +1041,118 @@ app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Post reply error:', err);
     res.status(500).json({ error: 'Failed to post reply' });
+  }
+});
+
+// Get a single post by ID
+app.get('/api/posts/:id', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+              u.id AS author_id, u.username AS author_username,
+              f.file_name AS media_file_name,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+       FROM hub_posts p
+       LEFT JOIN hub_users u ON p.author_id = u.id
+       LEFT JOIN hub_files f ON p.media_file_id = f.id
+       WHERE p.id = $1`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Post not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Get post error:', err);
+    res.status(500).json({ error: 'Failed to get post' });
+  }
+});
+
+// ── Featured routes ────────────────────────────────────────
+
+// List featured items (auth required)
+app.get('/api/featured', authenticate, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT fi.id, fi.type, fi.ref_id, fi.title, fi.caption, fi.category_label,
+              fi.image_url, fi.display_order, fi.created_at,
+              f.file_name AS media_file_name,
+              u.username  AS author_username
+       FROM hub_featured fi
+       LEFT JOIN hub_posts p ON fi.ref_id = p.id
+       LEFT JOIN hub_files f ON p.media_file_id = f.id
+       LEFT JOIN hub_users u ON p.author_id = u.id
+       ORDER BY fi.display_order ASC, fi.created_at ASC`
+    );
+    res.json({ items: rows });
+  } catch (err) {
+    console.error('List featured error:', err);
+    res.status(500).json({ error: 'Failed to list featured items' });
+  }
+});
+
+// Pin a post or add a custom card (admin only)
+app.post('/api/featured', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { type = 'post', ref_id, title, caption, category_label, image_url } = req.body || {};
+
+  try {
+    const countResult = await pool.query('SELECT COUNT(*) FROM hub_featured');
+    if (parseInt(countResult.rows[0].count, 10) >= 5) {
+      return res.status(400).json({ error: 'Maximum of 5 featured items allowed' });
+    }
+
+    let resolvedTitle = title?.trim();
+    let resolvedCaption = caption?.trim() || null;
+    let resolvedLabel = category_label?.trim() || null;
+
+    if (type === 'post') {
+      if (!ref_id) return res.status(400).json({ error: 'ref_id required for post type' });
+      if (!resolvedTitle) {
+        const post = await pool.query(
+          'SELECT title, body, category FROM hub_posts WHERE id = $1', [ref_id]
+        );
+        if (!post.rows[0]) return res.status(404).json({ error: 'Post not found' });
+        resolvedTitle  = post.rows[0].title;
+        resolvedCaption = resolvedCaption ?? (post.rows[0].body?.slice(0, 160) || null);
+        resolvedLabel   = resolvedLabel   ?? post.rows[0].category;
+      }
+    } else if (type === 'custom') {
+      if (!resolvedTitle) return res.status(400).json({ error: 'title is required for custom type' });
+    } else {
+      return res.status(400).json({ error: 'type must be post or custom' });
+    }
+
+    const orderResult = await pool.query(
+      'SELECT COALESCE(MAX(display_order), -1) + 1 AS next FROM hub_featured'
+    );
+    const displayOrder = orderResult.rows[0].next;
+
+    const { rows } = await pool.query(
+      `INSERT INTO hub_featured
+         (type, ref_id, title, caption, category_label, image_url, display_order, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, type, ref_id, title, caption, category_label, image_url, display_order, created_at`,
+      [type, ref_id || null, resolvedTitle, resolvedCaption, resolvedLabel,
+       image_url || null, displayOrder, req.user.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Create featured error:', err);
+    res.status(500).json({ error: 'Failed to create featured item' });
+  }
+});
+
+// Remove a featured item (admin only)
+app.delete('/api/featured/:id', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM hub_featured WHERE id = $1 RETURNING id', [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Featured item not found' });
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Delete featured error:', err);
+    res.status(500).json({ error: 'Failed to delete featured item' });
   }
 });
 

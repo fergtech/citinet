@@ -3,9 +3,14 @@ import {
   Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
 } from 'lucide-react';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
+import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
+import { featuredService } from '../services/featuredService';
+import { hubService } from '../services/hubService';
+import type { FeaturedItem } from '../types/featured';
+import type { HubPost } from '../types/hub';
 
 interface DashboardProps {
   userName?: string;
@@ -36,6 +41,26 @@ function NavigationCard({ icon, label, onClick }: NavigationCardProps) {
 export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: DashboardProps) {
   const { currentHub, currentUser, updateTunnelUrl } = useHub();
   const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
+
+  // Featured
+  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
+  const [featuredPost, setFeaturedPost] = useState<HubPost | null>(null);
+
+  const hubSlug = currentHub?.slug ?? '';
+
+  useEffect(() => {
+    if (!hubSlug) return;
+    featuredService.getFeatured(hubSlug).then(setFeaturedItems);
+  }, [hubSlug]);
+
+  async function handleFeaturedPostClick(postId: string) {
+    try {
+      const post = await hubService.getPost(hubSlug, postId);
+      setFeaturedPost(post);
+    } catch {
+      // ignore — fall through silently
+    }
+  }
 
   // Tunnel reconnect state
   const [showTunnelInput, setShowTunnelInput] = useState(false);
@@ -514,7 +539,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Featured</h2>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-light">Curated by community moderators</span>
             </div>
-            <FeaturedCarousel />
+            <FeaturedCarousel
+              items={featuredItems}
+              hubSlug={hubSlug}
+              onPostClick={handleFeaturedPostClick}
+            />
           </div>
           {/* Recent Local Activity */}
         <div>
@@ -702,6 +731,28 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
         </div>
       </div>
+
+      {/* Featured post detail modal */}
+      {featuredPost && (
+        <PostDetailModal
+          isOpen
+          onClose={() => setFeaturedPost(null)}
+          post={featuredPost}
+          hubSlug={hubSlug}
+          currentUserId={currentUser?.hubUserId}
+          isAdmin={isAdmin}
+          categoryColors={CATEGORY_COLORS}
+          publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
+          onDeleted={() => setFeaturedPost(null)}
+        />
+      )}
     </div>
   );
 }
+
+const CATEGORY_COLORS: Record<string, string> = {
+  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
+  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
+  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
+  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
+};

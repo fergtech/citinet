@@ -1041,6 +1041,14 @@ class HubService {
     return Array.isArray(data) ? data : (data.posts || []);
   }
 
+  /** Fetch a single post by ID. */
+  async getPost(hubSlug: string, postId: string): Promise<HubPost> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${encodeURIComponent(postId)}`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
   /** Create a new post. Optionally attach an image file. */
   async createPost(
     hubSlug: string,

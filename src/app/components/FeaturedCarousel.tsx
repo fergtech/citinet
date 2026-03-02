@@ -1,82 +1,143 @@
 import { useRef } from 'react';
 import Slider from 'react-slick';
+import { Play } from 'lucide-react';
+import type { FeaturedItem } from '../types/featured';
+import { hubService } from '../services/hubService';
 
-interface FeaturedItem {
-  id: string;
-  type: 'event' | 'announcement' | 'marketplace' | 'community';
-  title: string;
-  description: string;
-  imageUrl: string;
+interface FeaturedCarouselProps {
+  items: FeaturedItem[];
+  hubSlug: string;
+  onPostClick?: (postId: string) => void;
 }
 
-const featuredItems: FeaturedItem[] = [
+const GRADIENT_MAP: Record<string, string> = {
+  ANNOUNCEMENT: 'from-purple-600 via-purple-500 to-indigo-600',
+  DISCUSSION:   'from-blue-600 via-blue-500 to-cyan-600',
+  PROJECT:      'from-emerald-600 via-emerald-500 to-teal-600',
+  REQUEST:      'from-orange-500 via-amber-500 to-yellow-500',
+  EVENT:        'from-pink-600 via-rose-500 to-red-500',
+  CUSTOM:       'from-slate-700 via-slate-600 to-slate-500',
+};
+
+const LABEL_BG: Record<string, string> = {
+  ANNOUNCEMENT: 'bg-purple-500/90',
+  DISCUSSION:   'bg-blue-500/90',
+  PROJECT:      'bg-emerald-500/90',
+  REQUEST:      'bg-orange-500/90',
+  EVENT:        'bg-pink-500/90',
+};
+
+function cardGradient(label?: string) {
+  return GRADIENT_MAP[(label ?? '').toUpperCase()] ?? GRADIENT_MAP.CUSTOM;
+}
+
+function labelBg(label?: string) {
+  return LABEL_BG[(label ?? '').toUpperCase()] ?? 'bg-slate-600/90';
+}
+
+const MOCK_ITEMS: FeaturedItem[] = [
   {
-    id: '1',
-    type: 'event',
-    title: 'Community Meetup',
-    description: 'Join us this Saturday at Highland Park',
-    imageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&h=400&fit=crop'
+    id:            '__placeholder',
+    type:          'custom',
+    title:         'Welcome to your community hub',
+    caption:       'Admins can pin posts or add custom cards to feature them here.',
+    categoryLabel: 'ANNOUNCEMENT',
+    mediaType:     'gradient',
+    displayOrder:  0,
+    createdAt:     new Date().toISOString(),
   },
-  {
-    id: '2',
-    type: 'marketplace',
-    title: 'Local Coffee Shop',
-    description: '20% off with node membership',
-    imageUrl: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800&h=400&fit=crop'
-  },
-  {
-    id: '3',
-    type: 'announcement',
-    title: 'Network Upgrade',
-    description: 'Faster speeds coming next week',
-    imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=400&fit=crop'
-  }
 ];
 
-export function FeaturedCarousel() {
+export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarouselProps) {
   const sliderRef = useRef<Slider>(null);
+  const displayItems = items.length > 0 ? items : MOCK_ITEMS;
 
   const settings = {
     dots: true,
-    infinite: true,
+    infinite: displayItems.length > 1,
     speed: 500,
     slidesToShow: 1,
     slidesToScroll: 1,
-    autoplay: true,
+    autoplay: displayItems.length > 1,
     autoplaySpeed: 5000,
     arrows: false,
     pauseOnHover: true,
     customPaging: () => (
       <div className="w-2 h-2 rounded-full bg-white/40 hover:bg-white/70 transition-all duration-200" />
     ),
-    dotsClass: 'slick-dots !bottom-4 flex items-center justify-center gap-2'
+    dotsClass: 'slick-dots !bottom-4 flex items-center justify-center gap-2',
   };
+
+  function resolveMediaUrl(item: FeaturedItem): string | null {
+    if (item.imageUrl) return item.imageUrl;
+    if (item.mediaFileName) return hubService.getPublicFileUrl(hubSlug, item.mediaFileName);
+    return null;
+  }
 
   return (
     <div className="w-full max-w-full overflow-hidden">
       <Slider ref={sliderRef} {...settings}>
-        {featuredItems.map((item) => (
-          <div key={item.id} className="px-0.5 sm:px-1">
-            <div className="relative w-full h-56 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 shadow-lg hover:shadow-xl transition-shadow duration-300 cursor-pointer group">
-              <img 
-                src={item.imageUrl} 
-                alt={item.title}
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-              
-              <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 text-white">
-                <div className="flex items-center gap-2 mb-2 sm:mb-3">
-                  <span className="px-2.5 py-1 rounded-md text-xs font-medium uppercase tracking-wide bg-purple-500/90 backdrop-blur-sm ring-1 ring-white/20">
-                    {item.type}
-                  </span>
+        {displayItems.map((item) => {
+          const mediaUrl = resolveMediaUrl(item);
+          const clickable = !!item.refId && !!onPostClick;
+
+          return (
+            <div key={item.id} className="px-0.5 sm:px-1">
+              <div
+                onClick={() => clickable && onPostClick!(item.refId!)}
+                className={`relative w-full h-56 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 shadow-lg hover:shadow-xl transition-shadow duration-300 group ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                {/* Background */}
+                {item.mediaType === 'video' && mediaUrl ? (
+                  <video
+                    src={mediaUrl}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                ) : item.mediaType === 'image' && mediaUrl ? (
+                  <img
+                    src={mediaUrl}
+                    alt={item.title}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className={`absolute inset-0 bg-gradient-to-br ${cardGradient(item.categoryLabel)}`} />
+                )}
+
+                {/* Scrim */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                {/* Video badge */}
+                {item.mediaType === 'video' && (
+                  <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium">
+                    <Play className="w-3 h-3 fill-white" />
+                    Video
+                  </div>
+                )}
+
+                {/* Text content */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 text-white">
+                  {item.categoryLabel && (
+                    <div className="mb-2 sm:mb-3">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium uppercase tracking-wide backdrop-blur-sm ring-1 ring-white/20 ${labelBg(item.categoryLabel)}`}>
+                        {item.categoryLabel}
+                      </span>
+                    </div>
+                  )}
+                  <h3 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight line-clamp-2 mb-1">
+                    {item.title}
+                  </h3>
+                  {item.caption && (
+                    <p className="text-white/80 text-sm font-light line-clamp-2">{item.caption}</p>
+                  )}
                 </div>
-                <h3 className="mb-1 sm:mb-2 text-lg sm:text-xl md:text-2xl font-semibold tracking-tight">{item.title}</h3>
-                <p className="text-white/90 text-sm md:text-base font-light">{item.description}</p>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </Slider>
     </div>
   );
