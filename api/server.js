@@ -232,6 +232,36 @@ function uptimeStr() {
 
 // ── Public routes ─────────────────────────────────────────
 
+// Root — browser landing. If a portal URL is configured (the hosted React app),
+// redirect there with this hub's URL pre-filled so the join flow auto-connects.
+// Otherwise return a minimal HTML page that identifies this as a Citinet hub API.
+app.get('/', (req, res) => {
+  const portalUrl = process.env.PORTAL_URL || '';
+  const tunnelUrl = process.env.TUNNEL_URL || `${req.protocol}://${req.get('host')}`;
+  const hubName   = process.env.HUB_NAME   || 'Citinet Hub';
+
+  if (portalUrl) {
+    const joinUrl = `${portalUrl.replace(/\/$/, '')}/join?url=${encodeURIComponent(tunnelUrl)}`;
+    return res.redirect(302, joinUrl);
+  }
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${hubName}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:480px;margin:80px auto;padding:0 24px;color:#1e293b}
+h1{font-size:1.5rem;font-weight:700}p{color:#475569;line-height:1.6}
+code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:.9em}
+a{color:#7c3aed}</style></head>
+<body>
+<h1>${hubName}</h1>
+<p>This is a <strong>Citinet community hub</strong> API. To join this hub, open the Citinet app and enter this URL:</p>
+<p><code>${tunnelUrl}</code></p>
+<p>Don't have the app? Ask the hub admin for the join link.</p>
+</body></html>`);
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '0.2.0' });
 });

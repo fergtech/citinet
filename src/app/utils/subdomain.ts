@@ -7,37 +7,39 @@
  * Dev mode: VITE_FORCE_HUB_SLUG=mytest npm run dev
  */
 
-/** Returns the hub slug from environment variable (Mission 1 localhost-only). */
+const HUB_SLUG_KEY = 'citinet-active-hub';
+
+/** Returns the hub slug from environment variable or URL/storage cache. */
 export function getSubdomain(): string | null {
-  // Mission 1: Only use forced slug for testing, no subdomain parsing
   const forced = (import.meta.env.VITE_FORCE_HUB_SLUG as string | undefined) ?? '';
   if (forced) return forced;
 
-  // Mission 1: ?hub= query param is set by navigateToHub() on initial hard-navigation.
-  // Cache it in sessionStorage so it survives client-side React Router navigation
-  // (navigate('/onboard') strips query params, losing ?hub=slug).
+  // ?hub= in URL is the authoritative source — write it to localStorage so it
+  // survives client-side React Router navigations that drop query params
+  // (iOS Safari PWA treats sessionStorage as ephemeral within SPA navigations).
   const hub = new URLSearchParams(window.location.search).get('hub');
   if (hub) {
-    sessionStorage.setItem('citinet-active-hub', hub);
+    localStorage.setItem(HUB_SLUG_KEY, hub);
     return hub;
   }
 
-  // Survived a client-side navigation — read from session cache
-  const cached = sessionStorage.getItem('citinet-active-hub');
-  if (cached) return cached;
-
-  return null;
+  return localStorage.getItem(HUB_SLUG_KEY);
 }
 
-/** Call when the user explicitly leaves a hub so the session cache is cleared. */
+/** Call when the user explicitly leaves a hub so the cache is cleared. */
 export function clearSubdomainCache(): void {
-  sessionStorage.removeItem('citinet-active-hub');
+  localStorage.removeItem(HUB_SLUG_KEY);
 }
 
-/** Returns the full URL for a hub slug (localhost-only for Mission 1). */
+/** Returns the full URL for a hub slug, relative to the current origin. */
 export function getHubUrl(slug: string): string {
-  // Mission 1: localhost-only, no production URLs
-  return `http://localhost:${window.location.port}?hub=${slug}`;
+  return `${window.location.origin}?hub=${slug}`;
+}
+
+/** Returns a router path with ?hub=slug appended so the slug survives SPA navigation. */
+export function hubPath(path: string, slug?: string): string {
+  const s = slug ?? getSubdomain();
+  return s ? `${path}?hub=${s}` : path;
 }
 
 /** Hard-navigates to a hub's subdomain (or query param for localhost).

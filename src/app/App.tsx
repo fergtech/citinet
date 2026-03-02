@@ -22,7 +22,7 @@ import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
-import { getSubdomain, navigateToHub } from './utils/subdomain';
+import { getSubdomain, navigateToHub, hubPath } from './utils/subdomain';
 import type { Hub, HubUser } from './types/hub';
 
 const screenTitles: Record<string, string> = {
@@ -151,14 +151,12 @@ function HubDashboardRoute() {
   }, [loading, hubSlug, navigate]);
 
   const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
+    navigate(hubPath(`/${screen}`));
   };
 
   const handleLogout = () => {
     const slug = currentHub?.slug || hubSlug;
     if (slug) leaveHub(slug);
-    // Hard reload to origin — clears the render-time subdomain capture
-    // so the app re-enters OnboardingModeRoutes at the welcome screen.
     window.location.href = window.location.origin + '/';
   };
 
@@ -174,42 +172,37 @@ function HubDashboardRoute() {
 
 function HubFeedRoute() {
   const navigate = useNavigate();
-  return <Feed onBack={() => navigate('/')} />;
+  return <Feed onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubNeighborsRoute() {
   const navigate = useNavigate();
-  return <NeighborsScreen onBack={() => navigate('/')} />;
+  return <NeighborsScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubFilesRoute() {
   const navigate = useNavigate();
-  return <FilesScreen onBack={() => navigate('/')} />;
+  return <FilesScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubMessagesRoute() {
   const navigate = useNavigate();
-  return <MessagesScreen onBack={() => navigate('/')} />;
+  return <MessagesScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubNetworkRoute() {
   const navigate = useNavigate();
-
-  const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
-  };
-
-  return <NetworkScreen onBack={() => navigate('/')} onNavigate={handleNavigate} />;
+  return <NetworkScreen onBack={() => navigate(hubPath('/'))} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubMarketplaceRoute() {
   const navigate = useNavigate();
-
-  const handleVendorClick = (vendorId: string) => {
-    navigate(`/vendor/${vendorId}`);
-  };
-
-  return <MarketplaceScreen onBack={() => navigate('/')} onVendorClick={handleVendorClick} />;
+  return (
+    <MarketplaceScreen
+      onBack={() => navigate(hubPath('/'))}
+      onVendorClick={id => navigate(hubPath(`/vendor/${id}`))}
+    />
+  );
 }
 
 function HubVendorProfileRoute() {
@@ -219,7 +212,7 @@ function HubVendorProfileRoute() {
   const vendor = mockVendors.find(v => v.id === vendorId);
 
   if (!vendor) {
-    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate('/marketplace')} />;
+    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate(hubPath('/marketplace'))} />;
   }
 
   const vendorListings = marketItems
@@ -237,40 +230,35 @@ function HubVendorProfileRoute() {
     <VendorProfileScreen
       vendor={vendor}
       vendorListings={vendorListings}
-      onBack={() => navigate('/marketplace')}
-      onItemClick={() => navigate('/marketplace')}
+      onBack={() => navigate(hubPath('/marketplace'))}
+      onItemClick={() => navigate(hubPath('/marketplace'))}
     />
   );
 }
 
 function HubToolkitRoute() {
   const navigate = useNavigate();
-
-  const handleNavigate = (screen: string) => {
-    navigate(`/${screen}`);
-  };
-
-  return <ToolkitScreen onBack={() => navigate('/')} onNavigate={handleNavigate} />;
+  return <ToolkitScreen onBack={() => navigate(hubPath('/'))} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubMySubmissionsRoute() {
   const navigate = useNavigate();
-  return <MySubmissionsScreen onBack={() => navigate('/toolkit')} />;
+  return <MySubmissionsScreen onBack={() => navigate(hubPath('/toolkit'))} />;
 }
 
 function HubModerationQueueRoute() {
   const navigate = useNavigate();
-  return <ModerationQueueScreen onBack={() => navigate('/toolkit')} />;
+  return <ModerationQueueScreen onBack={() => navigate(hubPath('/toolkit'))} />;
 }
 
 function HubAccountRoute() {
   const navigate = useNavigate();
-  return <AccountScreen onBack={() => navigate('/')} />;
+  return <AccountScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubManagementRoute() {
   const navigate = useNavigate();
-  return <HubManagementScreen onBack={() => navigate('/')} />;
+  return <HubManagementScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
 function HubPlaceholderRoute({ screen }: { screen: string }) {
@@ -279,7 +267,7 @@ function HubPlaceholderRoute({ screen }: { screen: string }) {
     <PlaceholderScreen
       title={screenTitles[screen] || 'Screen'}
       description={screenDescriptions[screen]}
-      onBack={() => navigate('/')}
+      onBack={() => navigate(hubPath('/'))}
     />
   );
 }
@@ -297,8 +285,7 @@ function HubGuard({ children }: { children: React.ReactNode }) {
     if (loading) return;
     if (currentHub) return;
     if (hubSlug && !hubService.getHubConnection(hubSlug)) {
-      // Not joined: send to onboarding
-      navigate('/');
+      navigate(hubPath('/'));
     }
   }, [currentHub, loading, hubSlug, navigate]);
 
