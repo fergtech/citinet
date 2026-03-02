@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Save, Check, MapPin, Users } from 'lucide-react';
 import { useHub } from '../context/HubContext';
+import { LocationPicker, type LocationResult } from './LocationPicker';
 
 interface AccountScreenProps {
   onBack: () => void;
@@ -11,11 +12,18 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
-  const [location, setLocation] = useState(currentUser?.location || '');
+  // locationResult is set when user picks from the dropdown; null means no new selection
+  const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
-    updateUserProfile({ displayName: displayName.trim() || currentUser?.displayName, email: email.trim(), location: location.trim() });
+    // If user picked a new location from the picker, use that; otherwise keep existing
+    const location = locationResult?.displayName ?? currentUser?.location ?? '';
+    updateUserProfile({
+      displayName: displayName.trim() || currentUser?.displayName,
+      email: email.trim(),
+      location: location.trim(),
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -98,12 +106,11 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                 Location
               </label>
-              <input
-                type="text"
-                value={location}
-                onChange={e => setLocation(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
-                placeholder="Your neighborhood or city"
+              <LocationPicker
+                defaultValue={currentUser?.location || ''}
+                onSelect={setLocationResult}
+                placeholder="Your neighborhood or city…"
+                inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
               />
             </div>
           </div>

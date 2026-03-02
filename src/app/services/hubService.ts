@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply } from '../types/hub';
 
 const STORAGE_KEYS = {
   HUBS: 'citinet-hubs',              // All known hub connections
@@ -103,12 +103,18 @@ class HubService {
     const cleanUrl = this.normalizeTunnelUrl(tunnelUrl);
     const hubName = probeInfo?.name || this.extractNameFromUrl(cleanUrl);
     const slug = this.slugify(hubName);
-    
+
+    // Prefer the tunnel URL reported by the hub API (e.g. Tailscale funnel URL) over
+    // whatever address we used to probe it (which may be localhost during hub creation).
+    const storedUrl = probeInfo?.tunnel_url
+      ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
+      : cleanUrl;
+
     const hub: Hub = {
       id: probeInfo?.node_id || `local-${slug}-${Date.now()}`,
       slug,
       name: hubName,
-      tunnelUrl: cleanUrl,
+      tunnelUrl: storedUrl,
       location: probeInfo?.location || '',
       description: probeInfo?.description,
       memberCount: probeStatus?.user_count,
@@ -1023,6 +1029,97 @@ class HubService {
   }
 
   // ──────────────────────────────────────────────
+  // Posts & Replies
+  // ──────────────────────────────────────────────
+
+  /** List posts on the hub, newest first. Optionally filter by category. */
+  async listPosts(hubSlug: string, category?: string): Promise<HubPost[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const params = category ? `?category=${encodeURIComponent(category)}` : '';
+    const response = await fetch(`${tunnelUrl}/api/posts${params}`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.posts || []);
+  }
+
+  /** Create a new post. Optionally attach an image file. */
+  async createPost(
+    hubSlug: string,
+    post: { category: string; title: string; body: string; mediaFile?: File }
+  ): Promise<HubPost> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection?.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const formData = new FormData();
+    formData.append('category', post.category);
+    formData.append('title', post.title);
+    formData.append('body', post.body);
+    if (post.mediaFile) formData.append('media', post.mediaFile);
+
+    const headers: Record<string, string> = {};
+    if (connection.user?.authToken) headers['Authorization'] = `Bearer ${connection.user.authToken}`;
+
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/posts`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** Delete a post (author or admin only). */
+  async deletePost(hubSlug: string, postId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}`, { method: 'DELETE', headers });
+    if (!response.ok && response.status !== 204) await this.parseErrorResponse(response, hubSlug);
+  }
+
+  /** Update a post's text content (author or admin only). */
+  async updatePost(
+    hubSlug: string,
+    postId: string,
+    updates: { title?: string; body?: string }
+  ): Promise<HubPost> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** Get the URL for a public post image (no auth needed). */
+  getPublicFileUrl(hubSlug: string, fileName: string): string | null {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection?.hub.tunnelUrl) return null;
+    return `${connection.hub.tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}`;
+  }
+
+  /** List replies for a post, oldest first. */
+  async listReplies(hubSlug: string, postId: string): Promise<HubPostReply[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/replies`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.replies || []);
+  }
+
+  /** Post a reply to a discussion. */
+  async createReply(hubSlug: string, postId: string, body: string): Promise<HubPostReply> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/replies`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  // ──────────────────────────────────────────────
   // Private: Storage helpers
   // ──────────────────────────────────────────────
 
@@ -1046,6 +1143,31 @@ class HubService {
       throw new Error(`Server error (${response.status})`);
     }
     throw new Error(text || `Request failed (${response.status})`);
+  }
+
+  /**
+   * Update the hub's location and geocoded coordinates in localStorage.
+   * Does not call the hub API (the hub's .env has the baked-in location).
+   * Used from the management screen to correct or refine the hub's map position.
+   */
+  updateHubDescription(slug: string, description: string): Hub {
+    const connections = this.getAllHubConnections();
+    const connection = connections[slug];
+    if (!connection) throw new Error(`No hub found with slug: ${slug}`);
+    connection.hub.description = description;
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+    return connection.hub;
+  }
+
+  updateHubLocation(slug: string, location: string, lat: number, lng: number): Hub {
+    const connections = this.getAllHubConnections();
+    const connection = connections[slug];
+    if (!connection) throw new Error(`No hub found with slug: ${slug}`);
+    connection.hub.location = location;
+    connection.hub.lat = lat;
+    connection.hub.lng = lng;
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+    return connection.hub;
   }
 
   /** Clear the stored auth token for a hub (called when a 401 is received). */

@@ -17,8 +17,9 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, ArrowRight, MapPin, Eye, User, Lock,
   Download, Terminal, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, ChevronDown,
 } from 'lucide-react';
+import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   type HubScriptConfig,
@@ -40,8 +41,11 @@ interface WizardData {
   // Step 1
   hubName: string;
   hubLocation: string;
+  hubLat?: number;
+  hubLng?: number;
   hubZip: string;
   hubDescription: string;
+  dataDir: string;
   // Step 2
   visibility: 'local' | 'tailscale';
   tailscaleAuthKey: string;
@@ -158,7 +162,7 @@ function ProgressBar({ currentStep }: { currentStep: WizardStep }) {
 export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardProps) {
   const [step, setStep] = useState<WizardStep>('identity');
   const [data, setData] = useState<WizardData>({
-    hubName: '', hubLocation: '', hubZip: '', hubDescription: '',
+    hubName: '', hubLocation: '', hubZip: '', hubDescription: '', dataDir: '',
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
   });
@@ -168,6 +172,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   const detectedOS = useRef<'windows' | 'mac' | 'linux'>(detectOS());
   const [scriptDownloaded, setScriptDownloaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Waiting step state
   const [pollAttempt, setPollAttempt] = useState(0);
@@ -179,8 +184,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   const canProceed: Record<WizardStep, boolean> = {
     identity:
       data.hubName.trim().length >= 2 &&
-      data.hubLocation.trim().length >= 2 &&
-      data.hubZip.trim().length >= 3,
+      data.hubLat !== undefined,
     access:
       data.visibility === 'local' ||
       (data.visibility === 'tailscale' && data.tailscaleAuthKey.trim().length >= 10),
@@ -207,6 +211,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       adminPassword: data.adminPassword,
       secrets: secretsRef.current,
       generatedAt: new Date().toISOString(),
+      dataDir: data.dataDir.trim() || undefined,
     };
   }
 
@@ -506,20 +511,33 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     </div>
                     <div>
                       <FieldLabel label="Neighborhood / City" />
-                      <TextInput
-                        value={data.hubLocation}
-                        onChange={v => set({ hubLocation: v })}
-                        placeholder="e.g., Highland Park, Los Angeles"
+                      <LocationPicker
+                        defaultValue={data.hubLocation}
+                        placeholder="e.g., Highland Park, Eagle Rock, Riverdale…"
+                        onSelect={(result: LocationResult | null) => {
+                          if (result) {
+                            set({
+                              hubLocation: result.displayName,
+                              hubLat: result.lat,
+                              hubLng: result.lng,
+                              hubZip: result.postcode || data.hubZip,
+                            });
+                          } else {
+                            set({ hubLat: undefined, hubLng: undefined });
+                          }
+                        }}
                       />
-                    </div>
-                    <div>
-                      <FieldLabel label="ZIP Code" />
-                      <TextInput
-                        value={data.hubZip}
-                        onChange={v => set({ hubZip: v })}
-                        placeholder="90042"
-                        maxLength={10}
-                      />
+                      {!data.hubLat && (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+                          Type your neighborhood or city and select from the suggestions
+                        </p>
+                      )}
+                      {data.hubLat && (
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-1.5 ml-1 flex items-center gap-1">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Location confirmed — your hub will appear on the map
+                        </p>
+                      )}
                     </div>
                     <div>
                       <FieldLabel label="Description" hint="optional" />
@@ -532,6 +550,34 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           text-slate-900 dark:text-white bg-white dark:bg-zinc-800
                           focus:border-purple-500 focus:outline-none transition-colors resize-none"
                       />
+                    </div>
+
+                    {/* Advanced — data directory */}
+                    <div className="border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced(v => !v)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        <span className="flex items-center gap-2">
+                          <HardDrive className="w-4 h-4" />
+                          Advanced
+                        </span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showAdvanced && (
+                        <div className="px-4 pb-4 pt-1 bg-slate-50 dark:bg-zinc-800/50 border-t border-slate-200 dark:border-zinc-700">
+                          <FieldLabel label="Data storage location" hint="optional" />
+                          <TextInput
+                            value={data.dataDir}
+                            onChange={v => set({ dataDir: v })}
+                            placeholder="e.g. H:\citinet-hub\data  or  /mnt/data/citinet"
+                          />
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+                            Where Docker stores hub data (Postgres, files, cache). Leave blank to use Docker's default location on your system drive.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

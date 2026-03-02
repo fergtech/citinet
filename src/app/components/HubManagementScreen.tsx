@@ -1,24 +1,51 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Users, Settings, Crown, RefreshCw, Shield } from 'lucide-react';
+import { ArrowLeft, Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import type { HubMember } from '../types/hub';
+import { LocationPicker, type LocationResult } from './LocationPicker';
 
 interface HubManagementScreenProps {
   onBack: () => void;
 }
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
-  const { currentHub, currentUser } = useHub();
+  const { currentHub, currentUser, updateLocation, updateDescription } = useHub();
   const [activeTab, setActiveTab] = useState<'info' | 'members'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
 
+  // Description editing
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionValue, setDescriptionValue] = useState('');
+  const [descriptionSaving, setDescriptionSaving] = useState(false);
+
+  // Location editing
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
+  const [locationSaving, setLocationSaving] = useState(false);
+
   // isAdmin: explicit flag (new sessions) OR effectively-local hub (Mission 1).
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+
+  const saveDescription = async () => {
+    setDescriptionSaving(true);
+    updateDescription(descriptionValue.trim());
+    setEditingDescription(false);
+    setDescriptionSaving(false);
+  };
+
+  const saveLocation = async () => {
+    if (!locationResult) return;
+    setLocationSaving(true);
+    updateLocation(locationResult.displayName, locationResult.lat, locationResult.lng);
+    setEditingLocation(false);
+    setLocationResult(null);
+    setLocationSaving(false);
+  };
 
   const loadMembers = async () => {
     if (!currentHub?.slug) return;
@@ -113,9 +140,111 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
               <InfoRow label="Slug" value={currentHub?.slug} mono />
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
-              <InfoRow label="Description" value={currentHub?.description || undefined} placeholder="No description set" />
+              {/* Description — editable */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Description</p>
+                  {!editingDescription && (
+                    <button
+                      onClick={() => { setDescriptionValue(currentHub?.description ?? ''); setEditingDescription(true); }}
+                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      {currentHub?.description ? 'Edit' : 'Add description'}
+                    </button>
+                  )}
+                </div>
+                {!editingDescription ? (
+                  currentHub?.description
+                    ? <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub.description}</p>
+                    : <p className="text-sm italic text-slate-400 dark:text-slate-500">No description set</p>
+                ) : (
+                  <div className="space-y-2 mt-1">
+                    <textarea
+                      value={descriptionValue}
+                      onChange={e => setDescriptionValue(e.target.value)}
+                      rows={3}
+                      placeholder="Describe your hub…"
+                      className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
+                        text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
+                        focus:border-purple-500 focus:outline-none transition-colors resize-none"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveDescription}
+                        disabled={descriptionSaving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
+                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingDescription(false); setDescriptionValue(''); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                          hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
-              <InfoRow label="Location" value={currentHub?.location || undefined} placeholder="Not set" />
+
+              {/* Location — editable */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</p>
+                  {!editingLocation && (
+                    <button
+                      onClick={() => setEditingLocation(true)}
+                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      {currentHub?.location ? 'Update' : 'Set location'}
+                    </button>
+                  )}
+                </div>
+
+                {!editingLocation ? (
+                  currentHub?.location
+                    ? <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub.location}</p>
+                    : <p className="text-sm italic text-slate-400 dark:text-slate-500">Not set — hub won't appear on the map</p>
+                ) : (
+                  <div className="space-y-2 mt-1">
+                    <LocationPicker
+                      defaultValue={currentHub?.location || ''}
+                      onSelect={setLocationResult}
+                      placeholder="Search for your hub's neighborhood or city…"
+                      inputClassName="w-full p-2.5 pr-9 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
+                        text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
+                        focus:border-purple-500 focus:outline-none transition-colors"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveLocation}
+                        disabled={!locationResult || locationSaving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
+                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingLocation(false); setLocationResult(null); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                          hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
               <InfoRow label="Hub API" value={currentHub?.tunnelUrl || undefined} placeholder="Not configured" mono small />
             </div>

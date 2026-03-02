@@ -34,6 +34,10 @@ interface HubContextValue {
   updateTunnelUrl: (newUrl: string, skipProbe?: boolean) => Promise<{ ok: boolean; error?: string }>;
   /** Update the current user's local profile */
   updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>) => HubUser | null;
+  /** Update the hub's location and geocoded coordinates in localStorage */
+  updateLocation: (location: string, lat: number, lng: number) => Hub | null;
+  /** Update the hub's description in localStorage */
+  updateDescription: (description: string) => Hub | null;
 }
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -191,6 +195,28 @@ export function HubProvider({ children }: { children: ReactNode }) {
     }
   }, [currentHub?.slug]);
 
+  const updateLocation = useCallback((location: string, lat: number, lng: number): Hub | null => {
+    if (!currentHub?.slug) return null;
+    try {
+      const updatedHub = hubService.updateHubLocation(currentHub.slug, location, lat, lng);
+      setCurrentHub(updatedHub);
+      return updatedHub;
+    } catch {
+      return null;
+    }
+  }, [currentHub?.slug]);
+
+  const updateDescription = useCallback((description: string): Hub | null => {
+    if (!currentHub?.slug) return null;
+    try {
+      const updatedHub = hubService.updateHubDescription(currentHub.slug, description);
+      setCurrentHub(updatedHub);
+      return updatedHub;
+    } catch {
+      return null;
+    }
+  }, [currentHub?.slug]);
+
   const updateTunnelUrl = useCallback(async (newUrl: string, skipProbe = false): Promise<{ ok: boolean; error?: string }> => {
     if (!currentHub?.slug) return { ok: false, error: 'No active hub' };
     try {
@@ -220,6 +246,8 @@ export function HubProvider({ children }: { children: ReactNode }) {
       onHubJoined,
       updateTunnelUrl,
       updateUserProfile,
+      updateLocation,
+      updateDescription,
     }}>
       {children}
     </HubContext.Provider>

@@ -1,5 +1,5 @@
 import { ArrowLeft, Radio, Users, QrCode, Server, AlertTriangle, Zap, Activity } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NetworkMap } from './NetworkMap';
 import { MemberListModal } from './MemberListModal';
 import { SignalDiagnosticsModal } from './SignalDiagnosticsModal';
@@ -7,28 +7,40 @@ import { InviteNeighborsModal } from './InviteNeighborsModal';
 import { HostNodeModal } from './HostNodeModal';
 import { EmergencySignalModal } from './EmergencySignalModal';
 import { useHub, useHubStatus } from '../context/HubContext';
+import { hubService } from '../services/hubService';
+import type { HubMember } from '../types/hub';
 
 interface NetworkScreenProps {
   onBack: () => void;
   onNavigate?: (screen: string) => void;
 }
 
-export function NetworkScreen({ onBack }: NetworkScreenProps) {
+export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const [memberListOpen, setMemberListOpen] = useState(false);
   const [memberListFilter, setMemberListFilter] = useState<'all' | 'online'>('all');
   const [signalDiagnosticsOpen, setSignalDiagnosticsOpen] = useState(false);
   const [inviteNeighborsOpen, setInviteNeighborsOpen] = useState(false);
   const [hostNodeOpen, setHostNodeOpen] = useState(false);
   const [emergencySignalOpen, setEmergencySignalOpen] = useState(false);
+  const [members, setMembers] = useState<HubMember[]>([]);
 
   const { currentHub } = useHub();
   const { status, label: statusLabel, dotColor } = useHubStatus();
 
-  // Use hub meta if available, otherwise mock data
-  const activeMembers = currentHub?.meta?.activeMembers ?? 47;
-  const onlineNow = currentHub?.meta?.onlineNow ?? 12;
+  // Fetch real hub members
+  useEffect(() => {
+    if (!currentHub?.slug) return;
+    const load = () => {
+      hubService.listMembers(currentHub.slug).then(setMembers).catch(() => {});
+    };
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, [currentHub?.slug]);
+
+  const activeMembers = members.length;
   const targetUsers = 100;
-  const progress = (activeMembers / targetUsers) * 100;
+  const progress = activeMembers > 0 ? Math.min((activeMembers / targetUsers) * 100, 100) : 0;
   const hubName = currentHub?.name || 'Community Hub';
   const tunnelUrl = currentHub?.tunnelUrl || '';
 
@@ -64,10 +76,7 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
               <p className="text-sm text-slate-600 dark:text-slate-400 font-light">Real-time visualization</p>
             </div>
             <div className="h-[500px]">
-              <NetworkMap 
-                activeMembers={activeMembers}
-                onlineNow={onlineNow}
-              />
+              <NetworkMap members={members} />
             </div>
           </div>
 
@@ -90,22 +99,18 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
               <div className="text-xs text-slate-600 dark:text-slate-400">Active Members</div>
             </button>
 
-            <button
-              onClick={() => {
-                setMemberListFilter('online');
-                setMemberListOpen(true);
-              }}
-              className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all cursor-pointer text-left"
-            >
+            <div className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm">
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                   <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               </div>
-              <div className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tabular-nums">{onlineNow}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Online Now</div>
-            </button>
+              <div className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tabular-nums">
+                {currentHub?.connectionStatus === 'connected' ? 'Online' : 'Local'}
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Hub Status</div>
+            </div>
 
             <button
               onClick={() => setSignalDiagnosticsOpen(true)}
@@ -263,6 +268,7 @@ export function NetworkScreen({ onBack }: NetworkScreenProps) {
       <HostNodeModal
         isOpen={hostNodeOpen}
         onClose={() => setHostNodeOpen(false)}
+        onNavigate={onNavigate}
       />
       <EmergencySignalModal
         isOpen={emergencySignalOpen}

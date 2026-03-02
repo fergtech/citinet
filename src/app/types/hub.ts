@@ -36,6 +36,10 @@ export interface Hub {
   lastConnectedAt?: string;
   /** Hub metadata from the hub's API, if available */
   meta?: HubMeta;
+  /** Geocoded latitude (stored when admin sets location via LocationPicker) */
+  lat?: number;
+  /** Geocoded longitude (stored when admin sets location via LocationPicker) */
+  lng?: number;
 }
 
 export type HubConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'unreachable';
@@ -107,6 +111,10 @@ export interface HubInfoResponse {
   // Optional fields the hub may add later
   location?: string;
   description?: string;
+  /** Public tunnel URL reported by the hub (e.g. Tailscale funnel URL) */
+  tunnel_url?: string;
+  /** LAN IP reported by the hub */
+  lan_ip?: string;
 }
 
 /**
@@ -179,6 +187,30 @@ export interface HubMessage {
   sender_username?: string;
   body: string;
   attachments?: HubMessageAttachment[];
+  created_at: string;
+}
+
+/** A discussion post on the hub */
+export interface HubPost {
+  id: string;
+  category: string;           // 'DISCUSSION' | 'ANNOUNCEMENT' | 'PROJECT' | 'REQUEST'
+  title: string;
+  body: string;
+  author_id: string;
+  author_username: string;
+  media_file_name?: string;   // filename in MinIO, served via /api/public/files/:name
+  reply_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A reply to a hub post */
+export interface HubPostReply {
+  id: string;
+  post_id: string;
+  body: string;
+  author_id: string;
+  author_username: string;
   created_at: string;
 }
 

@@ -1,192 +1,158 @@
-import { X, CheckCircle2, Zap, Wifi, Download, Settings, ChevronDown } from 'lucide-react';
+import { X, CheckCircle2, Server, Users, Shield, ChevronDown, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 
 interface HostNodeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 const SETUP_STEPS = [
   {
-    icon: Download,
-    title: 'Download Node Software',
-    description: 'Get the latest mesh node package for your device',
-    details: 'Compatible with Raspberry Pi 4, PC, or dedicated hardware',
-    status: 'ready' as const,
+    icon: Server,
+    title: 'Name & configure your hub',
+    description: 'Pick a hub name, set your neighborhood, choose public or local-only access',
+    details: 'The setup wizard walks you through every option — no config files, no terminal knowledge needed.',
   },
   {
-    icon: Settings,
-    title: 'Configure Your Node',
-    description: 'Set network name, choose bandwidth limits, and security settings',
-    details: 'Recommended: 20% bandwidth share for optimal network health',
-    status: 'ready' as const,
+    icon: CheckCircle2,
+    title: 'Download & run one script',
+    description: 'We generate a fully pre-configured script for your OS',
+    details: 'Windows (PowerShell) or Mac/Linux (bash). The script installs Docker, writes your config, and starts the hub stack — one paste in a terminal.',
   },
   {
-    icon: Wifi,
-    title: 'Connect to Mesh',
-    description: 'Join the local network and establish peer connections',
-    details: 'Auto-discovery finds nearby nodes within ~300ft range',
-    status: 'ready' as const,
+    icon: Users,
+    title: 'Share your join link',
+    description: 'Neighbors open the link, create an account, and they\'re in',
+    details: 'Local hubs share a LAN IP address. Tailscale-enabled hubs get a public HTTPS URL reachable from anywhere.',
   },
   {
-    icon: Zap,
-    title: 'Go Live',
-    description: 'Activate your node and start contributing to the network',
-    details: 'You\'ll earn reputation points and network credits',
-    status: 'ready' as const,
+    icon: Shield,
+    title: 'You\'re the admin',
+    description: 'Moderate content, manage members, and keep the space yours',
+    details: 'Your data stays on your machine — no cloud provider, no third-party storage. Citinet is just the software.',
   },
 ];
 
-export function HostNodeModal({ isOpen, onClose }: HostNodeModalProps) {
+export function HostNodeModal({ isOpen, onClose, onNavigate }: HostNodeModalProps) {
   const [expandedStep, setExpandedStep] = useState<number>(0);
-  
+
   if (!isOpen) return null;
 
+  const handleStart = () => {
+    onClose();
+    onNavigate?.('create');
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-zinc-900 rounded-[28px] max-w-2xl w-full max-h-[92vh] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.4)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-        {/* Clean Header - Light First */}
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-[28px] max-w-2xl w-full max-h-[92vh] shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
         <div className="relative px-8 pt-10 pb-8 bg-white dark:bg-zinc-900">
           <button
             onClick={onClose}
-            aria-label="Close host node modal"
-            className="absolute top-5 right-5 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            aria-label="Close host a hub modal"
+            className="absolute top-5 right-5 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 flex items-center justify-center transition-all"
           >
             <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
           </button>
-          
+
           <div className="max-w-md">
             <h3 className="text-4xl font-bold tracking-tight text-slate-900 dark:text-white mb-3 leading-[1.1]">
-              Host a Node
+              Host a Hub
             </h3>
             <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed font-normal">
-              Become a network contributor. Faster speeds, premium access, and reputation—just a few taps away.
+              Run a community hub from your own machine — your neighborhood's data stays on your hardware, not anyone else's servers.
             </p>
           </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-zinc-950">
-          <div className="px-8 py-10 space-y-10">
-            {/* HERO Benefits - Instagram/ChatGPT Style */}
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-10 shadow-sm border border-slate-200/60 dark:border-zinc-800/60">
-              <div className="grid grid-cols-3 gap-8">
-                <div className="text-center space-y-4">
-                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-[22px] bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
-                    <Zap className="w-10 h-10 text-white" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <div className="text-5xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-                      +50%
+          <div className="px-8 py-8 space-y-8">
+            {/* Benefits row */}
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 shadow-sm border border-slate-200/60 dark:border-zinc-800/60">
+              <div className="grid grid-cols-3 gap-6">
+                {[
+                  { label: 'Your data', sublabel: 'stays local', color: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/20', emoji: '🔒' },
+                  { label: 'Your rules', sublabel: 'you\'re admin', color: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/20', emoji: '⚡' },
+                  { label: 'Free', sublabel: 'open source', color: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/20', emoji: '🌐' },
+                ].map(({ label, sublabel, color, shadow, emoji }) => (
+                  <div key={label} className="text-center space-y-3">
+                    <div className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br ${color} shadow-lg ${shadow}`}>
+                      <span className="text-3xl leading-none">{emoji}</span>
                     </div>
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Network Speed</p>
-                  </div>
-                </div>
-                
-                <div className="text-center space-y-4">
-                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-[22px] bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/20">
-                    <CheckCircle2 className="w-10 h-10 text-white" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <div className="text-5xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-                      Free
+                    <div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{label}</div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">{sublabel}</p>
                     </div>
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Premium Access</p>
                   </div>
-                </div>
-                
-                <div className="text-center space-y-4">
-                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-[22px] bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/20">
-                    <span className="text-4xl leading-none">⭐</span>
-                  </div>
-                  <div>
-                    <div className="text-5xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">
-                      Earn
-                    </div>
-                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Reputation</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
-            {/* Steps - Meta/Instagram Card Style */}
+            {/* Steps */}
             <div>
-              <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 tracking-tight px-1">
-                Setup in 4 Easy Steps
+              <h4 className="text-xl font-bold text-slate-900 dark:text-white mb-5 tracking-tight px-1">
+                How it works — 4 steps
               </h4>
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {SETUP_STEPS.map((step, index) => {
                   const Icon = step.icon;
                   const isExpanded = expandedStep === index;
-                  
                   return (
                     <button
                       key={index}
                       onClick={() => setExpandedStep(isExpanded ? -1 : index)}
-                      className="w-full group/step"
+                      className="w-full"
                     >
                       <div className={`relative bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-300 shadow-sm border ${
-                        isExpanded 
-                          ? 'border-emerald-500 dark:border-emerald-600 shadow-lg shadow-emerald-500/10' 
+                        isExpanded
+                          ? 'border-purple-500 dark:border-purple-600 shadow-lg shadow-purple-500/10'
                           : 'border-slate-200/60 dark:border-zinc-800/60 hover:border-slate-300 dark:hover:border-zinc-700'
                       }`}>
-                        {/* Step Header */}
-                        <div className="flex items-center gap-5 p-6">
-                          {/* Icon Badge */}
+                        <div className="flex items-center gap-4 p-5">
                           <div className="relative flex-shrink-0">
-                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-md transition-all duration-300 ${
-                              isExpanded
-                                ? 'bg-gradient-to-br from-emerald-500 to-teal-600 scale-105'
-                                : 'bg-slate-100 dark:bg-zinc-800'
+                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm transition-all duration-300 ${
+                              isExpanded ? 'bg-gradient-to-br from-purple-500 to-blue-600 scale-105' : 'bg-slate-100 dark:bg-zinc-800'
                             }`}>
-                              <Icon className={`w-8 h-8 transition-colors duration-300 ${
+                              <Icon className={`w-7 h-7 transition-colors duration-300 ${
                                 isExpanded ? 'text-white' : 'text-slate-600 dark:text-slate-400'
                               }`} strokeWidth={2} />
                             </div>
-                            {/* Number Badge */}
-                            <div className={`absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all duration-300 ${
-                              isExpanded
-                                ? 'bg-emerald-600 text-white scale-110'
-                                : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                            <div className={`absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow transition-all duration-300 ${
+                              isExpanded ? 'bg-purple-600 text-white' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
                             }`}>
                               {index + 1}
                             </div>
                           </div>
 
-                          {/* Content */}
                           <div className="flex-1 text-left">
-                            <h5 className={`font-bold transition-all duration-300 ${
-                              isExpanded 
-                                ? 'text-emerald-700 dark:text-emerald-400 text-lg mb-1' 
-                                : 'text-slate-900 dark:text-white text-base mb-0.5'
+                            <h5 className={`font-bold transition-colors duration-300 ${
+                              isExpanded
+                                ? 'text-purple-700 dark:text-purple-400 text-base mb-0.5'
+                                : 'text-slate-900 dark:text-white text-sm mb-0.5'
                             }`}>
                               {step.title}
                             </h5>
-                            <p className="text-[15px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 leading-snug">
                               {step.description}
                             </p>
                           </div>
 
-                          {/* Chevron */}
-                          <ChevronDown className={`w-6 h-6 text-slate-400 flex-shrink-0 transition-all duration-300 ${
-                            isExpanded ? 'rotate-180 text-emerald-600 dark:text-emerald-400' : ''
+                          <ChevronDown className={`w-5 h-5 text-slate-400 flex-shrink-0 transition-all duration-300 ${
+                            isExpanded ? 'rotate-180 text-purple-500' : ''
                           }`} />
                         </div>
 
-                        {/* Expandable Details */}
                         <div className={`overflow-hidden transition-all duration-300 ${
-                          isExpanded ? 'max-h-48 opacity-100' : 'max-h-0 opacity-0'
+                          isExpanded ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
                         }`}>
-                          <div className="px-6 pb-6 pt-2">
-                            <div className="pl-[84px] -ml-px">
-                              <p className="text-[15px] text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
+                          <div className="px-5 pb-5 pt-1">
+                            <div className="pl-[72px]">
+                              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                                 {step.details}
                               </p>
-                              {index === 0 && isExpanded && (
-                                <button className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[15px] font-semibold rounded-xl transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]">
-                                  Download Now
-                                </button>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -197,59 +163,53 @@ export function HostNodeModal({ isOpen, onClose }: HostNodeModalProps) {
               </div>
             </div>
 
-            {/* Requirements - Clean List */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 shadow-sm border border-slate-200/60 dark:border-zinc-800/60">
-              <h4 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} />
+            {/* Requirements */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-5 shadow-sm border border-slate-200/60 dark:border-zinc-800/60">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} />
                 </div>
-                Requirements
+                What you need
               </h4>
-              <div className="grid grid-cols-2 gap-3.5 text-sm">
-                <div className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-slate-700 dark:text-slate-300">
-                    <strong className="font-semibold text-slate-900 dark:text-white">8GB</strong> storage
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-slate-700 dark:text-slate-300">
-                    <strong className="font-semibold text-slate-900 dark:text-white">2GB</strong> RAM
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-slate-700 dark:text-slate-300">
-                    <strong className="font-semibold text-slate-900 dark:text-white">10 Mbps</strong> internet
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-slate-700 dark:text-slate-300">
-                    <strong className="font-semibold text-slate-900 dark:text-white">18+ hrs</strong> uptime/day
-                  </span>
-                </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ['Docker', 'free, we link you to it'],
+                  ['Any modern PC or Mac', 'even a Raspberry Pi 4'],
+                  ['Broadband internet', '10 Mbps+ recommended'],
+                  ['Machine stays on', 'at least while neighbors use it'],
+                ].map(([title, note]) => (
+                  <div key={title} className="flex items-start gap-2.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0 mt-1.5" />
+                    <div>
+                      <span className="font-semibold text-slate-900 dark:text-white">{title}</span>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{note}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Footer - Instagram/Meta Button Style */}
+        {/* Footer */}
         <div className="p-6 bg-white dark:bg-zinc-900 border-t border-slate-200/60 dark:border-zinc-800/60">
-          <div className="flex gap-3 mb-4">
+          <div className="flex gap-3 mb-3">
             <button
               onClick={onClose}
-              className="flex-1 px-6 py-4 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-900 dark:text-white rounded-xl font-semibold text-[15px] transition-all active:scale-[0.98]"
+              className="flex-1 px-6 py-3.5 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-900 dark:text-white rounded-xl font-semibold text-sm transition-all"
             >
-              Maybe Later
+              Not now
             </button>
-            <button className="flex-1 px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-bold text-[15px] shadow-lg shadow-emerald-500/25 transition-all hover:shadow-xl hover:shadow-emerald-500/30 active:scale-[0.98]">
-              Start Setup
+            <button
+              onClick={handleStart}
+              className="flex-1 px-6 py-3.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-purple-500/20 transition-all flex items-center justify-center gap-2"
+            >
+              Start Setup Wizard
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-[13px] text-slate-500 dark:text-slate-400 text-center font-medium">
-            ⚡ Takes ~15 minutes · No technical knowledge required
+          <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+            Takes ~10 minutes · No terminal experience needed
           </p>
         </div>
       </div>

@@ -14,6 +14,12 @@
  *   GET    /api/files/:filename           — download file (auth required)
  *   DELETE /api/files/:filename           — delete file (auth required)
  *   PATCH  /api/files/:filename           — toggle visibility (auth required)
+ *   GET    /api/posts                     — list posts (auth required)
+ *   POST   /api/posts                     — create post (auth required)
+ *   PATCH  /api/posts/:id                 — update post (auth required)
+ *   DELETE /api/posts/:id                 — delete post (auth required)
+ *   GET    /api/posts/:id/replies         — list replies (auth required)
+ *   POST   /api/posts/:id/replies         — create reply (auth required)
  */
 
 const express = require('express');
@@ -134,6 +140,27 @@ async function initDb() {
         message_id UUID REFERENCES hub_messages(id) ON DELETE CASCADE,
         file_id    UUID REFERENCES hub_files(id) ON DELETE CASCADE,
         PRIMARY KEY (message_id, file_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_posts (
+        id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        category      VARCHAR(20)  NOT NULL DEFAULT 'DISCUSSION',
+        title         VARCHAR(500) NOT NULL,
+        body          TEXT         NOT NULL DEFAULT '',
+        author_id     UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        media_file_id UUID REFERENCES hub_files(id) ON DELETE SET NULL,
+        created_at    TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_post_replies (
+        id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id   UUID REFERENCES hub_posts(id) ON DELETE CASCADE,
+        author_id UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        body      TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
   } finally {
@@ -706,6 +733,216 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Patch error:', err);
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// ── Public file serving (for post images) ────────────────
+
+// Serves files marked is_public=true without auth — needed so <img> tags work in the feed
+app.get('/api/public/files/:filename', async (req, res) => {
+  const fileName = decodeURIComponent(req.params.filename);
+  try {
+    const result = await pool.query(
+      `SELECT * FROM hub_files WHERE file_name = $1 AND is_public = true LIMIT 1`,
+      [fileName]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
+    const file = result.rows[0];
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+    const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
+    if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Public file error:', err);
+    res.status(500).json({ error: 'Failed to load file' });
+  }
+});
+
+// ── Post routes ───────────────────────────────────────────
+
+const POST_CATEGORIES = ['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST'];
+
+// List posts — chronological, newest first, optional category filter
+app.get('/api/posts', authenticate, async (req, res) => {
+  const lim = Math.min(parseInt(req.query.limit) || 50, 100);
+  const cat = (req.query.category || '').toUpperCase();
+
+  try {
+    const params = [];
+    const where = cat && POST_CATEGORIES.includes(cat)
+      ? (params.push(cat), `WHERE p.category = $${params.length}`)
+      : '';
+
+    const { rows } = await pool.query(
+      `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+              u.id AS author_id, u.username AS author_username,
+              f.file_name AS media_file_name,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+       FROM hub_posts p
+       LEFT JOIN hub_users u ON p.author_id = u.id
+       LEFT JOIN hub_files f ON p.media_file_id = f.id
+       ${where}
+       ORDER BY p.created_at DESC
+       LIMIT $${params.length + 1}`,
+      [...params, lim]
+    );
+    res.json({ posts: rows });
+  } catch (err) {
+    console.error('List posts error:', err);
+    res.status(500).json({ error: 'Failed to list posts' });
+  }
+});
+
+// Create a post (with optional image upload)
+app.post('/api/posts', authenticate, upload.single('media'), async (req, res) => {
+  const { category, title, body } = req.body || {};
+  const cat = (category || '').toUpperCase();
+
+  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  if (!POST_CATEGORIES.includes(cat)) {
+    return res.status(400).json({ error: `category must be one of: ${POST_CATEGORIES.join(', ')}` });
+  }
+
+  try {
+    let mediaFileId = null;
+
+    if (req.file) {
+      const fileKey = `${req.user.id}/${req.file.originalname}`;
+      if (minioClient) {
+        await minioClient.putObject(
+          STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size,
+          { 'Content-Type': req.file.mimetype }
+        );
+      }
+      const fileResult = await pool.query(
+        `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
+         VALUES ($1, $2, $3, $4, $5, true)
+         ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW()
+         RETURNING id`,
+        [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id]
+      );
+      mediaFileId = fileResult.rows[0].id;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO hub_posts (category, title, body, author_id, media_file_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, category, title, body, created_at, updated_at`,
+      [cat, title.trim(), body?.trim() || '', req.user.id, mediaFileId]
+    );
+
+    const post = result.rows[0];
+    res.json({
+      ...post,
+      author_id:       req.user.id,
+      author_username: req.user.username,
+      media_file_name: req.file?.originalname || null,
+      reply_count:     0,
+    });
+  } catch (err) {
+    console.error('Create post error:', err);
+    res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+// Update a post (author or admin)
+app.patch('/api/posts/:id', authenticate, async (req, res) => {
+  const { title, body } = req.body || {};
+  if (!title || title.trim().length === 0) {
+    return res.status(400).json({ error: 'Title is required' });
+  }
+  try {
+    const result = await pool.query(
+      `UPDATE hub_posts p
+       SET title = $1, body = $2, updated_at = NOW()
+       WHERE p.id = $3 AND (p.author_id = $4 OR $5 = true)
+       RETURNING p.id, p.author_id, p.category, p.title, p.body,
+                 p.media_file_id, p.created_at, p.updated_at`,
+      [title.trim(), body?.trim() || '', req.params.id, req.user.id, req.user.is_admin]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Post not found or you do not have permission' });
+    }
+    const postData = result.rows[0];
+    const [userResult, fileResult] = await Promise.all([
+      pool.query(`SELECT username FROM hub_users WHERE id = $1`, [postData.author_id]),
+      postData.media_file_id
+        ? pool.query(`SELECT file_name FROM hub_files WHERE id = $1`, [postData.media_file_id])
+        : Promise.resolve({ rows: [] }),
+    ]);
+    res.json({
+      ...postData,
+      author_username:  userResult.rows[0]?.username || 'Unknown',
+      media_file_name:  fileResult.rows[0]?.file_name || null,
+      reply_count:      0,
+    });
+  } catch (err) {
+    console.error('Update post error:', err);
+    res.status(500).json({ error: 'Failed to update post' });
+  }
+});
+
+// Delete a post (author or admin)
+app.delete('/api/posts/:id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM hub_posts WHERE id = $1 AND (author_id = $2 OR $3 = true) RETURNING id`,
+      [req.params.id, req.user.id, req.user.is_admin]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Delete post error:', err);
+    res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// List replies for a post
+app.get('/api/posts/:id/replies', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.post_id, r.body, r.created_at,
+              u.id AS author_id, u.username AS author_username
+       FROM hub_post_replies r
+       LEFT JOIN hub_users u ON r.author_id = u.id
+       WHERE r.post_id = $1
+       ORDER BY r.created_at ASC`,
+      [req.params.id]
+    );
+    res.json({ replies: rows });
+  } catch (err) {
+    console.error('List replies error:', err);
+    res.status(500).json({ error: 'Failed to load replies' });
+  }
+});
+
+// Post a reply
+app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
+  const { body } = req.body || {};
+  if (!body?.trim()) return res.status(400).json({ error: 'Reply cannot be empty' });
+
+  try {
+    const post = await pool.query('SELECT id FROM hub_posts WHERE id = $1', [req.params.id]);
+    if (!post.rows[0]) return res.status(404).json({ error: 'Post not found' });
+
+    const result = await pool.query(
+      `INSERT INTO hub_post_replies (post_id, author_id, body) VALUES ($1, $2, $3)
+       RETURNING id, post_id, body, created_at`,
+      [req.params.id, req.user.id, body.trim()]
+    );
+
+    await pool.query(`UPDATE hub_posts SET updated_at = NOW() WHERE id = $1`, [req.params.id]);
+
+    res.json({
+      ...result.rows[0],
+      author_id:       req.user.id,
+      author_username: req.user.username,
+    });
+  } catch (err) {
+    console.error('Post reply error:', err);
+    res.status(500).json({ error: 'Failed to post reply' });
   }
 });
 

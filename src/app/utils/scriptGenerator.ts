@@ -30,6 +30,9 @@ export interface HubScriptConfig {
   adminPassword: string;
   secrets: HubSecrets;
   generatedAt: string;
+  /** Custom directory for Docker bind mounts (Postgres, MinIO, Redis data).
+   *  If omitted, Docker-managed named volumes are used instead. */
+  dataDir?: string;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -126,11 +129,19 @@ function generateEnvContent(config: HubScriptConfig): string {
 // because they use string concatenation, not TypeScript template interpolation.
 // ─────────────────────────────────────────────────────────
 
-function getComposeYaml(): string {
+function getComposeYaml(dataDir?: string): string {
   // Build the YAML using string concatenation so ${VAR} references are
   // literal in the output and not interpreted by TypeScript.
   const v = (name: string) => '${' + name + '}';
   const vd = (name: string, def: string) => '${' + name + ':-' + def + '}';
+
+  // When a custom data directory is specified, use bind mounts so data lands
+  // on the user's chosen drive. Otherwise fall back to Docker-managed named volumes.
+  const toComposePath = (sub: string) =>
+    dataDir ? dataDir.replace(/\\/g, '/') + '/' + sub : null;
+  const dbVol      = toComposePath('db')      ?? 'citinet-db-data';
+  const storageVol = toComposePath('storage') ?? 'citinet-storage-data';
+  const redisVol   = toComposePath('redis')   ?? 'citinet-redis-data';
 
   return [
     'services:',
@@ -187,7 +198,7 @@ function getComposeYaml(): string {
     '      - POSTGRES_PASSWORD=' + v('DB_PASSWORD'),
     '      - PGDATA=/var/lib/postgresql/data/pgdata',
     '    volumes:',
-    '      - citinet-db-data:/var/lib/postgresql/data',
+    '      - ' + dbVol + ':/var/lib/postgresql/data',
     '    healthcheck:',
     '      test: ["CMD-SHELL", "pg_isready -U citinet -d citinet"]',
     '      interval: 10s',
@@ -206,7 +217,7 @@ function getComposeYaml(): string {
     '      - MINIO_ROOT_USER=' + v('STORAGE_ACCESS_KEY'),
     '      - MINIO_ROOT_PASSWORD=' + v('STORAGE_SECRET_KEY'),
     '    volumes:',
-    '      - citinet-storage-data:/data',
+    '      - ' + storageVol + ':/data',
     '    ports:',
     '      - "127.0.0.1:9001:9001"',
     '    healthcheck:',
@@ -224,7 +235,7 @@ function getComposeYaml(): string {
     '    restart: unless-stopped',
     '    command: redis-server --appendonly yes --requirepass ' + v('REDIS_PASSWORD'),
     '    volumes:',
-    '      - citinet-redis-data:/data',
+    '      - ' + redisVol + ':/data',
     '    healthcheck:',
     '      test: ["CMD", "redis-cli", "-a", "' + v('REDIS_PASSWORD') + '", "ping"]',
     '      interval: 10s',
@@ -237,10 +248,12 @@ function getComposeYaml(): string {
     '  citinet-network:',
     '    driver: bridge',
     '',
-    'volumes:',
-    '  citinet-db-data:',
-    '  citinet-storage-data:',
-    '  citinet-redis-data:',
+    ...(dataDir ? [] : [
+      'volumes:',
+      '  citinet-db-data:',
+      '  citinet-storage-data:',
+      '  citinet-redis-data:',
+    ]),
   ].join('\n');
 }
 
@@ -308,7 +321,7 @@ function buildBashTailscaleSection(config: HubScriptConfig): string[] {
 
 function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml();
+  const composeYaml = getComposeYaml(config.dataDir);
   const isTailscale = config.visibility === 'tailscale';
 
   const tailscaleLines = isTailscale
@@ -354,6 +367,13 @@ function generateBashScript(config: HubScriptConfig): string {
     'step "Creating hub directory"',
     'mkdir -p "$HUB_DIR"',
     'ok "Directory: $HUB_DIR"',
+    ...(config.dataDir ? [
+      '',
+      '# === Create data directories (bind-mount targets) ===',
+      'DATA_DIR="' + config.dataDir + '"',
+      'mkdir -p "$DATA_DIR/db" "$DATA_DIR/storage" "$DATA_DIR/redis"',
+      'ok "Data directories: $DATA_DIR"',
+    ] : []),
     '',
     '# === Write .env (all values pre-configured) ===',
     'step "Writing configuration"',
@@ -587,7 +607,7 @@ function buildPsTailscaleSection(config: HubScriptConfig): string[] {
 
 function generatePowerShellScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml();
+  const composeYaml = getComposeYaml(config.dataDir);
   const isTailscale = config.visibility === 'tailscale';
 
   // Escape single quotes in content for PS array literal ('...' -> '..''...')
@@ -631,6 +651,13 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Step "Creating hub directory"',
     'New-Item -ItemType Directory -Force -Path $HubDir | Out-Null',
     'Ok "Directory: $HubDir"',
+    ...(config.dataDir ? [
+      '',
+      '# === Create data directories (bind-mount targets) ===',
+      '$DataDir = "' + config.dataDir + '"',
+      'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\storage","$DataDir\\redis" | Out-Null',
+      'Ok "Data directories: $DataDir"',
+    ] : []),
     '',
     '# === Write .env (all values pre-configured, no editing needed) ===',
     'Step "Writing configuration"',
