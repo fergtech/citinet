@@ -22,7 +22,7 @@ import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
-import { getSubdomain, navigateToHub, hubPath } from './utils/subdomain';
+import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
 import type { Hub, HubUser } from './types/hub';
 
 const screenTitles: Record<string, string> = {
@@ -157,6 +157,7 @@ function HubDashboardRoute() {
   const handleLogout = () => {
     const slug = currentHub?.slug || hubSlug;
     if (slug) leaveHub(slug);
+    clearSubdomainCache(); // ensure hub slug is always cleared regardless of leaveHub result
     window.location.href = window.location.origin + '/';
   };
 
@@ -279,15 +280,17 @@ function HubPlaceholderRoute({ screen }: { screen: string }) {
 function HubGuard({ children }: { children: React.ReactNode }) {
   const { currentHub, loading } = useHub();
   const hubSlug = getSubdomain();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (loading) return;
     if (currentHub) return;
     if (hubSlug && !hubService.getHubConnection(hubSlug)) {
-      navigate(hubPath('/'));
+      // No connection for this hub slug — clear the stale cache and return to welcome screen.
+      // Using hard redirect (not React Router navigate) so the app re-mounts without ?hub= in URL.
+      clearSubdomainCache();
+      window.location.href = window.location.origin + '/';
     }
-  }, [currentHub, loading, hubSlug, navigate]);
+  }, [currentHub, loading, hubSlug]);
 
   return <>{children}</>;
 }
