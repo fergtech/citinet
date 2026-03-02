@@ -5,7 +5,19 @@ const STORAGE_KEYS = {
   SUBMISSIONS: 'citinet-toolkit-submissions',
   APPROVED_TOOLS: 'citinet-toolkit-approved',
   USER_SUBMISSIONS: 'citinet-toolkit-user-submissions',
+  CATEGORIES: 'citinet-toolkit-categories',
 };
+
+export const BUILTIN_CATEGORIES: ToolCategory[] = [
+  'Web Browsing',
+  'Search',
+  'Messaging',
+  'Storage',
+  'Productivity',
+  'Creative Tools',
+  'Developer Tools',
+  'Open Hardware',
+];
 
 /**
  * Toolkit Service
@@ -185,6 +197,32 @@ class ToolkitService {
     submission.updatedAt = new Date().toISOString();
 
     this.saveSubmissions(submissions);
+  }
+
+  // ── Category management ──────────────────────────────────────
+
+  /** Returns all categories: built-ins first, then admin-created custom ones */
+  getCategories(): ToolCategory[] {
+    const custom: ToolCategory[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || '[]');
+    return [...BUILTIN_CATEGORIES, ...custom];
+  }
+
+  /** Admin: add a new custom category. Silently ignores duplicates (case-insensitive). */
+  addCategory(name: string): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const all = this.getCategories();
+    if (all.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return;
+    const custom: ToolCategory[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || '[]');
+    custom.push(trimmed);
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(custom));
+  }
+
+  /** Admin: remove a custom category. Built-in categories cannot be removed. */
+  removeCategory(name: string): void {
+    const custom: ToolCategory[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || '[]');
+    const updated = custom.filter((c) => c.toLowerCase() !== name.trim().toLowerCase());
+    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(updated));
   }
 
   // Private helper methods

@@ -163,6 +163,24 @@ async function initDb() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_atlas_pins (
+        id          UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+        author_id   UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        latitude    DOUBLE PRECISION NOT NULL,
+        longitude   DOUBLE PRECISION NOT NULL,
+        title       VARCHAR(200)     NOT NULL,
+        description TEXT,
+        category    VARCHAR(20)      NOT NULL DEFAULT 'poi',
+        created_at  TIMESTAMPTZ      DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_config (
+        key   VARCHAR(100) PRIMARY KEY,
+        value TEXT         NOT NULL DEFAULT ''
+      )
+    `);
   } finally {
     client.release();
   }
@@ -266,21 +284,57 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '0.2.0' });
 });
 
-app.get('/api/info', (_req, res) => {
+app.get('/api/info', async (_req, res) => {
+  // Read overrides from hub_config DB (set by admin via PATCH /api/hub-info).
+  // Falls back to env vars baked in at startup.
+  let cfg = {};
+  try {
+    const r = await pool.query('SELECT key, value FROM hub_config');
+    for (const row of r.rows) cfg[row.key] = row.value;
+  } catch { /* db may not be ready yet — use env fallback */ }
+
+  const name        = cfg.hub_name        || process.env.HUB_NAME        || '';
+  const location    = cfg.hub_location    || process.env.HUB_LOCATION    || '';
+  const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+
   res.json({
-    node_name:       process.env.HUB_NAME        || '',
-    name:            process.env.HUB_NAME        || '',
-    hub_name:        process.env.HUB_NAME        || '',
-    hub_slug:        process.env.HUB_SLUG        || '',
-    location:        process.env.HUB_LOCATION    || '',
-    hub_location:    process.env.HUB_LOCATION    || '',
-    description:     process.env.HUB_DESCRIPTION || '',
-    hub_description: process.env.HUB_DESCRIPTION || '',
-    hub_visibility:  process.env.HUB_VISIBILITY  || 'local',
-    tunnel_url:      process.env.TUNNEL_URL       || '',
+    node_name:       name,
+    name:            name,
+    hub_name:        name,
+    hub_slug:        process.env.HUB_SLUG       || '',
+    location:        location,
+    hub_location:    location,
+    description:     description,
+    hub_description: description,
+    hub_visibility:  process.env.HUB_VISIBILITY || 'local',
+    tunnel_url:      process.env.TUNNEL_URL      || '',
     lan_ip:          getLanIp(),
     api_port:        PORT,
   });
+});
+
+// Update hub identity fields (name, location, description) — admin only.
+// Persists to hub_config table so changes survive container restarts.
+app.patch('/api/hub-info', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { name, location, description } = req.body || {};
+  const updates = [];
+  if (name        !== undefined) updates.push(['hub_name',        String(name).trim()]);
+  if (location    !== undefined) updates.push(['hub_location',    String(location).trim()]);
+  if (description !== undefined) updates.push(['hub_description', String(description).trim()]);
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields provided' });
+  try {
+    for (const [key, value] of updates) {
+      await pool.query(
+        `INSERT INTO hub_config (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, value]
+      );
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/status', async (_req, res) => {
@@ -973,6 +1027,68 @@ app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Post reply error:', err);
     res.status(500).json({ error: 'Failed to post reply' });
+  }
+});
+
+// ── Atlas pin routes ───────────────────────────────────────
+
+const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi'];
+
+// List all pins
+app.get('/api/atlas/pins', authenticate, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category, p.created_at,
+              u.username AS author_username
+       FROM hub_atlas_pins p
+       LEFT JOIN hub_users u ON p.author_id = u.id
+       ORDER BY p.created_at DESC`
+    );
+    res.json({ pins: rows });
+  } catch (err) {
+    console.error('List atlas pins error:', err);
+    res.status(500).json({ error: 'Failed to list pins' });
+  }
+});
+
+// Create a pin
+app.post('/api/atlas/pins', authenticate, async (req, res) => {
+  const { latitude, longitude, title, description, category } = req.body || {};
+
+  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return res.status(400).json({ error: 'latitude and longitude must be numbers' });
+  }
+  if (!ATLAS_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `category must be one of: ${ATLAS_CATEGORIES.join(', ')}` });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_atlas_pins (author_id, latitude, longitude, title, description, category)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, latitude, longitude, title, description, category, created_at`,
+      [req.user.id, latitude, longitude, title.trim(), description?.trim() || null, category]
+    );
+    res.json({ ...rows[0], author_username: req.user.username });
+  } catch (err) {
+    console.error('Create atlas pin error:', err);
+    res.status(500).json({ error: 'Failed to create pin' });
+  }
+});
+
+// Delete a pin (author or admin)
+app.delete('/api/atlas/pins/:id', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `DELETE FROM hub_atlas_pins WHERE id = $1 AND (author_id = $2 OR $3 = true) RETURNING id`,
+      [req.params.id, req.user.id, req.user.is_admin]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Pin not found or not authorized' });
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Delete atlas pin error:', err);
+    res.status(500).json({ error: 'Failed to delete pin' });
   }
 });
 

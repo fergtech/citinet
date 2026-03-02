@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { CheckCircle2, AlertCircle, ArrowRight, Globe, Type, LayoutGrid, FileText, Tags, MessageSquare, ExternalLink } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ArrowRight, Globe, Type, LayoutGrid, FileText, Tags, MessageSquare, ExternalLink, Plus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toolkitService } from '../services/toolkitService';
 import { ToolCategory, ToolTag } from '../types/toolkit';
+import { useHub } from '../context/HubContext';
 import {
   Dialog,
   DialogContent,
@@ -17,17 +18,6 @@ interface AddToolModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
-
-const CATEGORIES: ToolCategory[] = [
-  'Web Browsing',
-  'Search',
-  'Messaging',
-  'Storage',
-  'Productivity',
-  'Creative Tools',
-  'Developer Tools',
-  'Open Hardware',
-];
 
 const AVAILABLE_TAGS: ToolTag[] = [
   'open-source',
@@ -84,6 +74,11 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
   const [selectedTags, setSelectedTags] = useState<ToolTag[]>([]);
   const [error, setError] = useState('');
   const [faviconError, setFaviconError] = useState(false);
+  // Category suggestion (user-only, not persisted globally)
+  const [showNewCatInput, setShowNewCatInput] = useState(false);
+  const [newCatValue, setNewCatValue] = useState('');
+  const [suggestedCategories, setSuggestedCategories] = useState<string[]>([]);
+  const categories = useMemo(() => toolkitService.getCategories(), []);
 
   // Derive domain and favicon URL from the current websiteUrl
   const domain = useMemo(() => extractDomain(formData.websiteUrl), [formData.websiteUrl]);
@@ -176,11 +171,11 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
     }
   };
 
+  const { currentUser } = useHub();
+
   const handleSubmit = () => {
-    const userData = localStorage.getItem('citinet-user-data');
-    const user = userData ? JSON.parse(userData) : null;
-    const userId = user?.displayName || 'anonymous';
-    const userName = user?.displayName || 'Anonymous User';
+    const userId = currentUser?.username || 'anonymous';
+    const userName = currentUser?.displayName || currentUser?.username || 'Anonymous User';
 
     try {
       toolkitService.submitTool({
@@ -198,6 +193,21 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
     } catch {
       setError('Failed to submit tool. Please try again.');
     }
+  };
+
+  const handleAddSuggestedCategory = () => {
+    const trimmed = newCatValue.trim();
+    if (!trimmed) return;
+    const allCats = [...categories, ...suggestedCategories];
+    if (allCats.some((c) => c.toLowerCase() === trimmed.toLowerCase())) {
+      setNewCatValue('');
+      setShowNewCatInput(false);
+      return;
+    }
+    setSuggestedCategories((prev) => [...prev, trimmed]);
+    setSelectedCategories((prev) => [...prev, trimmed]);
+    setNewCatValue('');
+    setShowNewCatInput(false);
   };
 
   const toggleCategory = (category: ToolCategory) => {
@@ -394,24 +404,92 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
 
               {/* Step 2: Categories */}
               {step === 2 && (
-                <div className="grid grid-cols-2 gap-2">
-                  {CATEGORIES.map((category) => (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Built-in + admin-created categories */}
+                    {categories.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => toggleCategory(category)}
+                        className={`p-3 rounded-xl border-2 text-left text-sm font-medium transition-all ${
+                          selectedCategories.includes(category)
+                            ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700'
+                        }`}
+                      >
+                        {selectedCategories.includes(category) && (
+                          <CheckCircle2 className="w-4 h-4 inline mr-1.5 -mt-0.5 text-purple-600 dark:text-purple-400" />
+                        )}
+                        {category}
+                      </button>
+                    ))}
+                    {/* User-suggested custom categories */}
+                    {suggestedCategories.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => toggleCategory(category)}
+                        className={`p-3 rounded-xl border-2 border-dashed text-left text-sm font-medium transition-all ${
+                          selectedCategories.includes(category)
+                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                            : 'border-slate-300 dark:border-zinc-600 text-slate-600 dark:text-slate-400 hover:border-purple-300'
+                        }`}
+                      >
+                        {selectedCategories.includes(category) && (
+                          <CheckCircle2 className="w-4 h-4 inline mr-1.5 -mt-0.5 text-purple-600 dark:text-purple-400" />
+                        )}
+                        {category}
+                        <span className="ml-1.5 text-xs text-slate-400 dark:text-slate-500">suggestion</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Suggest new category */}
+                  {showNewCatInput ? (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newCatValue}
+                        onChange={(e) => setNewCatValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); handleAddSuggestedCategory(); }
+                          if (e.key === 'Escape') { setShowNewCatInput(false); setNewCatValue(''); }
+                        }}
+                        placeholder="e.g. Geo / Mapping"
+                        className="flex-1 h-9 px-3 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddSuggestedCategory}
+                        className="px-3 h-9 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowNewCatInput(false); setNewCatValue(''); }}
+                        className="w-9 h-9 rounded-lg border border-slate-200 dark:border-zinc-700 flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      key={category}
                       type="button"
-                      onClick={() => toggleCategory(category)}
-                      className={`p-3 rounded-xl border-2 text-left text-sm font-medium transition-all ${
-                        selectedCategories.includes(category)
-                          ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
-                          : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700'
-                      }`}
+                      onClick={() => setShowNewCatInput(true)}
+                      className="w-full p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 text-sm text-slate-400 dark:text-slate-500 hover:border-purple-400 hover:text-purple-600 dark:hover:border-purple-700 dark:hover:text-purple-400 transition-all flex items-center justify-center gap-1.5"
                     >
-                      {selectedCategories.includes(category) && (
-                        <CheckCircle2 className="w-4 h-4 inline mr-1.5 -mt-0.5 text-purple-600 dark:text-purple-400" />
-                      )}
-                      {category}
+                      <Plus className="w-4 h-4" />
+                      None of these fit? Suggest a new category
                     </button>
-                  ))}
+                  )}
+                  {suggestedCategories.length > 0 && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      Suggested categories will be reviewed with your submission.
+                    </p>
+                  )}
                 </div>
               )}
 

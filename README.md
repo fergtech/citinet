@@ -73,6 +73,9 @@ All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage/cach
 | POST | `/api/conversations` | ✅ | Create DM or group conversation |
 | GET | `/api/conversations/:id/messages` | ✅ | Load messages (paginated) |
 | POST | `/api/conversations/:id/messages` | ✅ | Send a message |
+| GET | `/api/atlas/pins` | ✅ | List all community map pins |
+| POST | `/api/atlas/pins` | ✅ | Place a new pin |
+| DELETE | `/api/atlas/pins/:id` | ✅ | Delete a pin (author or admin) |
 | GET | `/api/files` | ✅ | List files (own + public) |
 | POST | `/api/files` | ✅ | Upload file (multipart, max 100 MB) |
 | GET | `/api/files/:name` | ✅ | Download file |
@@ -85,49 +88,83 @@ All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage/cach
 
 ### Mission 1 — Local Hub (Active · March 2026)
 
-**Goal:** Prove the complete flow end-to-end on a single machine before opening to the network.
+**Goal:** Prove the complete community hub experience end-to-end on a single machine before opening to the network. A person should be able to create a hub, invite their neighbors, communicate, share files, explore their community, and discover useful tools — all without touching a cloud service.
 
 **Completed:**
+
+*Hub setup & onboarding*
 - ✅ Hub creation wizard (6-step: identity → access mode → admin account → script download → wait → live)
-- ✅ OS-aware setup script generator (PowerShell for Windows, Bash for Mac/Linux) — handles Docker install, Tailscale, writes `.env` + `docker-compose.yml`, starts stack, polls for health
-- ✅ Hub API with real authentication (bcrypt passwords, random session tokens, Postgres-backed)
+- ✅ OS-aware setup script generator (PowerShell for Windows, Bash for Mac/Linux) — installs Docker + Tailscale, writes `.env` + `docker-compose.yml`, starts stack, polls for health
+- ✅ Hub API with real authentication (bcrypt passwords, cryptographically random session tokens, Postgres-backed)
 - ✅ First registered user on a hub automatically becomes admin
 - ✅ Join flow — probe any hub URL, "Connect Anyway" fallback if probe fails
 - ✅ Auth screens — register or log in against the hub's own API
-- ✅ Dashboard with full sidebar navigation
+- ✅ Logout — clears local state and subdomain cache, hard-reloads to welcome screen
+- ✅ Data sovereignty — `DATA_DIR` in `.env` controls where all hub data lives (any drive, any path)
+
+*Core hub features — hub API backed*
+- ✅ Dashboard — sidebar navigation, recent activity feed (mock), featured banner
 - ✅ Account screen — view/edit display name, email, location, tags
-- ✅ Hub Management screen (admin-only) — hub info, member list with admin badges
+- ✅ Hub Management (admin-only) — hub info, member list with admin badges
 - ✅ Messages — DMs, group conversations, file attachments, 10-second polling
 - ✅ Files — upload/download/delete/visibility toggle, backed by MinIO
-- ✅ Neighbors — live member list from hub API
-- ✅ Admin detection — hub creator stamped as admin at onboarding; system admin (`isAdmin`) separate from civic role
-- ✅ Leave hub — clears local state, hard-reloads to welcome screen
-- ✅ Data sovereignty — `DATA_DIR` in `.env` controls where all hub data lives (any drive, any path)
+- ✅ Neighbors / Network screen — live member list from hub API, searchable, member count badge, member list modal
+
+*Community features — hub API backed*
+- ✅ Discussions / Feed — fully wired to hub API; post types: discussion, announcement, project, request; compose with optional media upload (images/video → MinIO); threaded replies via PostDetailModal; edit/delete (author or admin); 30-second poll; public file serving via `/api/public/files/:name`
+
+*Community features — localStorage-backed (hub API integration pending)*
+- ✅ Atlas — neighborhood community map (OpenStreetMap + Leaflet); pin types: meetup spot, safety alert, avoid area, community space, point of interest; add/delete pins, search, category filter, two-way map↔list sync; dark/light tile switching; pins backed by hub API (`/api/atlas/pins`) — shared across all hub members in real time
+- ✅ Discover (Toolkit) — curated directory of open-source, privacy-first tools
+  - 24 seed tools across 8 built-in categories (browsers, search, messaging, storage, productivity, creative, dev tools, hardware)
+  - Category sidebar (desktop, sticky) + horizontal chip strip (mobile) — click any category to filter
+  - Search bar + tag filter panel (11 tags: open-source, encrypted, self-hostable, etc.)
+  - Community tool submissions via 5-step wizard modal (name/URL → categories → description → tags → rationale)
+  - Admin moderation queue — approve (publishes tool) or reject (with reviewer notes)
+  - My Submissions screen — submission history with status tracking per user
+  - Admin category creation — inline input in sidebar, persisted to localStorage
+  - User category suggestions — propose a new category during submission, reviewed with the tool
+
+*Admin & moderation*
+- ✅ Admin detection — hub creator stamped as admin at onboarding; localhost hub fallback grants admin to any logged-in user (dev convenience)
+- ✅ Admin-only surfaces: Hub Management, Hub Admin sidebar link, Discover moderation queue, Review Queue button
+- ✅ Toolkit moderation queue — approve/reject submissions, reviewer identity from hub context
 - ✅ Error handling — 401 clears stale token, HTML errors never surface raw in UI
 - ✅ Tailscale same-device limitation surfaced in UI with clear guidance
 
-**Known limitations in Mission 1:**
-- Tailscale Funnel cannot be accessed from the same machine serving it (Tailscale limitation) — use `localhost:9090` from the hub machine itself
-- Messages are stored in plaintext in Postgres (E2E encryption is a future mission)
+*Network map*
+- ✅ Network screen — OpenStreetMap + React Leaflet v4; hub pin (indigo square) + member pins (blue circles with golden-angle offsets); Nominatim geocoding with sessionStorage cache; click any pin → NodeDetailsModal with real data; 60-second member poll; dark/light CartoDB tile switching
+
+**Known limitations / remaining Mission 1 work:**
+- Toolkit submissions/approvals: localStorage only — not synced across clients (seed tool data works for all users regardless)
 - Hub registry/discovery (`citinet.xyz`) not yet wired to production domain
-- No real-time WebSocket — messages poll every 10 seconds
-- Feed/posts screen is UI-only (no backend yet)
+- No real-time WebSocket — messages poll every 10 seconds, feed polls every 30 seconds
+- Messages stored in plaintext in Postgres (E2E encryption is Mission 3)
+- Tailscale Funnel cannot be accessed from the machine serving it — use `localhost:9090` locally
+
+**Remaining to close Mission 1:**
+- Resolve hub registry domain for public discovery (`citinet.xyz` → Vercel + registry service)
+
+---
 
 ### Mission 2 — Network Access (Planned)
 
 - Production domain (`citinet.xyz`) wired to Vercel/auto-deploy
-- Hub registry and public discovery
-- External user access via Tailscale working end-to-end
+- Hub registry and public discovery — browse nearby hubs before joining
+- External user access via Tailscale working end-to-end (multi-device testing)
 - Hub Management: storage location management, drive migration UI
 - Smart re-join: "Resume session" when returning to a known hub
+- Toolkit, Atlas, Feed backed by hub API (multi-user sync)
+- Push notifications for messages (Web Push API)
 
 ### Mission 3 — Security & Federation (Planned)
 
-- End-to-end encryption for messages (client-side, server cannot read)
+- End-to-end encryption for messages (client-side; server stores ciphertext only)
 - File encryption at rest
 - ActivityPub / Matrix federation between hubs
 - WebSocket real-time messaging
 - Offline-capable hub-served PWA
+- Multi-hub identity — one account, multiple hubs
 
 ---
 
@@ -280,18 +317,30 @@ docker push ghcr.io/fergtech/citinet-api:latest
 
 | File | Purpose |
 |---|---|
-| `src/app/App.tsx` | Routing — subdomain detection, hub vs. welcome mode |
-| `src/app/context/HubContext.tsx` | Hub state management |
+| `src/app/App.tsx` | Routing — subdomain detection, hub vs. welcome mode, HubGuard |
+| `src/app/context/HubContext.tsx` | Hub state, currentUser, admin flag |
 | `src/app/services/hubService.ts` | All hub API calls, localStorage persistence |
 | `src/app/components/NodeCreationWizard.tsx` | Hub creation 6-step wizard |
-| `src/app/utils/scriptGenerator.ts` | Generates OS setup scripts |
-| `src/app/components/NodeDiscoveryScreen.tsx` | /join flow |
-| `src/app/components/MessagesScreen.tsx` | DMs, groups, file attachments |
+| `src/app/utils/scriptGenerator.ts` | Generates OS-specific setup scripts |
+| `src/app/components/NodeDiscoveryScreen.tsx` | /join flow — probe hub URL, auth |
+| `src/app/components/Dashboard.tsx` | Main hub dashboard, sidebar nav, admin detection |
+| `src/app/components/MessagesScreen.tsx` | DMs, group conversations, file attachments |
 | `src/app/components/FilesScreen.tsx` | File upload/download/management |
-| `src/app/components/HubManagementScreen.tsx` | Admin: hub info, members |
-| `src/app/components/AccountScreen.tsx` | User profile |
-| `api/server.js` | Hub API (Express + Postgres + MinIO) |
-| `docker-compose.yml` | Hub stack definition |
+| `src/app/components/NetworkScreen.tsx` | Neighbors list, member count modal, network map |
+| `src/app/components/NetworkMap.tsx` | OpenStreetMap + Leaflet map, geocoding, member pins |
+| `src/app/components/AtlasScreen.tsx` | Community neighborhood map, pin CRUD |
+| `src/app/services/atlasService.ts` | Atlas pin storage (localStorage per hub) |
+| `src/app/components/ToolkitScreen.tsx` | Discover screen — category sidebar, tool grid, admin controls |
+| `src/app/services/toolkitService.ts` | Tool/submission/category storage (localStorage) |
+| `src/app/components/AddToolModal.tsx` | 5-step tool submission wizard |
+| `src/app/components/ModerationQueueScreen.tsx` | Admin: approve/reject tool submissions |
+| `src/app/components/HubManagementScreen.tsx` | Admin: hub info, member list |
+| `src/app/components/AccountScreen.tsx` | User profile — edit display name, email, location |
+| `src/app/types/hub.ts` | Hub, HubUser, HubMember, HubPost types |
+| `src/app/types/toolkit.ts` | Tool, ToolSubmission, ToolCategory types |
+| `src/app/types/atlas.ts` | AtlasPin, AtlasPinCategory, ATLAS_CATEGORIES |
+| `api/server.js` | Hub API (Express + Postgres + MinIO + Redis) |
+| `docker-compose.yml` | Hub stack definition (dev — local volume mount) |
 | `.env.example` | Hub configuration reference |
 
 ---

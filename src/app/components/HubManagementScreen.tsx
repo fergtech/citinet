@@ -20,11 +20,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionValue, setDescriptionValue] = useState('');
   const [descriptionSaving, setDescriptionSaving] = useState(false);
+  const [descriptionError, setDescriptionError] = useState('');
 
   // Location editing
   const [editingLocation, setEditingLocation] = useState(false);
   const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const [locationSaving, setLocationSaving] = useState(false);
+  const [locationError, setLocationError] = useState('');
 
   // isAdmin: explicit flag (new sessions) OR effectively-local hub (Mission 1).
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
@@ -33,18 +35,30 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   const saveDescription = async () => {
     setDescriptionSaving(true);
-    updateDescription(descriptionValue.trim());
-    setEditingDescription(false);
-    setDescriptionSaving(false);
+    setDescriptionError('');
+    try {
+      await updateDescription(descriptionValue.trim());
+      setEditingDescription(false);
+    } catch {
+      setDescriptionError('Failed to save — changes saved locally only.');
+    } finally {
+      setDescriptionSaving(false);
+    }
   };
 
   const saveLocation = async () => {
     if (!locationResult) return;
     setLocationSaving(true);
-    updateLocation(locationResult.displayName, locationResult.lat, locationResult.lng);
-    setEditingLocation(false);
-    setLocationResult(null);
-    setLocationSaving(false);
+    setLocationError('');
+    try {
+      await updateLocation(locationResult.displayName, locationResult.lat, locationResult.lng);
+      setEditingLocation(false);
+      setLocationResult(null);
+    } catch {
+      setLocationError('Failed to save — changes saved locally only.');
+    } finally {
+      setLocationSaving(false);
+    }
   };
 
   const loadMembers = async () => {
@@ -180,7 +194,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         Save
                       </button>
                       <button
-                        onClick={() => { setEditingDescription(false); setDescriptionValue(''); }}
+                        onClick={() => { setEditingDescription(false); setDescriptionValue(''); setDescriptionError(''); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
                           hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
@@ -188,6 +202,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         Cancel
                       </button>
                     </div>
+                    {descriptionError && <p className="text-xs text-amber-600 dark:text-amber-400">{descriptionError}</p>}
                   </div>
                 )}
               </div>
@@ -233,7 +248,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         Save
                       </button>
                       <button
-                        onClick={() => { setEditingLocation(false); setLocationResult(null); }}
+                        onClick={() => { setEditingLocation(false); setLocationResult(null); setLocationError(''); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
                           hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
@@ -241,6 +256,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         Cancel
                       </button>
                     </div>
+                    {locationError && <p className="text-xs text-amber-600 dark:text-amber-400">{locationError}</p>}
                   </div>
                 )}
               </div>

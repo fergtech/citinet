@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { ArrowLeft, CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { ToolSubmission } from '../types/toolkit';
+import { useHub } from '../context/HubContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Textarea } from './ui/textarea';
@@ -89,18 +90,17 @@ function ReviewModal({
   );
 }
 
-function SubmissionReviewCard({ submission, onReview }: { 
+function SubmissionReviewCard({ submission, onReview }: {
   submission: ToolSubmission;
   onReview: () => void;
 }) {
+  const { currentUser } = useHub();
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
 
   const handleApprove = () => {
-    const userData = localStorage.getItem('citinet-user-data');
-    const user = userData ? JSON.parse(userData) : null;
-    const reviewerId = user?.displayName || 'moderator';
-    const reviewerName = user?.displayName || 'Moderator';
+    const reviewerId = currentUser?.username || 'moderator';
+    const reviewerName = currentUser?.displayName || currentUser?.username || 'Moderator';
 
     toolkitService.approveSubmission(submission.id, reviewerId, reviewerName);
     setShowApproveModal(false);
@@ -108,10 +108,8 @@ function SubmissionReviewCard({ submission, onReview }: {
   };
 
   const handleReject = (notes?: string) => {
-    const userData = localStorage.getItem('citinet-user-data');
-    const user = userData ? JSON.parse(userData) : null;
-    const reviewerId = user?.displayName || 'moderator';
-    const reviewerName = user?.displayName || 'Moderator';
+    const reviewerId = currentUser?.username || 'moderator';
+    const reviewerName = currentUser?.displayName || currentUser?.username || 'Moderator';
 
     toolkitService.rejectSubmission(submission.id, reviewerId, reviewerName, notes);
     setShowRejectModal(false);
@@ -232,6 +230,9 @@ function SubmissionReviewCard({ submission, onReview }: {
 
 export function ModerationQueueScreen({ onBack }: ModerationQueueScreenProps) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const { currentUser, currentHub } = useHub();
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
 
   // Get pending submissions
   const pendingSubmissions = useMemo(
@@ -241,20 +242,17 @@ export function ModerationQueueScreen({ onBack }: ModerationQueueScreenProps) {
 
   // Sort by date (oldest first for FIFO review)
   const sortedSubmissions = useMemo(
-    () => [...pendingSubmissions].sort((a, b) => 
+    () => [...pendingSubmissions].sort((a, b) =>
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     ),
     [pendingSubmissions]
   );
 
   const handleReview = () => {
-    // Trigger refresh
     setRefreshKey((prev) => prev + 1);
   };
 
-  // Simple admin check (TODO: replace with real role system)
-  // For now, allow access in development mode
-  const isAdmin = true; // TODO: Implement role-based access control
+  const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
 
   if (!isAdmin) {
     return (

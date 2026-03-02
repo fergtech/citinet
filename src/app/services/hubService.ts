@@ -1145,26 +1145,48 @@ class HubService {
   }
 
   /**
-   * Update the hub's location and geocoded coordinates in localStorage.
-   * Does not call the hub API (the hub's .env has the baked-in location).
-   * Used from the management screen to correct or refine the hub's map position.
+   * Update hub identity fields on the server (PATCH /api/hub-info) and in localStorage.
+   * Requires admin token. Any subset of name, location, description may be provided.
+   * @returns the updated Hub object (localStorage-updated regardless of API result)
    */
-  updateHubDescription(slug: string, description: string): Hub {
+  async updateHubInfo(
+    slug: string,
+    fields: { name?: string; location?: string; lat?: number; lng?: number; description?: string },
+  ): Promise<Hub> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(slug);
     const connections = this.getAllHubConnections();
     const connection = connections[slug];
     if (!connection) throw new Error(`No hub found with slug: ${slug}`);
-    connection.hub.description = description;
-    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
-    return connection.hub;
-  }
 
-  updateHubLocation(slug: string, location: string, lat: number, lng: number): Hub {
-    const connections = this.getAllHubConnections();
-    const connection = connections[slug];
-    if (!connection) throw new Error(`No hub found with slug: ${slug}`);
-    connection.hub.location = location;
-    connection.hub.lat = lat;
-    connection.hub.lng = lng;
+    // Persist to server (best-effort — don't block on failure)
+    if (tunnelUrl) {
+      const body: Record<string, string> = {};
+      if (fields.name        !== undefined) body.name        = fields.name;
+      if (fields.location    !== undefined) body.location    = fields.location;
+      if (fields.description !== undefined) body.description = fields.description;
+      if (Object.keys(body).length > 0) {
+        try {
+          const res = await fetch(`${tunnelUrl}/api/hub-info`, {
+            method: 'PATCH',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            console.warn('hub-info update failed:', res.status, text);
+          }
+        } catch (err) {
+          console.warn('hub-info update network error:', err);
+        }
+      }
+    }
+
+    // Always update localStorage so the UI reflects the change immediately
+    if (fields.name        !== undefined) connection.hub.name        = fields.name;
+    if (fields.location    !== undefined) connection.hub.location    = fields.location;
+    if (fields.lat         !== undefined) connection.hub.lat         = fields.lat;
+    if (fields.lng         !== undefined) connection.hub.lng         = fields.lng;
+    if (fields.description !== undefined) connection.hub.description = fields.description;
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     return connection.hub;
   }

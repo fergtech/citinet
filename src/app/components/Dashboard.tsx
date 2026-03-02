@@ -1,7 +1,7 @@
 import {
   Users, MessageCircle, Settings, Radio, Store,
   Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
-  RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield,
+  RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
 } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
@@ -269,11 +269,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             </button>
 
             <button
-              onClick={() => onNavigate('community')}
+              onClick={() => onNavigate('atlas')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
-              <Users className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Community</span>
+              <Map className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Atlas</span>
             </button>
 
             <button
@@ -562,10 +562,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Upcoming Events</h2>
               <button
-                onClick={() => onNavigate('community')}
+                onClick={() => onNavigate('atlas')}
                 className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
               >
-                Calendar
+                Atlas →
               </button>
             </div>
 
@@ -645,9 +645,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               onClick={() => onNavigate('feed')}
             />
             <NavigationCard
-              icon={<Users className="w-5 h-5" />}
-              label="Community"
-              onClick={() => onNavigate('community')}
+              icon={<Map className="w-5 h-5" />}
+              label="Atlas"
+              onClick={() => onNavigate('atlas')}
             />
             <NavigationCard
               icon={<Store className="w-5 h-5" />}

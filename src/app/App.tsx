@@ -17,7 +17,7 @@ import { FilesScreen } from './components/FilesScreen';
 import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
-import { HubSetupScreen } from './components/HubSetupScreen';
+import { AtlasScreen } from './components/AtlasScreen';
 import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { HubProvider, useHub } from './context/HubContext';
@@ -97,11 +97,6 @@ function CreateHubRoute() {
   };
 
   return <NodeCreationWizard onComplete={handleComplete} onBack={() => navigate('/')} />;
-}
-
-function HubSetupRoute() {
-  const navigate = useNavigate();
-  return <HubSetupScreen onBack={() => navigate('/')} />;
 }
 
 // ──────────────────────────────────────────────
@@ -247,6 +242,11 @@ function HubMySubmissionsRoute() {
   return <MySubmissionsScreen onBack={() => navigate(hubPath('/toolkit'))} />;
 }
 
+function HubAtlasRoute() {
+  const navigate = useNavigate();
+  return <AtlasScreen onBack={() => navigate(hubPath('/'))} />;
+}
+
 function HubModerationQueueRoute() {
   const navigate = useNavigate();
   return <ModerationQueueScreen onBack={() => navigate(hubPath('/toolkit'))} />;
@@ -305,7 +305,6 @@ function OnboardingModeRoutes() {
       <Route path="/" element={<WelcomeRoute />} />
       <Route path="/join" element={<JoinHubRoute />} />
       <Route path="/create" element={<CreateHubRoute />} />
-      <Route path="/hub-setup" element={<HubSetupRoute />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -326,7 +325,7 @@ function HubModeRoutes() {
       <Route path="/toolkit" element={<HubGuard><HubToolkitRoute /></HubGuard>} />
       <Route path="/toolkit/my-submissions" element={<HubGuard><HubMySubmissionsRoute /></HubGuard>} />
       <Route path="/toolkit/moderation" element={<HubGuard><HubModerationQueueRoute /></HubGuard>} />
-      <Route path="/community" element={<HubGuard><HubPlaceholderRoute screen="community" /></HubGuard>} />
+      <Route path="/atlas" element={<HubGuard><HubAtlasRoute /></HubGuard>} />
       <Route path="/settings" element={<HubGuard><HubPlaceholderRoute screen="settings" /></HubGuard>} />
       <Route path="/post" element={<HubGuard><HubPlaceholderRoute screen="post" /></HubGuard>} />
       <Route path="/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />

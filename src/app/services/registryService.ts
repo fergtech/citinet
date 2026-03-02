@@ -40,9 +40,10 @@ interface RegistryResponse {
   updated_at: string;
 }
 
-// Registry URL - set to null for Mission 1 (local-only development)
-// Future: Make this configurable via environment variable when deploying
-const REGISTRY_URL = null;
+// Registry URL — set VITE_REGISTRY_URL in your environment to enable.
+// Vercel: add it in Project Settings → Environment Variables
+// Local dev: add VITE_REGISTRY_URL=... to a .env.local file (gitignored)
+const REGISTRY_URL: string | null = import.meta.env.VITE_REGISTRY_URL ?? null;
 const FETCH_TIMEOUT_MS = 10_000;
 
 class RegistryService {
@@ -118,6 +119,7 @@ class RegistryService {
     apiToken: string,
     hub: Omit<RegistryHub, 'registered_at' | 'last_seen'>,
   ): Promise<{ ok: boolean; error?: string }> {
+    if (!REGISTRY_URL) return { ok: false, error: 'Registry not configured' };
     try {
       const res = await fetch(`${REGISTRY_URL}/hubs`, {
         method: 'POST',

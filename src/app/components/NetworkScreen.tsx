@@ -17,7 +17,7 @@ interface NetworkScreenProps {
 
 export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const [memberListOpen, setMemberListOpen] = useState(false);
-  const [memberListFilter, setMemberListFilter] = useState<'all' | 'online'>('all');
+  const [memberListFilter, setMemberListFilter] = useState<'all' | 'admins'>('all');
   const [signalDiagnosticsOpen, setSignalDiagnosticsOpen] = useState(false);
   const [inviteNeighborsOpen, setInviteNeighborsOpen] = useState(false);
   const [hostNodeOpen, setHostNodeOpen] = useState(false);
@@ -255,6 +255,7 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
       <MemberListModal
         isOpen={memberListOpen}
         onClose={() => setMemberListOpen(false)}
+        members={members}
         filter={memberListFilter}
       />
       <SignalDiagnosticsModal

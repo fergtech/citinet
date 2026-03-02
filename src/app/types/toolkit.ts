@@ -1,14 +1,7 @@
 // Toolkit Types
 
-export type ToolCategory = 
-  | 'Web Browsing'
-  | 'Search'
-  | 'Messaging'
-  | 'Storage'
-  | 'Productivity'
-  | 'Creative Tools'
-  | 'Developer Tools'
-  | 'Open Hardware';
+/** Category name — built-in or admin-created custom category */
+export type ToolCategory = string;
 
 export type ToolTag = 
   | 'open-source'

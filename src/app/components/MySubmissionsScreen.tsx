@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowLeft, Clock, CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { ToolSubmission } from '../types/toolkit';
+import { useHub } from '../context/HubContext';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 
@@ -126,10 +127,8 @@ function SubmissionCard({ submission }: { submission: ToolSubmission }) {
 }
 
 export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
-  // Get current user
-  const userData = localStorage.getItem('citinet-user-data');
-  const user = userData ? JSON.parse(userData) : null;
-  const userId = user?.displayName || 'anonymous';
+  const { currentUser } = useHub();
+  const userId = currentUser?.username || 'anonymous';
 
   // Get user's submissions
   const submissions = useMemo(
