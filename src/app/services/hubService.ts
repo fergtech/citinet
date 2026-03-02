@@ -488,11 +488,10 @@ class HubService {
   // URL Helpers
   // ──────────────────────────────────────────────
 
-  /** Get the web app URL for a hub (localhost-only for Mission 1) */
+  /** Get the web app URL for a hub, relative to the current origin. */
   getHubPortalUrl(hubSlug: string): string {
-    // Mission 1: localhost-only, no hardcoded domains
-    const port = typeof window !== 'undefined' ? window.location.port : '3000';
-    return `http://localhost:${port}?hub=${hubSlug}`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    return `${origin}?hub=${hubSlug}`;
   }
 
   /** Get the invite URL for a hub */

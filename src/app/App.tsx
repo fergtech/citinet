@@ -119,7 +119,7 @@ function HubOnboardRoute() {
 
   useEffect(() => {
     if (hubSlug && hubService.isOnboarded(hubSlug)) {
-      navigate('/', { replace: true });
+      navigate(hubPath('/'), { replace: true });
     }
   }, [hubSlug, navigate]);
 
@@ -131,7 +131,7 @@ function HubOnboardRoute() {
     const finalData: HubUser = isCreator ? { ...data, isAdmin: true } : data;
     await hubService.completeOnboarding(hubSlug, finalData);
     onOnboardingComplete(hubSlug, finalData);
-    navigate('/');
+    navigate(hubPath('/'));
   };
 
   return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} />;
