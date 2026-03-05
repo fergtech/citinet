@@ -60,7 +60,7 @@ class RegistryService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-      const res = await fetch(`${REGISTRY_URL}/hubs`, {
+      const res = await fetch(REGISTRY_URL, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
@@ -88,24 +88,9 @@ class RegistryService {
    * Used by hub-mode pages to resolve the subdomain → tunnel URL.
    * Returns null if not found or registry unreachable.
    */
-  async getHubBySlug(slug: string): Promise<RegistryHub | null> {    if (!REGISTRY_URL) {
-      console.warn('[registry] disabled for local development');
-      return null;
-    }    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-      const res = await fetch(
-        `${REGISTRY_URL}/hubs/by-slug/${encodeURIComponent(slug)}`,
-        { signal: controller.signal, headers: { Accept: 'application/json' } },
-      );
-      clearTimeout(timer);
-
-      if (!res.ok) return null;
-      return await res.json() as RegistryHub;
-    } catch {
-      return null;
-    }
+  async getHubBySlug(slug: string): Promise<RegistryHub | null> {
+    const hubs = await this.getHubs();
+    return hubs.find(h => h.slug === slug) ?? null;
   }
 
   /**
