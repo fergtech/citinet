@@ -836,7 +836,8 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
 
 // ── Public file serving (for post images) ────────────────
 
-// Serves files marked is_public=true without auth — needed so <img> tags work in the feed
+// Serves files marked is_public=true without auth — needed so <img> tags work in the feed.
+// Supports HTTP Range requests so browsers can stream video without downloading the whole file.
 app.get('/api/public/files/:filename', async (req, res) => {
   const fileName = decodeURIComponent(req.params.filename);
   try {
@@ -847,11 +848,40 @@ app.get('/api/public/files/:filename', async (req, res) => {
     if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
     const file = result.rows[0];
     if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
-    const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
-    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+
+    const mimeType = file.mime_type || 'application/octet-stream';
+    const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
+
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
-    if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
-    stream.pipe(res);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    const rangeHeader = req.headers['range'];
+    if (rangeHeader && totalSize) {
+      const [unit, rangeStr] = rangeHeader.split('=');
+      if (unit !== 'bytes' || !rangeStr) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const [startStr, endStr] = rangeStr.split('-');
+      const start = parseInt(startStr, 10);
+      const end = endStr ? parseInt(endStr, 10) : totalSize - 1;
+      if (isNaN(start) || isNaN(end) || start > end || end >= totalSize) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader('Content-Length', chunkSize);
+      const stream = await minioClient.getPartialObject(STORAGE_BUCKET, file.file_key, start, chunkSize);
+      stream.pipe(res);
+    } else {
+      if (totalSize) res.setHeader('Content-Length', totalSize);
+      const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+      stream.pipe(res);
+    }
   } catch (err) {
     console.error('Public file error:', err);
     res.status(500).json({ error: 'Failed to load file' });
