@@ -117,13 +117,28 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
               className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-700 transition-all cursor-pointer text-left"
             >
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                  <Radio className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                  status === 'connected'    ? 'bg-green-100 dark:bg-green-900/30' :
+                  status === 'connecting'   ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                  status === 'unreachable'  ? 'bg-orange-100 dark:bg-orange-900/30' :
+                                             'bg-slate-100 dark:bg-zinc-800'
+                }`}>
+                  <Radio className={`w-4 h-4 ${
+                    status === 'connected'   ? 'text-green-600 dark:text-green-400' :
+                    status === 'connecting'  ? 'text-yellow-600 dark:text-yellow-400' :
+                    status === 'unreachable' ? 'text-orange-500 dark:text-orange-400' :
+                                              'text-slate-400'
+                  }`} />
                 </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
               </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Strong</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Signal Strength</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
+                {status === 'connected'   ? 'Connected' :
+                 status === 'connecting'  ? 'Connecting' :
+                 status === 'unreachable' ? 'Unreachable' :
+                                           'Local Only'}
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400">Hub Connection</div>
             </button>
           </div>
         </div>

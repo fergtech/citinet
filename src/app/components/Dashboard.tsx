@@ -1,9 +1,9 @@
 import {
   Users, MessageCircle, Settings, Radio, Store,
-  Calendar, AlertCircle, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
+  Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
 } from 'lucide-react';
-import { ReactNode, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
@@ -16,26 +16,6 @@ interface DashboardProps {
   userName?: string;
   onNavigate: (screen: string) => void;
   onLogout?: () => void;
-}
-
-interface NavigationCardProps {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}
-
-function NavigationCard({ icon, label, onClick }: NavigationCardProps) {
-  return (
-    <button
-      onClick={onClick}
-      className="bg-white dark:bg-zinc-800 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:scale-[1.02] p-4 flex items-center gap-3 border border-slate-200 dark:border-zinc-700"
-    >
-      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-        <div className="text-white">{icon}</div>
-      </div>
-      <span className="text-sm font-bold text-slate-900 dark:text-white">{label}</span>
-    </button>
-  );
 }
 
 export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: DashboardProps) {
@@ -61,6 +41,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       // ignore — fall through silently
     }
   }
+
+  // Mobile user menu
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // Tunnel reconnect state
   const [showTunnelInput, setShowTunnelInput] = useState(false);
@@ -194,7 +177,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       </div>
 
       {/* Desktop Sidebar - Hidden on mobile */}
-      <aside className="hidden md:flex md:flex-col md:w-72 lg:w-80 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 sticky top-0 h-screen overflow-y-auto shrink-0 relative z-10">
+      <aside className="hidden md:flex md:flex-col md:w-72 lg:w-80 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 sticky top-0 h-screen overflow-y-auto shrink-0 z-10">
         {/* User Identity */}
         <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center gap-3 mb-2">
@@ -417,22 +400,63 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   {nodeName}
                 </p>
               </div>
-              <button
-                onClick={() => onNavigate('settings')}
-                className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                aria-label="Open settings"
-              >
-                <Settings className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-              </button>
-              {onLogout && (
+              {/* Avatar button — opens user menu */}
+              <div className="relative">
                 <button
-                  onClick={onLogout}
-                  className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center justify-center transition-colors"
-                  aria-label="Leave hub"
+                  onClick={() => setShowUserMenu(v => !v)}
+                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shadow-sm active:scale-95 transition-transform"
+                  aria-label="Open user menu"
                 >
-                  <LogOut className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                  {displayName.charAt(0).toUpperCase()}
                 </button>
-              )}
+                {showUserMenu && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowUserMenu(false)}
+                    />
+                    {/* Dropdown */}
+                    <div className="absolute right-0 top-12 z-50 w-48 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                      <button
+                        onClick={() => { setShowUserMenu(false); onNavigate('account'); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
+                      >
+                        <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                        <span className="text-sm font-medium text-slate-900 dark:text-white">My Account</span>
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); onNavigate('settings'); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
+                      >
+                        <Settings className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                        <span className="text-sm font-medium text-slate-900 dark:text-white">Settings</span>
+                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => { setShowUserMenu(false); onNavigate('hub-management'); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
+                        >
+                          <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span className="text-sm font-medium text-slate-900 dark:text-white">Hub Admin</span>
+                        </button>
+                      )}
+                      {onLogout && (
+                        <>
+                          <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+                          <button
+                            onClick={() => { setShowUserMenu(false); onLogout(); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 transition-colors text-left"
+                          >
+                            <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                            <span className="text-sm font-medium text-red-600 dark:text-red-400">Leave Hub</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Mobile: connection status + reconnect */}
@@ -660,77 +684,44 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div>
         </div>
 
-        {/* Mobile Navigation Cards - Only shown on mobile */}
-        <div className="md:hidden pt-8 border-t border-slate-200 dark:border-zinc-800">
-          <div className="mb-4">
-            <h2 className="text-base font-bold text-slate-700 dark:text-slate-400 mb-1">Navigate</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-500">Access network tools and features</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <NavigationCard
-              icon={<MessageCircle className="w-5 h-5" />}
-              label="Discussions"
-              onClick={() => onNavigate('feed')}
-            />
-            <NavigationCard
-              icon={<Map className="w-5 h-5" />}
-              label="Atlas"
-              onClick={() => onNavigate('atlas')}
-            />
-            <NavigationCard
-              icon={<Store className="w-5 h-5" />}
-              label="Local Exchange"
-              onClick={() => onNavigate('marketplace')}
-            />
-            <NavigationCard
-              icon={<Wrench className="w-5 h-5" />}
-              label="Discover"
-              onClick={() => onNavigate('toolkit')}
-            />
-            <NavigationCard
-              icon={<Radio className="w-5 h-5" />}
-              label="Network"
-              onClick={() => onNavigate('network')}
-            />
-            <NavigationCard
-              icon={<MessageCircle className="w-5 h-5" />}
-              label="Messages"
-              onClick={() => onNavigate('messages')}
-            />
-          </div>
-        </div>
-
-        {/* Civic Action Bar - Mobile Only */}
-        <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-20">
-          <div className="bg-slate-900/95 dark:bg-zinc-800/95 backdrop-blur-lg rounded-2xl shadow-2xl flex items-center justify-around p-4 border border-slate-700/50">
-            <button
-              onClick={() => onNavigate('post')}
-              className="flex flex-col items-center gap-1 text-white hover:text-purple-400 transition-colors"
-            >
-              <MessageCircle className="w-5 h-5" />
-              <span className="text-xs font-medium">Discuss</span>
-            </button>
-            <div className="h-8 w-px bg-slate-700" />
-            <button
-              onClick={() => onNavigate('chat')}
-              className="flex flex-col items-center gap-1 text-white hover:text-purple-400 transition-colors"
-            >
-              <AlertCircle className="w-5 h-5" />
-              <span className="text-xs font-medium">Report</span>
-            </button>
-            <div className="h-8 w-px bg-slate-700" />
-            <button
-              onClick={() => onNavigate('signal')}
-              className="flex flex-col items-center gap-1 text-white hover:text-red-400 transition-colors"
-            >
-              <Radio className="w-5 h-5" />
-              <span className="text-xs font-medium">Signal</span>
-            </button>
-          </div>
-        </div>
+        {/* Bottom padding so last content clears the tab bar */}
+        <div className="md:hidden h-20" />
         </div>
       </div>
+
+      {/* Mobile Bottom Tab Bar — horizontally scrollable */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-t border-slate-200 dark:border-zinc-800">
+        {/* Fade hint on right edge */}
+        <div className="relative">
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white/95 dark:from-zinc-900/95 to-transparent z-10" />
+          <div
+            className="flex items-stretch h-16 overflow-x-auto"
+            style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+          >
+            {[
+              { icon: <MessageCircle className="w-5 h-5" />, label: 'Discuss',   screen: 'feed' },
+              { icon: <Map className="w-5 h-5" />,            label: 'Atlas',     screen: 'atlas' },
+              { icon: <Store className="w-5 h-5" />,          label: 'Exchange',  screen: 'marketplace' },
+              { icon: <Users className="w-5 h-5" />,          label: 'Neighbors', screen: 'neighbors' },
+              { icon: <FolderOpen className="w-5 h-5" />,     label: 'Files',     screen: 'files' },
+              { icon: <Wrench className="w-5 h-5" />,         label: 'Discover',  screen: 'toolkit' },
+              { icon: <Radio className="w-5 h-5" />,          label: 'Network',   screen: 'network' },
+              { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',  screen: 'messages' },
+            ].map(item => (
+              <button
+                key={item.screen}
+                onClick={() => onNavigate(item.screen)}
+                className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 active:scale-95 transition-all"
+              >
+                {item.icon}
+                <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              </button>
+            ))}
+            {/* Extra right padding so last tab isn't obscured by the fade */}
+            <div className="flex-shrink-0 w-4" />
+          </div>
+        </div>
+      </nav>
 
       {/* Featured post detail modal */}
       {featuredPost && (
