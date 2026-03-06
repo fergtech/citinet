@@ -188,6 +188,7 @@ class HubService {
       agreedToManifesto: true,
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
+      isAdmin: result.isAdmin === true,
     };
 
     // Save user data for this hub
@@ -231,10 +232,73 @@ class HubService {
       agreedToManifesto: true,
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
+      isAdmin: result.isAdmin === true,
     };
 
     await this.completeOnboarding(hubSlug, userData);
     return userData;
+  }
+
+  /** Toggle admin status for a hub member (admin only). */
+  async toggleMemberAdmin(hubSlug: string, memberId: string, isAdmin: boolean): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/members/${encodeURIComponent(memberId)}/admin`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_admin: isAdmin }),
+    });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+  }
+
+  /** Remove a member from the hub (admin only). */
+  async removeMember(hubSlug: string, memberId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!res.ok && res.status !== 204) await this.parseErrorResponse(res, hubSlug);
+  }
+
+  /** Delete the current user's own account (requires password confirmation). */
+  async deleteAccount(hubSlug: string, password: string): Promise<void> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection?.hub.tunnelUrl) throw new Error('Hub not found');
+    const token = connection.user?.authToken;
+    if (!token) throw new Error('Not authenticated');
+    const res = await fetch(`${connection.hub.tunnelUrl}/api/auth/account`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok && res.status !== 204) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Failed (${res.status})`);
+    }
+    // Clean up local state
+    this.leaveHub(hubSlug);
+  }
+
+  /** Change the current user's password. */
+  async changePassword(
+    hubSlug: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection?.hub.tunnelUrl) throw new Error('Hub not found');
+    const token = connection.user?.authToken;
+    if (!token) throw new Error('Not authenticated');
+
+    const res = await fetch(`${connection.hub.tunnelUrl}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Failed (${res.status})`);
+    }
   }
 
   // ──────────────────────────────────────────────

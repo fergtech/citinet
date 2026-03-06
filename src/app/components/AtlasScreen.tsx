@@ -115,6 +115,17 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   useEffect(() => { loadPins(); }, [loadPins]);
 
+  // Deep-link: auto-select a pin once pins load
+  useEffect(() => {
+    if (pins.length === 0) return;
+    const deeplink = sessionStorage.getItem('citinet-deeplink-pin');
+    if (!deeplink) return;
+    sessionStorage.removeItem('citinet-deeplink-pin');
+    const target = pins.find(p => p.id === deeplink);
+    if (target) handlePinSelect(target);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins]);
+
   // Dark mode observer
   useEffect(() => {
     const observer = new MutationObserver(() =>

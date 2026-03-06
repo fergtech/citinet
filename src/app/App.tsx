@@ -173,7 +173,12 @@ function HubFeedRoute() {
 
 function HubNeighborsRoute() {
   const navigate = useNavigate();
-  return <NeighborsScreen onBack={() => navigate(hubPath('/'))} />;
+  return (
+    <NeighborsScreen
+      onBack={() => navigate(hubPath('/'))}
+      onNavigate={screen => navigate(hubPath(`/${screen}`))}
+    />
+  );
 }
 
 function HubFilesRoute() {

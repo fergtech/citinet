@@ -48,12 +48,14 @@ interface ComposeModalProps {
   hubSlug: string;
   onClose: () => void;
   onCreated: (post: HubPost) => void;
+  initialTitle?: string;
+  initialBody?: string;
 }
 
-function ComposeModal({ hubSlug, onClose, onCreated }: ComposeModalProps) {
+function ComposeModal({ hubSlug, onClose, onCreated, initialTitle = '', initialBody = '' }: ComposeModalProps) {
   const [category, setCategory] = useState('DISCUSSION');
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -248,6 +250,22 @@ export function Feed({ onBack }: FeedProps) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
+  const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
+
+  // Deep-link: open compose with pre-filled welcome message
+  useEffect(() => {
+    const raw = sessionStorage.getItem('citinet-deeplink-welcome');
+    if (!raw) return;
+    sessionStorage.removeItem('citinet-deeplink-welcome');
+    try {
+      const { username } = JSON.parse(raw) as { username: string };
+      setComposeInitial({
+        title: `Welcome to the community, @${username}!`,
+        body: `Hey @${username}, glad you're here! Welcome to the neighborhood.`,
+      });
+      setComposing(true);
+    } catch { /* ignore */ }
+  }, []);
 
   const load = useCallback(async (silent = false) => {
     if (!hubSlug) return;
@@ -425,8 +443,10 @@ export function Feed({ onBack }: FeedProps) {
       {composing && (
         <ComposeModal
           hubSlug={hubSlug}
-          onClose={() => setComposing(false)}
+          onClose={() => { setComposing(false); setComposeInitial(null); }}
           onCreated={handleCreated}
+          initialTitle={composeInitial?.title}
+          initialBody={composeInitial?.body}
         />
       )}
     </div>

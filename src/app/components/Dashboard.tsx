@@ -3,12 +3,13 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { featuredService } from '../services/featuredService';
 import { hubService } from '../services/hubService';
+import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost } from '../types/hub';
 
@@ -32,6 +33,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     if (!hubSlug) return;
     featuredService.getFeatured(hubSlug).then(setFeaturedItems);
   }, [hubSlug]);
+
+  const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
 
   async function handleFeaturedPostClick(postId: string) {
     try {
@@ -102,33 +105,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     onlineNow: currentHub?.meta?.onlineNow ?? 0,
     signalStrength: currentHub?.connectionStatus === 'connected' ? 'Strong' : currentHub?.connectionStatus === 'connecting' ? 'Weak' : 'Offline'
   };
-
-  const recentDiscussions = [
-    {
-      id: 1,
-      type: 'Discussion',
-      title: 'Proposed bike lane on Main Street',
-      author: 'Sarah K.',
-      timestamp: '2 hours ago',
-      replies: 8
-    },
-    {
-      id: 2,
-      type: 'Announcement',
-      title: 'Community meeting this Thursday at 7 PM',
-      author: 'Highland Park Civic Association',
-      timestamp: '5 hours ago',
-      replies: 3
-    },
-    {
-      id: 3,
-      type: 'Request',
-      title: 'Looking for volunteers for park cleanup',
-      author: 'Maria G.',
-      timestamp: '1 day ago',
-      replies: 12
-    }
-  ];
 
   const upcomingEvents = [
     {
@@ -569,44 +545,67 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               onPostClick={handleFeaturedPostClick}
             />
           </div>
-          {/* Recent Local Activity */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
-            <button
-              onClick={() => onNavigate('feed')}
-              className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
-            >
-              View All
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {recentDiscussions.map(discussion => (
-              <div
-                key={discussion.id}
-                className="bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-slate-300 dark:hover:border-zinc-700 transition-all cursor-pointer"
+          {/* Recent Activity — live feed */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
+              <button
+                onClick={refreshActivity}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                aria-label="Refresh activity"
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="inline-block px-2.5 py-1 rounded-md text-xs font-medium uppercase tracking-wide bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 ring-1 ring-purple-200 dark:ring-purple-500/20">
-                        {discussion.type}
-                      </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">{discussion.timestamp}</span>
-                    </div>
-                    <h3 className="font-bold text-slate-900 dark:text-white mb-1">{discussion.title}</h3>
-                    <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
-                      <span>{discussion.author}</span>
-                      <span>•</span>
-                      <span>{discussion.replies} replies</span>
+                <RefreshCw className={`w-4 h-4 text-slate-400 dark:text-slate-500 ${activityLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {activityLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                    <div className="flex">
+                      <div className="w-1 bg-slate-200 dark:bg-zinc-700 animate-pulse shrink-0" />
+                      <div className="flex-1 p-4 space-y-2">
+                        <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
+                        <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
+                        <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/4" />
+                      </div>
                     </div>
                   </div>
-                </div>
+                ))}
               </div>
-            ))}
+            ) : activityItems.length === 0 ? (
+              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+                <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {activityItems.map(item => (
+                  <ActivityCard
+                    key={item.id}
+                    item={item}
+                    onClick={() => {
+                      const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                      if (postTypes.includes(item.type) && item.itemId) {
+                        handleFeaturedPostClick(item.itemId);
+                      } else if (item.type === 'file_shared' && item.itemId) {
+                        sessionStorage.setItem('citinet-deeplink-file', item.itemId);
+                        onNavigate('files');
+                      } else if (item.type === 'pin_added' && item.itemId) {
+                        sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
+                        onNavigate('atlas');
+                      } else if (item.type === 'neighbor_joined') {
+                        sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
+                        onNavigate('feed');
+                      } else {
+                        onNavigate(item.navigateTo);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
 
         {/* Two Column Grid for Desktop */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -738,6 +737,66 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         />
       )}
     </div>
+  );
+}
+
+// ── Activity Feed ────────────────────────────────────────
+
+const ACTIVITY_CONFIG: Record<ActivityType, {
+  Icon: React.ElementType;
+  iconBg: string;
+  border: string;
+  label: string;
+}> = {
+  discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    border: 'border-l-blue-500',    label: 'Discussion' },
+  announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   border: 'border-l-amber-500',   label: 'Announcement' },
+  project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', border: 'border-l-emerald-500', label: 'Project' },
+  request:         { Icon: Users,         iconBg: 'bg-rose-500',    border: 'border-l-rose-500',    label: 'Request' },
+  file_shared:     { Icon: FolderOpen,    iconBg: 'bg-violet-500',  border: 'border-l-violet-500',  label: 'File Shared' },
+  neighbor_joined: { Icon: Users,         iconBg: 'bg-teal-500',    border: 'border-l-teal-500',    label: 'New Neighbor' },
+  pin_added:       { Icon: MapPin,        iconBg: 'bg-orange-500',  border: 'border-l-orange-500',  label: 'Atlas Pin' },
+};
+
+function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
+  const cfg = ACTIVITY_CONFIG[item.type];
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
+    >
+      <div className="flex">
+        {/* Left accent border */}
+        <div className={`w-[3px] shrink-0 ${cfg.border.replace('border-l-', 'bg-')}`} />
+
+        <div className="flex-1 px-4 py-3 flex items-start gap-3 min-w-0">
+          {/* Icon */}
+          <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
+            <cfg.Icon className="w-4 h-4 text-white" />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{item.actor}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">·</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">{item.summary}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto shrink-0">{timeAgo(item.timestamp)}</span>
+            </div>
+            <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+          </div>
+        </div>
+
+        {/* CTA (Say Welcome etc.) */}
+        {item.cta && (
+          <div className="flex items-center pr-3 shrink-0">
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
+              {item.cta}
+            </span>
+          </div>
+        )}
+      </div>
+    </button>
   );
 }
 

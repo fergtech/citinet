@@ -17,6 +17,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
+  const [memberActionId, setMemberActionId] = useState<string | null>(null);
 
   // Description editing
   const [editingDescription, setEditingDescription] = useState(false);
@@ -91,6 +92,33 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       setMembersError(err instanceof Error ? err.message : 'Could not load members');
     } finally {
       setMembersLoading(false);
+    }
+  };
+
+  const handleToggleAdmin = async (member: HubMember) => {
+    if (!currentHub?.slug) return;
+    setMemberActionId(member.user_id);
+    try {
+      await hubService.toggleMemberAdmin(currentHub.slug, member.user_id, !member.is_admin);
+      setMembers(prev => prev.map(m => m.user_id === member.user_id ? { ...m, is_admin: !m.is_admin } : m));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update member');
+    } finally {
+      setMemberActionId(null);
+    }
+  };
+
+  const handleRemoveMember = async (member: HubMember) => {
+    if (!currentHub?.slug) return;
+    if (!confirm(`Remove @${member.username} from this hub?`)) return;
+    setMemberActionId(member.user_id);
+    try {
+      await hubService.removeMember(currentHub.slug, member.user_id);
+      setMembers(prev => prev.filter(m => m.user_id !== member.user_id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to remove member');
+    } finally {
+      setMemberActionId(null);
     }
   };
 
@@ -570,31 +598,62 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             )}
 
             <div className="divide-y divide-slate-100 dark:divide-zinc-800">
-              {members.map(member => (
-                <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                    {member.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                        {member.username}
-                      </span>
-                      {member.is_admin && (
-                        <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0">
-                          <Crown className="w-3 h-3" />
-                          Admin
+              {members.map(member => {
+                const isSelf = member.user_id === currentUser?.hubUserId;
+                const busy = memberActionId === member.user_id;
+                return (
+                  <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                      {member.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                          {member.username}
+                          {isSelf && <span className="text-slate-400 dark:text-slate-500 font-normal"> (you)</span>}
+                        </span>
+                        {member.is_admin && (
+                          <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0">
+                            <Crown className="w-3 h-3" />
+                            Admin
+                          </span>
+                        )}
+                      </div>
+                      {member.created_at && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                          Joined {new Date(member.created_at).toLocaleDateString()}
                         </span>
                       )}
                     </div>
-                    {member.created_at && (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">
-                        Joined {new Date(member.created_at).toLocaleDateString()}
-                      </span>
+                    {currentUser?.isAdmin && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => handleToggleAdmin(member)}
+                          disabled={busy}
+                          title={member.is_admin ? 'Remove admin' : 'Make admin'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            member.is_admin
+                              ? 'text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20'
+                              : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <Shield className="w-4 h-4" />
+                        </button>
+                        {!isSelf && (
+                          <button
+                            onClick={() => handleRemoveMember(member)}
+                            disabled={busy}
+                            title="Remove member"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

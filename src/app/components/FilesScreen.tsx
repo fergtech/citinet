@@ -117,6 +117,17 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     fetchFiles();
   }, [fetchFiles]);
 
+  // Deep-link: auto-open a file once the file list loads
+  useEffect(() => {
+    if (allFiles.length === 0) return;
+    const deeplink = sessionStorage.getItem('citinet-deeplink-file');
+    if (!deeplink) return;
+    sessionStorage.removeItem('citinet-deeplink-file');
+    const target = allFiles.find(f => f.name === deeplink);
+    if (target) openPreview(target);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFiles]);
+
   // ── derived data ───────────────────────────
   const myDriveFiles = allFiles.filter(f => f.owner_id === myUserId);
   const sharedFiles = allFiles.filter(f => f.is_public);

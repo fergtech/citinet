@@ -1,5 +1,6 @@
-import { Network, Plus, MapPin } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Network, Plus, MapPin, X, Download, Share } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 interface WelcomeScreenProps {
   onJoinNetwork: () => void;
@@ -7,6 +8,8 @@ interface WelcomeScreenProps {
 }
 
 export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
+  const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
+
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden flex flex-col items-center justify-center p-6">
       {/* Background Vector Pattern */}
@@ -104,6 +107,53 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           Participating in citinet means joining shared civic digital space
         </p>
       </div>
+
+      {/* Install / Add to Home Screen banner */}
+      <AnimatePresence>
+        {showBanner && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', damping: 24, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-safe"
+          >
+            <div className="max-w-md mx-auto bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shrink-0 mt-0.5">
+                {isIOS ? <Share className="w-5 h-5 text-white" /> : <Download className="w-5 h-5 text-white" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm">Add citinet to your home screen</p>
+                {isIOS ? (
+                  <p className="text-white/60 text-xs mt-0.5 leading-relaxed">
+                    Tap the <strong className="text-white/80">Share</strong> button in your browser, then choose{' '}
+                    <strong className="text-white/80">Add to Home Screen</strong>.
+                  </p>
+                ) : (
+                  <p className="text-white/60 text-xs mt-0.5">
+                    Install for faster access — no App Store needed.
+                  </p>
+                )}
+                {!isIOS && (
+                  <button
+                    onClick={install}
+                    className="mt-2 px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-colors"
+                  >
+                    Install
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={dismiss}
+                className="text-white/40 hover:text-white/70 transition-colors shrink-0 mt-0.5"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

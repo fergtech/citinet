@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { hubService } from '../services/hubService';
+import { clearSubdomainCache } from '../utils/subdomain';
 import { registryService, type RegistryHub } from '../services/registryService';
 import type { Hub, HubInfoResponse, HubStatusResponse } from '../types/hub';
 
@@ -163,8 +164,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     setJoining(true);
     setAuthError('');
 
+    let hub: Awaited<ReturnType<typeof hubService.joinHub>> | null = null;
     try {
-      const hub = await hubService.joinHub(tunnelUrl, probeInfo, probeStatus || undefined);
+      hub = await hubService.joinHub(tunnelUrl, probeInfo, probeStatus || undefined);
 
       if (authMode === 'signup') {
         await hubService.registerUser(hub.slug, {
@@ -181,6 +183,11 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
       onNodeFound(hub.slug, hub.name, hub);
     } catch (err) {
+      // If auth failed after joinHub already saved a partial connection,
+      // clean it up so the user isn't stuck in an unauthenticated state
+      // that would redirect them to onboarding on the next visit.
+      if (hub) { hubService.leaveHub(hub.slug); clearSubdomainCache(); }
+
       const msg = err instanceof Error ? err.message : String(err);
       setAuthError(
         authMode === 'login'

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Search, Loader2, AlertCircle, RefreshCw,
-  Users, Shield, UserCircle, Calendar
+  Users, Shield, UserCircle, Calendar, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -10,6 +10,7 @@ import type { HubMember } from '../types/hub';
 
 interface NeighborsScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 function formatJoinDate(dateStr?: string): string {
@@ -45,7 +46,7 @@ function getAvatarColor(username: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function NeighborsScreen({ onBack }: NeighborsScreenProps) {
+export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug || '';
 
@@ -222,6 +223,22 @@ export function NeighborsScreen({ onBack }: NeighborsScreenProps) {
                           </div>
                         )}
                       </div>
+
+                      {/* Say Welcome */}
+                      {!isYou && onNavigate && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: member.username }));
+                            onNavigate('feed');
+                          }}
+                          title={`Say welcome to @${member.username}`}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 opacity-0 group-hover:opacity-100 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-all shrink-0"
+                        >
+                          <MessageSquarePlus className="w-3 h-3" />
+                          Welcome
+                        </button>
+                      )}
 
                       {/* Icon */}
                       <UserCircle className="w-5 h-5 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />

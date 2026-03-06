@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { ArrowLeft, Save, Check, MapPin, Users } from 'lucide-react';
+import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
+import { hubService } from '../services/hubService';
+import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 
 interface AccountScreenProps {
@@ -12,9 +14,20 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
-  // locationResult is set when user picks from the dropdown; null means no new selection
   const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwSaved, setPwSaved] = useState(false);
+  const [pwError, setPwError] = useState('');
+
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const handleSave = () => {
     // If user picked a new location from the picker, use that; otherwise keep existing
@@ -26,6 +39,39 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) { setPwError("New passwords don't match"); return; }
+    if (newPassword.length < 4) { setPwError('New password must be at least 4 characters'); return; }
+    setPwError('');
+    setPwSaving(true);
+    try {
+      await hubService.changePassword(currentHub!.slug, currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 2000);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : 'Failed to change password');
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!currentHub?.slug || !deletePassword) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await hubService.deleteAccount(currentHub.slug, deletePassword);
+      clearSubdomainCache();
+      window.location.href = window.location.origin + '/';
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete account');
+      setDeleting(false);
+    }
   };
 
   const role = currentUser?.role || 'participant';
@@ -124,6 +170,61 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
           </button>
         </div>
 
+        {/* Change Password */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Change Password</h3>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Current Password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+                placeholder="Your current password"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">New Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+                placeholder="At least 4 characters"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Confirm New Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow ${
+                  confirmPassword && confirmPassword !== newPassword
+                    ? 'border-red-400 dark:border-red-600'
+                    : 'border-slate-200 dark:border-zinc-700'
+                }`}
+                placeholder="Repeat new password"
+              />
+            </div>
+          </div>
+          {pwError && (
+            <p className="text-xs text-red-500 dark:text-red-400 mt-3">{pwError}</p>
+          )}
+          <button
+            onClick={handleChangePassword}
+            disabled={pwSaving || !currentPassword || !newPassword || !confirmPassword}
+            className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+          >
+            {pwSaved ? <Check className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+            {pwSaving ? 'Saving…' : pwSaved ? 'Password updated!' : 'Update Password'}
+          </button>
+        </div>
+
         {/* Interests */}
         {(currentUser?.tags?.length ?? 0) > 0 && (
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
@@ -161,6 +262,38 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
               </p>
             )}
           </div>
+        </div>
+        {/* Delete Account */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-red-200 dark:border-red-900/40 p-6">
+          <button
+            onClick={() => { setDeleteConfirm(v => !v); setDeleteError(''); setDeletePassword(''); }}
+            className="flex items-center gap-2 text-red-600 dark:text-red-400 text-sm font-semibold w-full text-left"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Account
+          </button>
+          {deleteConfirm && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                This permanently deletes your account and all your data from this hub. This cannot be undone.
+              </p>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                placeholder="Enter your password to confirm"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/10 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-red-500 focus:outline-none"
+              />
+              {deleteError && <p className="text-xs text-red-500">{deleteError}</p>}
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting || !deletePassword}
+                className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+              >
+                {deleting ? 'Deleting…' : 'Permanently Delete My Account'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

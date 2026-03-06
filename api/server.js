@@ -440,6 +440,32 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Change password
+app.post('/api/auth/change-password', authenticate, async (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'current_password and new_password are required' });
+  }
+  if (new_password.length < 4) {
+    return res.status(400).json({ error: 'New password must be at least 4 characters' });
+  }
+  try {
+    const result = await pool.query('SELECT password_hash FROM hub_users WHERE id = $1', [req.user.id]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const valid = await bcrypt.compare(current_password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const newHash = await bcrypt.hash(new_password, 10);
+    await pool.query('UPDATE hub_users SET password_hash = $1 WHERE id = $2', [newHash, req.user.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
 // ── Authenticated routes ──────────────────────────────────
 
 app.get('/api/members', authenticate, async (_req, res) => {
@@ -451,6 +477,93 @@ app.get('/api/members', authenticate, async (_req, res) => {
   } catch (err) {
     console.error('Members error:', err);
     res.status(500).json({ error: 'Failed to list members' });
+  }
+});
+
+// Toggle admin status for a member (admin only)
+app.patch('/api/members/:id/admin', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const targetId = req.params.id;
+  const { is_admin } = req.body;
+  if (typeof is_admin !== 'boolean') return res.status(400).json({ error: 'is_admin must be a boolean' });
+  // Prevent the last admin from demoting themselves
+  if (!is_admin && targetId === req.user.id) {
+    const { rows } = await pool.query("SELECT COUNT(*) AS c FROM hub_users WHERE is_admin = true");
+    if (parseInt(rows[0].c, 10) <= 1) {
+      return res.status(400).json({ error: 'Cannot remove the last admin' });
+    }
+  }
+  try {
+    const result = await pool.query(
+      'UPDATE hub_users SET is_admin = $1 WHERE id = $2 RETURNING id, username, is_admin',
+      [is_admin, targetId]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Member not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Toggle admin error:', err);
+    res.status(500).json({ error: 'Failed to update member' });
+  }
+});
+
+// Remove a member (admin only, cannot remove yourself)
+app.delete('/api/members/:id', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot remove yourself' });
+  try {
+    await pool.query('DELETE FROM hub_users WHERE id = $1', [req.params.id]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Remove member error:', err);
+    res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
+// Delete own account (requires password confirmation)
+app.delete('/api/auth/account', authenticate, async (req, res) => {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'password is required' });
+  try {
+    // Verify password first
+    const result = await pool.query('SELECT password_hash FROM hub_users WHERE id = $1', [req.user.id]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+    // 1. Delete files from MinIO storage before removing DB records
+    if (minioClient) {
+      const files = await pool.query('SELECT file_key FROM hub_files WHERE owner_id = $1', [req.user.id]);
+      for (const file of files.rows) {
+        await minioClient.removeObject(STORAGE_BUCKET, file.file_key).catch(() => {});
+      }
+    }
+
+    // 2. Delete content owned by the user
+    await pool.query('DELETE FROM hub_atlas_pins WHERE author_id = $1', [req.user.id]);
+    await pool.query('DELETE FROM hub_post_replies WHERE author_id = $1', [req.user.id]);
+
+    // Delete posts (and their associated media files via DB cascade if set up,
+    // but also clean up MinIO for post media files explicitly)
+    if (minioClient) {
+      const postFiles = await pool.query(
+        `SELECT f.file_key FROM hub_files f
+         JOIN hub_posts p ON p.media_file_id = f.id
+         WHERE p.author_id = $1`, [req.user.id]
+      );
+      for (const file of postFiles.rows) {
+        await minioClient.removeObject(STORAGE_BUCKET, file.file_key).catch(() => {});
+      }
+    }
+    await pool.query('DELETE FROM hub_posts WHERE author_id = $1', [req.user.id]);
+
+    // 3. Delete the user — CASCADE handles sessions, hub_files rows, conversation_members
+    await pool.query('DELETE FROM hub_users WHERE id = $1', [req.user.id]);
+
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Delete account error:', err);
+    res.status(500).json({ error: 'Failed to delete account' });
   }
 });
 
