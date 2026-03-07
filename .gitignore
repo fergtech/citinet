@@ -37,3 +37,6 @@ Thumbs.db
 
 # Local Netlify folder
 .netlify
+
+# Local AI context / brain files
+CLAUDE_CONTEXT.md

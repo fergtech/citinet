@@ -17,7 +17,7 @@ interface MessagesScreenProps {
 interface StagedFile {
   file: File;
   previewUrl?: string;        // object URL for local preview
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'audio' | 'file';
 }
 
 // ── helpers ──────────────────────────────────────────────
@@ -83,31 +83,36 @@ function convoDisplayName(c: HubConversation, myUserId?: string): string {
 const POLL_INTERVAL = 10_000;
 
 /** Classify a file by its MIME type */
-function classifyFile(file: File): 'image' | 'video' | 'file' {
+function classifyFile(file: File): 'image' | 'video' | 'audio' | 'file' {
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
+  if (file.type.startsWith('audio/')) return 'audio';
   return 'file';
 }
 
 /** Video extensions for fallback detection */
 const VIDEO_EXTS = new Set(['mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', 'ogv', '3gp']);
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus']);
 
 /** Classify an attachment by MIME, with filename fallback */
-function classifyMime(mime?: string, fileName?: string): 'image' | 'video' | 'file' {
+function classifyMime(mime?: string, fileName?: string): 'image' | 'video' | 'audio' | 'file' {
   if (mime && mime !== 'application/octet-stream') {
     if (mime.startsWith('image/')) return 'image';
     if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
   }
   // Fallback: check file extension
   if (fileName) {
     const ext = fileName.split('.').pop()?.toLowerCase();
     if (ext && IMAGE_EXTS.has(ext)) return 'image';
     if (ext && VIDEO_EXTS.has(ext)) return 'video';
+    if (ext && AUDIO_EXTS.has(ext)) return 'audio';
   }
   if (mime) {
     if (mime.startsWith('image/')) return 'image';
     if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
   }
   return 'file';
 }
@@ -155,6 +160,14 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
   const kind = classifyMime(mimeType, fileName);
   if (kind === 'video') {
     return <video src={blobUrl} controls className={className || ''} />;
+  }
+  if (kind === 'audio') {
+    return (
+      <div className="flex flex-col gap-1 bg-slate-100 dark:bg-zinc-700 rounded-lg px-3 py-2 min-w-[220px]">
+        <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{fileName}</span>
+        <audio src={blobUrl} controls className="w-full h-8" />
+      </div>
+    );
   }
   return <img src={blobUrl} alt={alt || fileName} className={className || ''} onClick={onClick} />;
 }
@@ -235,7 +248,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
     if (!silent) setMsgsLoading(true);
     try {
       const msgs = await hubService.getMessages(slug, convoId, 100);
-      setMessages(msgs);
+      // Preserve locally-known attachments if the server response omits them
+      setMessages(prev => msgs.map(m => {
+        const existing = prev.find(p => p.id === m.id);
+        if (existing?.attachments?.length && !m.attachments?.length) {
+          return { ...m, attachments: existing.attachments };
+        }
+        return m;
+      }));
     } catch (err: any) {
       console.error('Failed to load messages:', err);
     } finally {
@@ -811,7 +831,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                             <div className="mt-2 flex flex-wrap gap-2">
                               {msg.attachments.map((att) => {
                                 const kind = classifyMime(att.mime_type, att.file_name);
-                                if (kind === 'image' || kind === 'video') {
+                                if (kind === 'image' || kind === 'video' || kind === 'audio') {
                                   return (
                                     <AuthMedia
                                       key={att.id}

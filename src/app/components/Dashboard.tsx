@@ -2,8 +2,10 @@ import {
   Users, MessageCircle, Settings, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
+  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
@@ -106,37 +108,54 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     signalStrength: currentHub?.connectionStatus === 'connected' ? 'Strong' : currentHub?.connectionStatus === 'connecting' ? 'Weak' : 'Offline'
   };
 
+  const [rsvpDone, setRsvpDone] = useState<Record<number, boolean>>({});
+
   const upcomingEvents = [
     {
       id: 1,
       title: 'Town Hall: Infrastructure Planning',
       date: 'Thursday, Jan 9',
       time: '7:00 PM',
-      location: 'Community Center'
+      location: 'Community Center',
+      organizer: 'Hub Admin',
+      attendees: 34,
+      description: 'Join your neighbors for an open discussion on upcoming infrastructure improvements, road maintenance priorities, and broadband expansion plans for our community. All residents welcome — bring your questions and ideas.',
     },
     {
       id: 2,
       title: 'Weekend Farmers Market',
       date: 'Saturday, Jan 11',
       time: '9:00 AM',
-      location: 'Central Square'
-    }
-  ];
+      location: 'Central Square',
+      organizer: 'Local Growers Collective',
+      attendees: 112,
+      description: 'Fresh produce, local honey, artisan goods, and live music. Our weekly market brings together over 20 local vendors. Bring your own bags and enjoy a morning in the square with the community.',
+    },
+  ] as const;
 
   const activeInitiatives = [
     {
       id: 1,
       title: 'Community Garden Expansion',
       participants: 23,
-      status: 'In Progress'
+      status: 'In Progress',
+      progress: 62,
+      goal: 'Convert the vacant lot on Elm St. into a shared vegetable garden with 40 raised beds available to all residents.',
+      description: 'We\'ve secured the land lease and have 14 beds built so far. Next steps: irrigation install and bed assignments. Volunteers needed every weekend.',
     },
     {
       id: 2,
       title: 'Local Tool Library',
       participants: 15,
-      status: 'Planning'
-    }
-  ];
+      status: 'Planning',
+      progress: 28,
+      goal: 'Establish a lending library of tools and equipment so neighbors can borrow instead of buy.',
+      description: 'Inventory catalogue underway with 80+ tools donated so far. Looking for a space to host and a volunteer coordinator. Sign up to help shape the programme.',
+    },
+  ] as const;
+
+  const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
+  const [selectedInitiative, setSelectedInitiative] = useState<typeof activeInitiatives[number] | null>(null);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative">
@@ -282,6 +301,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             >
               <FolderOpen className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
               <span className="text-sm font-medium text-slate-900 dark:text-white">Files</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('initiatives')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
+            >
+              <Target className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Initiatives</span>
             </button>
 
             <button
@@ -545,8 +572,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               onPostClick={handleFeaturedPostClick}
             />
           </div>
-          {/* Recent Activity — live feed */}
-          <div>
+          {/* Activity + sidebar two-column layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            {/* Left: Recent Activity */}
+            <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
               <button
@@ -605,10 +634,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 ))}
               </div>
             )}
-          </div>
+            </div>
 
-        {/* Two Column Grid for Desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Right: Events + Initiatives */}
+            <div className="flex flex-col gap-8">
           {/* Upcoming Events */}
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -623,11 +652,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
             <div className="space-y-3">
               {upcomingEvents.map(event => (
-                <div
+                <button
                   key={event.id}
-                  className="bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-slate-300 dark:hover:border-zinc-700 transition-all cursor-pointer"
+                  onClick={() => setSelectedEvent(event)}
+                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
                 >
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 items-center">
                     <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                       <Calendar className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                     </div>
@@ -644,8 +674,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         </div>
                       </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -656,32 +687,42 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
             <div className="space-y-3">
               {activeInitiatives.map(initiative => (
-                <div
+                <button
                   key={initiative.id}
-                  className="bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-slate-300 dark:hover:border-zinc-700 transition-all cursor-pointer"
+                  onClick={() => setSelectedInitiative(initiative)}
+                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 flex items-center justify-center">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0">
                         <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white">{initiative.title}</h3>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{initiative.title}</h3>
                         <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-slate-400">
-                          <Users className="w-3 h-3" />
+                          <Users className="w-3 h-3 shrink-0" />
                           <span>{initiative.participants} participants</span>
+                          <span>·</span>
+                          <div className="flex-1 max-w-[80px] h-1 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
+                          </div>
+                          <span>{initiative.progress}%</span>
                         </div>
                       </div>
                     </div>
-                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                      {initiative.status}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${initiative.status === 'In Progress' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
+                        {initiative.status}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />
+                    </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
-        </div>
+            </div>
+          </div>
 
         {/* Bottom padding so last content clears the tab bar */}
         <div className="md:hidden h-20" />
@@ -703,6 +744,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               { icon: <Store className="w-5 h-5" />,          label: 'Exchange',  screen: 'marketplace' },
               { icon: <Users className="w-5 h-5" />,          label: 'Neighbors', screen: 'neighbors' },
               { icon: <FolderOpen className="w-5 h-5" />,     label: 'Files',     screen: 'files' },
+              { icon: <Target className="w-5 h-5" />,          label: 'Initiatives', screen: 'initiatives' },
               { icon: <Wrench className="w-5 h-5" />,         label: 'Discover',  screen: 'toolkit' },
               { icon: <Radio className="w-5 h-5" />,          label: 'Network',   screen: 'network' },
               { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',  screen: 'messages' },
@@ -736,6 +778,198 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           onDeleted={() => setFeaturedPost(null)}
         />
       )}
+
+      {/* ── Event Detail Modal ── */}
+      <AnimatePresence>
+        {selectedEvent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSelectedEvent(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.97 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 340 }}
+              className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header gradient */}
+              <div className="relative bg-gradient-to-br from-blue-600 via-purple-600 to-purple-700 px-6 pt-6 pb-8">
+                <button
+                  onClick={() => setSelectedEvent(null)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+                <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center mb-3">
+                  <Calendar className="w-6 h-6 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-white leading-tight pr-8">{selectedEvent.title}</h2>
+                <p className="text-sm text-white/70 mt-1">Organised by {selectedEvent.organizer}</p>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-5 space-y-4">
+                {/* Meta chips */}
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <Clock className="w-3.5 h-3.5 text-purple-500" />
+                    {selectedEvent.date} · {selectedEvent.time}
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <MapPin className="w-3.5 h-3.5 text-purple-500" />
+                    {selectedEvent.location}
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
+                    <Users className="w-3.5 h-3.5 text-purple-500" />
+                    {rsvpDone[selectedEvent.id] ? selectedEvent.attendees + 1 : selectedEvent.attendees} going
+                  </div>
+                </div>
+
+                {/* Description */}
+                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{selectedEvent.description}</p>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setRsvpDone(prev => ({ ...prev, [selectedEvent.id]: !prev[selectedEvent.id] }))}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      rsvpDone[selectedEvent.id]
+                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-sm'
+                    }`}
+                  >
+                    {rsvpDone[selectedEvent.id]
+                      ? <><CheckCircle2 className="w-4 h-4" /> You're going</>
+                      : <><UserPlus className="w-4 h-4" /> RSVP</>
+                    }
+                  </button>
+                  <button
+                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                    aria-label="Share event"
+                    title="Share"
+                  >
+                    <Share2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Initiative Detail Modal ── */}
+      <AnimatePresence>
+        {selectedInitiative && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSelectedInitiative(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.97 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 340 }}
+              className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header gradient */}
+              <div className="relative bg-gradient-to-br from-purple-600 via-pink-600 to-rose-600 px-6 pt-6 pb-8">
+                <button
+                  onClick={() => setSelectedInitiative(null)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
+                    <Lightbulb className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="pr-8">
+                    <h2 className="text-xl font-bold text-white leading-tight">{selectedInitiative.title}</h2>
+                    <span className={`inline-block mt-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+                      selectedInitiative.status === 'In Progress'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/15 text-white/80'
+                    }`}>
+                      {selectedInitiative.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-5 space-y-5">
+                {/* Progress */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Progress</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedInitiative.progress}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${selectedInitiative.progress}%` }}
+                      transition={{ duration: 0.6, ease: 'easeOut', delay: 0.15 }}
+                      className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Goal */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Goal</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{selectedInitiative.goal}</p>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">What's happening</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{selectedInitiative.description}</p>
+                </div>
+
+                {/* Participants */}
+                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                  <Users className="w-4 h-4 text-purple-500" />
+                  <span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{selectedInitiative.participants}</span> neighbors participating
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => {
+                      sessionStorage.setItem('citinet-deeplink-initiative', String(selectedInitiative.id));
+                      setSelectedInitiative(null);
+                      onNavigate('initiatives');
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all"
+                  >
+                    <Target className="w-4 h-4" /> View Initiative
+                  </button>
+                  <button
+                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                    aria-label="Share initiative"
+                    title="Share"
+                  >
+                    <Share2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

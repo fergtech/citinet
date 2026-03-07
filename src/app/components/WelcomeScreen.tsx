@@ -27,7 +27,14 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
-        <h2 className="text-white tracking-tight">[citinet]</h2>
+        <a
+          href="https://citinet-info.vercel.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-white tracking-tight hover:text-white/85 transition-colors"
+        >
+          [citinet]
+        </a>
       </div>
 
       {/* Center Content */}

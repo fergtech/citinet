@@ -202,11 +202,12 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   };
 
   // ── lightbox preview ───────────────────────
-  const getFileCategory = (file: HubFile): 'image' | 'video' | 'audio' | 'other' => {
+  const getFileCategory = (file: HubFile): 'image' | 'video' | 'audio' | 'pdf' | 'other' => {
     const ext = (file.name || '').split('.').pop()?.toLowerCase() || '';
     if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].includes(ext)) return 'image';
     if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'ogv'].includes(ext)) return 'video';
     if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'].includes(ext)) return 'audio';
+    if (ext === 'pdf') return 'pdf';
     return 'other';
   };
 
@@ -217,6 +218,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       handleDownload(file);
       return;
     }
+
     setPreviewFile(file);
     setPreviewLoading(true);
     setPreviewError('');
@@ -510,7 +512,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1">
-                      {/* Preview – for previewable files */}
+                      {/* Preview – for previewable files (image, video, audio, pdf) */}
                       {getFileCategory(file) !== 'other' && (
                         <button
                           onClick={() => openPreview(file)}
@@ -664,6 +666,15 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                       <p className="text-sm text-white font-medium truncate max-w-[280px]">{previewFile.name}</p>
                       <audio src={previewUrl} controls autoPlay className="w-full" />
                     </div>
+                  );
+                }
+                if (category === 'pdf') {
+                  return (
+                    <iframe
+                      src={previewUrl}
+                      title={previewFile.name}
+                      className="w-[85vw] h-[80vh] rounded-lg shadow-2xl border-0 bg-white"
+                    />
                   );
                 }
                 return null;

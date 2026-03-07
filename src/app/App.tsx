@@ -18,6 +18,7 @@ import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
 import { AtlasScreen } from './components/AtlasScreen';
+import { InitiativesScreen } from './components/InitiativesScreen';
 import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { HubProvider, useHub } from './context/HubContext';
@@ -252,6 +253,11 @@ function HubAtlasRoute() {
   return <AtlasScreen onBack={() => navigate(hubPath('/'))} />;
 }
 
+function HubInitiativesRoute() {
+  const navigate = useNavigate();
+  return <InitiativesScreen onBack={() => navigate(hubPath('/'))} />;
+}
+
 function HubModerationQueueRoute() {
   const navigate = useNavigate();
   return <ModerationQueueScreen onBack={() => navigate(hubPath('/toolkit'))} />;
@@ -331,6 +337,7 @@ function HubModeRoutes() {
       <Route path="/toolkit/my-submissions" element={<HubGuard><HubMySubmissionsRoute /></HubGuard>} />
       <Route path="/toolkit/moderation" element={<HubGuard><HubModerationQueueRoute /></HubGuard>} />
       <Route path="/atlas" element={<HubGuard><HubAtlasRoute /></HubGuard>} />
+      <Route path="/initiatives" element={<HubGuard><HubInitiativesRoute /></HubGuard>} />
       <Route path="/settings" element={<HubGuard><HubPlaceholderRoute screen="settings" /></HubGuard>} />
       <Route path="/post" element={<HubGuard><HubPlaceholderRoute screen="post" /></HubGuard>} />
       <Route path="/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />
