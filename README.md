@@ -305,13 +305,26 @@ npm run dev
 
 ### Build & Push Hub API Image
 
-```bash
-docker build -t ghcr.io/fergtech/citinet-api:latest \
-  --provenance=false --sbom=false \
-  ./api
+The API image is built automatically for **both `amd64` and `arm64`** (Raspberry Pi) via GitHub
+Actions on every push to `master` that touches `api/`. See `.github/workflows/build-api.yml`.
 
-docker push ghcr.io/fergtech/citinet-api:latest
+To build and push manually (requires `docker buildx`):
+
+```bash
+# One-time setup — create a buildx builder if you don't have one
+docker buildx create --use --name citinet-builder
+
+# Build for amd64 + arm64 and push both in one command
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/fergtech/citinet-api:latest \
+  --push \
+  ./api
 ```
+
+> **Note:** Plain `docker build` only produces an image for your local machine's architecture.
+> Always use `docker buildx` with `--platform` when publishing so Raspberry Pi (ARM64) users
+> can pull the image without building it themselves.
 
 ### Key Files
 
