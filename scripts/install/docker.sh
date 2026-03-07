@@ -6,30 +6,12 @@ set -e
 echo "🐳 Installing Docker..."
 
 # Detect OS
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+if [[ "$OSTYPE" == "linux-gnu"* ]] || [[ "$OSTYPE" == "linux"* ]]; then
     echo "Detected Linux"
-    
-    # Check for package manager
-    if command -v apt-get &> /dev/null; then
-        echo "Using apt package manager"
-        sudo apt-get update
-        sudo apt-get install -y docker.io docker-compose
-        sudo systemctl enable docker
-        sudo systemctl start docker
-        sudo usermod -aG docker $USER
-        echo "✓ Docker installed. Log out and back in for group changes to take effect."
-    elif command -v yum &> /dev/null; then
-        echo "Using yum package manager"
-        sudo yum install -y docker docker-compose
-        sudo systemctl enable docker
-        sudo systemctl start docker
-        sudo usermod -aG docker $USER
-        echo "✓ Docker installed. Log out and back in for group changes to take effect."
-    else
-        echo "❌ Unsupported package manager"
-        echo "Please install Docker manually: https://docs.docker.com/engine/install/"
-        exit 1
-    fi
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker "$USER"
+    sudo systemctl enable --now docker
+    echo "✓ Docker installed. Log out and back in for group changes to take effect."
     
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Detected macOS"

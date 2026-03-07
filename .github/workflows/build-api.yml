@@ -37,6 +37,8 @@ jobs:
           context: ./api
           platforms: linux/amd64,linux/arm64
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ghcr.io/fergtech/citinet-api:latest
             ghcr.io/fergtech/citinet-api:${{ github.sha }}
