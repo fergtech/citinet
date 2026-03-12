@@ -2,7 +2,7 @@ import {
   Users, MessageCircle, Settings, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass,
+  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle,
   LayoutGrid,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
@@ -179,6 +179,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
   const [selectedInitiative, setSelectedInitiative] = useState<typeof activeInitiatives[number] | null>(null);
 
+  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://citinet-info.vercel.app/').trim();
+  const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
+    ? projectInfoUrlRaw
+    : `https://${projectInfoUrlRaw}`;
+
+  const openProjectInfo = () => {
+    window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="min-h-screen flex relative">
 
@@ -292,6 +301,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                   <span className="text-sm text-slate-700 dark:text-slate-300">My Account</span>
                 </button>
+                
                 {isAdmin && (
                   <button
                     onClick={() => { setShowStartMenu(false); onNavigate('hub-management'); }}
@@ -301,6 +311,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                     <span className="text-sm text-slate-700 dark:text-slate-300">Hub Admin</span>
                   </button>
                 )}
+                <button
+                  onClick={() => { setShowStartMenu(false); openProjectInfo(); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">About Citinet</span>
+                </button>
               </div>
               {onLogout && (
                 <>
@@ -373,6 +390,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <Shield className="w-5 h-5" />
           </button>
         )}
+        <button
+          onClick={openProjectInfo}
+          title="About Citinet"
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+        >
+          <HelpCircle className="w-5 h-5" />
+        </button>
         <button
           onClick={() => onNavigate('account')}
           title="My Account"
@@ -702,6 +726,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         <Settings className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                         <span className="text-sm font-medium text-slate-900 dark:text-white">Settings</span>
                       </button>
+                      
                       {isAdmin && (
                         <button
                           onClick={() => { setShowUserMenu(false); onNavigate('hub-management'); }}
@@ -711,6 +736,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                           <span className="text-sm font-medium text-slate-900 dark:text-white">Hub Admin</span>
                         </button>
                       )}
+                      <button
+                        onClick={() => { setShowUserMenu(false); openProjectInfo(); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
+                      >
+                        <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                        <span className="text-sm font-medium text-slate-900 dark:text-white">About Citinet</span>
+                      </button>
                       {onLogout && (
                         <>
                           <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
@@ -1035,10 +1067,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               { icon: <Wrench className="w-5 h-5" />,         label: 'Resources',  screen: 'toolkit' },
               { icon: <Radio className="w-5 h-5" />,          label: 'Network',    screen: 'network' },
               { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',   screen: 'messages' },
+              { icon: <HelpCircle className="w-5 h-5" />,     label: 'Info',       screen: 'project-info' },
             ].map(item => (
               <button
                 key={item.screen}
-                onClick={() => onNavigate(item.screen)}
+                onClick={() => item.screen === 'project-info' ? openProjectInfo() : onNavigate(item.screen)}
                 className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 active:scale-95 transition-all"
               >
                 {item.icon}
