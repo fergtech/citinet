@@ -59,6 +59,11 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB
 });
 
+const uploadBg = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB cap for background images
+});
+
 // ── Middleware ────────────────────────────────────────────
 
 app.use(express.json());
@@ -226,6 +231,14 @@ async function initDb() {
         is_active       BOOLEAN       DEFAULT TRUE,
         created_at      TIMESTAMPTZ   DEFAULT NOW(),
         updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_user_preferences (
+        user_id  UUID         REFERENCES hub_users(id) ON DELETE CASCADE,
+        key      VARCHAR(100) NOT NULL,
+        value    TEXT,
+        PRIMARY KEY (user_id, key)
       )
     `);
     // Migrations — add columns that may not exist on older schemas
@@ -1753,6 +1766,84 @@ app.patch('/api/marketplace-config', authenticate, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── User Preferences ─────────────────────────────────────
+
+const PREF_KEYS = ['background_type', 'background_value'];
+
+app.get('/api/me/preferences', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT key, value FROM hub_user_preferences WHERE user_id = $1`,
+      [req.user.id]
+    );
+    const prefs = {};
+    for (const row of result.rows) prefs[row.key] = row.value;
+    res.json(prefs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/me/preferences', authenticate, async (req, res) => {
+  try {
+    const entries = Object.entries(req.body || {}).filter(([k]) => PREF_KEYS.includes(k));
+    for (const [key, val] of entries) {
+      if (val === null || val === '') {
+        await pool.query(
+          `DELETE FROM hub_user_preferences WHERE user_id = $1 AND key = $2`,
+          [req.user.id, key]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO hub_user_preferences (user_id, key, value)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
+          [req.user.id, key, String(val)]
+        );
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/me/preferences/background-image', authenticate, uploadBg.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+
+  const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const fileName = `bg-${req.user.id}-${Date.now()}.${ext}`;
+
+  try {
+    // Remove any previous background image for this user
+    const old = await pool.query(
+      `SELECT file_key FROM hub_files WHERE owner_id = $1 AND file_name LIKE 'bg-' || $2 || '-%'`,
+      [req.user.id, req.user.id]
+    );
+    for (const row of old.rows) {
+      await minioClient.removeObject(STORAGE_BUCKET, row.file_key).catch(() => {});
+    }
+    await pool.query(
+      `DELETE FROM hub_files WHERE owner_id = $1 AND file_name LIKE 'bg-' || $2 || '-%'`,
+      [req.user.id, req.user.id]
+    );
+
+    await minioClient.putObject(STORAGE_BUCKET, fileName, req.file.buffer, req.file.size, {
+      'Content-Type': req.file.mimetype,
+    });
+    await pool.query(
+      `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
+       VALUES ($1, $2, $3, $4, $5, true)`,
+      [fileName, fileName, req.file.mimetype, req.file.size, req.user.id]
+    );
+    res.json({ name: fileName });
+  } catch (err) {
+    console.error('BG image upload error:', err);
+    res.status(500).json({ error: 'Upload failed' });
   }
 });
 

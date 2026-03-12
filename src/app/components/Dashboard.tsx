@@ -3,6 +3,7 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass,
+  LayoutGrid,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,6 +16,19 @@ import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
+
+const APP_TILES = [
+  { Icon: MessageCircle, label: 'Discussions', screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600' },
+  { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
+  { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
+  { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
+  { Icon: Users,         label: 'Neighbors',   screen: 'neighbors',   gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' },
+  { Icon: FolderOpen,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
+  { Icon: Target,        label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
+  { Icon: Wrench,        label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
+  { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
+  { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600' },
+];
 
 interface DashboardProps {
   userName?: string;
@@ -52,6 +66,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   // Mobile user menu
   const [showUserMenu, setShowUserMenu] = useState(false);
+  // Desktop start menu
+  const [showStartMenu, setShowStartMenu] = useState(false);
 
   // Tunnel reconnect state
   const [showTunnelInput, setShowTunnelInput] = useState(false);
@@ -161,21 +177,210 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [selectedInitiative, setSelectedInitiative] = useState<typeof activeInitiatives[number] | null>(null);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative">
-      {/* Dot grid background pattern */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="dashboard-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#dashboard-dots)" opacity="0.07" className="dark:opacity-[0.12]"/>
-        </svg>
+    <div className="min-h-screen flex relative">
+
+      {/* ═══ DESKTOP OS UI (hidden on mobile) ═══ */}
+
+      {/* Desktop Top Menubar */}
+      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 items-center px-4 gap-3 select-none">
+        <div className="w-2 h-2 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
+        <span className="text-sm font-semibold text-slate-900 dark:text-white">{nodeName}</span>
+        <div className="flex-1" />
+        <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+        <span className="text-xs text-slate-500 dark:text-slate-400">{statusLabel}</span>
+        {nodeStatus.onlineNow > 0 && (
+          <>
+            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{nodeStatus.onlineNow} online</span>
+          </>
+        )}
+        <button
+          onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
+          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+          title="Update tunnel URL"
+          aria-label="Update tunnel URL"
+        >
+          <Link2 className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+        </button>
       </div>
 
-      {/* Desktop Sidebar - Hidden on mobile */}
-      <aside className="hidden md:flex md:flex-col md:w-72 lg:w-80 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 sticky top-0 h-screen overflow-y-auto shrink-0 z-10">
+      {/* Desktop Tunnel Update Panel */}
+      {showTunnelInput && (
+        <div className="hidden md:block fixed top-10 right-4 z-40 w-72 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-slate-200 dark:border-zinc-800 p-4 space-y-2">
+          {currentHub?.tunnelUrl && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate font-mono">{currentHub.tunnelUrl}</p>
+          )}
+          <div className="flex gap-1.5">
+            <input
+              type="url"
+              value={tunnelInput}
+              onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
+              placeholder="New tunnel URL..."
+              className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:border-transparent focus:outline-none"
+              disabled={tunnelUpdating}
+            />
+            <button
+              onClick={handleTunnelReconnect}
+              disabled={tunnelUpdating || !tunnelInput.trim()}
+              className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
+            >
+              {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : tunnelSuccess ? <Check className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
+            </button>
+          </div>
+          {tunnelError && (
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
+              {tunnelInput.trim() && (
+                <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 dark:text-purple-400 underline hover:no-underline shrink-0">Save anyway</button>
+              )}
+            </div>
+          )}
+          {tunnelSuccess && <p className="text-[10px] text-green-500 dark:text-green-400">Reconnected!</p>}
+          {connectionStatus === 'unreachable' && !tunnelInput && (
+            <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — enter the new tunnel URL to reconnect.</p>
+          )}
+        </div>
+      )}
+
+      {/* Desktop Start Menu Panel */}
+      <AnimatePresence>
+        {showStartMenu && (
+          <>
+            <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setShowStartMenu(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.97 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              className="hidden md:block fixed bottom-16 left-4 z-50 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden"
+            >
+              <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-slate-200 dark:border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shrink-0">
+                    {currentUser?.avatarUrl
+                      ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : displayName.charAt(0).toUpperCase()
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
+                      {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{nodeName}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-2 space-y-0.5">
+                {currentUser?.hubUserId && (
+                  <button
+                    onClick={() => { setShowStartMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                  >
+                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">My Profile</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowStartMenu(false); onNavigate('account'); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">My Account</span>
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setShowStartMenu(false); onNavigate('hub-management'); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                  >
+                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">Hub Admin</span>
+                  </button>
+                )}
+              </div>
+              {onLogout && (
+                <>
+                  <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+                  <div className="p-2">
+                    <button
+                      onClick={() => { setShowStartMenu(false); onLogout(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
+                    >
+                      <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                      <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Bottom Dock */}
+      <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-t border-slate-200/50 dark:border-zinc-800/50 items-center px-4 gap-1">
+        <button
+          onClick={() => setShowStartMenu(v => !v)}
+          className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white hover:from-blue-700 hover:to-purple-700 transition-all shadow-sm hover:shadow-md active:scale-95 shrink-0"
+          title="Menu"
+          aria-label="Open menu"
+        >
+          <LayoutGrid className="w-5 h-5" />
+        </button>
+        <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700 mx-2 shrink-0" />
+        {[
+          { Icon: MessageCircle, label: 'Discussions', screen: 'feed' },
+          { Icon: Map,           label: 'Atlas',       screen: 'atlas' },
+          { Icon: Store,         label: 'Exchange',    screen: 'marketplace' },
+          { Icon: Users,         label: 'Neighbors',   screen: 'neighbors' },
+          { Icon: Wrench,        label: 'Resources',   screen: 'toolkit' },
+        ].map(app => (
+          <button
+            key={app.screen}
+            onClick={() => onNavigate(app.screen)}
+            title={app.label}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+          >
+            <app.Icon className="w-5 h-5" />
+          </button>
+        ))}
+        {myVendor && (
+          <>
+            <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700 mx-1 shrink-0" />
+            <button
+              onClick={() => onNavigate(`vendor/${myVendor.id}`)}
+              title={myVendor.name}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all"
+            >
+              {myVendor.name.charAt(0).toUpperCase()}
+            </button>
+          </>
+        )}
+        <div className="flex-1" />
+        {isAdmin && (
+          <button
+            onClick={() => onNavigate('hub-management')}
+            title="Hub Admin"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+          >
+            <Shield className="w-5 h-5" />
+          </button>
+        )}
+        <button
+          onClick={() => onNavigate('account')}
+          title="My Account"
+          className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm active:scale-95 ml-1 shrink-0 hover:ring-2 hover:ring-purple-400 transition-all"
+        >
+          {currentUser?.avatarUrl
+            ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            : displayName.charAt(0).toUpperCase()
+          }
+        </button>
+      </div>
+
+      {/* Desktop Sidebar - Hidden; replaced by OS dock + launcher */}
+      <aside className="hidden">
         {/* User Identity */}
         <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center gap-3 mb-2">
@@ -431,7 +636,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 pb-24 overflow-x-hidden relative z-10">
+      <div className="flex-1 pb-24 md:pb-16 md:pt-9 overflow-x-hidden relative z-10">
         {/* Mobile Header - Only shown on mobile */}
         <div className="md:hidden bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
           <div className="px-6 py-6">
@@ -569,15 +774,34 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div>
         </div>
 
-        {/* Desktop Header - Simpler, no user name since it's in sidebar */}
-        <div className="hidden md:block bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
-          <div className="px-8 py-5">
-            <h1 className="text-slate-900 dark:text-white font-semibold text-2xl tracking-tight">
-              {nodeName}
-            </h1>
-            <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-              Welcome to the new internet, owned and operated by our local community.
-            </p>
+        {/* Desktop App Launcher - OS-style icon grid */}
+        <div className="hidden md:block border-b border-slate-200/50 dark:border-zinc-800/50 bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm">
+          <div className="max-w-5xl mx-auto px-8 py-5">
+            <div className="grid grid-cols-5 lg:grid-cols-10 gap-1">
+              {APP_TILES.map(app => (
+                <button
+                  key={app.screen}
+                  onClick={() => onNavigate(app.screen)}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-slate-100/80 dark:hover:bg-zinc-800/60 transition-all group active:scale-95"
+                >
+                  <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all`}>
+                    <app.Icon className="w-6 h-6 text-white" />
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 text-center leading-tight">{app.label}</span>
+                </button>
+              ))}
+              {myVendor && (
+                <button
+                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-50/80 dark:hover:bg-purple-900/20 transition-all group active:scale-95"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg">
+                    {myVendor.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 text-center leading-tight truncate w-full">{myVendor.name}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

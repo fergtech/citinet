@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon } from 'lucide-react';
+import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { preferencesService } from '../services/preferencesService';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 
@@ -11,7 +12,7 @@ interface AccountScreenProps {
 }
 
 export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
-  const { currentHub, currentUser, updateUserProfile } = useHub();
+  const { currentHub, currentUser, updateUserProfile, userPreferences, updateUserPreferences } = useHub();
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -38,6 +39,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Appearance
+  const [bgUploading, setBgUploading] = useState(false);
+  const [bgError, setBgError] = useState('');
+  const [bgSaved, setBgSaved] = useState(false);
+  const [colorInput, setColorInput] = useState('');
+  const bgFileRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,6 +147,38 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     }
   };
 
+  const handleSetColor = async (color: string) => {
+    setBgError('');
+    await updateUserPreferences({ background_type: 'color', background_value: color });
+    setBgSaved(true);
+    setTimeout(() => setBgSaved(false), 1500);
+  };
+
+  const handleBgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentHub?.slug) return;
+    if (file.size > 4 * 1024 * 1024) { setBgError('Image must be under 4 MB'); return; }
+    setBgError('');
+    setBgUploading(true);
+    try {
+      const name = await preferencesService.uploadBackgroundImage(currentHub.slug, file);
+      await updateUserPreferences({ background_type: 'image', background_value: name });
+      setBgSaved(true);
+      setTimeout(() => setBgSaved(false), 1500);
+    } catch (err) {
+      setBgError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setBgUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleResetBg = async () => {
+    await updateUserPreferences({ background_type: 'default', background_value: '' });
+    setBgSaved(true);
+    setTimeout(() => setBgSaved(false), 1500);
+  };
+
   const role = currentUser?.role || 'participant';
   const isAdmin = currentUser?.isAdmin === true;
 
@@ -149,18 +189,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const roleLabel = isAdmin ? '★ Hub Admin' : role.charAt(0).toUpperCase() + role.slice(1);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="account-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#account-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+    <div className="min-h-screen">
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-4">
@@ -406,6 +435,102 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             {pwSaved ? <Check className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
             {pwSaving ? 'Saving…' : pwSaved ? 'Password updated!' : 'Update Password'}
           </button>
+        </div>
+
+        {/* Appearance */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <Palette className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Appearance</h3>
+            {bgSaved && <span className="ml-auto text-xs text-green-500 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" />Saved</span>}
+          </div>
+
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Choose your personal background. Only you see this — it follows you across all hub screens.</p>
+
+          {/* Preset swatches */}
+          <div className="mb-4">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Solid Color</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { color: '#0f172a', label: 'Deep Navy' },
+                { color: '#052e16', label: 'Forest' },
+                { color: '#1e1b4b', label: 'Deep Purple' },
+                { color: '#1c1917', label: 'Charcoal' },
+                { color: '#3b0764', label: 'Plum' },
+                { color: '#042f2e', label: 'Ocean' },
+                { color: '#fef9ee', label: 'Warm White' },
+                { color: '#f0f4ff', label: 'Cool White' },
+              ].map(({ color, label }) => (
+                <button
+                  key={color}
+                  onClick={() => handleSetColor(color)}
+                  title={label}
+                  className={`w-8 h-8 rounded-xl border-2 transition-all hover:scale-110 active:scale-95 ${
+                    userPreferences.background_type === 'color' && userPreferences.background_value === color
+                      ? 'border-purple-500 ring-2 ring-purple-300 dark:ring-purple-700'
+                      : 'border-slate-200 dark:border-zinc-700'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  aria-label={label}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Custom hex */}
+          <div className="flex items-center gap-2 mb-4">
+            <div
+              className="w-8 h-8 rounded-xl border border-slate-200 dark:border-zinc-700 shrink-0"
+              style={{ backgroundColor: colorInput || 'transparent' }}
+            />
+            <input
+              type="text"
+              value={colorInput}
+              onChange={e => setColorInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && /^#[0-9a-fA-F]{6}$/.test(colorInput)) handleSetColor(colorInput);
+              }}
+              placeholder="#1e293b  (press Enter)"
+              className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none font-mono"
+            />
+            <button
+              onClick={() => { if (/^#[0-9a-fA-F]{6}$/.test(colorInput)) handleSetColor(colorInput); }}
+              disabled={!/^#[0-9a-fA-F]{6}$/.test(colorInput)}
+              className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-xs font-medium transition-colors shrink-0"
+            >
+              Apply
+            </button>
+          </div>
+
+          {/* Image upload */}
+          <div className="mb-4">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Custom Image <span className="font-normal">(max 4 MB)</span></p>
+            <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
+            <button
+              onClick={() => bgFileRef.current?.click()}
+              disabled={bgUploading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 text-sm transition-colors disabled:opacity-50"
+            >
+              {bgUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
+              {bgUploading ? 'Uploading…' : userPreferences.background_type === 'image' ? 'Replace image' : 'Upload image'}
+            </button>
+            {userPreferences.background_type === 'image' && userPreferences.background_value && (
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 truncate font-mono">{userPreferences.background_value}</p>
+            )}
+          </div>
+
+          {bgError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{bgError}</p>}
+
+          {/* Reset */}
+          {userPreferences.background_type && userPreferences.background_type !== 'default' && (
+            <button
+              onClick={handleResetBg}
+              className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset to default (dot grid)
+            </button>
+          )}
         </div>
 
         {/* Interests */}

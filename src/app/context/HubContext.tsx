@@ -9,6 +9,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import type { Hub, HubConnectionStatus, HubUser } from '../types/hub';
 import { hubService } from '../services/hubService';
 import { registryService } from '../services/registryService';
+import { preferencesService, type UserPreferences } from '../services/preferencesService';
 import { getSubdomain, navigateToHub, clearSubdomainCache } from '../utils/subdomain';
 
 interface HubContextValue {
@@ -38,6 +39,10 @@ interface HubContextValue {
   updateLocation: (location: string, lat: number, lng: number) => Promise<Hub | null>;
   /** Update the hub's description (server + localStorage) */
   updateDescription: (description: string) => Promise<Hub | null>;
+  /** Current user's background/appearance preferences */
+  userPreferences: UserPreferences;
+  /** Update and persist user preferences */
+  updateUserPreferences: (prefs: Partial<UserPreferences>) => Promise<void>;
 }
 
 const HubContext = createContext<HubContextValue | null>(null);
@@ -47,6 +52,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<HubUser | null>(null);
   const [joinedHubs, setJoinedHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userPreferences, setUserPreferences] = useState<UserPreferences>({});
 
   // Initialize: load hub data from the subdomain (hub mode) or skip (onboarding mode)
   useEffect(() => {
@@ -79,6 +85,8 @@ export function HubProvider({ children }: { children: ReactNode }) {
       if (connection) {
         setCurrentHub(connection.hub);
         setCurrentUser(connection.user);
+        // Fetch user preferences in background (non-blocking)
+        preferencesService.getPreferences(slug).then(setUserPreferences).catch(() => {});
       }
 
       // Refresh tunnel URL from registry in the background — but never override
@@ -210,6 +218,24 @@ export function HubProvider({ children }: { children: ReactNode }) {
     }
   }, [currentHub?.slug]);
 
+  const updateUserPreferences = useCallback(async (prefs: Partial<UserPreferences>): Promise<void> => {
+    if (!currentHub?.slug) return;
+    // Optimistic update
+    setUserPreferences(prev => ({ ...prev, ...prefs }));
+    try {
+      await preferencesService.updatePreferences(currentHub.slug, prefs);
+    } catch {
+      // Revert on failure
+      setUserPreferences(prev => {
+        const reverted = { ...prev };
+        for (const key of Object.keys(prefs) as (keyof UserPreferences)[]) {
+          delete reverted[key];
+        }
+        return reverted;
+      });
+    }
+  }, [currentHub?.slug]);
+
   const updateDescription = useCallback(async (description: string): Promise<Hub | null> => {
     if (!currentHub?.slug) return null;
     try {
@@ -252,6 +278,8 @@ export function HubProvider({ children }: { children: ReactNode }) {
       updateUserProfile,
       updateLocation,
       updateDescription,
+      userPreferences,
+      updateUserPreferences,
     }}>
       {children}
     </HubContext.Provider>

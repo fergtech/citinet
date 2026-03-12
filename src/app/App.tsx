@@ -23,6 +23,7 @@ import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
+import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
@@ -358,6 +359,8 @@ function OnboardingModeRoutes() {
 
 function HubModeRoutes() {
   return (
+    <>
+    <HubBackground />
     <Routes>
       <Route path="/onboard" element={<HubGuard><HubOnboardRoute /></HubGuard>} />
       <Route path="/" element={<HubGuard><HubDashboardRoute /></HubGuard>} />
@@ -384,6 +387,7 @@ function HubModeRoutes() {
       <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 
