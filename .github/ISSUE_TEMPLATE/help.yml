@@ -1,0 +1,31 @@
+name: Help / Troubleshooting
+description: Ask for help or troubleshooting advice
+title: "[Help] "
+labels: ["question"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: "## How can we help?"
+  - type: input
+    id: question-summary
+    attributes:
+      label: "Summary"
+      description: "Describe your question or problem."
+      placeholder: "I'm having trouble with..."
+    validations:
+      required: true
+  - type: textarea
+    id: what-you-tried
+    attributes:
+      label: "What have you tried?"
+      description: "Tell us what you’ve already tried."
+    validations:
+      required: false
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "Additional Information"
+      description: "Include screenshots, error messages, etc."
+    validations:
+      required: false

@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature] "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: "## Suggest a feature or improvement."
+  - type: input
+    id: feature-summary
+    attributes:
+      label: "Feature Summary"
+      description: "Briefly describe the feature."
+      placeholder: "Add support for..."
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: "Use Case"
+      description: "How does this help users? Why is it needed?"
+    validations:
+      required: false
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "Additional Information"
+      description: "Anything else relevant."
+    validations:
+      required: false
