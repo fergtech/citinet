@@ -248,20 +248,40 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
       {/* Header */}
       <div className="sticky top-0 bg-white dark:bg-zinc-900 z-20 border-b border-slate-200 dark:border-zinc-800">
         <div className="px-4 py-3">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3">
+            {/* Left: back + title */}
             <button
               onClick={onBack}
-              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
             >
               <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
             </button>
-            <div className="flex-1">
-              <h2 className="text-slate-900 dark:text-white text-xl font-bold">Exchange</h2>
+            <div className="shrink-0">
+              <h2 className="text-slate-900 dark:text-white text-xl font-bold leading-tight">Exchange</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">{listings.length} listings</p>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* View toggle */}
+            {/* Center: search bar */}
+            <div className="flex-1 flex justify-center px-2">
+              <div className="relative w-full max-w-[700px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search listings…"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Right: view toggle + sell button */}
+            <div className="flex items-center gap-2 shrink-0">
               <div className="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-lg p-1">
                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
                   <Grid3x3 className="w-4 h-4 text-slate-600 dark:text-slate-300" />
@@ -271,7 +291,6 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                 </button>
               </div>
 
-              {/* Sell button */}
               {myVendor ? (
                 <button
                   onClick={() => setShowAddListing(true)}
@@ -290,40 +309,6 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                 </button>
               )}
             </div>
-          </div>
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search listings…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Category chips */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-3 py-1.5 rounded-full whitespace-nowrap text-xs font-semibold transition-all ${
-                  activeCategory === cat
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:border-purple-400'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -492,6 +477,23 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Category filter chips */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none mb-4 -mx-1 px-1">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`px-3 py-1.5 rounded-full whitespace-nowrap text-xs font-semibold transition-all ${
+                activeCategory === cat
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-500'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
 
         {/* Sort + count row */}
         {!loading && listings.length > 0 && (
