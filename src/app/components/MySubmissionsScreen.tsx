@@ -155,6 +155,17 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
+      {/* Dot grid background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="submissions-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#submissions-dots)" opacity="0.07"/>
+        </svg>
+      </div>
       {/* Header */}
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-4">

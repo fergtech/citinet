@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { clearSubdomainCache } from '../utils/subdomain';
@@ -7,15 +7,21 @@ import { LocationPicker, type LocationResult } from './LocationPicker';
 
 interface AccountScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
-export function AccountScreen({ onBack }: AccountScreenProps) {
+export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const { currentHub, currentUser, updateUserProfile } = useHub();
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
+  const [bio, setBio] = useState(currentUser?.bio || '');
+  const [tags, setTags] = useState<string[]>(currentUser?.tags ?? []);
+  const [tagInput, setTagInput] = useState('');
+  const tagInputRef = useRef<HTMLInputElement>(null);
   const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -24,21 +30,80 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState('');
 
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const handleSave = () => {
-    // If user picked a new location from the picker, use that; otherwise keep existing
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentHub?.slug) return;
+    setAvatarError('');
+    setAvatarUploading(true);
+    try {
+      await hubService.uploadAvatar(currentHub.slug, file);
+      // Avatar is served via /api/auth/avatar/:userId — build the URL
+      const avatarUrl = currentUser?.hubUserId
+        ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId) ?? undefined
+        : undefined;
+      if (avatarUrl) updateUserProfile({ avatarUrl });
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setAvatarUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const commitTag = useCallback(() => {
+    const val = tagInput.trim().replace(/^#/, '').toLowerCase();
+    if (!val || tags.includes(val) || tags.length >= 10) return;
+    setTags(prev => [...prev, val]);
+    setTagInput('');
+  }, [tagInput, tags]);
+
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitTag(); }
+    if (e.key === 'Backspace' && tagInput === '' && tags.length > 0) {
+      setTags(prev => prev.slice(0, -1));
+    }
+  };
+
+  const removeTag = (tag: string) => setTags(prev => prev.filter(t => t !== tag));
+
+  const handleSave = async () => {
+    if (!currentHub?.slug) return;
+    setSaving(true);
     const location = locationResult?.displayName ?? currentUser?.location ?? '';
-    updateUserProfile({
-      displayName: displayName.trim() || currentUser?.displayName,
-      email: email.trim(),
-      location: location.trim(),
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await hubService.updateProfile(currentHub.slug, {
+        displayName: displayName.trim() || currentUser?.displayName,
+        location: location.trim(),
+        bio: bio.trim(),
+        tags,
+      });
+      // email is local-only for now (no server field yet)
+      if (email.trim()) updateUserProfile({ email: email.trim() });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // fall back to local-only save so the user isn't blocked
+      updateUserProfile({
+        displayName: displayName.trim() || currentUser?.displayName,
+        email: email.trim(),
+        location: location.trim(),
+        bio: bio.trim(),
+        tags,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChangePassword = async () => {
@@ -85,6 +150,17 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
+      {/* Dot grid background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="account-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#account-dots)" opacity="0.07"/>
+        </svg>
+      </div>
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-4">
@@ -96,6 +172,15 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
             <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
           </button>
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">My Account</h1>
+          {onNavigate && currentUser?.hubUserId && (
+            <button
+              onClick={() => onNavigate(`profile/${currentUser.hubUserId}`)}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              View Profile
+            </button>
+          )}
         </div>
       </div>
 
@@ -104,9 +189,39 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
           {/* Avatar + username row */}
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-2xl shrink-0">
-              {(currentUser?.displayName || currentUser?.username || 'N').charAt(0).toUpperCase()}
-            </div>
+            {/* Avatar — clickable to upload */}
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="relative w-16 h-16 rounded-2xl shrink-0 group focus:outline-none focus:ring-2 focus:ring-purple-500"
+              aria-label="Change profile picture"
+            >
+              {currentUser?.avatarUrl ? (
+                <img
+                  src={currentUser.avatarUrl}
+                  alt="Profile"
+                  className="w-16 h-16 rounded-2xl object-cover"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-2xl">
+                  {(currentUser?.displayName || currentUser?.username || 'N').charAt(0).toUpperCase()}
+                </div>
+              )}
+              {/* Hover / upload overlay */}
+              <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {avatarUploading
+                  ? <Loader2 className="w-5 h-5 text-white animate-spin" />
+                  : <Camera className="w-5 h-5 text-white" />}
+              </div>
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-mono text-slate-500 dark:text-slate-400">
@@ -117,8 +232,19 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
                 </span>
               </div>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{currentHub?.name}</p>
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="text-xs text-purple-500 dark:text-purple-400 mt-1 hover:underline disabled:opacity-50"
+              >
+                {avatarUploading ? 'Uploading…' : 'Change photo'}
+              </button>
             </div>
           </div>
+
+          {avatarError && (
+            <p className="text-xs text-red-500 dark:text-red-400 mb-3">{avatarError}</p>
+          )}
 
           {/* Editable fields */}
           <div className="space-y-4">
@@ -150,6 +276,62 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
 
             <div>
               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Bio
+              </label>
+              <textarea
+                value={bio}
+                onChange={e => setBio(e.target.value)}
+                maxLength={160}
+                rows={2}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
+                placeholder="A short intro about you (160 chars)"
+              />
+              <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/160</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Interests
+                <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">({tags.length}/10)</span>
+              </label>
+              {/* Chip container — clicking anywhere focuses the input */}
+              <div
+                onClick={() => tagInputRef.current?.focus()}
+                className="min-h-[42px] flex flex-wrap gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 cursor-text focus-within:ring-2 focus-within:ring-purple-500 focus-within:border-transparent transition-shadow"
+              >
+                {tags.map(tag => (
+                  <span
+                    key={tag}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); removeTag(tag); }}
+                      className="hover:text-purple-900 dark:hover:text-purple-100 transition-colors"
+                      aria-label={`Remove ${tag}`}
+                    >
+                      <XIcon className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {tags.length < 10 && (
+                  <input
+                    ref={tagInputRef}
+                    value={tagInput}
+                    onChange={e => setTagInput(e.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    onBlur={commitTag}
+                    placeholder={tags.length === 0 ? 'gardening, repair, music… (Enter to add)' : ''}
+                    className="flex-1 min-w-[120px] bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none"
+                  />
+                )}
+              </div>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Press Enter or comma to add · tap × to remove</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                 Location
               </label>
               <LocationPicker
@@ -163,10 +345,11 @@ export function AccountScreen({ onBack }: AccountScreenProps) {
 
           <button
             onClick={handleSave}
-            className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors"
+            disabled={saving}
+            className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
           >
-            {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-            {saved ? 'Saved!' : 'Save Changes'}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
           </button>
         </div>
 

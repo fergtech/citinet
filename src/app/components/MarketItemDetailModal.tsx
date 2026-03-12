@@ -1,32 +1,41 @@
-import { X, MapPin, MessageCircle, Share2, Flag, Heart } from 'lucide-react';
+import { X, MessageCircle, Share2, Flag } from 'lucide-react';
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { MarketItem } from '../data/marketplaceData';
+import type { HubListing } from '../types/hub';
 
 interface MarketItemDetailModalProps {
-  item: MarketItem | null;
+  item: HubListing | null;
+  imageUrl?: string | null;
   onClose: () => void;
   onVendorClick?: (vendorId: string) => void;
 }
 
-export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketItemDetailModalProps) {
+function formatPrice(listing: HubListing): string {
+  if (listing.price_type === 'free') return 'Free';
+  if (listing.price_type === 'contact') return 'Contact for Price';
+  if (listing.price == null) return 'Contact for Price';
+  const formatted = `$${Number(listing.price).toFixed(2)}`;
+  if (listing.price_type === 'hourly') return `${formatted} / hr`;
+  if (listing.price_type === 'negotiable') return `${formatted} OBO`;
+  return formatted;
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return ''; }
+}
+
+export function MarketItemDetailModal({ item, imageUrl, onClose, onVendorClick }: MarketItemDetailModalProps) {
   useEffect(() => {
-    if (item) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
+    document.body.style.overflow = item ? 'hidden' : 'unset';
+    return () => { document.body.style.overflow = 'unset'; };
   }, [item]);
 
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
   if (!item) return null;
@@ -34,7 +43,6 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -42,8 +50,6 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
           onClick={onClose}
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         />
-
-        {/* Modal */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -51,125 +57,81 @@ export function MarketItemDetailModal({ item, onClose, onVendorClick }: MarketIt
           transition={{ type: 'spring', duration: 0.3 }}
           className="relative w-full max-w-4xl max-h-[90vh] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
         >
-          {/* Left Side - Image */}
-          <div className="md:w-1/2 bg-slate-100 dark:bg-zinc-800 relative">
-            <img
-              src={item.imageUrl}
-              alt={item.title}
-              className="w-full h-64 md:h-full object-cover"
-            />
-            {item.featured && (
-              <div className="absolute top-4 left-4">
-                <span className="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-600 text-white shadow-lg">
-                  Featured
-                </span>
-              </div>
-            )}
+          {/* Left — image */}
+          <div className="md:w-1/2 bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 relative min-h-48">
+            {imageUrl
+              ? <img src={imageUrl} alt={item.title} className="w-full h-64 md:h-full object-cover" />
+              : <div className="w-full h-full flex items-center justify-center text-purple-300 dark:text-purple-700 text-7xl font-bold select-none">
+                  {item.title.charAt(0).toUpperCase()}
+                </div>
+            }
             <button
               onClick={onClose}
-              title="Close"
               className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm flex items-center justify-center hover:bg-white dark:hover:bg-zinc-800 transition-colors shadow-lg"
             >
               <X className="w-5 h-5 text-slate-900 dark:text-white" />
             </button>
           </div>
 
-          {/* Right Side - Details */}
+          {/* Right — details */}
           <div className="md:w-1/2 flex flex-col overflow-y-auto">
-            <div className="p-6 space-y-6">
-              {/* Header */}
+            <div className="p-6 space-y-5 flex-1">
+              {/* Title + category */}
               <div>
-                <div className="flex items-start justify-between gap-4 mb-2">
-                  <h2 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">
-                    {item.title}
-                  </h2>
-                  <button title="Save to favorites" className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
-                    <Heart className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="px-3 py-1 rounded-lg text-sm font-medium uppercase tracking-wide bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-200 dark:ring-purple-500/20">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-semibold uppercase tracking-wide bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-1 ring-purple-200 dark:ring-purple-500/20">
                     {item.category}
                   </span>
                   {item.condition && (
-                    <span className="px-3 py-1 rounded-lg text-sm font-medium bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300">
-                      {item.condition === 'like-new' ? 'Like New' : item.condition.charAt(0).toUpperCase() + item.condition.slice(1)}
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 capitalize">
+                      {item.condition.replace('-', ' ')}
                     </span>
                   )}
                 </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{item.title}</h2>
               </div>
 
               {/* Price */}
-              <div>
-                <p className="text-4xl font-semibold text-purple-600 dark:text-purple-400">
-                  ${item.price.toFixed(2)}
-                </p>
-              </div>
+              <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{formatPrice(item)}</p>
 
-              {/* Seller Info */}
+              {/* Seller */}
               <div className="bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Seller Information</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold">
-                      {item.vendor.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <button
-                        onClick={() => {
-                          onVendorClick?.(item.vendorId);
-                          onClose();
-                        }}
-                        className="text-sm font-medium text-slate-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors text-left"
-                      >
-                        {item.vendor}
-                      </button>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">Highland Park</p>
-                    </div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Seller</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold shrink-0">
+                    {(item.vendor_name ?? '?').charAt(0).toUpperCase()}
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                    <MapPin className="w-4 h-4" />
-                    <span>{item.distance} miles away</span>
+                  <div>
+                    <button
+                      onClick={() => { onVendorClick?.(item.vendor_id); onClose(); }}
+                      className="text-sm font-semibold text-slate-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors text-left"
+                    >
+                      {item.vendor_name ?? 'Unknown'}
+                    </button>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Listed {formatDate(item.created_at)}</p>
                   </div>
-                  {item.postedDate && (
-                    <p className="text-xs text-slate-500 dark:text-slate-500">
-                      Posted {item.postedDate}
-                    </p>
-                  )}
                 </div>
               </div>
 
               {/* Description */}
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Description</h3>
-                <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {item.description || 'No description provided.'}
-                </p>
-              </div>
-
-              {/* Location Preview */}
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Location</h3>
-                <div className="h-32 bg-slate-200 dark:bg-zinc-800 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <MapPin className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Highland Park, {item.distance} mi away</p>
-                  </div>
+              {item.description && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Description</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{item.description}</p>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Action Buttons - Sticky Footer */}
-            <div className="mt-auto p-6 border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+            {/* Actions */}
+            <div className="p-6 border-t border-slate-200 dark:border-zinc-800">
               <div className="flex gap-3">
-                <button className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2">
-                  <MessageCircle className="w-5 h-5" />
-                  Contact Seller
+                <button className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg flex items-center justify-center gap-2">
+                  <MessageCircle className="w-4 h-4" /> Contact Seller
                 </button>
-                <button title="Share listing" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                <button title="Share" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
                   <Share2 className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 </button>
-                <button title="Report listing" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
+                <button title="Report" className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
                   <Flag className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 </button>
               </div>

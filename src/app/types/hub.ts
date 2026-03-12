@@ -88,6 +88,10 @@ export interface HubUser {
   email?: string;
   /** User's location/neighborhood */
   location?: string;
+  /** Short bio */
+  bio?: string;
+  /** Avatar image key (MinIO key, resolved via /api/auth/avatar/:userId) */
+  avatarUrl?: string;
 }
 
 /** What we store per hub in localStorage */
@@ -148,8 +152,13 @@ export interface HubAuthCredentials {
 export interface HubMember {
   user_id: string;
   username: string;
+  display_name?: string | null;
+  location?: string | null;
+  bio?: string | null;
+  tags?: string[] | null;
   is_admin: boolean;
   created_at: string;
+  avatar_url?: string | null;
 }
 
 /** A conversation participant */
@@ -226,4 +235,37 @@ export interface HubFile {
   description?: string;
   category?: string;
   is_public: boolean;
+}
+
+/** A vendor/organization page on the hub */
+export interface HubVendor {
+  id: string;
+  owner_user_id: string;
+  name: string;
+  description?: string;
+  category: string;
+  logo_file_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  website?: string;
+  hours?: string;
+  created_at: string;
+  updated_at?: string;
+  listing_count?: number;
+}
+
+/** A product or service listed on the hub marketplace */
+export interface HubListing {
+  id: string;
+  vendor_id: string;
+  vendor_name?: string;
+  title: string;
+  description?: string;
+  price: number | null;
+  price_type: 'fixed' | 'negotiable' | 'free' | 'hourly' | 'contact';
+  category: string;
+  image_file_name?: string;
+  condition?: string;
+  is_active: boolean;
+  created_at: string;
 }

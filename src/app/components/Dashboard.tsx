@@ -2,7 +2,7 @@ import {
   Users, MessageCircle, Settings, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target,
+  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,9 +11,10 @@ import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { featuredService } from '../services/featuredService';
 import { hubService } from '../services/hubService';
+import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import type { FeaturedItem } from '../types/featured';
-import type { HubPost } from '../types/hub';
+import type { HubPost, HubVendor } from '../types/hub';
 
 interface DashboardProps {
   userName?: string;
@@ -28,12 +29,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   // Featured
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
   const [featuredPost, setFeaturedPost] = useState<HubPost | null>(null);
+  const [myVendor, setMyVendor] = useState<HubVendor | null>(null);
 
   const hubSlug = currentHub?.slug ?? '';
 
   useEffect(() => {
     if (!hubSlug) return;
     featuredService.getFeatured(hubSlug).then(setFeaturedItems);
+    marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
   }, [hubSlug]);
 
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
@@ -159,15 +162,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative">
-      {/* Subtle mesh grid background pattern */}
-      <div className="fixed inset-0 opacity-[0.03] dark:opacity-[0.08] pointer-events-none z-0">
+      {/* Dot grid background pattern */}
+      <div className="fixed inset-0 pointer-events-none z-0">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <pattern id="dashboard-mesh" x="0" y="0" width="32" height="32" patternUnits="userSpaceOnUse">
-              <path d="M 32 0 L 0 0 0 32" fill="none" stroke="currentColor" strokeWidth="0.5" className="text-purple-600 dark:text-purple-400"/>
+            <pattern id="dashboard-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
             </pattern>
           </defs>
-          <rect width="100%" height="100%" fill="url(#dashboard-mesh)"/>
+          <rect width="100%" height="100%" fill="url(#dashboard-dots)" opacity="0.07" className="dark:opacity-[0.12]"/>
         </svg>
       </div>
 
@@ -176,9 +179,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         {/* User Identity */}
         <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg">
-              {displayName.charAt(0).toUpperCase()}
-            </div>
+            {currentUser?.avatarUrl
+              ? <img src={currentUser.avatarUrl} alt={displayName} className="w-12 h-12 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg shrink-0">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+            }
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{displayName}</h2>
@@ -187,6 +193,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 )}
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{nodeName}</p>
+              {currentUser?.hubUserId && (
+                <button
+                  onClick={() => onNavigate(`profile/${currentUser.hubUserId}`)}
+                  className="text-xs text-purple-600 dark:text-purple-400 hover:underline mt-0.5"
+                >
+                  View my profile
+                </button>
+              )}
             </div>
           </div>
           {/* Connection status + reconnect */}
@@ -312,11 +326,19 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             </button>
 
             <button
+              onClick={() => onNavigate('discover')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
+            >
+              <Compass className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Discover</span>
+            </button>
+
+            <button
               onClick={() => onNavigate('toolkit')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
               <Wrench className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Discover</span>
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Resources</span>
             </button>
 
             <button
@@ -334,6 +356,25 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <MessageCircle className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
               <span className="text-sm font-medium text-slate-900 dark:text-white">Messages</span>
             </button>
+
+            {/* My Store — only visible to users who have a vendor page */}
+            {myVendor && (
+              <>
+                <div className="my-2 border-t border-slate-200 dark:border-zinc-800" />
+                <button
+                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors text-left group"
+                >
+                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                    {myVendor.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-semibold text-purple-700 dark:text-purple-400 truncate block">{myVendor.name}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-500 leading-none">My Store</span>
+                  </div>
+                </button>
+              </>
+            )}
           </div>
 
           {/* Node Status - Simplified
@@ -407,10 +448,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(v => !v)}
-                  className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shadow-sm active:scale-95 transition-transform"
+                  className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shadow-sm active:scale-95 transition-transform"
                   aria-label="Open user menu"
                 >
-                  {displayName.charAt(0).toUpperCase()}
+                  {currentUser?.avatarUrl
+                    ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    : displayName.charAt(0).toUpperCase()
+                  }
                 </button>
                 {showUserMenu && (
                   <>
@@ -428,6 +472,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                         <span className="text-sm font-medium text-slate-900 dark:text-white">My Account</span>
                       </button>
+                      {currentUser?.hubUserId && (
+                        <button
+                          onClick={() => { setShowUserMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
+                        >
+                          <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                          <span className="text-sm font-medium text-slate-900 dark:text-white">My Profile</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => { setShowUserMenu(false); onNavigate('settings'); }}
                         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
@@ -739,15 +792,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
           >
             {[
-              { icon: <MessageCircle className="w-5 h-5" />, label: 'Discuss',   screen: 'feed' },
-              { icon: <Map className="w-5 h-5" />,            label: 'Atlas',     screen: 'atlas' },
-              { icon: <Store className="w-5 h-5" />,          label: 'Exchange',  screen: 'marketplace' },
-              { icon: <Users className="w-5 h-5" />,          label: 'Neighbors', screen: 'neighbors' },
-              { icon: <FolderOpen className="w-5 h-5" />,     label: 'Files',     screen: 'files' },
-              { icon: <Target className="w-5 h-5" />,          label: 'Initiatives', screen: 'initiatives' },
-              { icon: <Wrench className="w-5 h-5" />,         label: 'Discover',  screen: 'toolkit' },
-              { icon: <Radio className="w-5 h-5" />,          label: 'Network',   screen: 'network' },
-              { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',  screen: 'messages' },
+              { icon: <MessageCircle className="w-5 h-5" />, label: 'Discuss',     screen: 'feed' },
+              { icon: <Compass className="w-5 h-5" />,        label: 'Discover',   screen: 'discover' },
+              { icon: <Map className="w-5 h-5" />,            label: 'Atlas',      screen: 'atlas' },
+              { icon: <Store className="w-5 h-5" />,          label: 'Exchange',   screen: 'marketplace' },
+              { icon: <Users className="w-5 h-5" />,          label: 'Neighbors',  screen: 'neighbors' },
+              { icon: <FolderOpen className="w-5 h-5" />,     label: 'Files',      screen: 'files' },
+              { icon: <Target className="w-5 h-5" />,         label: 'Initiatives',screen: 'initiatives' },
+              { icon: <Wrench className="w-5 h-5" />,         label: 'Resources',  screen: 'toolkit' },
+              { icon: <Radio className="w-5 h-5" />,          label: 'Network',    screen: 'network' },
+              { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',   screen: 'messages' },
             ].map(item => (
               <button
                 key={item.screen}
@@ -758,6 +812,21 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <span className="text-[10px] font-medium leading-none">{item.label}</span>
               </button>
             ))}
+            {/* My Store — separator + tab, only shown when user has a vendor page */}
+            {myVendor && (
+              <>
+                <div className="flex-shrink-0 w-px self-stretch my-2 bg-slate-200 dark:bg-zinc-700" />
+                <button
+                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
+                  className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-all"
+                >
+                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold">
+                    {myVendor.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[10px] font-medium leading-none">My Store</span>
+                </button>
+              </>
+            )}
             {/* Extra right padding so last tab isn't obscured by the fade */}
             <div className="flex-shrink-0 w-4" />
           </div>
@@ -772,6 +841,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           post={featuredPost}
           hubSlug={hubSlug}
           currentUserId={currentUser?.hubUserId}
+          currentUserAvatarUrl={currentUser?.avatarUrl}
           isAdmin={isAdmin}
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
@@ -993,42 +1063,57 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
 
 function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
   const cfg = ACTIVITY_CONFIG[item.type];
+  const initial = item.actor.charAt(0).toUpperCase();
 
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
+      className="min-w-[280px] w-full bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
     >
-      <div className="flex">
+      <div className="flex items-stretch">
         {/* Left accent border */}
         <div className={`w-[3px] shrink-0 ${cfg.border.replace('border-l-', 'bg-')}`} />
 
         <div className="flex-1 px-4 py-3 flex items-start gap-3 min-w-0">
-          {/* Icon */}
+          {/* Left: type icon */}
           <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
             <cfg.Icon className="w-4 h-4 text-white" />
           </div>
 
-          {/* Content */}
+          {/* Center: content */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{item.actor}</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500">·</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500">{item.summary}</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto shrink-0">{timeAgo(item.timestamp)}</span>
+            {/* Row 1: actor · summary · timestamp */}
+            <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
+              {/* Actor avatar (personal) */}
+              {item.actorAvatarUrl ? (
+                <img
+                  src={item.actorAvatarUrl}
+                  alt={item.actor}
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                  {initial}
+                </div>
+              )}
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0 max-w-[6rem] truncate">{item.actor}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">·</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{item.summary}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto pl-2 shrink-0 whitespace-nowrap">{timeAgo(item.timestamp)}</span>
             </div>
+            {/* Row 2: title */}
             <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+            {/* Row 3: CTA (if present) — own line so it never overlaps */}
+            {item.cta && (
+              <div className="mt-1.5">
+                <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
+                  {item.cta}
+                </span>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* CTA (Say Welcome etc.) */}
-        {item.cta && (
-          <div className="flex items-center pr-3 shrink-0">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
-              {item.cta}
-            </span>
-          </div>
-        )}
       </div>
     </button>
   );

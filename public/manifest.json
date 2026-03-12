@@ -1,7 +1,7 @@
 {
-  "name": "citinet - Local Mesh Network",
+  "name": "citinet — Community Network",
   "short_name": "citinet",
-  "description": "Local mesh network community platform for Highland Park. Secure, local, owned by us.",
+  "description": "A decentralized community network platform. Connect with your neighbors, share resources, and build local resilience.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

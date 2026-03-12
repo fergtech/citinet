@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, Search, Loader2, AlertCircle, RefreshCw,
-  Users, Shield, UserCircle, Calendar, MessageSquarePlus
+  Users, Shield, UserCircle, Calendar, MessageSquarePlus, Tag, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -11,6 +11,7 @@ import type { HubMember } from '../types/hub';
 interface NeighborsScreenProps {
   onBack: () => void;
   onNavigate?: (screen: string) => void;
+  onViewProfile?: (userId: string) => void;
 }
 
 function formatJoinDate(dateStr?: string): string {
@@ -46,7 +47,7 @@ function getAvatarColor(username: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
+export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: NeighborsScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug || '';
 
@@ -54,6 +55,7 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const loadMembers = async () => {
     if (!slug) return;
@@ -73,9 +75,27 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
     loadMembers();
   }, [slug]);
 
-  const filteredMembers = members.filter(m =>
-    m.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Read tag filter set by ProfileScreen navigation
+  useEffect(() => {
+    const tag = sessionStorage.getItem('citinet-filter-tag');
+    if (tag) {
+      setActiveTag(tag);
+      sessionStorage.removeItem('citinet-filter-tag');
+    }
+  }, []);
+
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    members.forEach(m => m.tags?.forEach(t => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  }, [members]);
+
+  const filteredMembers = members.filter(m => {
+    const matchesSearch = m.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    const matchesTag = !activeTag || (m.tags?.includes(activeTag) ?? false);
+    return matchesSearch && matchesTag;
+  });
 
   // Sort: admins first, then alphabetically
   const sortedMembers = [...filteredMembers].sort((a, b) => {
@@ -87,6 +107,17 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
+      {/* Dot grid background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="neighbors-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#neighbors-dots)" opacity="0.07"/>
+        </svg>
+      </div>
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -129,6 +160,35 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
           />
         </div>
 
+        {/* Tag filter chips */}
+        {allTags.length > 0 && (
+          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1 scrollbar-none">
+            {activeTag && (
+              <button
+                onClick={() => setActiveTag(null)}
+                className="flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+              >
+                <X className="w-3 h-3" />
+                Clear
+              </button>
+            )}
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+                className={`flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  activeTag === tag
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600'
+                }`}
+              >
+                <Tag className="w-3 h-3" />
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Loading State */}
         {loading && (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -167,11 +227,16 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
           <div className="flex flex-col items-center justify-center py-20 text-slate-400">
             <Users className="w-12 h-12 mb-3 opacity-40" />
             <p className="text-sm font-medium">
-              {searchQuery ? 'No neighbors match your search' : 'No neighbors yet'}
+              {activeTag ? `No neighbors tagged #${activeTag}` : searchQuery ? 'No neighbors match your search' : 'No neighbors yet'}
             </p>
             <p className="text-xs mt-1 text-slate-400">
-              {searchQuery ? 'Try a different search term' : 'Be the first to join this hub!'}
+              {activeTag ? 'Try a different tag' : searchQuery ? 'Try a different search term' : 'Be the first to join this hub!'}
             </p>
+            {activeTag && (
+              <button onClick={() => setActiveTag(null)} className="mt-2 text-xs text-purple-600 hover:underline">
+                Clear filter
+              </button>
+            )}
           </div>
         )}
 
@@ -182,19 +247,31 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
               {sortedMembers.map((member, index) => {
                 const isYou = member.user_id === currentUserId;
                 return (
-                  <motion.div
+                  <motion.button
                     key={member.user_id || index}
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -12 }}
                     transition={{ delay: index * 0.03 }}
-                    className="group bg-white dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/50 rounded-xl p-4 hover:border-purple-300 dark:hover:border-purple-600/40 transition-colors"
+                    onClick={() => {
+                      if (isYou) { onNavigate?.('account'); }
+                      else { onViewProfile?.(member.user_id); }
+                    }}
+                    className="w-full text-left group bg-white dark:bg-zinc-800/60 border border-slate-200 dark:border-zinc-700/50 rounded-xl p-4 hover:border-purple-300 dark:hover:border-purple-600/40 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       {/* Avatar */}
-                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
-                        {getInitials(member.username)}
-                      </div>
+                      {member.avatar_url
+                        ? <img
+                            src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}
+                            alt={member.username}
+                            className="w-10 h-10 rounded-full object-cover shadow-sm"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        : <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
+                            {getInitials(member.username)}
+                          </div>
+                      }
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
@@ -240,10 +317,10 @@ export function NeighborsScreen({ onBack, onNavigate }: NeighborsScreenProps) {
                         </button>
                       )}
 
-                      {/* Icon */}
+                      {/* Chevron / icon */}
                       <UserCircle className="w-5 h-5 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />
                     </div>
-                  </motion.div>
+                  </motion.button>
                 );
               })}
             </div>

@@ -15,6 +15,8 @@ export interface ActivityItem {
   id: string;
   type: ActivityType;
   actor: string;
+  /** Uploaded avatar URL for the actor, if available */
+  actorAvatarUrl?: string;
   summary: string;
   title: string;
   timestamp: Date;
@@ -62,14 +64,36 @@ export function useActivityFeed(hubSlug: string) {
 
     const raw: ActivityItem[] = [];
 
+    // Build lookup maps from members list
+    const memberByUsername: Record<string, { user_id: string }> = {};
+    const memberByUserId: Record<string, { username: string }> = {};
+    if (membersResult.status === 'fulfilled') {
+      for (const m of membersResult.value) {
+        memberByUsername[m.username] = m;
+        memberByUserId[m.user_id] = m;
+      }
+    }
+
+    // Helper: build avatar URL via the API endpoint (same as sidebar)
+    const avatarUrl = (userId: string): string | undefined => {
+      const url = hubService.getAvatarUrl(hubSlug, userId);
+      return url ?? undefined;
+    };
+    const avatarUrlForUsername = (username: string): string | undefined => {
+      const member = memberByUsername[username];
+      return member ? avatarUrl(member.user_id) : undefined;
+    };
+
     // ── Posts → discussions / announcements / projects / requests
     if (postsResult.status === 'fulfilled') {
       for (const post of postsResult.value.slice(0, 5)) {
         const type: ActivityType = POST_CATEGORY_MAP[post.category?.toUpperCase()] ?? 'discussion';
+        const actor = (post as any).author_username || 'A neighbor';
         raw.push({
           id: `post-${post.id}`,
           type,
-          actor: (post as any).author_username || 'A neighbor',
+          actor,
+          actorAvatarUrl: avatarUrlForUsername(actor),
           summary: 'posted',
           title: post.title,
           timestamp: new Date(post.created_at),
@@ -81,22 +105,18 @@ export function useActivityFeed(hubSlug: string) {
 
     // ── Public files → file_shared
     if (filesResult.status === 'fulfilled') {
-      // Build userId→username map from members if available
-      const usernameMap: Record<string, string> = {};
-      if (membersResult.status === 'fulfilled') {
-        for (const m of membersResult.value) usernameMap[m.user_id] = m.username;
-      }
-
       const publicFiles = filesResult.value
         .filter(f => f.is_public && f.uploaded_at)
         .slice(0, 3);
 
       for (const file of publicFiles) {
-        const actor = (file.owner_id && usernameMap[file.owner_id]) || 'A neighbor';
+        const member = file.owner_id ? memberByUserId[file.owner_id] : undefined;
+        const actor = member?.username || 'A neighbor';
         raw.push({
           id: `file-${file.id}`,
           type: 'file_shared',
           actor,
+          actorAvatarUrl: file.owner_id ? avatarUrl(file.owner_id) : undefined,
           summary: 'shared a file',
           title: file.name,
           timestamp: new Date(file.uploaded_at!),
@@ -118,6 +138,7 @@ export function useActivityFeed(hubSlug: string) {
           id: `member-${member.user_id}`,
           type: 'neighbor_joined',
           actor: member.username,
+          actorAvatarUrl: avatarUrl(member.user_id),
           summary: 'joined the community',
           title: `@${member.username} is a new neighbor`,
           timestamp: new Date(member.created_at),
@@ -135,10 +156,12 @@ export function useActivityFeed(hubSlug: string) {
         .slice(0, 3);
 
       for (const pin of recentPins) {
+        const actor = pin.authorUsername || 'A neighbor';
         raw.push({
           id: `pin-${pin.id}`,
           type: 'pin_added',
-          actor: pin.authorUsername || 'A neighbor',
+          actor,
+          actorAvatarUrl: avatarUrlForUsername(actor),
           summary: 'pinned to Atlas',
           title: pin.title,
           timestamp: new Date(pin.createdAt),

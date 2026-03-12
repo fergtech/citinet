@@ -216,6 +216,17 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
+      {/* Dot grid background */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="hubmgmt-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#hubmgmt-dots)" opacity="0.07"/>
+        </svg>
+      </div>
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4">
@@ -603,9 +614,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 const busy = memberActionId === member.user_id;
                 return (
                   <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                      {member.username.charAt(0).toUpperCase()}
-                    </div>
+                    {member.avatar_url && currentHub?.slug
+                      ? <img src={hubService.getAvatarUrl(currentHub.slug, member.user_id) ?? undefined} alt={member.username} className="w-9 h-9 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                          {member.username.charAt(0).toUpperCase()}
+                        </div>
+                    }
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-slate-900 dark:text-white truncate">

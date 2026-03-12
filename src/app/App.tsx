@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
@@ -9,8 +9,8 @@ import { Feed } from './components/Feed';
 import { NetworkScreen } from './components/NetworkScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
-import { VendorProfileScreen, mockVendors } from './components/VendorProfileScreen';
-import { marketItems } from './data/marketplaceData';
+import { VendorProfileScreen } from './components/VendorProfileScreen';
+import { marketplaceService } from './services/marketplaceService';
 import { MessagesScreen } from './components/MessagesScreen';
 import { ToolkitScreen } from './components/ToolkitScreen';
 import { FilesScreen } from './components/FilesScreen';
@@ -21,10 +21,12 @@ import { AtlasScreen } from './components/AtlasScreen';
 import { InitiativesScreen } from './components/InitiativesScreen';
 import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
+import { ProfileScreen } from './components/ProfileScreen';
+import { DiscoverScreen } from './components/DiscoverScreen';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
-import type { Hub, HubUser } from './types/hub';
+import type { Hub, HubUser, HubVendor, HubListing } from './types/hub';
 
 const screenTitles: Record<string, string> = {
   community: 'Community',
@@ -125,12 +127,12 @@ function HubOnboardRoute() {
     const isCreator = sessionStorage.getItem('citinet-creator-for') === hubSlug;
     if (isCreator) sessionStorage.removeItem('citinet-creator-for');
     const finalData: HubUser = isCreator ? { ...data, isAdmin: true } : data;
-    await hubService.completeOnboarding(hubSlug, finalData);
+    // completeOnboarding already called inside registerUser/loginUser — just update context
     onOnboardingComplete(hubSlug, finalData);
     navigate(hubPath('/'));
   };
 
-  return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} />;
+  return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} hubSlug={hubSlug} />;
 }
 
 function HubDashboardRoute() {
@@ -169,14 +171,27 @@ function HubDashboardRoute() {
 
 function HubFeedRoute() {
   const navigate = useNavigate();
-  return <Feed onBack={() => navigate(hubPath('/'))} />;
+  return <Feed onBack={() => navigate(-1)} />;
 }
 
 function HubNeighborsRoute() {
   const navigate = useNavigate();
   return (
     <NeighborsScreen
-      onBack={() => navigate(hubPath('/'))}
+      onBack={() => navigate(-1)}
+      onNavigate={screen => navigate(hubPath(`/${screen}`))}
+      onViewProfile={userId => navigate(hubPath(`/profile/${userId}`))}
+    />
+  );
+}
+
+function HubProfileRoute() {
+  const navigate = useNavigate();
+  const params = useParams<{ userId: string }>();
+  return (
+    <ProfileScreen
+      userId={params.userId ?? ''}
+      onBack={() => navigate(-1)}
       onNavigate={screen => navigate(hubPath(`/${screen}`))}
     />
   );
@@ -184,24 +199,24 @@ function HubNeighborsRoute() {
 
 function HubFilesRoute() {
   const navigate = useNavigate();
-  return <FilesScreen onBack={() => navigate(hubPath('/'))} />;
+  return <FilesScreen onBack={() => navigate(-1)} />;
 }
 
 function HubMessagesRoute() {
   const navigate = useNavigate();
-  return <MessagesScreen onBack={() => navigate(hubPath('/'))} />;
+  return <MessagesScreen onBack={() => navigate(-1)} />;
 }
 
 function HubNetworkRoute() {
   const navigate = useNavigate();
-  return <NetworkScreen onBack={() => navigate(hubPath('/'))} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+  return <NetworkScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubMarketplaceRoute() {
   const navigate = useNavigate();
   return (
     <MarketplaceScreen
-      onBack={() => navigate(hubPath('/'))}
+      onBack={() => navigate(-1)}
       onVendorClick={id => navigate(hubPath(`/vendor/${id}`))}
     />
   );
@@ -210,67 +225,87 @@ function HubMarketplaceRoute() {
 function HubVendorProfileRoute() {
   const navigate = useNavigate();
   const { vendorId } = useParams<{ vendorId: string }>();
+  const { currentHub } = useHub();
+  const slug = currentHub?.slug ?? '';
 
-  const vendor = mockVendors.find(v => v.id === vendorId);
+  const [data, setData] = useState<{ vendor: HubVendor; listings: HubListing[] } | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (!vendor) {
-    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate(hubPath('/marketplace'))} />;
+  useEffect(() => {
+    if (!slug || !vendorId) return;
+    marketplaceService.getVendor(slug, vendorId)
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [slug, vendorId]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
-  const vendorListings = marketItems
-    .filter(item => item.vendorId === vendorId)
-    .map(item => ({
-      id: item.id,
-      title: item.title,
-      price: item.price,
-      imageUrl: item.imageUrl,
-      category: item.category,
-      featured: item.featured
-    }));
+  if (!data) {
+    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate(-1)} />;
+  }
 
   return (
     <VendorProfileScreen
-      vendor={vendor}
-      vendorListings={vendorListings}
-      onBack={() => navigate(hubPath('/marketplace'))}
-      onItemClick={() => navigate(hubPath('/marketplace'))}
+      vendor={data.vendor}
+      listings={data.listings}
+      hubSlug={slug}
+      onBack={() => navigate(-1)}
+      onItemClick={() => navigate(-1)}
     />
   );
 }
 
 function HubToolkitRoute() {
   const navigate = useNavigate();
-  return <ToolkitScreen onBack={() => navigate(hubPath('/'))} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+  return <ToolkitScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubMySubmissionsRoute() {
   const navigate = useNavigate();
-  return <MySubmissionsScreen onBack={() => navigate(hubPath('/toolkit'))} />;
+  return <MySubmissionsScreen onBack={() => navigate(-1)} />;
 }
 
 function HubAtlasRoute() {
   const navigate = useNavigate();
-  return <AtlasScreen onBack={() => navigate(hubPath('/'))} />;
+  return <AtlasScreen onBack={() => navigate(-1)} />;
 }
 
 function HubInitiativesRoute() {
   const navigate = useNavigate();
-  return <InitiativesScreen onBack={() => navigate(hubPath('/'))} />;
+  return <InitiativesScreen onBack={() => navigate(-1)} />;
 }
 
 function HubModerationQueueRoute() {
   const navigate = useNavigate();
-  return <ModerationQueueScreen onBack={() => navigate(hubPath('/toolkit'))} />;
+  return <ModerationQueueScreen onBack={() => navigate(-1)} />;
 }
 
 function HubAccountRoute() {
   const navigate = useNavigate();
-  return <AccountScreen onBack={() => navigate(hubPath('/'))} />;
+  return <AccountScreen onBack={() => navigate(-1)} onNavigate={screen => navigate(hubPath(`/${screen}`))} />;
 }
 
 function HubManagementRoute() {
   const navigate = useNavigate();
-  return <HubManagementScreen onBack={() => navigate(hubPath('/'))} />;
+  return <HubManagementScreen onBack={() => navigate(-1)} />;
+}
+
+function HubDiscoverRoute() {
+  const navigate = useNavigate();
+  return (
+    <DiscoverScreen
+      onBack={() => navigate(-1)}
+      onNavigate={s => navigate(hubPath(`/${s}`))}
+      onViewProfile={userId => navigate(hubPath(`/profile/${userId}`))}
+    />
+  );
 }
 
 function HubPlaceholderRoute({ screen }: { screen: string }) {
@@ -279,7 +314,7 @@ function HubPlaceholderRoute({ screen }: { screen: string }) {
     <PlaceholderScreen
       title={screenTitles[screen] || 'Screen'}
       description={screenDescriptions[screen]}
-      onBack={() => navigate(hubPath('/'))}
+      onBack={() => navigate(-1)}
     />
   );
 }
@@ -344,7 +379,9 @@ function HubModeRoutes() {
       <Route path="/signal" element={<HubGuard><HubPlaceholderRoute screen="signal" /></HubGuard>} />
       <Route path="/become-sponsor" element={<HubGuard><HubPlaceholderRoute screen="become-sponsor" /></HubGuard>} />
       <Route path="/account" element={<HubGuard><HubAccountRoute /></HubGuard>} />
+      <Route path="/profile/:userId" element={<HubGuard><HubProfileRoute /></HubGuard>} />
       <Route path="/hub-management" element={<HubGuard><HubManagementRoute /></HubGuard>} />
+      <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -195,6 +195,46 @@ async function initDb() {
         created_at     TIMESTAMPTZ  DEFAULT NOW()
       )
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_vendors (
+        id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_user_id   UUID         NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        name            VARCHAR(100) NOT NULL,
+        description     TEXT,
+        category        TEXT         DEFAULT 'General',
+        logo_file_name  TEXT,
+        contact_email   TEXT,
+        contact_phone   TEXT,
+        website         TEXT,
+        hours           TEXT,
+        created_at      TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ  DEFAULT NOW(),
+        UNIQUE(owner_user_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_listings (
+        id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+        vendor_id       UUID          NOT NULL REFERENCES hub_vendors(id) ON DELETE CASCADE,
+        title           VARCHAR(200)  NOT NULL,
+        description     TEXT,
+        price           DECIMAL(10,2),
+        price_type      TEXT          DEFAULT 'fixed',
+        category        TEXT          DEFAULT 'Other',
+        image_file_name TEXT,
+        condition       TEXT,
+        is_active       BOOLEAN       DEFAULT TRUE,
+        created_at      TIMESTAMPTZ   DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ   DEFAULT NOW()
+      )
+    `);
+    // Migrations — add columns that may not exist on older schemas
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS avatar_url   TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS display_name TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS location     TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS bio          TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS tags         TEXT[]`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ DEFAULT NOW()`);
   } finally {
     client.release();
   }
@@ -388,7 +428,7 @@ app.post('/api/auth/register', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO hub_users (username, email, password_hash, is_admin)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, username, is_admin`,
+       RETURNING id, username, is_admin, avatar_url`,
       [username.trim().toLowerCase(), email || '', hash, isFirst]
     );
 
@@ -399,7 +439,17 @@ app.post('/api/auth/register', async (req, res) => {
       [token, user.id]
     );
 
-    res.json({ token, userId: user.id, username: user.username, isAdmin: user.is_admin });
+    res.json({
+      token,
+      userId: user.id,
+      username: user.username,
+      isAdmin: user.is_admin,
+      avatar_url:   user.avatar_url   || null,
+      display_name: user.display_name || null,
+      location:     user.location     || null,
+      bio:          user.bio          || null,
+      tags:         user.tags         || [],
+    });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Username already taken. Try logging in instead.' });
@@ -433,7 +483,17 @@ app.post('/api/auth/login', async (req, res) => {
       [token, user.id]
     );
 
-    res.json({ token, userId: user.id, username: user.username, isAdmin: user.is_admin });
+    res.json({
+      token,
+      userId: user.id,
+      username: user.username,
+      isAdmin: user.is_admin,
+      avatar_url:   user.avatar_url   || null,
+      display_name: user.display_name || null,
+      location:     user.location     || null,
+      bio:          user.bio          || null,
+      tags:         user.tags         || [],
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
@@ -466,17 +526,112 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
   }
 });
 
+// Upload avatar
+app.post('/api/auth/avatar', authenticate, upload.single('avatar'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+
+  const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const avatarKey = `avatars/${req.user.id}.${ext}`;
+
+  try {
+    await minioClient.putObject(
+      STORAGE_BUCKET,
+      avatarKey,
+      req.file.buffer,
+      req.file.size,
+      { 'Content-Type': req.file.mimetype }
+    );
+
+    // Store relative key so it works even if tunnel URL changes
+    await pool.query('UPDATE hub_users SET avatar_url = $1 WHERE id = $2', [avatarKey, req.user.id]);
+    res.json({ avatar_key: avatarKey });
+  } catch (err) {
+    console.error('Avatar upload error:', err);
+    res.status(500).json({ error: 'Avatar upload failed' });
+  }
+});
+
+// Serve avatar (no auth — avatars are visible to hub members)
+app.get('/api/auth/avatar/:userId', async (req, res) => {
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+
+  try {
+    const result = await pool.query('SELECT avatar_url FROM hub_users WHERE id = $1', [req.params.userId]);
+    const user = result.rows[0];
+    if (!user || !user.avatar_url) return res.status(404).json({ error: 'No avatar' });
+
+    const stat = await minioClient.statObject(STORAGE_BUCKET, user.avatar_url).catch(() => null);
+    const stream = await minioClient.getObject(STORAGE_BUCKET, user.avatar_url);
+    res.setHeader('Content-Type', stat?.metaData?.['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Avatar serve error:', err);
+    res.status(500).json({ error: 'Failed to load avatar' });
+  }
+});
+
+// Update own profile (display name, location, bio, tags)
+app.patch('/api/auth/profile', authenticate, async (req, res) => {
+  const { display_name, location, bio, tags } = req.body || {};
+  const fields = [];
+  const values = [];
+  let idx = 1;
+
+  if (display_name !== undefined) { fields.push(`display_name = $${idx++}`); values.push(display_name || null); }
+  if (location     !== undefined) { fields.push(`location = $${idx++}`);     values.push(location || null); }
+  if (bio          !== undefined) { fields.push(`bio = $${idx++}`);           values.push(bio || null); }
+  if (tags         !== undefined) { fields.push(`tags = $${idx++}`);          values.push(Array.isArray(tags) ? tags : []); }
+
+  if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+  fields.push(`updated_at = NOW()`);
+  values.push(req.user.id);
+
+  try {
+    const result = await pool.query(
+      `UPDATE hub_users SET ${fields.join(', ')} WHERE id = $${idx}
+       RETURNING id AS user_id, username, display_name, location, bio, tags, avatar_url, is_admin, created_at, updated_at`,
+      values
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Profile update error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
 // ── Authenticated routes ──────────────────────────────────
 
 app.get('/api/members', authenticate, async (_req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id AS user_id, username, is_admin, created_at FROM hub_users ORDER BY created_at'
+      `SELECT id AS user_id, username, display_name, location, bio, tags,
+              is_admin, created_at, avatar_url
+       FROM hub_users ORDER BY created_at`
     );
     res.json({ members: result.rows });
   } catch (err) {
     console.error('Members error:', err);
     res.status(500).json({ error: 'Failed to list members' });
+  }
+});
+
+// Get a single member's public profile
+app.get('/api/members/:id', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id AS user_id, username, display_name, location, bio, tags,
+              avatar_url, is_admin, created_at
+       FROM hub_users WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Member not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Member profile error:', err);
+    res.status(500).json({ error: 'Failed to load member profile' });
   }
 });
 
@@ -1358,6 +1513,246 @@ app.delete('/api/atlas/pins/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Delete atlas pin error:', err);
     res.status(500).json({ error: 'Failed to delete pin' });
+  }
+});
+
+// ── Marketplace / Vendor routes ────────────────────────────────────────────
+
+// All active listings (joined with vendor name)
+app.get('/api/marketplace/listings', authenticate, async (req, res) => {
+  const { category } = req.query;
+  try {
+    let query = `
+      SELECT l.*, v.name AS vendor_name
+      FROM hub_listings l
+      JOIN hub_vendors v ON l.vendor_id = v.id
+      WHERE l.is_active = TRUE
+    `;
+    const params = [];
+    if (category && category !== 'All') {
+      params.push(category.toString().toUpperCase());
+      query += ` AND UPPER(l.category) = $${params.length}`;
+    }
+    query += ' ORDER BY l.created_at DESC';
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get listings error:', err);
+    res.status(500).json({ error: 'Failed to fetch listings' });
+  }
+});
+
+// All vendors
+app.get('/api/vendors', authenticate, async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT v.*, COUNT(l.id)::int AS listing_count
+      FROM hub_vendors v
+      LEFT JOIN hub_listings l ON l.vendor_id = v.id AND l.is_active = TRUE
+      GROUP BY v.id
+      ORDER BY v.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch vendors' });
+  }
+});
+
+// My vendor page — MUST be before /api/vendors/:id
+app.get('/api/vendors/me', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM hub_vendors WHERE owner_user_id = $1',
+      [req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'No vendor page' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch vendor' });
+  }
+});
+
+// Single vendor + their listings
+app.get('/api/vendors/:id', authenticate, async (req, res) => {
+  try {
+    const vendorResult = await pool.query('SELECT * FROM hub_vendors WHERE id = $1', [req.params.id]);
+    if (vendorResult.rows.length === 0) return res.status(404).json({ error: 'Vendor not found' });
+    const listingsResult = await pool.query(
+      'SELECT * FROM hub_listings WHERE vendor_id = $1 AND is_active = TRUE ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    res.json({ vendor: vendorResult.rows[0], listings: listingsResult.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch vendor' });
+  }
+});
+
+// Create vendor page (one per user)
+app.post('/api/vendors', authenticate, async (req, res) => {
+  const { name, description, category, contact_email, contact_phone, website, hours } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Vendor name is required' });
+  try {
+    const result = await pool.query(`
+      INSERT INTO hub_vendors (owner_user_id, name, description, category, contact_email, contact_phone, website, hours)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [req.user.id, name.trim(), description || null, category || 'General',
+        contact_email || null, contact_phone || null, website || null, hours || null]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'You already have a vendor page' });
+    console.error('Create vendor error:', err);
+    res.status(500).json({ error: 'Failed to create vendor page' });
+  }
+});
+
+// Update my vendor page
+app.patch('/api/vendors/me', authenticate, async (req, res) => {
+  const { name, description, category, contact_email, contact_phone, website, hours } = req.body;
+  try {
+    const result = await pool.query(`
+      UPDATE hub_vendors
+      SET name          = COALESCE($1, name),
+          description   = COALESCE($2, description),
+          category      = COALESCE($3, category),
+          contact_email = COALESCE($4, contact_email),
+          contact_phone = COALESCE($5, contact_phone),
+          website       = COALESCE($6, website),
+          hours         = COALESCE($7, hours),
+          updated_at    = NOW()
+      WHERE owner_user_id = $8
+      RETURNING *
+    `, [name || null, description || null, category || null,
+        contact_email || null, contact_phone || null, website || null, hours || null,
+        req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Vendor page not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update vendor page' });
+  }
+});
+
+// Create a listing (user must have vendor page)
+app.post('/api/marketplace/listings', authenticate, async (req, res) => {
+  const { title, description, price, price_type, category, image_file_name, condition } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  try {
+    const vendorResult = await pool.query(
+      'SELECT id FROM hub_vendors WHERE owner_user_id = $1',
+      [req.user.id]
+    );
+    if (vendorResult.rows.length === 0) {
+      return res.status(403).json({ error: 'You need a vendor page to create listings' });
+    }
+    const vendorId = vendorResult.rows[0].id;
+    const result = await pool.query(`
+      INSERT INTO hub_listings (vendor_id, title, description, price, price_type, category, image_file_name, condition)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [vendorId, title.trim(), description || null,
+        price != null ? parseFloat(price) : null,
+        price_type || 'fixed', category || 'Other',
+        image_file_name || null, condition || null]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create listing error:', err);
+    res.status(500).json({ error: 'Failed to create listing' });
+  }
+});
+
+// Update a listing (owner only)
+app.patch('/api/marketplace/listings/:id', authenticate, async (req, res) => {
+  const { title, description, price, price_type, category, image_file_name, condition, is_active } = req.body;
+  try {
+    const check = await pool.query(`
+      SELECT l.id FROM hub_listings l
+      JOIN hub_vendors v ON l.vendor_id = v.id
+      WHERE l.id = $1 AND v.owner_user_id = $2
+    `, [req.params.id, req.user.id]);
+    if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    const result = await pool.query(`
+      UPDATE hub_listings
+      SET title           = COALESCE($1, title),
+          description     = COALESCE($2, description),
+          price           = COALESCE($3::decimal, price),
+          price_type      = COALESCE($4, price_type),
+          category        = COALESCE($5, category),
+          image_file_name = COALESCE($6, image_file_name),
+          condition       = COALESCE($7, condition),
+          is_active       = COALESCE($8, is_active),
+          updated_at      = NOW()
+      WHERE id = $9
+      RETURNING *
+    `, [title || null, description || null,
+        price != null ? parseFloat(price) : null,
+        price_type || null, category || null,
+        image_file_name || null, condition || null,
+        is_active != null ? is_active : null,
+        req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update listing' });
+  }
+});
+
+// Delete a listing (owner only)
+app.delete('/api/marketplace/listings/:id', authenticate, async (req, res) => {
+  try {
+    const check = await pool.query(`
+      SELECT l.id FROM hub_listings l
+      JOIN hub_vendors v ON l.vendor_id = v.id
+      WHERE l.id = $1 AND v.owner_user_id = $2
+    `, [req.params.id, req.user.id]);
+    if (check.rows.length === 0) return res.status(403).json({ error: 'Not authorized' });
+    await pool.query('DELETE FROM hub_listings WHERE id = $1', [req.params.id]);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete listing' });
+  }
+});
+
+// ── Marketplace banner config ────────────────────────────
+
+const BANNER_CONFIG_KEYS = [
+  'marketplace_banner_image',
+  'marketplace_banner_position',
+  'marketplace_banner_title',
+  'marketplace_banner_subtitle',
+];
+
+app.get('/api/marketplace-config', authenticate, async (_req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT key, value FROM hub_config WHERE key = ANY($1)',
+      [BANNER_CONFIG_KEYS]
+    );
+    const config = {};
+    result.rows.forEach(r => { config[r.key] = r.value; });
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/marketplace-config', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const entries = Object.entries(req.body || {}).filter(([k]) => BANNER_CONFIG_KEYS.includes(k));
+  if (entries.length === 0) return res.status(400).json({ error: 'No valid fields provided' });
+  try {
+    for (const [key, value] of entries) {
+      if (value === null || value === '') {
+        await pool.query('DELETE FROM hub_config WHERE key = $1', [key]);
+      } else {
+        await pool.query(
+          `INSERT INTO hub_config (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [key, String(value)]
+        );
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

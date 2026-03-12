@@ -33,7 +33,7 @@ interface HubContextValue {
   /** Update the tunnel URL when it rotates */
   updateTunnelUrl: (newUrl: string, skipProbe?: boolean) => Promise<{ ok: boolean; error?: string }>;
   /** Update the current user's local profile */
-  updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>) => HubUser | null;
+  updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>) => HubUser | null;
   /** Update the hub's location and geocoded coordinates (server + localStorage) */
   updateLocation: (location: string, lat: number, lng: number) => Promise<Hub | null>;
   /** Update the hub's description (server + localStorage) */
@@ -81,12 +81,16 @@ export function HubProvider({ children }: { children: ReactNode }) {
         setCurrentUser(connection.user);
       }
 
-      // Refresh tunnel URL from registry in the background.
-      // Quick tunnels rotate on restart — registry always has the current URL.
+      // Refresh tunnel URL from registry in the background — but never override
+      // a locally-set URL (localhost / LAN), since the machine can't reach its
+      // own Tailscale funnel from the inside.
       registryService.getHubBySlug(slug).then(registryHub => {
         if (!registryHub?.tunnel_url) return;
         const stored = hubService.getHubConnection(slug);
-        if (stored && stored.hub.tunnelUrl !== registryHub.tunnel_url) {
+        if (!stored) return;
+        const isLocalUrl = /localhost|127\.0\.0\.1|192\.168\.|^10\.|172\.(1[6-9]|2\d|3[01])\./.test(stored.hub.tunnelUrl || '');
+        if (isLocalUrl) return;
+        if (stored.hub.tunnelUrl !== registryHub.tunnel_url) {
           hubService.updateTunnelUrl(slug, registryHub.tunnel_url, true).then(updatedHub => {
             setCurrentHub(updatedHub);
           }).catch(() => {});
@@ -183,7 +187,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUserProfile = useCallback((
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>
   ): HubUser | null => {
     if (!currentHub?.slug) return null;
     try {

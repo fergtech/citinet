@@ -104,9 +104,11 @@ class HubService {
     const hubName = probeInfo?.name || this.extractNameFromUrl(cleanUrl);
     const slug = this.slugify(hubName);
 
-    // Prefer the tunnel URL reported by the hub API (e.g. Tailscale funnel URL) over
-    // whatever address we used to probe it (which may be localhost during hub creation).
-    const storedUrl = probeInfo?.tunnel_url
+    // If we probed via localhost/LAN, keep that as the stored URL — the machine can't
+    // reach its own Tailscale funnel URL from the inside. Only prefer the API-reported
+    // tunnel_url when we probed via a non-local address.
+    const isLocalProbe = /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\./.test(cleanUrl);
+    const storedUrl = (!isLocalProbe && probeInfo?.tunnel_url)
       ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
       : cleanUrl;
 
@@ -182,13 +184,16 @@ class HubService {
 
     const userData: HubUser = {
       username: credentials.username,
-      displayName: credentials.username,
-      tags: [],
+      displayName: result.display_name || credentials.username,
+      tags: result.tags || [],
       role: 'participant',
       agreedToManifesto: true,
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
       isAdmin: result.isAdmin === true,
+      avatarUrl: result.avatar_url || undefined,
+      location: result.location || undefined,
+      bio: result.bio || undefined,
     };
 
     // Save user data for this hub
@@ -226,13 +231,16 @@ class HubService {
 
     const userData: HubUser = {
       username: credentials.username,
-      displayName: credentials.username,
-      tags: [],
+      displayName: result.display_name || credentials.username,
+      tags: result.tags || [],
       role: 'participant',
       agreedToManifesto: true,
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
       isAdmin: result.isAdmin === true,
+      avatarUrl: result.avatar_url || undefined,
+      location: result.location || undefined,
+      bio: result.bio || undefined,
     };
 
     await this.completeOnboarding(hubSlug, userData);
@@ -299,6 +307,73 @@ class HubService {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Failed (${res.status})`);
     }
+  }
+
+  /** Update the current user's profile fields on the server and in localStorage. */
+  async updateProfile(
+    hubSlug: string,
+    updates: { displayName?: string; location?: string; bio?: string; tags?: string[] }
+  ): Promise<HubUser> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const body: Record<string, unknown> = {};
+    if (updates.displayName !== undefined) body.display_name = updates.displayName;
+    if (updates.location    !== undefined) body.location     = updates.location;
+    if (updates.bio         !== undefined) body.bio          = updates.bio;
+    if (updates.tags        !== undefined) body.tags         = updates.tags;
+
+    const res = await fetch(`${tunnelUrl}/api/auth/profile`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed (${res.status})`);
+    }
+
+    // Persist to localStorage so the rest of the app sees it immediately
+    return this.updateUserProfile(hubSlug, {
+      displayName: updates.displayName,
+      location:    updates.location,
+      bio:         updates.bio,
+      tags:        updates.tags,
+    });
+  }
+
+  /** Fetch a single member's public profile from the server. */
+  async getMember(hubSlug: string, userId: string): Promise<HubMember> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/members/${encodeURIComponent(userId)}`, { headers });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+    return res.json();
+  }
+
+  /**
+   * Upload a profile picture. Returns the MinIO key of the stored avatar.
+   * The caller should resolve the full URL via getAvatarUrl().
+   */
+  async uploadAvatar(hubSlug: string, file: File): Promise<string> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const form = new FormData();
+    form.append('avatar', file);
+    const res = await fetch(`${tunnelUrl}/api/auth/avatar`, {
+      method: 'POST',
+      headers, // no Content-Type — browser sets multipart boundary
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed (${res.status})`);
+    }
+    const { avatar_key } = await res.json();
+    return avatar_key;
+  }
+
+  /** Build a fully-qualified avatar URL for a given userId on this hub. */
+  getAvatarUrl(hubSlug: string, userId: string): string | null {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection?.hub.tunnelUrl || !userId) return null;
+    return `${connection.hub.tunnelUrl}/api/auth/avatar/${encodeURIComponent(userId)}`;
   }
 
   // ──────────────────────────────────────────────
@@ -368,7 +443,7 @@ class HubService {
   /** Update profile fields for the current user on a hub (stored locally) */
   updateUserProfile(
     hubSlug: string,
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'tags'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>
   ): HubUser {
     const connections = this.getAllHubConnections();
     const connection = connections[hubSlug];

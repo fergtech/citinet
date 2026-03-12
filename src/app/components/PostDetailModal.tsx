@@ -16,6 +16,7 @@ interface PostDetailModalProps {
   post: HubPost;
   hubSlug: string;
   currentUserId?: string;
+  currentUserAvatarUrl?: string;
   isAdmin?: boolean;
   categoryColors: Record<string, string>;
   publicFileUrl: (name: string) => string;
@@ -40,6 +41,32 @@ function getInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
+function AvatarCircle({ authorId, authorUsername, currentUserId, currentUserAvatarUrl, size = 'md' }: {
+  authorId: string;
+  authorUsername: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+  size?: 'sm' | 'md';
+}) {
+  const dim = size === 'sm' ? 'w-7 h-7 text-[10px]' : 'w-8 h-8 text-xs';
+  const isMe = authorId === currentUserId && currentUserAvatarUrl;
+  if (isMe) {
+    return (
+      <img
+        src={currentUserAvatarUrl}
+        alt={authorUsername}
+        className={`${dim} rounded-full object-cover flex-shrink-0`}
+        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+      />
+    );
+  }
+  return (
+    <div className={`${dim} rounded-full bg-gradient-to-br ${avatarColor(authorUsername)} flex items-center justify-center text-white font-semibold flex-shrink-0`}>
+      {getInitials(authorUsername)}
+    </div>
+  );
+}
+
 const AVATAR_COLORS = [
   'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
   'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
@@ -52,7 +79,7 @@ function avatarColor(name: string) {
 }
 
 export function PostDetailModal({
-  isOpen, onClose, post, hubSlug, currentUserId, isAdmin,
+  isOpen, onClose, post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin,
   categoryColors, publicFileUrl, onDeleted,
 }: PostDetailModalProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
@@ -304,9 +331,7 @@ export function PostDetailModal({
                         {post.title}
                       </h2>
                       <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>
-                          {getInitials(post.author_username)}
-                        </div>
+                        <AvatarCircle authorId={post.author_id} authorUsername={post.author_username} currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl} size="sm" />
                         <div className="flex items-center gap-1.5">
                           <Users className="w-3.5 h-3.5" />
                           <span>{post.author_username}</span>
@@ -343,9 +368,7 @@ export function PostDetailModal({
 
                   {!loadingReplies && replies.map(reply => (
                     <div key={reply.id} className="flex gap-3 mb-4">
-                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${avatarColor(reply.author_username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>
-                        {getInitials(reply.author_username)}
-                      </div>
+                      <AvatarCircle authorId={reply.author_id} authorUsername={reply.author_username} currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2 mb-1">
                           <span className="text-sm font-medium text-slate-900 dark:text-white">{reply.author_username}</span>
