@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Search, Send, ArrowLeft, Users, Loader2, AlertCircle,
+  Search, Send, Users, Loader2, AlertCircle,
   RefreshCw, Plus, MessageCircle, X, Check,
-  Paperclip, File as FileIcon, Download,
+  Paperclip, File as FileIcon, Download, ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -643,23 +643,17 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
         {/* Header */}
         <div className="p-4 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Messages</h1>
+            <div className="flex items-center gap-2">
               <button
-                onClick={onBack}
-                className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                title="Back to Dashboard"
+                onClick={openNewConvo}
+                className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg"
+                title="New conversation"
               >
-                <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                <Plus className="w-5 h-5 text-white" />
               </button>
-              <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Messages</h1>
+              <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
             </div>
-            <button
-              onClick={openNewConvo}
-              className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg"
-              title="New conversation"
-            >
-              <Plus className="w-5 h-5 text-white" />
-            </button>
           </div>
 
           {/* Search */}

@@ -43,6 +43,10 @@ class MarketplaceService {
     return hubService.getPublicFileUrl(hubSlug, fileName);
   }
 
+  getVendorBannerUrl(hubSlug: string, fileName: string): string | null {
+    return hubService.getPublicFileUrl(hubSlug, fileName);
+  }
+
   async getListings(hubSlug: string, category?: string): Promise<HubListing[]> {
     const params = category && category !== 'All'
       ? `?category=${encodeURIComponent(category)}`

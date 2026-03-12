@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { ArrowLeft, Search, Grid3x3, List, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Package, Pencil, MoveVertical, ImagePlus, Check } from 'lucide-react';
+import { Search, Grid3x3, List, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Package, Pencil, MoveVertical, ImagePlus, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { marketplaceService } from '../services/marketplaceService';
 import type { MarketplaceBannerConfig } from '../services/marketplaceService';
@@ -231,6 +231,9 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
   const selectedImageUrl = selectedListing?.image_file_name
     ? marketplaceService.getListingImageUrl(slug, selectedListing.image_file_name)
     : null;
+  const selectedVendorLogoUrl = selectedListing?.vendor_logo_file_name
+    ? marketplaceService.getVendorLogoUrl(slug, selectedListing.vendor_logo_file_name)
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
@@ -249,13 +252,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
       <div className="sticky top-0 bg-white dark:bg-zinc-900 z-20 border-b border-slate-200 dark:border-zinc-800">
         <div className="px-4 py-3">
           <div className="flex items-center gap-3">
-            {/* Left: back + title */}
-            <button
-              onClick={onBack}
-              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-            </button>
+            {/* Left: title */}
             <div className="shrink-0">
               <h2 className="text-slate-900 dark:text-white text-xl font-bold leading-tight">Exchange</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">{listings.length} listings</p>
@@ -280,7 +277,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
               </div>
             </div>
 
-            {/* Right: view toggle + sell button */}
+            {/* Right: view toggle + sell button + close */}
             <div className="flex items-center gap-2 shrink-0">
               <div className="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-lg p-1">
                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
@@ -308,6 +305,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                   <span className="hidden sm:inline">Start Selling</span>
                 </button>
               )}
+              <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
             </div>
           </div>
         </div>
@@ -648,7 +646,11 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                         </div>
                         <p className="text-purple-600 dark:text-purple-400 font-bold text-base mb-1">{formatPrice(listing)}</p>
                         <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                          <button onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }} className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                          <button onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }} className="flex items-center gap-1.5 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                            {listing.vendor_logo_file_name
+                              ? <img src={marketplaceService.getVendorLogoUrl(slug, listing.vendor_logo_file_name) ?? undefined} alt="" className="w-4 h-4 rounded-full object-cover" />
+                              : <span className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
+                            }
                             {listing.vendor_name}
                           </button>
                           <span>·</span>
@@ -703,6 +705,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
       <MarketItemDetailModal
         item={selectedListing}
         imageUrl={selectedImageUrl ?? undefined}
+        vendorLogoUrl={selectedVendorLogoUrl ?? undefined}
         onClose={() => setSelectedListing(null)}
         onVendorClick={onVendorClick}
       />

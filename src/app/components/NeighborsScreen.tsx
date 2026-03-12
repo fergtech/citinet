@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  ArrowLeft, Search, Loader2, AlertCircle, RefreshCw,
+  Search, Loader2, AlertCircle, RefreshCw,
   Users, Shield, UserCircle, Calendar, MessageSquarePlus, Tag, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -120,21 +120,12 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
       </div>
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onBack}
-              title="Back"
-              className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-            </button>
-            <div>
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white">Neighbors</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {members.length} {members.length === 1 ? 'member' : 'members'}
-              </p>
-            </div>
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Neighbors</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {members.length} {members.length === 1 ? 'member' : 'members'}
+            </p>
           </div>
           <button
             onClick={loadMembers}
@@ -144,6 +135,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
           >
             <RefreshCw className={`w-5 h-5 text-slate-600 dark:text-slate-400 ${loading ? 'animate-spin' : ''}`} />
           </button>
+          <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
         </div>
       </div>
 

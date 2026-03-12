@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { ArrowLeft, Search, Plus, ExternalLink, Filter, X, Shield, Check } from 'lucide-react';
+import { Search, Plus, ExternalLink, Filter, X, Shield, Check } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { Tool, ToolTag } from '../types/toolkit';
 import { Button } from './ui/button';
@@ -179,13 +179,6 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 shrink-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3 mb-3">
-            <button
-              onClick={onBack}
-              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-900 dark:text-white" />
-            </button>
             <div className="flex-1 min-w-0">
               <h1 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">Resources</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">People-first tools you can trust</p>
@@ -195,6 +188,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Tool</span>
               </Button>
+              <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
             </div>
           </div>
 

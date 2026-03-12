@@ -1,5 +1,36 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw } from 'lucide-react';
+
+/** Compress an image file to JPEG using canvas — scales down if > maxDim, targets quality 0.82. */
+function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        blob => {
+          if (!blob) { reject(new Error('Compression failed')); return; }
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
+    img.src = url;
+  });
+}
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -157,11 +188,11 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const handleBgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentHub?.slug) return;
-    if (file.size > 4 * 1024 * 1024) { setBgError('Image must be under 4 MB'); return; }
     setBgError('');
     setBgUploading(true);
     try {
-      const name = await preferencesService.uploadBackgroundImage(currentHub.slug, file);
+      const compressed = await compressImage(file);
+      const name = await preferencesService.uploadBackgroundImage(currentHub.slug, compressed);
       await updateUserPreferences({ background_type: 'image', background_value: name });
       setBgSaved(true);
       setTimeout(() => setBgSaved(false), 1500);
@@ -193,23 +224,17 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-          </button>
-          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">My Account</h1>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white flex-1">My Account</h1>
           {onNavigate && currentUser?.hubUserId && (
             <button
               onClick={() => onNavigate(`profile/${currentUser.hubUserId}`)}
-              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               View Profile
             </button>
           )}
+          <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
         </div>
       </div>
 
@@ -504,7 +529,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
           {/* Image upload */}
           <div className="mb-4">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Custom Image <span className="font-normal">(max 4 MB)</span></p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Custom Image</p>
             <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
             <button
               onClick={() => bgFileRef.current?.click()}

@@ -208,6 +208,11 @@ async function initDb() {
         description     TEXT,
         category        TEXT         DEFAULT 'General',
         logo_file_name  TEXT,
+        banner_mode     TEXT,
+        banner_image_file_name TEXT,
+        banner_color    TEXT,
+        banner_gradient_from TEXT,
+        banner_gradient_to TEXT,
         contact_email   TEXT,
         contact_phone   TEXT,
         website         TEXT,
@@ -248,6 +253,12 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS bio          TEXT`);
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS tags         TEXT[]`);
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS logo_file_name TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_mode TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_color TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_to TEXT`);
   } finally {
     client.release();
   }
@@ -1536,7 +1547,7 @@ app.get('/api/marketplace/listings', authenticate, async (req, res) => {
   const { category } = req.query;
   try {
     let query = `
-      SELECT l.*, v.name AS vendor_name
+      SELECT l.*, v.name AS vendor_name, v.logo_file_name AS vendor_logo_file_name
       FROM hub_listings l
       JOIN hub_vendors v ON l.vendor_id = v.id
       WHERE l.is_active = TRUE
@@ -1602,15 +1613,50 @@ app.get('/api/vendors/:id', authenticate, async (req, res) => {
 
 // Create vendor page (one per user)
 app.post('/api/vendors', authenticate, async (req, res) => {
-  const { name, description, category, contact_email, contact_phone, website, hours } = req.body;
+  const {
+    name,
+    description,
+    category,
+    logo_file_name,
+    banner_mode,
+    banner_image_file_name,
+    banner_color,
+    banner_gradient_from,
+    banner_gradient_to,
+    contact_email,
+    contact_phone,
+    website,
+    hours,
+  } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Vendor name is required' });
+
+  const normalizedBannerMode = ['image', 'solid', 'gradient'].includes(banner_mode) ? banner_mode : null;
+
   try {
     const result = await pool.query(`
-      INSERT INTO hub_vendors (owner_user_id, name, description, category, contact_email, contact_phone, website, hours)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO hub_vendors (
+        owner_user_id, name, description, category,
+        logo_file_name, banner_mode, banner_image_file_name, banner_color, banner_gradient_from, banner_gradient_to,
+        contact_email, contact_phone, website, hours
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *
-    `, [req.user.id, name.trim(), description || null, category || 'General',
-        contact_email || null, contact_phone || null, website || null, hours || null]);
+    `, [
+      req.user.id,
+      name.trim(),
+      description || null,
+      category || 'General',
+      logo_file_name || null,
+      normalizedBannerMode,
+      banner_image_file_name || null,
+      banner_color || null,
+      banner_gradient_from || null,
+      banner_gradient_to || null,
+      contact_email || null,
+      contact_phone || null,
+      website || null,
+      hours || null,
+    ]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'You already have a vendor page' });
@@ -1621,23 +1667,59 @@ app.post('/api/vendors', authenticate, async (req, res) => {
 
 // Update my vendor page
 app.patch('/api/vendors/me', authenticate, async (req, res) => {
-  const { name, description, category, contact_email, contact_phone, website, hours } = req.body;
+  const {
+    name,
+    description,
+    category,
+    logo_file_name,
+    banner_mode,
+    banner_image_file_name,
+    banner_color,
+    banner_gradient_from,
+    banner_gradient_to,
+    contact_email,
+    contact_phone,
+    website,
+    hours,
+  } = req.body;
+
+  const normalizedBannerMode = ['image', 'solid', 'gradient'].includes(banner_mode) ? banner_mode : null;
+
   try {
     const result = await pool.query(`
       UPDATE hub_vendors
       SET name          = COALESCE($1, name),
           description   = COALESCE($2, description),
           category      = COALESCE($3, category),
-          contact_email = COALESCE($4, contact_email),
-          contact_phone = COALESCE($5, contact_phone),
-          website       = COALESCE($6, website),
-          hours         = COALESCE($7, hours),
+          logo_file_name = COALESCE($4, logo_file_name),
+          banner_mode = COALESCE($5, banner_mode),
+          banner_image_file_name = COALESCE($6, banner_image_file_name),
+          banner_color = COALESCE($7, banner_color),
+          banner_gradient_from = COALESCE($8, banner_gradient_from),
+          banner_gradient_to = COALESCE($9, banner_gradient_to),
+          contact_email = COALESCE($10, contact_email),
+          contact_phone = COALESCE($11, contact_phone),
+          website       = COALESCE($12, website),
+          hours         = COALESCE($13, hours),
           updated_at    = NOW()
-      WHERE owner_user_id = $8
+      WHERE owner_user_id = $14
       RETURNING *
-    `, [name || null, description || null, category || null,
-        contact_email || null, contact_phone || null, website || null, hours || null,
-        req.user.id]);
+    `, [
+      name || null,
+      description || null,
+      category || null,
+      logo_file_name || null,
+      normalizedBannerMode,
+      banner_image_file_name || null,
+      banner_color || null,
+      banner_gradient_from || null,
+      banner_gradient_to || null,
+      contact_email || null,
+      contact_phone || null,
+      website || null,
+      hours || null,
+      req.user.id,
+    ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Vendor page not found' });
     res.json(result.rows[0]);
   } catch (err) {

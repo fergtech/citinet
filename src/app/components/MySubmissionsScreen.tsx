@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ArrowLeft, Clock, CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, ExternalLink, X } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { ToolSubmission } from '../types/toolkit';
 import { useHub } from '../context/HubContext';
@@ -170,14 +170,7 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button
-              onClick={onBack}
-              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-              aria-label="Go back"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-900 dark:text-white" />
-            </button>
-            <div>
+            <div className="flex-1">
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
                 My Submissions
               </h1>
@@ -185,6 +178,7 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
                 Track the status of your tool submissions
               </p>
             </div>
+            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
           </div>
         </div>
       </header>

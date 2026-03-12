@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  ArrowLeft, Target, Plus, Users, CheckCircle2, Circle, Clock,
+  Target, Plus, Users, CheckCircle2, Circle, Clock,
   Lightbulb, X, MessageSquare, TrendingUp, UserPlus, Calendar,
   ChevronRight, CheckCheck, AlertCircle, Zap,
 } from 'lucide-react';
@@ -375,14 +375,6 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button
-            onClick={handleBack}
-            className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-700 dark:text-slate-300" />
-          </button>
-
           <div className="flex-1 min-w-0">
             {view === 'list' ? (
               <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Initiatives</h1>
@@ -411,6 +403,7 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
               {isJoined(current.id) ? 'Joined' : 'Join'}
             </button>
           )}
+          <button onClick={handleBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
         </div>
       </div>
 

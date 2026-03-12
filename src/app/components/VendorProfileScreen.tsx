@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowLeft, Clock, Phone, Globe, Mail, Store, Package, Plus, Pencil, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Clock, Phone, Globe, Mail, Store, Package, Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, ImagePlus, Loader2, Palette } from 'lucide-react';
 import type { HubVendor, HubListing } from '../types/hub';
 import { marketplaceService } from '../services/marketplaceService';
 import { hubService } from '../services/hubService';
@@ -30,6 +30,16 @@ function formatPrice(listing: HubListing): string {
   return f;
 }
 
+const BANNER_SOLID_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#be123c', '#b45309', '#374151'];
+const BANNER_GRADIENTS = [
+  { from: '#2563eb', to: '#7c3aed' },
+  { from: '#0f766e', to: '#2563eb' },
+  { from: '#be123c', to: '#7c2d12' },
+  { from: '#1d4ed8', to: '#0f766e' },
+  { from: '#c2410c', to: '#be123c' },
+  { from: '#374151', to: '#111827' },
+];
+
 export function VendorProfileScreen({ vendor: initialVendor, listings: initialListings, hubSlug, onBack, onItemClick }: VendorProfileScreenProps) {
   const conn = hubService.getHubConnection(hubSlug);
   const currentUserId = conn?.user?.hubUserId;
@@ -41,6 +51,81 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
   const [showAddListing, setShowAddListing] = useState(false);
   const [editingListing, setEditingListing] = useState<HubListing | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [savingVisual, setSavingVisual] = useState<'logo' | 'banner' | null>(null);
+  const [visualError, setVisualError] = useState('');
+  const [showBannerEditor, setShowBannerEditor] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  const bannerStyle = useMemo((): React.CSSProperties => {
+    if (vendor.banner_mode === 'image' && vendor.banner_image_file_name) {
+      const imageUrl = marketplaceService.getVendorBannerUrl(hubSlug, vendor.banner_image_file_name);
+      if (imageUrl) {
+        return {
+          backgroundImage: `url(${imageUrl})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        };
+      }
+    }
+    if (vendor.banner_mode === 'solid' && vendor.banner_color) {
+      return { backgroundColor: vendor.banner_color };
+    }
+    if (vendor.banner_mode === 'gradient' && vendor.banner_gradient_from && vendor.banner_gradient_to) {
+      return { backgroundImage: `linear-gradient(135deg, ${vendor.banner_gradient_from}, ${vendor.banner_gradient_to})` };
+    }
+    return { backgroundImage: 'linear-gradient(135deg, #2563eb, #7c3aed)' };
+  }, [hubSlug, vendor.banner_color, vendor.banner_gradient_from, vendor.banner_gradient_to, vendor.banner_image_file_name, vendor.banner_mode]);
+
+  const saveVendorVisuals = async (updates: Partial<HubVendor>, savingTarget: 'logo' | 'banner') => {
+    setSavingVisual(savingTarget);
+    setVisualError('');
+    try {
+      const updated = await marketplaceService.updateVendor(hubSlug, updates);
+      setVendor(updated);
+    } catch (err: any) {
+      setVisualError(err?.message || 'Failed to update vendor visuals');
+    } finally {
+      setSavingVisual(null);
+    }
+  };
+
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setSavingVisual('logo');
+      setVisualError('');
+      const uploaded = await hubService.uploadFile(hubSlug, file, true);
+      const updated = await marketplaceService.updateVendor(hubSlug, { logo_file_name: uploaded.name });
+      setVendor(updated);
+    } catch (err: any) {
+      setVisualError(err?.message || 'Failed to update logo image');
+    } finally {
+      setSavingVisual(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleBannerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setSavingVisual('banner');
+      setVisualError('');
+      const uploaded = await hubService.uploadFile(hubSlug, file, true);
+      const updated = await marketplaceService.updateVendor(hubSlug, {
+        banner_mode: 'image',
+        banner_image_file_name: uploaded.name,
+      });
+      setVendor(updated);
+    } catch (err: any) {
+      setVisualError(err?.message || 'Failed to update banner image');
+    } finally {
+      setSavingVisual(null);
+      e.target.value = '';
+    }
+  };
 
   const handleVendorUpdated = (updated: HubVendor) => {
     setVendor(updated);
@@ -95,12 +180,6 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       </div>
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-slate-900 dark:text-white" />
-          </button>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white flex-1 truncate">{vendor.name}</h1>
           {isOwner && (
             <button
@@ -110,6 +189,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               <Pencil className="w-4 h-4" /> Edit Page
             </button>
           )}
+          <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
         </div>
       </header>
 
@@ -118,24 +198,121 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
 
           {/* Hero card */}
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
-            <div className="h-32 bg-gradient-to-br from-blue-600 to-purple-600" />
-            <div className="px-6 pb-6">
-              <div className="flex items-end gap-4 -mt-16 mb-4">
-                {vendor.logo_file_name
-                  ? <img
-                      src={marketplaceService.getVendorLogoUrl(hubSlug, vendor.logo_file_name) ?? undefined}
-                      alt={vendor.name}
-                      className="w-24 h-24 rounded-2xl object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
-                    />
-                  : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-3xl font-bold ring-4 ring-white dark:ring-zinc-900 shadow-lg">
-                      {vendor.name.charAt(0).toUpperCase()}
+            <div
+              className={`h-32 relative ${isOwner ? 'cursor-pointer' : ''}`}
+              style={bannerStyle}
+              onClick={() => isOwner && setShowBannerEditor(v => !v)}
+              role={isOwner ? 'button' : undefined}
+              aria-label={isOwner ? 'Edit banner' : undefined}
+            >
+              {isOwner && (
+                <>
+                  <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
+                      {savingVisual === 'banner' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                      Edit Banner
                     </div>
-                }
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowBannerEditor(v => !v); }}
+                    className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/50 hover:bg-black/65 text-white transition-colors"
+                    title="Customize banner"
+                    aria-label="Customize banner"
+                  >
+                    <Palette className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="px-6 pb-6">
+              <div className="flex items-end gap-4 mb-4">
+                <div
+                  className={`relative -mt-16 ${isOwner ? 'cursor-pointer group' : ''}`}
+                  onClick={() => isOwner && logoInputRef.current?.click()}
+                  role={isOwner ? 'button' : undefined}
+                  aria-label={isOwner ? 'Edit vendor avatar' : undefined}
+                >
+                  {vendor.logo_file_name
+                    ? <img
+                        src={marketplaceService.getVendorLogoUrl(hubSlug, vendor.logo_file_name) ?? undefined}
+                        alt={vendor.name}
+                        className="w-24 h-24 rounded-2xl object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
+                      />
+                    : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-3xl font-bold ring-4 ring-white dark:ring-zinc-900 shadow-lg">
+                        {vendor.name.charAt(0).toUpperCase()}
+                      </div>
+                  }
+                  {isOwner && (
+                    <div className="absolute inset-0 rounded-2xl bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center ring-4 ring-white dark:ring-zinc-900">
+                      {savingVisual === 'logo'
+                        ? <Loader2 className="w-5 h-5 text-white animate-spin" />
+                        : <ImagePlus className="w-5 h-5 text-white" />
+                      }
+                    </div>
+                  )}
+                </div>
                 <div className="mb-2 flex-1 min-w-0">
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white truncate">{vendor.name}</h2>
                   <p className="text-sm text-slate-600 dark:text-slate-400">{vendor.category}</p>
                 </div>
               </div>
+
+              {isOwner && showBannerEditor && (
+                <div className="mb-4 rounded-xl border border-slate-200 dark:border-zinc-700 p-3 bg-slate-50 dark:bg-zinc-800/40 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Banner Style</p>
+                    <button
+                      type="button"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={savingVisual === 'banner'}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 dark:hover:bg-zinc-600 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60"
+                    >
+                      {savingVisual === 'banner' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                      Upload Image
+                    </button>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Solid Colors</p>
+                    <div className="flex flex-wrap gap-2">
+                      {BANNER_SOLID_COLORS.map(color => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => saveVendorVisuals({ banner_mode: 'solid', banner_color: color }, 'banner')}
+                          className={`w-7 h-7 rounded-full border-2 transition-all ${vendor.banner_mode === 'solid' && vendor.banner_color === color ? 'border-white ring-2 ring-slate-900 dark:ring-white' : 'border-white/70 dark:border-zinc-700'}`}
+                          style={{ backgroundColor: color }}
+                          title={`Solid ${color}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Gradients</p>
+                    <div className="flex flex-wrap gap-2">
+                      {BANNER_GRADIENTS.map(g => {
+                        const selected = vendor.banner_mode === 'gradient' && vendor.banner_gradient_from === g.from && vendor.banner_gradient_to === g.to;
+                        return (
+                          <button
+                            key={`${g.from}-${g.to}`}
+                            type="button"
+                            onClick={() => saveVendorVisuals({ banner_mode: 'gradient', banner_gradient_from: g.from, banner_gradient_to: g.to }, 'banner')}
+                            className={`w-10 h-7 rounded-lg border-2 transition-all ${selected ? 'border-white ring-2 ring-slate-900 dark:ring-white' : 'border-white/70 dark:border-zinc-700'}`}
+                            style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
+                            title="Choose gradient"
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {visualError && (
+                <p className="mb-4 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">{visualError}</p>
+              )}
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-4 mb-4">
@@ -331,6 +508,21 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
           )}
         </div>
       </main>
+
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleLogoFileChange}
+      />
+      <input
+        ref={bannerInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleBannerFileChange}
+      />
 
       {/* Edit vendor modal */}
       <CreateVendorModal

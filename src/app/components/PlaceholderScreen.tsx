@@ -1,4 +1,4 @@
-import { ArrowLeft, Construction } from 'lucide-react';
+import { Construction, X } from 'lucide-react';
 
 interface PlaceholderScreenProps {
   title: string;
@@ -12,14 +12,8 @@ export function PlaceholderScreen({ title, description, onBack }: PlaceholderScr
       {/* Header */}
       <div className="p-4 border-b border-border max-w-4xl mx-auto w-full">
         <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            title="Back"
-            className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center hover:bg-accent transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-foreground" />
-          </button>
-          <h2 className="text-card-foreground">{title}</h2>
+          <h2 className="text-card-foreground flex-1">{title}</h2>
+          <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
         </div>
       </div>
 

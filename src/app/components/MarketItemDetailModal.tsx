@@ -6,6 +6,7 @@ import type { HubListing } from '../types/hub';
 interface MarketItemDetailModalProps {
   item: HubListing | null;
   imageUrl?: string | null;
+  vendorLogoUrl?: string | null;
   onClose: () => void;
   onVendorClick?: (vendorId: string) => void;
 }
@@ -26,7 +27,7 @@ function formatDate(iso: string): string {
   } catch { return ''; }
 }
 
-export function MarketItemDetailModal({ item, imageUrl, onClose, onVendorClick }: MarketItemDetailModalProps) {
+export function MarketItemDetailModal({ item, imageUrl, vendorLogoUrl, onClose, onVendorClick }: MarketItemDetailModalProps) {
   useEffect(() => {
     document.body.style.overflow = item ? 'hidden' : 'unset';
     return () => { document.body.style.overflow = 'unset'; };
@@ -98,8 +99,11 @@ export function MarketItemDetailModal({ item, imageUrl, onClose, onVendorClick }
               <div className="bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-4">
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">Seller</p>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold shrink-0">
-                    {(item.vendor_name ?? '?').charAt(0).toUpperCase()}
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
+                    {vendorLogoUrl
+                      ? <img src={vendorLogoUrl} alt={item.vendor_name ?? ''} className="w-full h-full object-cover" />
+                      : (item.vendor_name ?? '?').charAt(0).toUpperCase()
+                    }
                   </div>
                   <div>
                     <button

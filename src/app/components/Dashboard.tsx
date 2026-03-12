@@ -120,6 +120,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+  const vendorLogoUrl = myVendor?.logo_file_name
+    ? marketplaceService.getVendorLogoUrl(hubSlug, myVendor.logo_file_name)
+    : null;
 
   const nodeStatus = {
     activeMembers: currentHub?.meta?.activeMembers ?? 0,
@@ -351,9 +354,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <button
               onClick={() => onNavigate(`vendor/${myVendor.id}`)}
               title={myVendor.name}
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all"
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all overflow-hidden"
             >
-              {myVendor.name.charAt(0).toUpperCase()}
+              {vendorLogoUrl
+                ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                : myVendor.name.charAt(0).toUpperCase()
+              }
             </button>
           </>
         )}
@@ -570,8 +576,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   onClick={() => onNavigate(`vendor/${myVendor.id}`)}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors text-left group"
                 >
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                    {myVendor.name.charAt(0).toUpperCase()}
+                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 overflow-hidden">
+                    {vendorLogoUrl
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                      : myVendor.name.charAt(0).toUpperCase()
+                    }
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-semibold text-purple-700 dark:text-purple-400 truncate block">{myVendor.name}</span>
@@ -795,8 +804,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   onClick={() => onNavigate(`vendor/${myVendor.id}`)}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-50/80 dark:hover:bg-purple-900/20 transition-all group active:scale-95"
                 >
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg">
-                    {myVendor.name.charAt(0).toUpperCase()}
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg overflow-hidden">
+                    {vendorLogoUrl
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                      : myVendor.name.charAt(0).toUpperCase()
+                    }
                   </div>
                   <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 text-center leading-tight truncate w-full">{myVendor.name}</span>
                 </button>
@@ -867,20 +879,17 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             {activityLoading ? (
               <div className="space-y-3">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
-                    <div className="flex">
-                      <div className="w-1 bg-slate-200 dark:bg-zinc-700 animate-pulse shrink-0" />
-                      <div className="flex-1 p-4 space-y-2">
-                        <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
-                        <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
-                        <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/4" />
-                      </div>
+                  <div key={i} className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                    <div className="p-4 space-y-2">
+                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
+                      <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
+                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/4" />
                     </div>
                   </div>
                 ))}
               </div>
             ) : activityItems.length === 0 ? (
-              <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
                 <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
                 <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
               </div>
@@ -932,7 +941,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <button
                   key={event.id}
                   onClick={() => setSelectedEvent(event)}
-                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                  className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
                 >
                   <div className="flex gap-3 items-center">
                     <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
@@ -967,7 +976,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <button
                   key={initiative.id}
                   onClick={() => setSelectedInitiative(initiative)}
-                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                  className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1044,8 +1053,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   onClick={() => onNavigate(`vendor/${myVendor.id}`)}
                   className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-all"
                 >
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold">
-                    {myVendor.name.charAt(0).toUpperCase()}
+                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold overflow-hidden">
+                    {vendorLogoUrl
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                      : myVendor.name.charAt(0).toUpperCase()
+                    }
                   </div>
                   <span className="text-[10px] font-medium leading-none">My Store</span>
                 </button>
@@ -1273,16 +1285,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 const ACTIVITY_CONFIG: Record<ActivityType, {
   Icon: React.ElementType;
   iconBg: string;
-  border: string;
   label: string;
 }> = {
-  discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    border: 'border-l-blue-500',    label: 'Discussion' },
-  announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   border: 'border-l-amber-500',   label: 'Announcement' },
-  project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', border: 'border-l-emerald-500', label: 'Project' },
-  request:         { Icon: Users,         iconBg: 'bg-rose-500',    border: 'border-l-rose-500',    label: 'Request' },
-  file_shared:     { Icon: FolderOpen,    iconBg: 'bg-violet-500',  border: 'border-l-violet-500',  label: 'File Shared' },
-  neighbor_joined: { Icon: Users,         iconBg: 'bg-teal-500',    border: 'border-l-teal-500',    label: 'New Neighbor' },
-  pin_added:       { Icon: MapPin,        iconBg: 'bg-orange-500',  border: 'border-l-orange-500',  label: 'Atlas Pin' },
+  discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    label: 'Discussion' },
+  announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   label: 'Announcement' },
+  project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', label: 'Project' },
+  request:         { Icon: Users,         iconBg: 'bg-rose-500',    label: 'Request' },
+  file_shared:     { Icon: FolderOpen,    iconBg: 'bg-violet-500',  label: 'File Shared' },
+  neighbor_joined: { Icon: Users,         iconBg: 'bg-teal-500',    label: 'New Neighbor' },
+  pin_added:       { Icon: MapPin,        iconBg: 'bg-orange-500',  label: 'Atlas Pin' },
 };
 
 function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
@@ -1292,51 +1303,46 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className="min-w-[280px] w-full bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
+      className="min-w-[280px] w-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
     >
-      <div className="flex items-stretch">
-        {/* Left accent border */}
-        <div className={`w-[3px] shrink-0 ${cfg.border.replace('border-l-', 'bg-')}`} />
+      <div className="px-4 py-3 flex items-start gap-3 min-w-0">
+        {/* Left: type icon */}
+        <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
+          <cfg.Icon className="w-4 h-4 text-white" />
+        </div>
 
-        <div className="flex-1 px-4 py-3 flex items-start gap-3 min-w-0">
-          {/* Left: type icon */}
-          <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
-            <cfg.Icon className="w-4 h-4 text-white" />
-          </div>
-
-          {/* Center: content */}
-          <div className="flex-1 min-w-0">
-            {/* Row 1: actor · summary · timestamp */}
-            <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
-              {/* Actor avatar (personal) */}
-              {item.actorAvatarUrl ? (
-                <img
-                  src={item.actorAvatarUrl}
-                  alt={item.actor}
-                  className="w-4 h-4 rounded-full object-cover shrink-0"
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                />
-              ) : (
-                <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
-                  {initial}
-                </div>
-              )}
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0 max-w-[6rem] truncate">{item.actor}</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">·</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{item.summary}</span>
-              <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto pl-2 shrink-0 whitespace-nowrap">{timeAgo(item.timestamp)}</span>
-            </div>
-            {/* Row 2: title */}
-            <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
-            {/* Row 3: CTA (if present) — own line so it never overlaps */}
-            {item.cta && (
-              <div className="mt-1.5">
-                <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
-                  {item.cta}
-                </span>
+        {/* Center: content */}
+        <div className="flex-1 min-w-0">
+          {/* Row 1: actor · summary · timestamp */}
+          <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
+            {/* Actor avatar (personal) */}
+            {item.actorAvatarUrl ? (
+              <img
+                src={item.actorAvatarUrl}
+                alt={item.actor}
+                className="w-4 h-4 rounded-full object-cover shrink-0"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                {initial}
               </div>
             )}
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0 max-w-[6rem] truncate">{item.actor}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">·</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{item.summary}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto pl-2 shrink-0 whitespace-nowrap">{timeAgo(item.timestamp)}</span>
           </div>
+          {/* Row 2: title */}
+          <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+          {/* Row 3: CTA (if present) — own line so it never overlaps */}
+          {item.cta && (
+            <div className="mt-1.5">
+              <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
+                {item.cta}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </button>

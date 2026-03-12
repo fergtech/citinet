@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { ArrowLeft, Clock, Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search } from 'lucide-react';
+import { Clock, Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -329,13 +329,6 @@ export function Feed({ onBack }: FeedProps) {
       <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
         <div className="max-w-4xl mx-auto p-4">
           <div className="flex items-center gap-4 mb-4">
-            <button
-              onClick={onBack}
-              title="Back"
-              className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
-            </button>
             <div className="flex-1">
               <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight">Discussions</h2>
               <div className="flex items-center gap-2 mt-0.5">
@@ -350,6 +343,7 @@ export function Feed({ onBack }: FeedProps) {
             >
               <Plus className="w-5 h-5 text-white" />
             </button>
+            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
           </div>
 
           {/* Category filters */}

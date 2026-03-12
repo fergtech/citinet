@@ -245,6 +245,11 @@ export interface HubVendor {
   description?: string;
   category: string;
   logo_file_name?: string;
+  banner_mode?: 'image' | 'solid' | 'gradient';
+  banner_image_file_name?: string;
+  banner_color?: string;
+  banner_gradient_from?: string;
+  banner_gradient_to?: string;
   contact_email?: string;
   contact_phone?: string;
   website?: string;
@@ -259,6 +264,7 @@ export interface HubListing {
   id: string;
   vendor_id: string;
   vendor_name?: string;
+  vendor_logo_file_name?: string;
   title: string;
   description?: string;
   price: number | null;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  ArrowLeft, File, FileText, FileImage, FileVideo, FileAudio,
+  File, FileText, FileImage, FileVideo, FileAudio,
   Download, Search, Loader2, FolderOpen, AlertCircle, RefreshCw,
   HardDrive, Upload, Trash2, Globe, Lock, Plus, X, Eye,
 } from 'lucide-react';
@@ -271,13 +271,6 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="w-9 h-9 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="w-4 h-4 text-slate-700 dark:text-slate-300" />
-          </button>
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Files</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -343,6 +336,15 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             aria-label="Refresh"
           >
             <RefreshCw className={`w-4 h-4 text-slate-700 dark:text-slate-300 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+
+          {/* Close button */}
+          <button
+            onClick={onBack}
+            className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4 text-white" />
           </button>
         </div>
 
