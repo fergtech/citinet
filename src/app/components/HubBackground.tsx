@@ -7,6 +7,10 @@ export function HubBackground() {
 
   const bgType = userPreferences?.background_type;
   const bgValue = userPreferences?.background_value ?? '';
+  const parsedBrightness = Number(userPreferences?.background_brightness);
+  const bgBrightness = Number.isFinite(parsedBrightness)
+    ? Math.min(1, Math.max(0.35, parsedBrightness))
+    : 0.65;
 
   if (bgType === 'color' && bgValue) {
     return (
@@ -27,7 +31,7 @@ export function HubBackground() {
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundAttachment: 'fixed',
-          filter: 'brightness(0.45)',
+          filter: `brightness(${bgBrightness})`,
         }}
       />
     );

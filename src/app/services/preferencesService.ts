@@ -3,6 +3,7 @@ import { hubService } from './hubService';
 export interface UserPreferences {
   background_type?: 'default' | 'color' | 'image';
   background_value?: string;
+  background_brightness?: string;
 }
 
 class PreferencesService {

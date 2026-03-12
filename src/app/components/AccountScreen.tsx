@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 /** Compress an image file to JPEG using canvas — scales down if > maxDim, targets quality 0.82. */
 function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File> {
@@ -76,7 +76,18 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [bgError, setBgError] = useState('');
   const [bgSaved, setBgSaved] = useState(false);
   const [colorInput, setColorInput] = useState('');
+  const [bgBrightness, setBgBrightness] = useState(0.65);
+  const [bgBrightnessSaving, setBgBrightnessSaving] = useState(false);
   const bgFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const parsed = Number(userPreferences.background_brightness);
+    if (Number.isFinite(parsed)) {
+      setBgBrightness(Math.min(1, Math.max(0.35, parsed)));
+    } else {
+      setBgBrightness(0.65);
+    }
+  }, [userPreferences.background_brightness]);
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,6 +219,20 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     await updateUserPreferences({ background_type: 'default', background_value: '' });
     setBgSaved(true);
     setTimeout(() => setBgSaved(false), 1500);
+  };
+
+  const handleSaveBgBrightness = async () => {
+    setBgError('');
+    setBgBrightnessSaving(true);
+    try {
+      await updateUserPreferences({ background_brightness: bgBrightness.toFixed(2) });
+      setBgSaved(true);
+      setTimeout(() => setBgSaved(false), 1500);
+    } catch (err) {
+      setBgError(err instanceof Error ? err.message : 'Failed to save brightness');
+    } finally {
+      setBgBrightnessSaving(false);
+    }
   };
 
   const role = currentUser?.role || 'participant';
@@ -542,6 +567,33 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             {userPreferences.background_type === 'image' && userPreferences.background_value && (
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 truncate font-mono">{userPreferences.background_value}</p>
             )}
+          </div>
+
+          {/* Brightness control for image backgrounds */}
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Image Brightness</p>
+              <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{Math.round(bgBrightness * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="35"
+              max="100"
+              step="1"
+              value={Math.round(bgBrightness * 100)}
+              onChange={e => setBgBrightness(Number(e.target.value) / 100)}
+              className="w-full accent-purple-600"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">Lower is dimmer and improves readability.</p>
+              <button
+                onClick={handleSaveBgBrightness}
+                disabled={bgBrightnessSaving}
+                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-medium transition-colors shrink-0"
+              >
+                {bgBrightnessSaving ? 'Saving…' : 'Save Brightness'}
+              </button>
+            </div>
           </div>
 
           {bgError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{bgError}</p>}

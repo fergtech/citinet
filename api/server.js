@@ -1853,7 +1853,7 @@ app.patch('/api/marketplace-config', authenticate, async (req, res) => {
 
 // ── User Preferences ─────────────────────────────────────
 
-const PREF_KEYS = ['background_type', 'background_value'];
+const PREF_KEYS = ['background_type', 'background_value', 'background_brightness'];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {
   try {
