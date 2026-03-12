@@ -27,6 +27,7 @@ export function HubBackground() {
           backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundAttachment: 'fixed',
+          filter: 'brightness(0.45)',
         }}
       />
     );
