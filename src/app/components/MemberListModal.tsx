@@ -1,6 +1,8 @@
 import { X, Search, Users, Shield } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { HubMember } from '../types/hub';
+import { hubService } from '../services/hubService';
+import { useHub } from '../context/HubContext';
 
 interface MemberListModalProps {
   isOpen: boolean;
@@ -24,6 +26,8 @@ function formatJoinDate(isoDate: string): string {
 }
 
 export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: MemberListModalProps) {
+  const { currentHub } = useHub();
+  const slug = currentHub?.slug ?? '';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'admins'>(filter);
 
@@ -130,12 +134,16 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                 >
                   {/* Avatar */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 ${
-                    member.is_admin
-                      ? 'bg-gradient-to-br from-purple-600 to-blue-600'
-                      : 'bg-slate-400 dark:bg-slate-600'
-                  }`}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 bg-slate-400 dark:bg-slate-600 relative overflow-hidden">
                     {getInitials(member.username)}
+                    {slug && (
+                      <img
+                        src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}
+                        alt={member.username}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
                   </div>
 
                   {/* Info */}

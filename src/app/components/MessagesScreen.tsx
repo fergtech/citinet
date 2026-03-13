@@ -69,6 +69,51 @@ function formatMessageTime(iso: string): string {
   }
 }
 
+function convoAvatarUserId(c: HubConversation, myUserId?: string): string | undefined {
+  if (c.kind !== 'dm') return undefined;
+  return c.members.find(m => m.user_id !== myUserId)?.user_id;
+}
+
+function AvatarBadge({
+  slug,
+  userId,
+  name,
+  sizeClass,
+  textClass,
+  radiusClass,
+}: {
+  slug: string;
+  userId?: string;
+  name: string;
+  sizeClass: string;
+  textClass: string;
+  radiusClass: string;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const avatarUrl = userId ? (hubService.getAvatarUrl(slug, userId) ?? undefined) : undefined;
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [avatarUrl]);
+
+  if (avatarUrl && !imgFailed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className={`${sizeClass} ${radiusClass} object-cover`}
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className={`${sizeClass} ${radiusClass} bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center text-white font-semibold ${textClass}`}>
+      {getInitials(name)}
+    </div>
+  );
+}
+
 /** Display name for a conversation */
 function convoDisplayName(c: HubConversation, myUserId?: string): string {
   if (c.name) return c.name;
@@ -211,6 +256,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
 
   // Lightbox state — clicking an image opens it full-screen
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const swipeBackRef = useRef({
+    tracking: false,
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    lastX: 0,
+    lastY: 0,
+  });
   const closeLightbox = () => {
     if (lightboxUrl) URL.revokeObjectURL(lightboxUrl);
     setLightboxUrl(null);
@@ -448,6 +501,55 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
     }
   };
 
+  const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 768;
+
+  const handleThreadTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMobileViewport() || e.touches.length !== 1) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('textarea, input, button, a, video, audio')) return;
+
+    const touch = e.touches[0];
+    swipeBackRef.current = {
+      tracking: true,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startTime: Date.now(),
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+    };
+  };
+
+  const handleThreadTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!swipeBackRef.current.tracking || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    swipeBackRef.current.lastX = touch.clientX;
+    swipeBackRef.current.lastY = touch.clientY;
+  };
+
+  const handleThreadTouchEnd = () => {
+    if (!swipeBackRef.current.tracking || !isMobileViewport()) {
+      swipeBackRef.current.tracking = false;
+      return;
+    }
+
+    const { startX, startY, lastX, lastY, startTime } = swipeBackRef.current;
+    swipeBackRef.current.tracking = false;
+
+    const dx = lastX - startX;
+    const dy = Math.abs(lastY - startY);
+    const elapsedMs = Math.max(Date.now() - startTime, 1);
+    const velocityX = dx / elapsedMs;
+
+    const isSwipeRight = dx > 72 && dy < 88 && (velocityX > 0.42 || dx > 140);
+    if (isSwipeRight) {
+      setSelectedId(null);
+    }
+  };
+
+  const handleThreadTouchCancel = () => {
+    swipeBackRef.current.tracking = false;
+  };
+
   // ── render: loading ───────────────────────────────────
   if (loading) {
     return (
@@ -611,9 +713,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                             selected ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
                           }`}
                         >
-                          <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white text-xs font-semibold`}>
-                            {getInitials(member.username)}
-                          </div>
+                          <AvatarBadge
+                            slug={slug}
+                            userId={member.user_id}
+                            name={member.username}
+                            sizeClass="w-9 h-9"
+                            radiusClass="rounded-lg"
+                            textClass="text-xs"
+                          />
                           <span className="flex-1 text-left text-sm font-medium text-slate-900 dark:text-white">{member.username}</span>
                           {selected && <Check className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
                         </button>
@@ -690,6 +797,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
             <AnimatePresence mode="popLayout">
               {filteredConversations.map((convo) => {
                 const displayName = convoDisplayName(convo, myUserId);
+                const avatarUserId = convoAvatarUserId(convo, myUserId);
                 const preview = convo.lastMessage?.body;
                 return (
                   <motion.button
@@ -707,9 +815,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                   >
                     {/* Avatar */}
                     <div className="relative flex-shrink-0">
-                      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getAvatarColor(displayName)} flex items-center justify-center text-white font-semibold`}>
-                        {getInitials(displayName)}
-                      </div>
+                      <AvatarBadge
+                        slug={slug}
+                        userId={avatarUserId}
+                        name={displayName}
+                        sizeClass="w-12 h-12"
+                        radiusClass="rounded-xl"
+                        textClass=""
+                      />
                     </div>
 
                     {/* Content */}
@@ -751,7 +864,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
 
       {/* ── Chat Area ── */}
       {selectedId && selectedConvo ? (
-        <div className={`flex-1 flex flex-col relative z-10 ${selectedId ? 'flex' : 'hidden md:flex'}`}>
+        <div
+          className={`flex-1 flex flex-col relative z-10 ${selectedId ? 'flex' : 'hidden md:flex'}`}
+          onTouchStart={handleThreadTouchStart}
+          onTouchMove={handleThreadTouchMove}
+          onTouchEnd={handleThreadTouchEnd}
+          onTouchCancel={handleThreadTouchCancel}
+          style={{ touchAction: 'pan-y' }}
+        >
           {/* Chat Header */}
           <div className="p-4 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -764,9 +884,14 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
               </button>
 
               <div className="relative">
-                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${getAvatarColor(convoDisplayName(selectedConvo, myUserId))} flex items-center justify-center text-white font-semibold`}>
-                  {getInitials(convoDisplayName(selectedConvo, myUserId))}
-                </div>
+                <AvatarBadge
+                  slug={slug}
+                  userId={convoAvatarUserId(selectedConvo, myUserId)}
+                  name={convoDisplayName(selectedConvo, myUserId)}
+                  sizeClass="w-10 h-10"
+                  radiusClass="rounded-xl"
+                  textClass=""
+                />
               </div>
 
               <div>

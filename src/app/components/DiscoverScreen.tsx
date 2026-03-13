@@ -112,12 +112,12 @@ function MemberResult({
       className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 hover:border-purple-300 dark:hover:border-purple-700 transition-all group"
     >
       <div className="flex items-center gap-3">
-        {member.avatar_url && avatarUrl
-          ? <img src={avatarUrl} alt={member.username} className="w-10 h-10 rounded-full object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          : <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shrink-0`}>
-              {member.username.slice(0, 2).toUpperCase()}
-            </div>
-        }
+        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shrink-0 relative overflow-hidden`}>
+          {member.username.slice(0, 2).toUpperCase()}
+          {avatarUrl && (
+            <img src={avatarUrl} alt={member.username} className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-slate-900 dark:text-white">

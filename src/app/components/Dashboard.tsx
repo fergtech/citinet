@@ -1,8 +1,8 @@
 import {
-  Users, MessageCircle, Settings, Radio, Store,
+  Users, MessageCircle, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert,
+  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
   LayoutGrid,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
@@ -28,6 +28,13 @@ const APP_TILES = [
   { Icon: Wrench,        label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
   { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600' },
+];
+
+const MOBILE_DOCK_APPS = [
+  { Icon: MessageCircle, label: 'Discuss', screen: 'feed' },
+  { Icon: Map, label: 'Atlas', screen: 'atlas' },
+  { Icon: Store, label: 'Exchange', screen: 'marketplace' },
+  { Icon: MessageCircle, label: 'Messages', screen: 'messages' },
 ];
 
 interface DashboardProps {
@@ -64,10 +71,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     }
   }
 
-  // Mobile user menu
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  // Mobile start/menu
+  const [showMobileStartMenu, setShowMobileStartMenu] = useState(false);
   // Desktop start menu
   const [showStartMenu, setShowStartMenu] = useState(false);
+  const [showSupportMenu, setShowSupportMenu] = useState(false);
 
   // Tunnel reconnect state
   const [showTunnelInput, setShowTunnelInput] = useState(false);
@@ -131,6 +139,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   };
 
   const [rsvpDone, setRsvpDone] = useState<Record<number, boolean>>({});
+  const [showNodeStatus, setShowNodeStatus] = useState(false);
 
   const upcomingEvents = [
     {
@@ -183,15 +192,83 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
     ? projectInfoUrlRaw
     : `https://${projectInfoUrlRaw}`;
-  const getHelpUrl = 'https://github.com/fergtech/citinet/issues/new?template=help.yml';
+  const githubIssueBaseUrl = 'https://github.com/fergtech/citinet/issues/new';
+
+  const getCurrentFeatureContext = () => {
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const cleanPath = path.toLowerCase();
+    const firstSegment = cleanPath.split('/').filter(Boolean)[0] ?? '';
+
+    const labelMap: Record<string, string> = {
+      '': 'Dashboard',
+      feed: 'Discussions',
+      discover: 'Discover',
+      atlas: 'Atlas',
+      marketplace: 'Exchange',
+      neighbors: 'Neighbors',
+      files: 'Files',
+      initiatives: 'Initiatives',
+      toolkit: 'Resources',
+      network: 'Network',
+      messages: 'Messages',
+      account: 'Account',
+      profile: 'Profile',
+      settings: 'Settings',
+      'hub-management': 'Hub Management',
+      vendor: 'Vendor Profile',
+    };
+
+    const featureName = labelMap[firstSegment] ?? (firstSegment ? `${firstSegment.charAt(0).toUpperCase()}${firstSegment.slice(1)}` : 'Dashboard');
+    return { featureName, path };
+  };
+
+  const buildSupportUrl = (kind: 'help' | 'bug' | 'feature') => {
+    const { featureName, path } = getCurrentFeatureContext();
+    const params = new URLSearchParams();
+    const contextText = [
+      `Feature/Screen: ${featureName}`,
+      `Route: ${path}`,
+      `Hub: ${nodeName}`,
+    ].join('\n');
+
+    if (kind === 'help') {
+      params.set('template', 'help.yml');
+      params.set('title', `[Help] ${featureName}: `);
+      params.set('question-summary', `Need help with ${featureName}`);
+      params.set('additional-info', contextText);
+    }
+
+    if (kind === 'bug') {
+      params.set('template', 'bug_report.yml');
+      params.set('title', `[Bug] ${featureName}: `);
+      params.set('what-happened', `Issue encountered in ${featureName}.`);
+      params.set('steps-to-reproduce', `1. Open ${featureName}\n2. ...\n3. Observe issue`);
+      params.set('additional-info', contextText);
+    }
+
+    if (kind === 'feature') {
+      params.set('template', 'feature_request.yml');
+      params.set('title', `[Feature] ${featureName}: `);
+      params.set('feature-summary', `Enhance ${featureName}`);
+      params.set('use-case', `While using ${featureName}, it would help if ...`);
+      params.set('additional-info', contextText);
+    }
+
+    return `${githubIssueBaseUrl}?${params.toString()}`;
+  };
 
   const openProjectInfo = () => {
     window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
   };
 
-  const openGetHelp = () => {
-    window.open(getHelpUrl, '_blank', 'noopener,noreferrer');
+  const openSupportLink = (kind: 'help' | 'bug' | 'feature') => {
+    window.open(buildSupportUrl(kind), '_blank', 'noopener,noreferrer');
+    setShowSupportMenu(false);
   };
+
+  const mobileLauncherTiles = myVendor
+    ? [...APP_TILES, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
+    : APP_TILES;
 
   return (
     <div className="min-h-screen flex relative">
@@ -199,16 +276,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       {/* ═══ DESKTOP OS UI (hidden on mobile) ═══ */}
 
       {/* Desktop Top Menubar */}
-      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 items-center px-4 gap-3 select-none">
+      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-slate-950/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-800/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
         <div className="w-2 h-2 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
-        <span className="text-sm font-semibold text-slate-900 dark:text-white">{nodeName}</span>
+        <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
         <div className="flex-1" />
         <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-        <span className="text-xs text-slate-500 dark:text-slate-400">{statusLabel}</span>
+        <span className="text-xs text-slate-300">{statusLabel}</span>
         {nodeStatus.onlineNow > 0 && (
           <>
             <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{nodeStatus.onlineNow} online</span>
+            <span className="text-xs text-slate-300">{nodeStatus.onlineNow} online</span>
           </>
         )}
         <button
@@ -324,11 +401,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   <span className="text-sm text-slate-700 dark:text-slate-300">About Citinet</span>
                 </button>
                 <button
-                  onClick={() => { setShowStartMenu(false); openGetHelp(); }}
+                  onClick={() => { setShowStartMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Get Help</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Support</span>
                 </button>
               </div>
               {onLogout && (
@@ -351,7 +428,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       </AnimatePresence>
 
       {/* Desktop Bottom Dock */}
-      <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-t border-slate-200/50 dark:border-zinc-800/50 items-center px-4 gap-1">
+      <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60 items-center px-4 gap-1">
         <button
           onClick={() => setShowStartMenu(v => !v)}
           className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white hover:from-blue-700 hover:to-purple-700 transition-all shadow-sm hover:shadow-md active:scale-95 shrink-0"
@@ -372,7 +449,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             key={app.screen}
             onClick={() => onNavigate(app.screen)}
             title={app.label}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
           >
             <app.Icon className="w-5 h-5" />
           </button>
@@ -397,7 +474,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           <button
             onClick={() => onNavigate('hub-management')}
             title="Hub Admin"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
           >
             <Shield className="w-5 h-5" />
           </button>
@@ -405,7 +482,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         <button
           onClick={openProjectInfo}
           title="About Citinet"
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-purple-600 dark:hover:text-purple-400 transition-all active:scale-95 shrink-0"
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
         >
           <CircleAlert className="w-5 h-5" />
         </button>
@@ -682,107 +759,52 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
       {/* Main Content Area */}
       <div className="flex-1 pb-24 md:pb-16 md:pt-9 overflow-x-hidden relative z-10">
-        {/* Mobile Header - Only shown on mobile */}
-        <div className="md:hidden bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
-          <div className="px-6 py-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-slate-900 dark:text-white font-semibold text-2xl mb-1 tracking-tight">
-                  {displayName}
-                </h1>
-                <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-                  {nodeName}
-                </p>
+        {/* Mobile Header - System strip + start menu trigger */}
+        <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 sticky top-0 z-20">
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowMobileStartMenu(true)}
+                className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white shadow-sm active:scale-95 transition-transform"
+                aria-label="Open menu"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Hub Desktop</p>
+                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
               </div>
-              {/* Avatar button — opens user menu */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(v => !v)}
-                  className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shadow-sm active:scale-95 transition-transform"
-                  aria-label="Open user menu"
-                >
-                  {currentUser?.avatarUrl
-                    ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                    : displayName.charAt(0).toUpperCase()
-                  }
-                </button>
-                {showUserMenu && (
-                  <>
-                    {/* Backdrop */}
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setShowUserMenu(false)}
-                    />
-                    {/* Dropdown */}
-                    <div className="absolute right-0 top-12 z-50 w-48 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
-                      <button
-                        onClick={() => { setShowUserMenu(false); onNavigate('account'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                      >
-                        <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">My Account</span>
-                      </button>
-                      {currentUser?.hubUserId && (
-                        <button
-                          onClick={() => { setShowUserMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                        >
-                          <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                          <span className="text-sm font-medium text-slate-900 dark:text-white">My Profile</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { setShowUserMenu(false); onNavigate('settings'); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                      >
-                        <Settings className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">Settings</span>
-                      </button>
-                      
-                      {isAdmin && (
-                        <button
-                          onClick={() => { setShowUserMenu(false); onNavigate('hub-management'); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                        >
-                          <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                          <span className="text-sm font-medium text-slate-900 dark:text-white">Hub Admin</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { setShowUserMenu(false); openProjectInfo(); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                      >
-                        <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">About Citinet</span>
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); openGetHelp(); }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 transition-colors text-left"
-                      >
-                        <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">Get Help</span>
-                      </button>
-                      {onLogout && (
-                        <>
-                          <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
-                          <button
-                            onClick={() => { setShowUserMenu(false); onLogout(); }}
-                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 transition-colors text-left"
-                          >
-                            <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
-                            <span className="text-sm font-medium text-red-600 dark:text-red-400">Leave Hub</span>
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
+
+              <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80">
+                <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+                <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
               </div>
+
+              <button
+                onClick={() => setShowMobileStartMenu(true)}
+                className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm active:scale-95 transition-transform"
+                aria-label="Open profile menu"
+              >
+                {currentUser?.avatarUrl
+                  ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  : displayName.charAt(0).toUpperCase()
+                }
+              </button>
             </div>
 
-            {/* Mobile: connection status + reconnect */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 px-3 py-2">
+              <span className="text-xs text-slate-600 dark:text-slate-300">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</span>
+              <button
+                onClick={() => setShowSupportMenu(true)}
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400"
+              >
+                Support
+              </button>
+            </div>
+
             {connectionStatus === 'unreachable' && (
-              <div className="mt-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-2">
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <WifiOff className="w-4 h-4 text-orange-500" />
                   <span className="text-xs font-medium text-orange-700 dark:text-orange-300 flex-1">Hub unreachable</span>
@@ -835,25 +857,25 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
 
         {/* Desktop App Launcher - OS-style icon grid */}
-        <div className="hidden md:block border-b border-slate-200/50 dark:border-zinc-800/50 bg-white/30 dark:bg-zinc-900/30 backdrop-blur-sm">
+        <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
           <div className="max-w-5xl mx-auto px-8 py-5">
-            <div className="grid grid-cols-5 lg:grid-cols-10 gap-1">
+            <div className="grid grid-cols-5 lg:grid-cols-10 gap-1 justify-items-center">
               {APP_TILES.map(app => (
                 <button
                   key={app.screen}
                   onClick={() => onNavigate(app.screen)}
-                  className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-slate-100/80 dark:hover:bg-zinc-800/60 transition-all group active:scale-95"
+                  className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
                 >
                   <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all`}>
                     <app.Icon className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 text-center leading-tight">{app.label}</span>
+                  <span className="text-[11px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
                 </button>
               ))}
               {myVendor && (
                 <button
                   onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-                  className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-50/80 dark:hover:bg-purple-900/20 transition-all group active:scale-95"
+                  className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
                 >
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg overflow-hidden">
                     {vendorLogoUrl
@@ -861,7 +883,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       : myVendor.name.charAt(0).toUpperCase()
                     }
                   </div>
-                  <span className="text-[11px] font-medium text-purple-700 dark:text-purple-400 text-center leading-tight truncate w-full">{myVendor.name}</span>
+                  <span className="text-[11px] font-medium text-purple-300 text-center leading-tight truncate w-full">{myVendor.name}</span>
                 </button>
               )}
             </div>
@@ -869,37 +891,33 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
 
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8 overflow-x-hidden">
-          {/* Node Status - Mobile Only (Desktop has it in sidebar) */}
-          <div className="md:hidden relative overflow-hidden bg-gradient-to-br from-purple-600 via-purple-500 to-blue-500 rounded-2xl p-4 shadow-xl text-white max-w-full">
-            {/* Subtle texture overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
-            
-            <div className="relative flex items-start justify-between mb-6">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-sm font-medium text-white/90">Network Active</span>
-                </div>
-                <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">Node Status</h2>
-              </div>
-              <Activity className="w-8 h-8 text-white/80" />
+          {/* Mobile launcher - app first, widgets second */}
+          <div className="md:hidden space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
+              <button
+                onClick={() => setShowMobileStartMenu(true)}
+                className="text-xs font-semibold text-purple-600 dark:text-purple-400"
+              >
+                Open Menu
+              </button>
             </div>
-
-            <div className="relative grid grid-cols-3 gap-2 sm:gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2 sm:p-4">
-                <div className="text-3xl font-semibold mb-1">{nodeStatus.activeMembers}</div>
-                <div className="text-xs text-white/80 font-light">Active Members</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2 sm:p-4">
-                <div className="text-3xl font-semibold mb-1">{nodeStatus.onlineNow}</div>
-                <div className="text-xs text-white/80 font-light">Online Now</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-lg p-2 sm:p-4">
-                <div className="text-base font-semibold mb-1">{nodeStatus.signalStrength}</div>
-                <div className="text-xs text-white/80 font-light">Signal</div>
-              </div>
+            <div className="grid grid-cols-5 gap-2 justify-items-center">
+              {mobileLauncherTiles.map(app => (
+                <button
+                  key={app.screen}
+                  onClick={() => onNavigate(app.screen)}
+                  className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-slate-900/75 dark:bg-black/60 border border-slate-700 shadow-sm active:scale-95 transition-transform"
+                >
+                  <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm`}>
+                    <app.Icon className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-[10px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
+                </button>
+              ))}
             </div>
           </div>
+
           {/* Featured Content - Curated by Admins/Mods */}
           <div className="max-w-full overflow-hidden">
             <div className="flex items-center justify-between mb-4">
@@ -1058,6 +1076,42 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               ))}
             </div>
           </div>
+
+          {/* Node Status */}
+          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Activity className="w-4 h-4 text-slate-200 shrink-0" />
+                <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-100 truncate">Node Status</h2>
+              </div>
+              <button
+                onClick={() => setShowNodeStatus(v => !v)}
+                className="text-xs font-semibold text-cyan-200 hover:text-cyan-100 transition-colors"
+              >
+                {showNodeStatus ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            {showNodeStatus && (
+              <>
+                <div className="mt-3 h-px bg-slate-600/70" />
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.activeMembers}</div>
+                    <div className="text-xs text-slate-200">Active Members</div>
+                  </div>
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.onlineNow}</div>
+                    <div className="text-xs text-slate-200">Online Now</div>
+                  </div>
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-base font-semibold mb-1">{nodeStatus.signalStrength}</div>
+                    <div className="text-xs text-slate-200">Signal</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
             </div>
           </div>
 
@@ -1066,61 +1120,133 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
       </div>
 
-      {/* Mobile Bottom Tab Bar — horizontally scrollable */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-t border-slate-200 dark:border-zinc-800">
-        {/* Fade hint on right edge */}
-        <div className="relative">
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white/95 dark:from-zinc-900/95 to-transparent z-10" />
-          <div
-            className="flex items-stretch h-16 overflow-x-auto"
-            style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+      {/* Mobile Bottom Dock */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
+        <div className="grid grid-cols-5 h-16 px-1">
+          <button
+            onClick={() => setShowMobileStartMenu(true)}
+            className="flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-transform"
           >
-            {[
-              { icon: <MessageCircle className="w-5 h-5" />, label: 'Discuss',     screen: 'feed' },
-              { icon: <Compass className="w-5 h-5" />,        label: 'Discover',   screen: 'discover' },
-              { icon: <Map className="w-5 h-5" />,            label: 'Atlas',      screen: 'atlas' },
-              { icon: <Store className="w-5 h-5" />,          label: 'Exchange',   screen: 'marketplace' },
-              { icon: <Users className="w-5 h-5" />,          label: 'Neighbors',  screen: 'neighbors' },
-              { icon: <FolderOpen className="w-5 h-5" />,     label: 'Files',      screen: 'files' },
-              { icon: <Target className="w-5 h-5" />,         label: 'Initiatives',screen: 'initiatives' },
-              { icon: <Wrench className="w-5 h-5" />,         label: 'Resources',  screen: 'toolkit' },
-              { icon: <Radio className="w-5 h-5" />,          label: 'Network',    screen: 'network' },
-              { icon: <MessageCircle className="w-5 h-5" />,  label: 'Messages',   screen: 'messages' },
-              { icon: <CircleAlert className="w-5 h-5" />,    label: 'About',      screen: 'project-info' },
-              { icon: <HelpCircle className="w-5 h-5" />,     label: 'Help',       screen: 'get-help' },
-            ].map(item => (
-              <button
-                key={item.screen}
-                onClick={() => item.screen === 'project-info' ? openProjectInfo() : item.screen === 'get-help' ? openGetHelp() : onNavigate(item.screen)}
-                className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 active:scale-95 transition-all"
-              >
-                {item.icon}
-                <span className="text-[10px] font-medium leading-none">{item.label}</span>
-              </button>
-            ))}
-            {/* My Store — separator + tab, only shown when user has a vendor page */}
-            {myVendor && (
-              <>
-                <div className="flex-shrink-0 w-px self-stretch my-2 bg-slate-200 dark:bg-zinc-700" />
-                <button
-                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-                  className="flex-shrink-0 w-20 flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-all"
-                >
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold overflow-hidden">
-                    {vendorLogoUrl
-                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
-                      : myVendor.name.charAt(0).toUpperCase()
-                    }
-                  </div>
-                  <span className="text-[10px] font-medium leading-none">My Store</span>
-                </button>
-              </>
-            )}
-            {/* Extra right padding so last tab isn't obscured by the fade */}
-            <div className="flex-shrink-0 w-4" />
-          </div>
+            <LayoutGrid className="w-5 h-5" />
+            <span className="text-[10px] font-semibold leading-none">Start</span>
+          </button>
+
+          {MOBILE_DOCK_APPS.map(app => (
+            <button
+              key={app.screen}
+              onClick={() => onNavigate(app.screen)}
+              className="flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+            >
+              <app.Icon className="w-5 h-5" />
+              <span className="text-[10px] font-medium leading-none">{app.label}</span>
+            </button>
+          ))}
         </div>
       </nav>
+
+      {/* Mobile Start Menu Sheet */}
+      <AnimatePresence>
+        {showMobileStartMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm md:hidden"
+              onClick={() => setShowMobileStartMenu(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 28 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 28 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 360 }}
+              className="fixed inset-x-0 bottom-0 z-50 md:hidden rounded-t-3xl border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl max-h-[80vh] overflow-y-auto"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold shrink-0">
+                      {currentUser?.avatarUrl
+                        ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        : displayName.charAt(0).toUpperCase()
+                      }
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowMobileStartMenu(false)}
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 space-y-1">
+                {currentUser?.hubUserId && (
+                  <button
+                    onClick={() => { setShowMobileStartMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                  >
+                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm text-slate-800 dark:text-slate-200">My Profile</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowMobileStartMenu(false); onNavigate('account'); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">My Account</span>
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setShowMobileStartMenu(false); onNavigate('hub-management'); }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                  >
+                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm text-slate-800 dark:text-slate-200">Hub Admin</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowMobileStartMenu(false); openProjectInfo(); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">About Citinet</span>
+                </button>
+                <button
+                  onClick={() => { setShowMobileStartMenu(false); setShowSupportMenu(true); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Support</span>
+                </button>
+                <button
+                  onClick={() => { setShowMobileStartMenu(false); onNavigate('discover'); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <Compass className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Find Apps & People</span>
+                </button>
+                {onLogout && (
+                  <button
+                    onClick={() => { setShowMobileStartMenu(false); onLogout(); }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
+                  >
+                    <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
+                    <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Featured post detail modal */}
       {featuredPost && (
@@ -1137,6 +1263,77 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           onDeleted={() => setFeaturedPost(null)}
         />
       )}
+
+      {/* Support options modal */}
+      <AnimatePresence>
+        {showSupportMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => setShowSupportMenu(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Support</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Choose a GitHub form to open in a new tab</p>
+                </div>
+                <button
+                  onClick={() => setShowSupportMenu(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                  aria-label="Close support options"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+
+              <div className="p-2">
+                <button
+                  onClick={() => openSupportLink('help')}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Get Help</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Troubleshooting or support questions</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => openSupportLink('bug')}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Report a Bug</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Something is broken or not working right</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => openSupportLink('feature')}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Request a Feature</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Suggest a new feature or enhancement</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ── Event Detail Modal ── */}
       <AnimatePresence>

@@ -608,12 +608,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 const busy = memberActionId === member.user_id;
                 return (
                   <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
-                    {member.avatar_url && currentHub?.slug
-                      ? <img src={hubService.getAvatarUrl(currentHub.slug, member.user_id) ?? undefined} alt={member.username} className="w-9 h-9 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                          {member.username.charAt(0).toUpperCase()}
-                        </div>
-                    }
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0 relative overflow-hidden">
+                      {member.username.charAt(0).toUpperCase()}
+                      {currentHub?.slug && (
+                        <img src={hubService.getAvatarUrl(currentHub.slug, member.user_id) ?? undefined} alt={member.username} className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      )}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-slate-900 dark:text-white truncate">

@@ -41,22 +41,31 @@ function getInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function AvatarCircle({ authorId, authorUsername, currentUserId, currentUserAvatarUrl, size = 'md' }: {
+function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId, currentUserAvatarUrl, size = 'md' }: {
   authorId: string;
   authorUsername: string;
+  authorAvatarUrl?: string;
   currentUserId?: string;
   currentUserAvatarUrl?: string;
   size?: 'sm' | 'md';
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const dim = size === 'sm' ? 'w-7 h-7 text-[10px]' : 'w-8 h-8 text-xs';
-  const isMe = authorId === currentUserId && currentUserAvatarUrl;
-  if (isMe) {
+  const preferredAvatarUrl = authorId === currentUserId
+    ? (currentUserAvatarUrl || authorAvatarUrl)
+    : authorAvatarUrl;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [preferredAvatarUrl]);
+
+  if (preferredAvatarUrl && !imageFailed) {
     return (
       <img
-        src={currentUserAvatarUrl}
+        src={preferredAvatarUrl}
         alt={authorUsername}
         className={`${dim} rounded-full object-cover flex-shrink-0`}
-        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        onError={() => setImageFailed(true)}
       />
     );
   }
@@ -331,7 +340,14 @@ export function PostDetailModal({
                         {post.title}
                       </h2>
                       <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        <AvatarCircle authorId={post.author_id} authorUsername={post.author_username} currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl} size="sm" />
+                        <AvatarCircle
+                          authorId={post.author_id}
+                          authorUsername={post.author_username}
+                          authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                          currentUserId={currentUserId}
+                          currentUserAvatarUrl={currentUserAvatarUrl}
+                          size="sm"
+                        />
                         <div className="flex items-center gap-1.5">
                           <Users className="w-3.5 h-3.5" />
                           <span>{post.author_username}</span>
@@ -368,7 +384,13 @@ export function PostDetailModal({
 
                   {!loadingReplies && replies.map(reply => (
                     <div key={reply.id} className="flex gap-3 mb-4">
-                      <AvatarCircle authorId={reply.author_id} authorUsername={reply.author_username} currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl} />
+                      <AvatarCircle
+                        authorId={reply.author_id}
+                        authorUsername={reply.author_username}
+                        authorAvatarUrl={hubService.getAvatarUrl(hubSlug, reply.author_id) ?? undefined}
+                        currentUserId={currentUserId}
+                        currentUserAvatarUrl={currentUserAvatarUrl}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2 mb-1">
                           <span className="text-sm font-medium text-slate-900 dark:text-white">{reply.author_username}</span>

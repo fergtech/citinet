@@ -253,17 +253,15 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                   >
                     <div className="flex items-center gap-3">
                       {/* Avatar */}
-                      {member.avatar_url
-                        ? <img
-                            src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}
-                            alt={member.username}
-                            className="w-10 h-10 rounded-full object-cover shadow-sm"
-                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        : <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
-                            {getInitials(member.username)}
-                          </div>
-                      }
+                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shadow-sm relative overflow-hidden`}>
+                        {getInitials(member.username)}
+                        <img
+                          src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}
+                          alt={member.username}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </div>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
