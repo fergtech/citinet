@@ -24,11 +24,13 @@
 
 const express = require('express');
 const os = require('os');
+const path = require('path');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const multer = require('multer');
 const Minio = require('minio');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '9090', 10);
@@ -64,6 +66,15 @@ const uploadBg = multer({
   limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB cap for background images
 });
 
+const ALLOWED_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif',
+  'video/mp4', 'video/webm', 'video/quicktime',
+  'application/pdf',
+  'text/plain',
+]);
+
+const BLOCKED_EXTENSIONS = new Set(['.exe', '.bat', '.sh', '.ps1', '.cmd', '.msi', '.dmg']);
+
 // ── Middleware ────────────────────────────────────────────
 
 app.use(express.json());
@@ -76,6 +87,23 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts — try again later' },
+});
+
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // ── Database ──────────────────────────────────────────────
 
@@ -290,14 +318,21 @@ async function authenticate(req, res, next) {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.is_admin
+      `SELECT u.id, u.username, u.is_admin, s.created_at AS session_created_at
        FROM hub_sessions s
        JOIN hub_users u ON s.user_id = u.id
        WHERE s.token = $1`,
       [token]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Invalid or expired token' });
+
+    if (Date.now() - new Date(result.rows[0].session_created_at).getTime() > SESSION_MAX_AGE_MS) {
+      await pool.query('DELETE FROM hub_sessions WHERE token = $1', [token]);
+      return res.status(401).json({ error: 'Session expired — please log in again' });
+    }
+
     req.user = result.rows[0];
+    req.token = token;
     next();
   } catch {
     res.status(500).json({ error: 'Auth check failed' });
@@ -432,7 +467,7 @@ app.get('/api/status', async (_req, res) => {
 
 // ── Auth routes ───────────────────────────────────────────
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const { username, password, email } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
@@ -440,8 +475,8 @@ app.post('/api/auth/register', async (req, res) => {
   if (username.trim().length < 2) {
     return res.status(400).json({ error: 'Username must be at least 2 characters' });
   }
-  if (password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  if (password.length < 10) {
+    return res.status(400).json({ error: 'Password must be at least 10 characters' });
   }
 
   try {
@@ -483,7 +518,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
@@ -524,14 +559,25 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Logout — invalidate the current session token
+app.delete('/api/auth/session', authenticate, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM hub_sessions WHERE token = $1', [req.token]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ error: 'Logout failed' });
+  }
+});
+
 // Change password
 app.post('/api/auth/change-password', authenticate, async (req, res) => {
   const { current_password, new_password } = req.body || {};
   if (!current_password || !new_password) {
     return res.status(400).json({ error: 'current_password and new_password are required' });
   }
-  if (new_password.length < 4) {
-    return res.status(400).json({ error: 'New password must be at least 4 characters' });
+  if (new_password.length < 10) {
+    return res.status(400).json({ error: 'New password must be at least 10 characters' });
   }
   try {
     const result = await pool.query('SELECT password_hash FROM hub_users WHERE id = $1', [req.user.id]);
@@ -1020,6 +1066,14 @@ app.get('/api/files', authenticate, async (req, res) => {
 app.post('/api/files', authenticate, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file provided' });
 
+  if (!ALLOWED_MIME.has(req.file.mimetype)) {
+    return res.status(400).json({ error: 'File type not allowed' });
+  }
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    return res.status(400).json({ error: 'File type not allowed' });
+  }
+
   const isPublic = req.body.is_public === 'true';
   // Prefix with owner ID to avoid collisions between users with same filename
   const fileKey = `${req.user.id}/${req.file.originalname}`;
@@ -1073,7 +1127,8 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
 
     const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
     res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
+    const safeName = path.basename(file.file_name).replace(/[^\w.\-]/g, '_');
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
     if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
     stream.pipe(res);
   } catch (err) {
@@ -1144,8 +1199,9 @@ app.get('/api/public/files/:filename', async (req, res) => {
     const mimeType = file.mime_type || 'application/octet-stream';
     const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
 
+    const safeName = path.basename(file.file_name).replace(/[^\w.\-]/g, '_');
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
+    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=3600');
 
@@ -1221,6 +1277,7 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
   const cat = (category || '').toUpperCase();
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  if (title.trim().length > 500) return res.status(400).json({ error: 'Title too long' });
   if (!POST_CATEGORIES.includes(cat)) {
     return res.status(400).json({ error: `category must be one of: ${POST_CATEGORIES.join(', ')}` });
   }
@@ -1229,6 +1286,13 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
     let mediaFileId = null;
 
     if (req.file) {
+      if (!ALLOWED_MIME.has(req.file.mimetype)) {
+        return res.status(400).json({ error: 'File type not allowed' });
+      }
+      const mediaExt = path.extname(req.file.originalname).toLowerCase();
+      if (BLOCKED_EXTENSIONS.has(mediaExt)) {
+        return res.status(400).json({ error: 'File type not allowed' });
+      }
       const fileKey = `${req.user.id}/${req.file.originalname}`;
       if (minioClient) {
         await minioClient.putObject(
@@ -1416,6 +1480,17 @@ app.post('/api/featured', authenticate, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
   const { type = 'post', ref_id, title, caption, category_label, image_url } = req.body || {};
 
+  if (image_url) {
+    try {
+      const parsed = new URL(image_url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'image_url must use http or https' });
+      }
+    } catch {
+      return res.status(400).json({ error: 'image_url is not a valid URL' });
+    }
+  }
+
   try {
     const countResult = await pool.query('SELECT COUNT(*) FROM hub_featured');
     if (parseInt(countResult.rows[0].count, 10) >= 5) {
@@ -1504,6 +1579,8 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
   const { latitude, longitude, title, description, category } = req.body || {};
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  if (title.trim().length > 200) return res.status(400).json({ error: 'Title too long' });
+  if (description && description.length > 1000) return res.status(400).json({ error: 'Description too long' });
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     return res.status(400).json({ error: 'latitude and longitude must be numbers' });
   }

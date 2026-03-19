@@ -453,8 +453,16 @@ class HubService {
     return connection.user;
   }
 
-  /** Remove a hub connection */
+  /** Remove a hub connection — also invalidates the server-side session token (best-effort) */
   leaveHub(slug: string): void {
+    const connection = this.getHubConnection(slug);
+    if (connection?.hub.tunnelUrl && connection.user?.authToken) {
+      // Fire-and-forget: invalidate the session server-side so the token can't be reused
+      fetch(`${connection.hub.tunnelUrl}/api/auth/session`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${connection.user.authToken}` },
+      }).catch((err) => { console.warn('[leaveHub] Failed to invalidate server session:', err); });
+    }
     const connections = this.getAllHubConnections();
     delete connections[slug];
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
