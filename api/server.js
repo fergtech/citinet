@@ -103,6 +103,15 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts — try again later' },
 });
 
+// General API rate limiter applied to all /api/* routes — guards against DoS
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 min
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — slow down' },
+});
+
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 // ── Database ──────────────────────────────────────────────
@@ -362,6 +371,9 @@ function uptimeStr() {
 }
 
 // ── Public routes ─────────────────────────────────────────
+
+// Apply general rate limiter to all /api/* routes
+app.use('/api/', apiLimiter);
 
 // Root — browser landing. If a portal URL is configured (the hosted React app),
 // redirect there with this hub's URL pre-filled so the join flow auto-connects.
