@@ -1,6 +1,6 @@
 # Security Hardening — Backlog
 
-> **Dev note:** None of this is implemented yet intentionally. During active development and local testing, open auth, weak passwords, and permissive CORS keep things friction-free. Revisit before any public-facing deployment.
+> **Dev note:** All critical items have been implemented. See individual sections below for details.
 
 ---
 
@@ -212,12 +212,12 @@ res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
 
 Before going live with real users:
 
-- [ ] Rate limiting on `/api/auth/*`
-- [ ] Password minimum raised to 10 chars
-- [ ] Logout endpoint implemented and called by frontend
-- [ ] File upload MIME/extension validation
-- [ ] `javascript:` URL blocked in featured image_url
+- [x] Rate limiting on `/api/auth/*`
+- [x] Password minimum raised to 10 chars
+- [x] Logout endpoint implemented and called by frontend
+- [x] File upload MIME/extension validation
+- [x] `javascript:` URL blocked in featured image_url
 - [ ] `CORS_ORIGIN` set to actual frontend domain in hub `.env`
-- [ ] Security headers added
-- [ ] Token expiration implemented (30-day sessions)
-- [ ] Input length limits on atlas + posts
+- [x] Security headers added
+- [x] Token expiration implemented (30-day sessions)
+- [x] Input length limits on atlas + posts

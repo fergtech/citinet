@@ -158,7 +158,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) { setPwError("New passwords don't match"); return; }
-    if (newPassword.length < 4) { setPwError('New password must be at least 4 characters'); return; }
+    if (newPassword.length < 10) { setPwError('New password must be at least 10 characters'); return; }
     setPwError('');
     setPwSaving(true);
     try {

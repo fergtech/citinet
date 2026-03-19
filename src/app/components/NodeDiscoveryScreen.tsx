@@ -149,7 +149,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
   const canSubmit = authMode === 'login'
     ? (probeInfo != null && username.trim().length >= 2 && password.length >= 1)
-    : (probeInfo != null && username.trim().length >= 2 && password.length >= 4
+    : (probeInfo != null && username.trim().length >= 2 && password.length >= 10
         && password === confirmPassword && isValidEmail(email));
 
   const switchAuthMode = (mode: AuthMode) => {
@@ -560,8 +560,8 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  {authMode === 'signup' && password.length > 0 && password.length < 4 && (
-                    <p className="text-xs text-red-500 mt-1">At least 4 characters</p>
+                  {authMode === 'signup' && password.length > 0 && password.length < 10 && (
+                    <p className="text-xs text-red-500 mt-1">At least 10 characters</p>
                   )}
                 </div>
 
