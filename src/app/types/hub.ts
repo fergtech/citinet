@@ -145,6 +145,7 @@ export interface HubStatusResponse {
   storage_used?: number;
   online?: boolean;
   user_count?: number;
+  online_now?: number;
 }
 
 /** Response expected from a hub's auth/register endpoint */

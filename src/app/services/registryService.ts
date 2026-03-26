@@ -40,10 +40,12 @@ interface RegistryResponse {
   updated_at: string;
 }
 
-// Registry URL — set VITE_REGISTRY_URL in your environment to enable.
-// Vercel: add it in Project Settings → Environment Variables
-// Local dev: add VITE_REGISTRY_URL=... to a .env.local file (gitignored)
+// Read URL — static JSON served from GitHub (fast, CDN-cached).
+// Set VITE_REGISTRY_URL in Vercel env vars and .env.local.
 const REGISTRY_URL: string | null = import.meta.env.VITE_REGISTRY_URL ?? null;
+// Write URL — Vercel serverless function that handles GitHub auth.
+// Relative /api/registry works in production; gracefully fails in local dev.
+const REGISTRY_API_URL: string = import.meta.env.VITE_REGISTRY_API_URL ?? '/api/registry';
 const FETCH_TIMEOUT_MS = 10_000;
 
 class RegistryService {
@@ -95,31 +97,22 @@ class RegistryService {
 
   /**
    * Register or update a hub in the public registry.
-   * Called from the hub's admin panel after a tunnel is set up.
-   *
-   * @param apiToken  - Cloudflare API token (passed from Tauri backend)
-   * @param hub       - Hub registration payload
+   * The Vercel API function handles GitHub auth — no token needed from the caller.
+   * Fires automatically when a hub admin saves a tunnel URL.
    */
   async registerHub(
-    apiToken: string,
     hub: Omit<RegistryHub, 'registered_at' | 'last_seen'>,
   ): Promise<{ ok: boolean; error?: string }> {
-    if (!REGISTRY_URL) return { ok: false, error: 'Registry not configured' };
     try {
-      const res = await fetch(`${REGISTRY_URL}/hubs`, {
+      const res = await fetch(REGISTRY_API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiToken}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(hub),
       });
-
       if (!res.ok) {
         const body = await res.text();
         return { ok: false, error: body || `Registry responded ${res.status}` };
       }
-
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -130,21 +123,15 @@ class RegistryService {
   /**
    * Deregister a hub from the public registry.
    */
-  async deregisterHub(
-    apiToken: string,
-    hubId: string,
-  ): Promise<{ ok: boolean; error?: string }> {
+  async deregisterHub(hubId: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch(`${REGISTRY_URL}/hubs/${encodeURIComponent(hubId)}`, {
+      const res = await fetch(`${REGISTRY_API_URL}?id=${encodeURIComponent(hubId)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${apiToken}` },
       });
-
       if (!res.ok && res.status !== 204) {
         const body = await res.text();
         return { ok: false, error: body || `Registry responded ${res.status}` };
       }
-
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

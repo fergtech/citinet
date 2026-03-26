@@ -16,6 +16,7 @@ import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
+import { registryService } from '../services/registryService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
 
@@ -95,6 +96,21 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [tunnelError, setTunnelError] = useState('');
   const [tunnelSuccess, setTunnelSuccess] = useState(false);
 
+  const autoRegisterHub = (tunnelUrl: string) => {
+    if (!currentHub) return;
+    // Fire-and-forget — failure is silent, doesn't affect the user's flow
+    registryService.registerHub({
+      id:           currentHub.slug,
+      name:         currentHub.name,
+      slug:         currentHub.slug,
+      location:     currentHub.location ?? '',
+      description:  currentHub.description ?? '',
+      tunnel_url:   tunnelUrl,
+      member_count: currentHub.meta?.activeMembers ?? 0,
+      online:       true,
+    }).catch(() => {});
+  };
+
   const handleTunnelReconnect = async () => {
     if (!tunnelInput.trim()) return;
     setTunnelUpdating(true);
@@ -105,6 +121,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     if (result.ok) {
       setTunnelSuccess(true);
       setTunnelInput('');
+      autoRegisterHub(tunnelInput.trim());
       setTimeout(() => {
         setShowTunnelInput(false);
         setTunnelSuccess(false);
@@ -124,6 +141,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     if (result.ok) {
       setTunnelSuccess(true);
       setTunnelInput('');
+      autoRegisterHub(tunnelInput.trim());
       setTimeout(() => {
         setShowTunnelInput(false);
         setTunnelSuccess(false);
@@ -286,7 +304,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     setShowSupportMenu(false);
   };
 
-  const mobileLauncherTiles = myVendor
+  const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...APP_TILES, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : APP_TILES;
 
