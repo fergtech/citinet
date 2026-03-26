@@ -54,10 +54,15 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
   const [savingVisual, setSavingVisual] = useState<'logo' | 'banner' | null>(null);
   const [visualError, setVisualError] = useState('');
   const [showBannerEditor, setShowBannerEditor] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const bannerStyle = useMemo((): React.CSSProperties => {
+    if (bannerPreview) {
+      return { backgroundImage: `url(${bannerPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+    }
     if (vendor.banner_mode === 'image' && vendor.banner_image_file_name) {
       const imageUrl = marketplaceService.getVendorBannerUrl(hubSlug, vendor.banner_image_file_name);
       if (imageUrl) {
@@ -75,7 +80,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       return { backgroundImage: `linear-gradient(135deg, ${vendor.banner_gradient_from}, ${vendor.banner_gradient_to})` };
     }
     return { backgroundImage: 'linear-gradient(135deg, #2563eb, #7c3aed)' };
-  }, [hubSlug, vendor.banner_color, vendor.banner_gradient_from, vendor.banner_gradient_to, vendor.banner_image_file_name, vendor.banner_mode]);
+  }, [bannerPreview, hubSlug, vendor.banner_color, vendor.banner_gradient_from, vendor.banner_gradient_to, vendor.banner_image_file_name, vendor.banner_mode]);
 
   const saveVendorVisuals = async (updates: Partial<HubVendor>, savingTarget: 'logo' | 'banner') => {
     setSavingVisual(savingTarget);
@@ -93,13 +98,21 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
+    setLogoPreview(previewUrl);
+    setSavingVisual('logo');
+    setVisualError('');
     try {
-      setSavingVisual('logo');
-      setVisualError('');
       const uploaded = await hubService.uploadFile(hubSlug, file, true);
       const updated = await marketplaceService.updateVendor(hubSlug, { logo_file_name: uploaded.name });
       setVendor(updated);
+      // Swap blob for real URL so preview stays stable while vendor state updates
+      URL.revokeObjectURL(previewUrl);
+      const freshUrl = marketplaceService.getVendorLogoUrl(hubSlug, updated.logo_file_name ?? '');
+      setLogoPreview(freshUrl);
     } catch (err: any) {
+      URL.revokeObjectURL(previewUrl);
+      setLogoPreview(null);
       setVisualError(err?.message || 'Failed to update logo image');
     } finally {
       setSavingVisual(null);
@@ -110,16 +123,24 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
   const handleBannerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
+    setBannerPreview(previewUrl);
+    setSavingVisual('banner');
+    setVisualError('');
     try {
-      setSavingVisual('banner');
-      setVisualError('');
       const uploaded = await hubService.uploadFile(hubSlug, file, true);
       const updated = await marketplaceService.updateVendor(hubSlug, {
         banner_mode: 'image',
         banner_image_file_name: uploaded.name,
       });
       setVendor(updated);
+      // Swap blob for real URL so preview stays stable while vendor state updates
+      URL.revokeObjectURL(previewUrl);
+      const freshUrl = marketplaceService.getVendorBannerUrl(hubSlug, updated.banner_image_file_name ?? '');
+      setBannerPreview(freshUrl);
     } catch (err: any) {
+      URL.revokeObjectURL(previewUrl);
+      setBannerPreview(null);
       setVisualError(err?.message || 'Failed to update banner image');
     } finally {
       setSavingVisual(null);
@@ -233,9 +254,9 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                   role={isOwner ? 'button' : undefined}
                   aria-label={isOwner ? 'Edit vendor avatar' : undefined}
                 >
-                  {vendor.logo_file_name
+                  {(logoPreview || vendor.logo_file_name)
                     ? <img
-                        src={marketplaceService.getVendorLogoUrl(hubSlug, vendor.logo_file_name) ?? undefined}
+                        src={logoPreview ?? (marketplaceService.getVendorLogoUrl(hubSlug, vendor.logo_file_name!) ?? undefined)}
                         alt={vendor.name}
                         className="w-24 h-24 rounded-2xl object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
                       />

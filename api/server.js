@@ -247,18 +247,43 @@ async function initDb() {
       )
     `);
     // Migrations — add columns that may not exist on older schemas
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS avatar_url   TEXT`);
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS display_name TEXT`);
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS location     TEXT`);
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS bio          TEXT`);
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS tags         TEXT[]`);
-    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS avatar_url             TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS display_name           TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS location               TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS bio                    TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS tags                   TEXT[]`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS updated_at             TIMESTAMPTZ DEFAULT NOW()`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS profile_headline       TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_mode            TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_color           TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_gradient_from   TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_gradient_to     TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS website                TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS logo_file_name TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_mode TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_color TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_to TEXT`);
+    await client.query(`ALTER TABLE hub_post_replies ADD COLUMN IF NOT EXISTS reply_to_reply_id UUID REFERENCES hub_post_replies(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE hub_post_replies ADD COLUMN IF NOT EXISTS reply_to_user_id  UUID REFERENCES hub_users(id)       ON DELETE SET NULL`);
+    // Notifications table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_notifications (
+        id         SERIAL       PRIMARY KEY,
+        user_id    UUID         NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        type       VARCHAR(50)  NOT NULL,
+        actor_id   UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        ref_id     TEXT,
+        read       BOOLEAN      DEFAULT false,
+        created_at TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_notifications_user_unread
+      ON hub_notifications(user_id, read) WHERE read = false
+    `);
   } finally {
     client.release();
   }
@@ -588,7 +613,7 @@ app.get('/api/auth/avatar/:userId', async (req, res) => {
     const stat = await minioClient.statObject(STORAGE_BUCKET, user.avatar_url).catch(() => null);
     const stream = await minioClient.getObject(STORAGE_BUCKET, user.avatar_url);
     res.setHeader('Content-Type', stat?.metaData?.['content-type'] || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'no-cache');
     stream.pipe(res);
   } catch (err) {
     console.error('Avatar serve error:', err);
@@ -596,17 +621,62 @@ app.get('/api/auth/avatar/:userId', async (req, res) => {
   }
 });
 
-// Update own profile (display name, location, bio, tags)
+// Upload profile banner image
+app.post('/api/auth/profile-banner', authenticate, upload.single('banner'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+
+  const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
+  const bannerKey = `profile_banners/${req.user.id}.${ext}`;
+
+  try {
+    await minioClient.putObject(STORAGE_BUCKET, bannerKey, req.file.buffer, req.file.size, { 'Content-Type': req.file.mimetype });
+    await pool.query(
+      `UPDATE hub_users SET banner_image_file_name = $1, banner_mode = 'image', updated_at = NOW() WHERE id = $2`,
+      [bannerKey, req.user.id]
+    );
+    res.json({ banner_key: bannerKey });
+  } catch (err) {
+    console.error('Profile banner upload error:', err);
+    res.status(500).json({ error: 'Banner upload failed' });
+  }
+});
+
+// Serve profile banner (no auth — visible to hub members)
+app.get('/api/auth/profile-banner/:userId', async (req, res) => {
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+  try {
+    const result = await pool.query('SELECT banner_image_file_name FROM hub_users WHERE id = $1', [req.params.userId]);
+    const user = result.rows[0];
+    if (!user?.banner_image_file_name) return res.status(404).json({ error: 'No banner' });
+    const stat = await minioClient.statObject(STORAGE_BUCKET, user.banner_image_file_name).catch(() => null);
+    const stream = await minioClient.getObject(STORAGE_BUCKET, user.banner_image_file_name);
+    res.setHeader('Content-Type', stat?.metaData?.['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-cache');
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Profile banner serve error:', err);
+    res.status(500).json({ error: 'Failed to load banner' });
+  }
+});
+
+// Update own profile (display name, location, bio, tags, headline, banner, website)
 app.patch('/api/auth/profile', authenticate, async (req, res) => {
-  const { display_name, location, bio, tags } = req.body || {};
+  const { display_name, location, bio, tags, profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, website } = req.body || {};
   const fields = [];
   const values = [];
   let idx = 1;
 
-  if (display_name !== undefined) { fields.push(`display_name = $${idx++}`); values.push(display_name || null); }
-  if (location     !== undefined) { fields.push(`location = $${idx++}`);     values.push(location || null); }
-  if (bio          !== undefined) { fields.push(`bio = $${idx++}`);           values.push(bio || null); }
-  if (tags         !== undefined) { fields.push(`tags = $${idx++}`);          values.push(Array.isArray(tags) ? tags : []); }
+  if (display_name        !== undefined) { fields.push(`display_name = $${idx++}`);        values.push(display_name || null); }
+  if (location            !== undefined) { fields.push(`location = $${idx++}`);             values.push(location || null); }
+  if (bio                 !== undefined) { fields.push(`bio = $${idx++}`);                  values.push(bio || null); }
+  if (tags                !== undefined) { fields.push(`tags = $${idx++}`);                 values.push(Array.isArray(tags) ? tags : []); }
+  if (profile_headline    !== undefined) { fields.push(`profile_headline = $${idx++}`);     values.push(profile_headline || null); }
+  if (banner_mode         !== undefined) { fields.push(`banner_mode = $${idx++}`);          values.push(banner_mode || null); }
+  if (banner_color        !== undefined) { fields.push(`banner_color = $${idx++}`);         values.push(banner_color || null); }
+  if (banner_gradient_from !== undefined) { fields.push(`banner_gradient_from = $${idx++}`); values.push(banner_gradient_from || null); }
+  if (banner_gradient_to  !== undefined) { fields.push(`banner_gradient_to = $${idx++}`);   values.push(banner_gradient_to || null); }
+  if (website             !== undefined) { fields.push(`website = $${idx++}`);              values.push(website || null); }
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -616,7 +686,8 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE hub_users SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id AS user_id, username, display_name, location, bio, tags, avatar_url, is_admin, created_at, updated_at`,
+       RETURNING id AS user_id, username, display_name, location, bio, tags, avatar_url, is_admin, created_at, updated_at,
+                 profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website`,
       values
     );
     res.json(result.rows[0]);
@@ -632,7 +703,8 @@ app.get('/api/members', authenticate, async (_req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS user_id, username, display_name, location, bio, tags,
-              is_admin, created_at, avatar_url
+              is_admin, created_at, avatar_url,
+              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website
        FROM hub_users ORDER BY created_at`
     );
     res.json({ members: result.rows });
@@ -647,7 +719,8 @@ app.get('/api/members/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS user_id, username, display_name, location, bio, tags,
-              avatar_url, is_admin, created_at
+              avatar_url, is_admin, created_at,
+              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website
        FROM hub_users WHERE id = $1`,
       [req.params.id]
     );
@@ -981,6 +1054,18 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
     // Bump conversation updated_at so it floats to top of list
     await pool.query(`UPDATE hub_conversations SET updated_at = NOW() WHERE id = $1`, [id]);
 
+    // Notify all other conversation members
+    const recipients = await pool.query(
+      `SELECT user_id FROM hub_conversation_members WHERE conversation_id = $1 AND user_id != $2`,
+      [id, req.user.id]
+    );
+    for (const row of recipients.rows) {
+      pool.query(
+        `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'message', $2, $3)`,
+        [row.user_id, req.user.id, id]
+      ).catch(() => {});
+    }
+
     res.json({
       message_id:      msg.message_id,
       conversation_id: id,
@@ -999,13 +1084,15 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
 // ── File routes ───────────────────────────────────────────
 
 // List files — own files + public files from others
+// Excludes system-managed files (hub backgrounds, etc.) from all listings
 app.get('/api/files', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS file_id, file_name, file_key, mime_type, size_bytes,
               owner_id, is_public, uploaded_at
        FROM hub_files
-       WHERE owner_id = $1 OR is_public = true
+       WHERE (owner_id = $1 OR is_public = true)
+         AND file_name NOT LIKE 'bg-%'
        ORDER BY uploaded_at DESC`,
       [req.user.id]
     );
@@ -1123,6 +1210,47 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Patch error:', err);
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// ── Notifications ─────────────────────────────────────────
+
+const FEATURE_TYPES = { feed: ['reply'], messages: ['message'] };
+
+// Get unread counts grouped by feature
+app.get('/api/notifications/counts', authenticate, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT type, COUNT(*) AS count FROM hub_notifications
+       WHERE user_id = $1 AND read = false
+       GROUP BY type`,
+      [req.user.id]
+    );
+    const counts = { feed: 0, messages: 0 };
+    for (const row of result.rows) {
+      if (FEATURE_TYPES.feed.includes(row.type))     counts.feed     += parseInt(row.count, 10);
+      if (FEATURE_TYPES.messages.includes(row.type)) counts.messages += parseInt(row.count, 10);
+    }
+    res.json(counts);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch notification counts' });
+  }
+});
+
+// Mark all notifications for a feature as read
+app.post('/api/notifications/mark-read', authenticate, async (req, res) => {
+  const { feature } = req.body || {};
+  const types = FEATURE_TYPES[feature];
+  if (!types) return res.status(400).json({ error: 'Invalid feature' });
+  try {
+    await pool.query(
+      `UPDATE hub_notifications SET read = true
+       WHERE user_id = $1 AND type = ANY($2::text[]) AND read = false`,
+      [req.user.id, types]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark notifications read' });
   }
 });
 
@@ -1324,9 +1452,12 @@ app.get('/api/posts/:id/replies', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT r.id, r.post_id, r.body, r.created_at,
-              u.id AS author_id, u.username AS author_username
+              u.id   AS author_id,       u.username  AS author_username,
+              r.reply_to_reply_id,       r.reply_to_user_id,
+              ru.username AS reply_to_username
        FROM hub_post_replies r
-       LEFT JOIN hub_users u ON r.author_id = u.id
+       LEFT JOIN hub_users u  ON r.author_id        = u.id
+       LEFT JOIN hub_users ru ON r.reply_to_user_id = ru.id
        WHERE r.post_id = $1
        ORDER BY r.created_at ASC`,
       [req.params.id]
@@ -1340,25 +1471,52 @@ app.get('/api/posts/:id/replies', authenticate, async (req, res) => {
 
 // Post a reply
 app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
-  const { body } = req.body || {};
+  const { body, reply_to_reply_id, reply_to_user_id } = req.body || {};
   if (!body?.trim()) return res.status(400).json({ error: 'Reply cannot be empty' });
 
   try {
-    const post = await pool.query('SELECT id FROM hub_posts WHERE id = $1', [req.params.id]);
+    const post = await pool.query('SELECT id, author_id FROM hub_posts WHERE id = $1', [req.params.id]);
     if (!post.rows[0]) return res.status(404).json({ error: 'Post not found' });
 
     const result = await pool.query(
-      `INSERT INTO hub_post_replies (post_id, author_id, body) VALUES ($1, $2, $3)
-       RETURNING id, post_id, body, created_at`,
-      [req.params.id, req.user.id, body.trim()]
+      `INSERT INTO hub_post_replies (post_id, author_id, body, reply_to_reply_id, reply_to_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, post_id, body, created_at, reply_to_reply_id, reply_to_user_id`,
+      [req.params.id, req.user.id, body.trim(), reply_to_reply_id || null, reply_to_user_id || null]
     );
 
     await pool.query(`UPDATE hub_posts SET updated_at = NOW() WHERE id = $1`, [req.params.id]);
 
+    // Notify post author (skip if replying to own post)
+    const postAuthorId = post.rows[0].author_id;
+    const notifiedUsers = new Set();
+    if (postAuthorId && postAuthorId !== req.user.id) {
+      notifiedUsers.add(postAuthorId);
+      pool.query(
+        `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'reply', $2, $3)`,
+        [postAuthorId, req.user.id, req.params.id]
+      ).catch(() => {});
+    }
+    // Also notify the person being directly replied to (if different from post author)
+    if (reply_to_user_id && reply_to_user_id !== req.user.id && !notifiedUsers.has(reply_to_user_id)) {
+      pool.query(
+        `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'reply', $2, $3)`,
+        [reply_to_user_id, req.user.id, req.params.id]
+      ).catch(() => {});
+    }
+
+    // Fetch reply_to_username to include in response
+    let reply_to_username = null;
+    if (reply_to_user_id) {
+      const u = await pool.query('SELECT username FROM hub_users WHERE id = $1', [reply_to_user_id]);
+      reply_to_username = u.rows[0]?.username ?? null;
+    }
+
     res.json({
       ...result.rows[0],
-      author_id:       req.user.id,
-      author_username: req.user.username,
+      author_id:        req.user.id,
+      author_username:  req.user.username,
+      reply_to_username,
     });
   } catch (err) {
     console.error('Post reply error:', err);
@@ -1926,6 +2084,282 @@ app.post('/api/me/preferences/background-image', authenticate, uploadBg.single('
   } catch (err) {
     console.error('BG image upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+// ── Hub App config (DB-backed, admin-managed) ────────────
+// Stores installed app configs in hub_app_configs table.
+// Falls back to env vars if the table row is absent.
+
+async function ensureAppConfigTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hub_app_configs (
+      capability  TEXT PRIMARY KEY,
+      app_url     TEXT NOT NULL,
+      app_key     TEXT NOT NULL,
+      app_name    TEXT,
+      updated_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+async function getAppConfig(capability) {
+  try {
+    const r = await pool.query(`SELECT * FROM hub_app_configs WHERE capability = $1`, [capability]);
+    if (r.rows.length) return { url: r.rows[0].app_url, key: r.rows[0].app_key, name: r.rows[0].app_name };
+  } catch {}
+  // Fallback to env vars
+  const envUrl = process.env[`${capability.toUpperCase()}_APP_URL`];
+  const envKey = process.env[`${capability.toUpperCase()}_APP_KEY`];
+  if (envUrl && envKey) return { url: envUrl, key: envKey };
+  return null;
+}
+
+// GET /api/admin/apps — list installed app configs (admin only)
+app.get('/api/admin/apps', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  try {
+    await ensureAppConfigTable();
+    const r = await pool.query(`SELECT capability, app_url, app_name, updated_at FROM hub_app_configs ORDER BY capability`);
+    // Also surface env-var-only configs
+    const rows = r.rows;
+    const capabilities = ['initiatives'];
+    const result = capabilities.map(cap => {
+      const row = rows.find(r => r.capability === cap);
+      if (row) return { capability: cap, appUrl: row.app_url, appName: row.app_name, source: 'db', updatedAt: row.updated_at };
+      const envUrl = process.env[`${cap.toUpperCase()}_APP_URL`];
+      if (envUrl) return { capability: cap, appUrl: envUrl, appName: null, source: 'env' };
+      return { capability: cap, appUrl: null, appName: null, source: null };
+    });
+    res.json({ apps: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/apps/:capability — install or update an app (admin only)
+app.put('/api/admin/apps/:capability', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { capability } = req.params;
+  const { appUrl, appKey } = req.body;
+  if (!appUrl || !appKey) return res.status(400).json({ error: 'appUrl and appKey are required' });
+
+  try {
+    await ensureAppConfigTable();
+
+    // Verify the app responds before saving
+    let appName = null;
+    try {
+      const testRes = await fetch(`${appUrl}/api/hub-app/info`, {
+        headers: { 'x-hub-api-key': appKey },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (testRes.ok) {
+        const info = await testRes.json();
+        appName = info.name ?? null;
+      } else if (testRes.status === 401) {
+        return res.status(502).json({ error: 'Invalid API key — check HUB_APP_KEY matches' });
+      } else if (testRes.status === 404) {
+        return res.status(502).json({ error: 'App URL reached but hub-app contract not found — is this the right URL?' });
+      } else {
+        return res.status(502).json({ error: `App responded with ${testRes.status} — check the URL` });
+      }
+    } catch (err) {
+      const msg = err?.name === 'TimeoutError' ? 'Connection timed out — is the app running and reachable?' : 'Could not reach the app — check the URL and try again';
+      return res.status(502).json({ error: msg });
+    }
+
+    await pool.query(
+      `INSERT INTO hub_app_configs (capability, app_url, app_key, app_name, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (capability) DO UPDATE
+       SET app_url = EXCLUDED.app_url, app_key = EXCLUDED.app_key, app_name = EXCLUDED.app_name, updated_at = NOW()`,
+      [capability, appUrl, appKey, appName]
+    );
+
+    // Hot-reload the provider so it takes effect immediately without restart
+    APP_PROVIDERS[capability] = { url: appUrl, key: appKey };
+
+    res.json({ capability, appUrl, appName, installed: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/admin/apps/:capability — uninstall an app (admin only)
+app.delete('/api/admin/apps/:capability', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { capability } = req.params;
+  try {
+    await ensureAppConfigTable();
+    await pool.query(`DELETE FROM hub_app_configs WHERE capability = $1`, [capability]);
+    APP_PROVIDERS[capability] = { url: null, key: null };
+    res.json({ uninstalled: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Hub App integration ───────────────────────────────────
+// Any app that implements the /api/hub-app/ contract and accepts
+// x-hub-api-key can be installed as a capability provider.
+
+const APP_PROVIDERS = {
+  initiatives: {
+    url: process.env.INITIATIVES_APP_URL,
+    key: process.env.INITIATIVES_APP_KEY,
+  },
+};
+
+async function getProvider(capability) {
+  // In-memory cache (hot-reloaded by admin routes)
+  const cached = APP_PROVIDERS[capability];
+  if (cached?.url && cached?.key) return cached;
+  // Try DB / env fallback
+  const config = await getAppConfig(capability);
+  if (config) {
+    APP_PROVIDERS[capability] = { url: config.url, key: config.key };
+    return APP_PROVIDERS[capability];
+  }
+  return null;
+}
+
+async function proxyToApp(provider, path, method = 'GET', body, actingUsername) {
+  const url = `${provider.url}/api/hub-app${path}`;
+  const headers = { 'x-hub-api-key': provider.key, 'Content-Type': 'application/json' };
+  if (actingUsername) headers['x-hub-user-email'] = `${actingUsername}@hub.citinet`;
+  const opts = { method, headers };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+// Ensure/create a Society+ user for the current Citinet user
+async function ensureAppUser(provider, username) {
+  const email = `${username}@hub.citinet`;
+  await proxyToApp(provider, '/users/ensure', 'POST', { email, name: username });
+}
+
+// GET /api/initiatives/app-info  — metadata about the installed initiatives app
+app.get('/api/initiatives/app-info', async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.json(null); // no app configured — hub-agnostic mode
+  try {
+    const { status, data } = await proxyToApp(p, '/info');
+    res.status(status).json(data);
+  } catch {
+    res.json(null); // fail silently — UI degrades gracefully
+  }
+});
+
+// GET /api/initiatives
+app.get('/api/initiatives', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, '/initiatives');
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/initiatives
+app.post('/api/initiatives', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    await ensureAppUser(p, req.user.username);
+    const body = { ...req.body, creatorEmail: `${req.user.username}@hub.citinet`, creatorName: req.user.username };
+    const { status, data } = await proxyToApp(p, '/initiatives', 'POST', body);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// GET /api/initiatives/:id
+app.get('/api/initiatives/:id', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/initiatives/${req.params.id}`);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// PATCH /api/initiatives/:id
+app.patch('/api/initiatives/:id', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/initiatives/${req.params.id}`, 'PATCH', req.body, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// DELETE /api/initiatives/:id
+app.delete('/api/initiatives/:id', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/initiatives/${req.params.id}`, 'DELETE', undefined, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/initiatives/:id/goals
+app.post('/api/initiatives/:id/goals', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/initiatives/${req.params.id}/goals`, 'POST', req.body, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// PATCH /api/initiatives/goals/:goalId
+app.patch('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/goals/${req.params.goalId}`, 'PATCH', req.body, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// DELETE /api/initiatives/goals/:goalId
+app.delete('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/goals/${req.params.goalId}`, 'DELETE', undefined, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/initiatives/:id/join
+app.post('/api/initiatives/:id/join', authenticate, async (req, res) => {
+  const p = await getProvider('initiatives');
+  if (!p) return res.status(503).json({ error: 'Initiatives app not configured' });
+  try {
+    const { status, data } = await proxyToApp(p, `/initiatives/${req.params.id}/join`, 'POST', {}, req.user.username);
+    res.status(status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
 });
 

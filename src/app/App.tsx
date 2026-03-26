@@ -194,7 +194,11 @@ function HubProfileRoute() {
     <ProfileScreen
       userId={params.userId ?? ''}
       onBack={() => navigate(-1)}
-      onNavigate={screen => navigate(hubPath(`/${screen}`))}
+      onNavigate={screen => {
+        // Account is a sibling of Profile — replace so toggling doesn't stack history
+        const replace = screen === 'account';
+        navigate(hubPath(`/${screen}`), { replace });
+      }}
     />
   );
 }
@@ -281,7 +285,16 @@ function HubAtlasRoute() {
 
 function HubInitiativesRoute() {
   const navigate = useNavigate();
-  return <InitiativesScreen onBack={() => navigate(-1)} />;
+  const { '*': initiativeId } = useParams();
+  const id = initiativeId || undefined;
+  return (
+    <InitiativesScreen
+      onBack={() => navigate(-1)}
+      initialId={id}
+      onOpenDetail={detailId => navigate(hubPath(`/initiatives/${detailId}`))}
+      onBackToList={() => navigate(hubPath('/initiatives'), { replace: true })}
+    />
+  );
 }
 
 function HubModerationQueueRoute() {
@@ -291,7 +304,16 @@ function HubModerationQueueRoute() {
 
 function HubAccountRoute() {
   const navigate = useNavigate();
-  return <AccountScreen onBack={() => navigate(-1)} onNavigate={screen => navigate(hubPath(`/${screen}`))} />;
+  return (
+    <AccountScreen
+      onBack={() => navigate(-1)}
+      onNavigate={screen => {
+        // Profile is a sibling of Account — replace so toggling doesn't stack history
+        const replace = screen.startsWith('profile/');
+        navigate(hubPath(`/${screen}`), { replace });
+      }}
+    />
+  );
 }
 
 function HubManagementRoute() {
@@ -541,14 +563,13 @@ function HubFloatingSupportLauncher() {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerEnd}
           onPointerCancel={handlePointerEnd}
-          className="h-11 px-4 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center gap-2"
+          className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center"
           aria-expanded={open}
           aria-label="Open support options"
           title="Support"
           style={{ touchAction: isMobile ? 'none' : 'auto' }}
         >
           <MessageSquareWarning className="w-4 h-4" />
-          <span className="text-sm font-semibold">Support</span>
         </button>
       </div>
     </>
@@ -588,7 +609,7 @@ function HubModeRoutes() {
       <Route path="/toolkit/my-submissions" element={<HubGuard><HubMySubmissionsRoute /></HubGuard>} />
       <Route path="/toolkit/moderation" element={<HubGuard><HubModerationQueueRoute /></HubGuard>} />
       <Route path="/atlas" element={<HubGuard><HubAtlasRoute /></HubGuard>} />
-      <Route path="/initiatives" element={<HubGuard><HubInitiativesRoute /></HubGuard>} />
+      <Route path="/initiatives/*" element={<HubGuard><HubInitiativesRoute /></HubGuard>} />
       <Route path="/settings" element={<HubGuard><HubPlaceholderRoute screen="settings" /></HubGuard>} />
       <Route path="/post" element={<HubGuard><HubPlaceholderRoute screen="post" /></HubGuard>} />
       <Route path="/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />

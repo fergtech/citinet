@@ -34,7 +34,7 @@ interface HubContextValue {
   /** Update the tunnel URL when it rotates */
   updateTunnelUrl: (newUrl: string, skipProbe?: boolean) => Promise<{ ok: boolean; error?: string }>;
   /** Update the current user's local profile */
-  updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>) => HubUser | null;
+  updateUserProfile: (updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName'>>) => HubUser | null;
   /** Update the hub's location and geocoded coordinates (server + localStorage) */
   updateLocation: (location: string, lat: number, lng: number) => Promise<Hub | null>;
   /** Update the hub's description (server + localStorage) */
@@ -195,7 +195,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateUserProfile = useCallback((
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName'>>
   ): HubUser | null => {
     if (!currentHub?.slug) return null;
     try {

@@ -749,18 +749,22 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
       <aside className={`${selectedId ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 relative z-10`}>
         {/* Header */}
         <div className="p-4 border-b border-slate-200/50 dark:border-zinc-800/50">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Messages</h1>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={openNewConvo}
-                className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg"
-                title="New conversation"
-              >
-                <Plus className="w-5 h-5 text-white" />
-              </button>
-              <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
-            </div>
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={onBack}
+              className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+            </button>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight flex-1">Messages</h1>
+            <button
+              onClick={openNewConvo}
+              className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg shrink-0"
+              title="New conversation"
+            >
+              <Plus className="w-5 h-5 text-white" />
+            </button>
           </div>
 
           {/* Search */}

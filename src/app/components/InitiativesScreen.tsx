@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useHub } from '../context/HubContext';
 import {
   Target, Plus, Users, CheckCircle2, Circle, Clock,
   Lightbulb, X, MessageSquare, TrendingUp, UserPlus, Calendar,
@@ -40,6 +41,7 @@ interface Initiative {
   description: string;
   progress: number;
   color: 'purple' | 'emerald' | 'blue' | 'amber';
+  imageUrl?: string | null;
   createdBy: string;
   createdAt: string;
   tasks: InitiativeTask[];
@@ -62,7 +64,7 @@ const STATUS_BADGE = {
   completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
 };
 
-// ── Mock data ──────────────────────────────────────────────
+// ── Mock data (fallback / offline) ────────────────────────
 
 const SEED_INITIATIVES: Initiative[] = [
   {
@@ -211,16 +213,24 @@ function avatarColor(name: string) {
 
 interface InitiativesScreenProps {
   onBack: () => void;
+  initialId?: string;
+  onOpenDetail?: (id: string) => void;
+  onBackToList?: () => void;
 }
 
 type TabId = 'overview' | 'tasks' | 'members' | 'updates';
 type FilterId = 'all' | 'active' | 'planning' | 'joined';
 
-export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
+export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToList }: InitiativesScreenProps) {
+  const { currentHub, currentUser } = useHub();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [filter, setFilter] = useState<FilterId>('all');
+
+  // Remote data
+  const [remoteInitiatives, setRemoteInitiatives] = useState<Initiative[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   // Participation state
   const [joinedIds, setJoinedIds] = useState<string[]>([]);
@@ -231,10 +241,10 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
   const [joinRole, setJoinRole] = useState('');
   const [joinContribution, setJoinContribution] = useState('');
 
-  // Task overrides (status toggles)
+  // Task overrides (status toggles — optimistic while API call is in flight)
   const [taskOverrides, setTaskOverrides] = useState<Record<string, InitiativeTask['status']>>({});
 
-  // Locally added tasks per initiative
+  // Locally added tasks per initiative (optimistic, replaced on next fetch)
   const [localTasks, setLocalTasks] = useState<Record<string, InitiativeTask[]>>({});
   const [newTaskText, setNewTaskText] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
@@ -243,19 +253,50 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
   const [localUpdates, setLocalUpdates] = useState<Record<string, InitiativeUpdate[]>>({});
   const [newUpdateText, setNewUpdateText] = useState('');
 
-  // Deep-link: auto-open from sessionStorage (set by dashboard modal)
+  // ── API helpers ─────────────────────────────────────────
+
+  const apiBase = currentHub?.tunnelUrl ?? '';
+  const authHeaders = useCallback((): Record<string, string> => ({
+    'Content-Type': 'application/json',
+    ...(currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {}),
+  }), [currentUser?.authToken]);
+
+  const fetchInitiatives = useCallback(async () => {
+    if (!apiBase) return;
+    try {
+      const res = await fetch(`${apiBase}/api/initiatives`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setRemoteInitiatives(data.initiatives ?? data);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
+  }, [apiBase, authHeaders]);
+
+  useEffect(() => { fetchInitiatives(); }, [fetchInitiatives]);
+
+  // Sync view state with URL-driven initialId
   useEffect(() => {
-    const deeplink = sessionStorage.getItem('citinet-deeplink-initiative');
-    if (!deeplink) return;
-    sessionStorage.removeItem('citinet-deeplink-initiative');
-    if (SEED_INITIATIVES.find(i => i.id === deeplink)) {
-      setSelectedId(deeplink);
+    if (!initialId) {
+      setView('list');
+      setSelectedId(null);
+      return;
+    }
+    const source = remoteInitiatives ?? SEED_INITIATIVES;
+    const found = source.find(i => String(i.id) === String(initialId));
+    if (found) {
+      setSelectedId(String(found.id));
       setView('detail');
       setActiveTab('overview');
+      setShowJoinPanel(false);
+      setShowAddTask(false);
     }
-  }, []);
+  }, [initialId, remoteInitiatives]);
 
-  const initiatives = SEED_INITIATIVES.map(ini => ({
+  const baseInitiatives = !loadError && remoteInitiatives !== null ? remoteInitiatives : SEED_INITIATIVES;
+
+  const initiatives = baseInitiatives.map(ini => ({
     ...ini,
     tasks: [...ini.tasks, ...(localTasks[ini.id] ?? [])],
     updates: [...(localUpdates[ini.id] ?? []), ...ini.updates],
@@ -278,6 +319,7 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
       setSelectedId(null);
       setShowJoinPanel(false);
       setShowAddTask(false);
+      onBackToList ? onBackToList() : onBack();
     } else {
       onBack();
     }
@@ -291,6 +333,7 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
     setShowAddTask(false);
     setNewTaskText('');
     setNewUpdateText('');
+    onOpenDetail?.(id);
   };
 
   // ── join / leave ────────────────────────────────────────
@@ -299,11 +342,19 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
 
   const handleJoinConfirm = () => {
     if (!selectedId || !joinRole.trim()) return;
+    // Optimistic local update
     setJoinedIds(prev => [...prev, selectedId]);
     setMemberRoles(prev => ({ ...prev, [selectedId]: { role: joinRole.trim(), contribution: joinContribution.trim() } }));
     setShowJoinPanel(false);
     setJoinRole('');
     setJoinContribution('');
+    // Persist to Society+ (creates membership record)
+    if (apiBase) {
+      fetch(`${apiBase}/api/initiatives/${selectedId}/join`, {
+        method: 'POST',
+        headers: authHeaders(),
+      }).catch(() => {});
+    }
   };
 
   const handleLeave = () => {
@@ -320,15 +371,45 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
   const cycleTask = (task: InitiativeTask) => {
     const cur = getTaskStatus(task);
     const next: InitiativeTask['status'] = cur === 'todo' ? 'in-progress' : cur === 'in-progress' ? 'done' : 'todo';
+    // Optimistic update
     setTaskOverrides(prev => ({ ...prev, [task.id]: next }));
+    // Persist to API (best-effort; optimistic update stays regardless)
+    if (apiBase && !task.id.startsWith('local-')) {
+      fetch(`${apiBase}/api/initiatives/goals/${task.id}`, {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ status: next }),
+      }).then(r => { if (r.ok) fetchInitiatives(); }).catch(() => {});
+    }
   };
 
   const handleAddTask = () => {
     if (!newTaskText.trim() || !selectedId) return;
-    const task: InitiativeTask = { id: `local-${Date.now()}`, title: newTaskText.trim(), status: 'todo' };
+    const title = newTaskText.trim();
+    // Optimistic
+    const tempId = `local-${Date.now()}`;
+    const task: InitiativeTask = { id: tempId, title, status: 'todo' };
     setLocalTasks(prev => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), task] }));
     setNewTaskText('');
     setShowAddTask(false);
+    // Persist to API
+    if (apiBase) {
+      fetch(`${apiBase}/api/initiatives/${selectedId}/goals`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ title }),
+      }).then(r => {
+        if (r.ok) {
+          // Remove optimistic entry and reload from server
+          setLocalTasks(prev => {
+            const n = { ...prev };
+            n[selectedId] = (n[selectedId] ?? []).filter(t => t.id !== tempId);
+            return n;
+          });
+          fetchInitiatives();
+        }
+      }).catch(() => {});
+    }
   };
 
   // ── updates ─────────────────────────────────────────────
@@ -454,8 +535,11 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
                   <div className={`h-1 w-full bg-gradient-to-r ${c.gradient}`} />
                   <div className="p-4">
                     <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-lg ${c.icon} flex items-center justify-center shrink-0 mt-0.5`}>
-                        <Lightbulb className="w-5 h-5" />
+                      <div className={`w-10 h-10 rounded-lg ${c.icon} flex items-center justify-center shrink-0 mt-0.5 overflow-hidden`}>
+                        {ini.imageUrl
+                          ? <img src={ini.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          : <Lightbulb className="w-5 h-5" />
+                        }
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -522,6 +606,16 @@ export function InitiativesScreen({ onBack }: InitiativesScreenProps) {
           <div>
             {/* Hero banner */}
             <div className={`relative bg-gradient-to-br ${c.gradient} px-5 pt-5 pb-10`}>
+              {current.imageUrl && (
+                <div className="absolute inset-0 overflow-hidden rounded-none">
+                  <img
+                    src={current.imageUrl}
+                    alt=""
+                    className="w-full h-full object-cover opacity-30"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+              )}
               <div className="max-w-4xl mx-auto">
                 <div className="flex items-start gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">

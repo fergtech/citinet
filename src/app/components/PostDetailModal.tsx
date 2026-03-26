@@ -1,4 +1,4 @@
-import { X, MessageCircle, Users, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check } from 'lucide-react';
+import { X, MessageCircle, Users, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { hubService } from '../services/hubService';
@@ -102,6 +102,9 @@ export function PostDetailModal({
   const [editBody, setEditBody] = useState(post.body || '');
   const [saving, setSaving] = useState(false);
   const repliesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [replyingTo, setReplyingTo] = useState<{ replyId: string; userId: string; username: string } | null>(null);
+  const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
 
   const loadReplies = useCallback(async (silent = false) => {
     if (!silent) setLoadingReplies(true);
@@ -142,15 +145,34 @@ export function PostDetailModal({
     };
   }, [isOpen, onClose]);
 
+  function scrollToReply(replyId: string) {
+    const el = document.getElementById(`reply-${replyId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedReplyId(replyId);
+    setTimeout(() => setHighlightedReplyId(null), 1500);
+  }
+
+  function handleClickReply(reply: { id: string; author_id: string; author_username: string }) {
+    setReplyingTo({ replyId: reply.id, userId: reply.author_id, username: reply.author_username });
+    setReplyText('');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }
+
   async function handleSendReply(e: React.FormEvent) {
     e.preventDefault();
     if (!replyText.trim()) return;
     setSendError('');
     setSending(true);
     try {
-      const reply = await hubService.createReply(hubSlug, post.id, replyText.trim());
+      const reply = await hubService.createReply(
+        hubSlug, post.id, replyText.trim(),
+        replyingTo?.replyId ?? null,
+        replyingTo?.userId ?? null,
+      );
       setReplies(prev => [...prev, reply]);
       setReplyText('');
+      setReplyingTo(null);
       setTimeout(() => repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Failed to post reply');
@@ -383,7 +405,11 @@ export function PostDetailModal({
                   )}
 
                   {!loadingReplies && replies.map(reply => (
-                    <div key={reply.id} className="flex gap-3 mb-4">
+                    <div
+                      key={reply.id}
+                      id={`reply-${reply.id}`}
+                      className={`flex gap-3 mb-4 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === reply.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                    >
                       <AvatarCircle
                         authorId={reply.author_id}
                         authorUsername={reply.author_username}
@@ -396,7 +422,26 @@ export function PostDetailModal({
                           <span className="text-sm font-medium text-slate-900 dark:text-white">{reply.author_username}</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(reply.created_at)}</span>
                         </div>
+                        {/* @mention reference — click to jump to that reply */}
+                        {reply.reply_to_username && reply.reply_to_reply_id && (
+                          <button
+                            type="button"
+                            onClick={() => scrollToReply(reply.reply_to_reply_id!)}
+                            className="flex items-center gap-1 mb-1 text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+                          >
+                            <CornerDownRight className="w-3 h-3 shrink-0" />
+                            @{reply.reply_to_username}
+                          </button>
+                        )}
                         <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
+                        {/* Reply button */}
+                        <button
+                          type="button"
+                          onClick={() => handleClickReply(reply)}
+                          className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                        >
+                          <CornerDownRight className="w-3 h-3" /> Reply
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -407,15 +452,33 @@ export function PostDetailModal({
 
               {/* Reply input */}
               <div className="flex-shrink-0 border-t border-slate-200 dark:border-zinc-800 p-4">
+                {/* Replying-to chip */}
+                {replyingTo && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/25 border border-blue-200 dark:border-blue-800 text-xs text-blue-600 dark:text-blue-400">
+                      <CornerDownRight className="w-3 h-3 shrink-0" />
+                      <span>Replying to <span className="font-semibold">@{replyingTo.username}</span></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                      aria-label="Cancel reply"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
                 {sendError && (
                   <p className="text-xs text-rose-500 mb-2">{sendError}</p>
                 )}
                 <form onSubmit={handleSendReply} className="flex gap-3">
                   <textarea
+                    ref={textareaRef}
                     value={replyText}
                     onChange={e => setReplyText(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
-                    placeholder="Write a reply… (Enter to send)"
+                    placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Write a reply… (Enter to send)'}
                     rows={2}
                     className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />

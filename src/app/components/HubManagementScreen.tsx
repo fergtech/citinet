@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { featuredService } from '../services/featuredService';
@@ -13,7 +13,7 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -52,6 +52,69 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+
+  // ── Apps tab state ──────────────────────────────────────
+  interface AppStatus { capability: string; appUrl: string | null; appName: string | null; source: string | null }
+  const [appsStatus, setAppsStatus] = useState<AppStatus[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appUrl, setAppUrl] = useState('');
+  const [appKey, setAppKey] = useState('');
+  const [appSaving, setAppSaving] = useState(false);
+  const [appSaveError, setAppSaveError] = useState('');
+  const [appSaveSuccess, setAppSaveSuccess] = useState('');
+
+  const authHeader = (): Record<string, string> => currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {};
+  const base = currentHub?.tunnelUrl ?? '';
+
+  const loadApps = async () => {
+    if (!base) return;
+    setAppsLoading(true);
+    try {
+      const res = await fetch(`${base}/api/admin/apps`, { headers: authHeader() });
+      const data = await res.json();
+      setAppsStatus(data.apps ?? []);
+      const initiatives = data.apps?.find((a: AppStatus) => a.capability === 'initiatives');
+      if (initiatives?.appUrl) setAppUrl(initiatives.appUrl);
+    } catch {}
+    setAppsLoading(false);
+  };
+
+  const saveAppConfig = async (capability: string) => {
+    if (!appUrl.trim() || !appKey.trim() || !base) return;
+    setAppSaving(true);
+    setAppSaveError('');
+    setAppSaveSuccess('');
+    try {
+      const res = await fetch(`${base}/api/admin/apps/${capability}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeader() },
+        body: JSON.stringify({ appUrl: appUrl.trim(), appKey: appKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      setAppSaveSuccess(`Connected to ${data.appName ?? appUrl.trim()}`);
+      setAppKey('');
+      loadApps();
+    } catch (err: unknown) {
+      setAppSaveError(err instanceof Error ? err.message : 'Could not connect — check URL and key');
+    }
+    setAppSaving(false);
+  };
+
+  const removeAppConfig = async (capability: string) => {
+    if (!base) return;
+    try {
+      await fetch(`${base}/api/admin/apps/${capability}`, { method: 'DELETE', headers: authHeader() });
+      setAppSaveSuccess('');
+      setAppUrl('');
+      setAppKey('');
+      loadApps();
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (activeTab === 'apps') loadApps();
+  }, [activeTab]);
 
   const saveDescription = async () => {
     setDescriptionSaving(true);
@@ -241,9 +304,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           {/* Tabs */}
           <div className="flex gap-1 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
             {([
-              { id: 'info',     icon: <Settings className="w-4 h-4" />, label: 'Hub Info' },
-              { id: 'featured', icon: <Star className="w-4 h-4" />,     label: 'Featured' },
-              { id: 'members',  icon: <Users className="w-4 h-4" />,    label: 'Members' },
+              { id: 'info',     icon: <Settings className="w-4 h-4" />,    label: 'Hub Info' },
+              { id: 'featured', icon: <Star className="w-4 h-4" />,      label: 'Featured' },
+              { id: 'members',  icon: <Users className="w-4 h-4" />,     label: 'Members' },
+              { id: 'apps',     icon: <LayoutGrid className="w-4 h-4" />, label: 'Apps' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -662,6 +726,114 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ─── Apps Tab ─── */}
+        {activeTab === 'apps' && (
+          <div className="space-y-4">
+            {/* Initiatives app */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-5">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-100 to-pink-100 dark:from-rose-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0">
+                  <LayoutGrid className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Initiatives App</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Connect any app that implements the hub-app contract to power Community Initiatives on your hub.
+                  </p>
+                </div>
+              </div>
+
+              {appsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <>
+                  {/* Current status */}
+                  {(() => {
+                    const ini = appsStatus.find(a => a.capability === 'initiatives');
+                    if (ini?.appUrl) return (
+                      <div className="flex items-center justify-between gap-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-4 py-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 truncate">
+                              {ini.appName ?? ini.appUrl}
+                            </p>
+                            <p className="text-xs text-emerald-600 dark:text-emerald-500 truncate">{ini.appUrl}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeAppConfig('initiatives')}
+                          className="shrink-0 text-xs text-red-500 hover:text-red-400 font-medium"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                    return (
+                      <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        No app connected — initiatives will not appear on this hub.
+                      </div>
+                    );
+                  })()}
+
+                  {/* Connect form */}
+                  <div className="space-y-3 pt-1">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      {appsStatus.find(a => a.capability === 'initiatives')?.appUrl ? 'Update connection' : 'Connect an app'}
+                    </p>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
+                      <input
+                        type="url"
+                        value={appUrl}
+                        onChange={e => setAppUrl(e.target.value)}
+                        placeholder="https://your-society-plus.app"
+                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
+                      <input
+                        type="password"
+                        value={appKey}
+                        onChange={e => setAppKey(e.target.value)}
+                        placeholder="Shared secret from the app"
+                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+
+                    {appSaveError && (
+                      <p className="text-xs text-red-500 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />{appSaveError}
+                      </p>
+                    )}
+                    {appSaveSuccess && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />{appSaveSuccess}
+                      </p>
+                    )}
+
+                    <button
+                      onClick={() => saveAppConfig('initiatives')}
+                      disabled={appSaving || !appUrl.trim() || !appKey.trim()}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                    >
+                      {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {appSaving ? 'Connecting…' : 'Connect & verify'}
+                    </button>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">
+                      Citinet will verify the connection before saving. For Society+, the API key is <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">HUB_APP_KEY</code> from its <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">.env</code>.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

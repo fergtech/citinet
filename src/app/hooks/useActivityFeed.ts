@@ -40,6 +40,28 @@ export function timeAgo(date: Date): string {
   return date.toLocaleDateString();
 }
 
+function friendlyFileLabel(mimeType?: string, fileName?: string): string {
+  const mime = mimeType?.toLowerCase() ?? '';
+  if (mime.startsWith('image/')) return 'Shared an Image';
+  if (mime.startsWith('video/')) return 'Shared a Video';
+  if (mime.startsWith('audio/')) return 'Shared an Audio File';
+  if (mime === 'application/pdf') return 'Shared a PDF';
+  if (mime.includes('spreadsheet') || mime.includes('excel') || mime.endsWith('.sheet')) return 'Shared a Spreadsheet';
+  if (mime.includes('document') || mime.includes('word')) return 'Shared a Document';
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return 'Shared a Presentation';
+  if (mime.startsWith('text/')) return 'Shared a Text File';
+  // Fallback: infer from extension
+  const ext = (fileName ?? '').split('.').pop()?.toLowerCase() ?? '';
+  if (['jpg','jpeg','png','gif','webp','avif','svg'].includes(ext)) return 'Shared an Image';
+  if (['mp4','webm','mov','avi','mkv'].includes(ext)) return 'Shared a Video';
+  if (['mp3','wav','ogg','flac','aac'].includes(ext)) return 'Shared an Audio File';
+  if (ext === 'pdf') return 'Shared a PDF';
+  if (['doc','docx'].includes(ext)) return 'Shared a Document';
+  if (['xls','xlsx','csv'].includes(ext)) return 'Shared a Spreadsheet';
+  if (['zip','rar','7z','tar'].includes(ext)) return 'Shared an Archive';
+  return 'Shared a File';
+}
+
 const POST_CATEGORY_MAP: Record<string, ActivityType> = {
   DISCUSSION: 'discussion',
   ANNOUNCEMENT: 'announcement',
@@ -106,7 +128,7 @@ export function useActivityFeed(hubSlug: string) {
     // ── Public files → file_shared
     if (filesResult.status === 'fulfilled') {
       const publicFiles = filesResult.value
-        .filter(f => f.is_public && f.uploaded_at)
+        .filter(f => f.is_public && f.uploaded_at && !f.name.startsWith('bg-'))
         .slice(0, 3);
 
       for (const file of publicFiles) {
@@ -118,7 +140,7 @@ export function useActivityFeed(hubSlug: string) {
           actor,
           actorAvatarUrl: file.owner_id ? avatarUrl(file.owner_id) : undefined,
           summary: 'shared a file',
-          title: file.name,
+          title: friendlyFileLabel(file.mime_type, file.name),
           timestamp: new Date(file.uploaded_at!),
           navigateTo: 'files',
           itemId: file.name,

@@ -37,6 +37,16 @@ import { preferencesService } from '../services/preferencesService';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 
+const BANNER_SOLID_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#be123c', '#b45309', '#374151'];
+const BANNER_GRADIENTS = [
+  { from: '#2563eb', to: '#7c3aed' },
+  { from: '#0f766e', to: '#2563eb' },
+  { from: '#be123c', to: '#7c2d12' },
+  { from: '#1d4ed8', to: '#0f766e' },
+  { from: '#c2410c', to: '#be123c' },
+  { from: '#374151', to: '#111827' },
+];
+
 interface AccountScreenProps {
   onBack: () => void;
   onNavigate?: (screen: string) => void;
@@ -48,6 +58,8 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [bio, setBio] = useState(currentUser?.bio || '');
+  const [profileHeadline, setProfileHeadline] = useState(currentUser?.profileHeadline || '');
+  const [website, setWebsite] = useState(currentUser?.website || '');
   const [tags, setTags] = useState<string[]>(currentUser?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
   const tagInputRef = useRef<HTMLInputElement>(null);
@@ -64,12 +76,19 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+
+  // Profile banner
+  const [showBannerEditor, setShowBannerEditor] = useState(false);
+  const [savingBanner, setSavingBanner] = useState(false);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // Appearance
   const [bgUploading, setBgUploading] = useState(false);
@@ -89,19 +108,71 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     }
   }, [userPreferences.background_brightness]);
 
+  const saveBannerFields = async (fields: Parameters<typeof hubService.updateProfile>[1]) => {
+    if (!currentHub?.slug) return;
+    // Apply immediately to context so the preview reflects the change at once
+    setBannerPreview(null);
+    updateUserProfile({
+      bannerMode: fields.bannerMode,
+      bannerColor: fields.bannerColor,
+      bannerGradientFrom: fields.bannerGradientFrom,
+      bannerGradientTo: fields.bannerGradientTo,
+    });
+    setSavingBanner(true);
+    try {
+      await hubService.updateProfile(currentHub.slug, fields);
+    } catch { /* silent */ }
+    setSavingBanner(false);
+  };
+
+  const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentHub?.slug) return;
+    // Show local preview immediately
+    const previewUrl = URL.createObjectURL(file);
+    setBannerPreview(previewUrl);
+    setSavingBanner(true);
+    try {
+      const key = await hubService.uploadProfileBanner(currentHub.slug, file);
+      updateUserProfile({ bannerMode: 'image', bannerImageFileName: key });
+      // Swap blob URL for the real server URL so preview stays stable
+      const freshUrl = currentUser?.hubUserId
+        ? hubService.getProfileBannerUrl(currentHub.slug, currentUser.hubUserId, key)
+        : null;
+      URL.revokeObjectURL(previewUrl);
+      setBannerPreview(freshUrl);
+    } catch {
+      URL.revokeObjectURL(previewUrl);
+      setBannerPreview(null);
+    }
+    setSavingBanner(false);
+    e.target.value = '';
+  };
+
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentHub?.slug) return;
     setAvatarError('');
+    // Show local preview immediately
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview(previewUrl);
     setAvatarUploading(true);
     try {
       await hubService.uploadAvatar(currentHub.slug, file);
-      // Avatar is served via /api/auth/avatar/:userId — build the URL
-      const avatarUrl = currentUser?.hubUserId
-        ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId) ?? undefined
-        : undefined;
-      if (avatarUrl) updateUserProfile({ avatarUrl });
+      // Swap blob URL for a cache-busted real URL so preview stays stable
+      const freshUrl = currentUser?.hubUserId
+        ? `${hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)}?t=${Date.now()}`
+        : null;
+      URL.revokeObjectURL(previewUrl);
+      if (freshUrl) {
+        updateUserProfile({ avatarUrl: freshUrl });
+        setAvatarPreview(freshUrl);
+      } else {
+        setAvatarPreview(null);
+      }
     } catch (err) {
+      URL.revokeObjectURL(previewUrl);
+      setAvatarPreview(null);
       setAvatarError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setAvatarUploading(false);
@@ -135,19 +206,21 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         location: location.trim(),
         bio: bio.trim(),
         tags,
+        profileHeadline: profileHeadline.trim(),
+        website: website.trim(),
       });
-      // email is local-only for now (no server field yet)
       if (email.trim()) updateUserProfile({ email: email.trim() });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // fall back to local-only save so the user isn't blocked
       updateUserProfile({
         displayName: displayName.trim() || currentUser?.displayName,
         email: email.trim(),
         location: location.trim(),
         bio: bio.trim(),
         tags,
+        profileHeadline: profileHeadline.trim(),
+        website: website.trim(),
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -264,6 +337,82 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
+        {/* Profile Banner */}
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+          {/* Banner preview — clickable */}
+          {(() => {
+            const bm = currentUser?.bannerMode;
+            const style: React.CSSProperties = bannerPreview
+              ? { backgroundImage: `url(${bannerPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+              : bm === 'image' && currentUser?.hubUserId
+              ? { backgroundImage: `url(${hubService.getProfileBannerUrl(currentHub?.slug ?? '', currentUser.hubUserId, currentUser.bannerImageFileName)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+              : bm === 'solid' && currentUser?.bannerColor
+              ? { backgroundColor: currentUser.bannerColor }
+              : bm === 'gradient' && currentUser?.bannerGradientFrom && currentUser?.bannerGradientTo
+              ? { backgroundImage: `linear-gradient(135deg, ${currentUser.bannerGradientFrom}, ${currentUser.bannerGradientTo})` }
+              : { backgroundImage: 'linear-gradient(135deg, #2563eb, #7c3aed)' };
+            return (
+              <div
+                className="h-24 relative cursor-pointer"
+                style={style}
+                onClick={() => setShowBannerEditor(v => !v)}
+              >
+                <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
+                    {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                    Edit Banner
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); setShowBannerEditor(v => !v); }}
+                  className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 hover:bg-black/65 text-white transition-colors"
+                  aria-label="Customize banner"
+                >
+                  <Palette className="w-4 h-4" />
+                </button>
+                <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
+              </div>
+            );
+          })()}
+          {showBannerEditor && (
+            <div className="p-4 space-y-3 border-t border-slate-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Banner Style</p>
+                <button
+                  type="button"
+                  onClick={() => bannerInputRef.current?.click()}
+                  disabled={savingBanner}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60"
+                >
+                  {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+                  Upload Image
+                </button>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Solid Colors</p>
+                <div className="flex flex-wrap gap-2">
+                  {BANNER_SOLID_COLORS.map(color => (
+                    <button key={color} type="button" onClick={() => saveBannerFields({ bannerMode: 'solid', bannerColor: color })}
+                      className="w-7 h-7 rounded-full border-2 border-white dark:border-zinc-700 shadow-sm hover:scale-110 transition-transform"
+                      style={{ backgroundColor: color }} aria-label={color} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Gradients</p>
+                <div className="flex flex-wrap gap-2">
+                  {BANNER_GRADIENTS.map((g, i) => (
+                    <button key={i} type="button" onClick={() => saveBannerFields({ bannerMode: 'gradient', bannerGradientFrom: g.from, bannerGradientTo: g.to })}
+                      className="w-14 h-7 rounded-full border-2 border-white dark:border-zinc-700 shadow-sm hover:scale-105 transition-transform"
+                      style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }} aria-label={`Gradient ${i + 1}`} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Identity card */}
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
           {/* Avatar + username row */}
@@ -275,9 +424,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
               className="relative w-16 h-16 rounded-2xl shrink-0 group focus:outline-none focus:ring-2 focus:ring-purple-500"
               aria-label="Change profile picture"
             >
-              {currentUser?.avatarUrl ? (
+              {(avatarPreview || currentUser?.avatarUrl) ? (
                 <img
-                  src={currentUser.avatarUrl}
+                  src={avatarPreview ?? currentUser!.avatarUrl}
                   alt="Profile"
                   className="w-16 h-16 rounded-2xl object-cover"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -355,6 +504,20 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
             <div>
               <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Headline
+              </label>
+              <input
+                type="text"
+                value={profileHeadline}
+                onChange={e => setProfileHeadline(e.target.value)}
+                maxLength={100}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+                placeholder="e.g. Local food advocate & urban gardener"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
                 Bio
               </label>
               <textarea
@@ -366,6 +529,19 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                 placeholder="A short intro about you (160 chars)"
               />
               <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/160</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Website
+              </label>
+              <input
+                type="url"
+                value={website}
+                onChange={e => setWebsite(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+                placeholder="https://yoursite.com"
+              />
             </div>
 
             <div>

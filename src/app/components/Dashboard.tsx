@@ -14,11 +14,13 @@ import { featuredService } from '../services/featuredService';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
+import { useNotificationCounts } from '../hooks/useNotificationCounts';
+import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
 
-const APP_TILES = [
-  { Icon: MessageCircle, label: 'Discussions', screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600' },
+const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
+  { Icon: MessageCircle, label: 'Discussions', screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
   { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
@@ -27,7 +29,7 @@ const APP_TILES = [
   { Icon: Target,        label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
   { Icon: Wrench,        label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
-  { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600' },
+  { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
 ];
 
 const MOBILE_DOCK_APPS = [
@@ -61,6 +63,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   }, [hubSlug]);
 
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
+  const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
+
+  function handleTileNavigate(screen: string, notifyFeature?: NotificationFeature) {
+    if (notifyFeature && notifCounts[notifyFeature] > 0) {
+      clearBadge(notifyFeature);
+      notificationsService.markRead(hubSlug, notifyFeature).catch(() => {});
+    }
+    onNavigate(screen);
+  }
 
   async function handleFeaturedPostClick(postId: string) {
     try {
@@ -141,6 +152,33 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [rsvpDone, setRsvpDone] = useState<Record<number, boolean>>({});
   const [showNodeStatus, setShowNodeStatus] = useState(false);
 
+  // ── Hub app: initiatives ────────────────────────────────
+  interface AppInfo { name: string; faviconUrl?: string; logoUrl?: string }
+  interface LiveInitiative { id: string | number; title: string; progress: number; status: string; imageUrl?: string | null; members?: { id: string }[] }
+  const [liveInitiatives, setLiveInitiatives] = useState<LiveInitiative[] | null>(null);
+  const [initiativesAppInfo, setInitiativesAppInfo] = useState<AppInfo | null>(null);
+
+  useEffect(() => {
+    if (!currentHub?.tunnelUrl) return;
+    const base = currentHub.tunnelUrl;
+    const token = currentUser?.authToken;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // Fetch app info (no auth needed — public endpoint)
+    fetch(`${base}/api/initiatives/app-info`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setInitiativesAppInfo(d))
+      .catch(() => {});
+
+    // Fetch live initiatives
+    fetch(`${base}/api/initiatives`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        setLiveInitiatives(d?.initiatives ? d.initiatives.slice(0, 3) : []);
+      })
+      .catch(() => { setLiveInitiatives([]); });
+  }, [currentHub?.tunnelUrl, currentUser?.authToken]);
+
   const upcomingEvents = [
     {
       id: 1,
@@ -164,29 +202,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     },
   ] as const;
 
-  const activeInitiatives = [
-    {
-      id: 1,
-      title: 'Community Garden Expansion',
-      participants: 23,
-      status: 'In Progress',
-      progress: 62,
-      goal: 'Convert the vacant lot on Elm St. into a shared vegetable garden with 40 raised beds available to all residents.',
-      description: 'We\'ve secured the land lease and have 14 beds built so far. Next steps: irrigation install and bed assignments. Volunteers needed every weekend.',
-    },
-    {
-      id: 2,
-      title: 'Local Tool Library',
-      participants: 15,
-      status: 'Planning',
-      progress: 28,
-      goal: 'Establish a lending library of tools and equipment so neighbors can borrow instead of buy.',
-      description: 'Inventory catalogue underway with 80+ tools donated so far. Looking for a space to host and a volunteer coordinator. Sign up to help shape the programme.',
-    },
-  ] as const;
+  // activeInitiatives: live data when available, empty otherwise (no mock fallback)
+  const activeInitiatives: LiveInitiative[] = liveInitiatives ?? [];
 
   const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
-  const [selectedInitiative, setSelectedInitiative] = useState<typeof activeInitiatives[number] | null>(null);
+  const [selectedInitiative] = useState<null>(null);
 
   const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://citinet-info.vercel.app/').trim();
   const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
@@ -860,18 +880,28 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
           <div className="max-w-5xl mx-auto px-8 py-5">
             <div className="grid grid-cols-5 lg:grid-cols-10 gap-1 justify-items-center">
-              {APP_TILES.map(app => (
-                <button
-                  key={app.screen}
-                  onClick={() => onNavigate(app.screen)}
-                  className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
-                >
-                  <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all`}>
-                    <app.Icon className="w-6 h-6 text-white" />
-                  </div>
-                  <span className="text-[11px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
-                </button>
-              ))}
+              {APP_TILES.map(app => {
+                const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+                return (
+                  <button
+                    key={app.screen}
+                    onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+                    className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
+                  >
+                    <div className="relative">
+                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all`}>
+                        <app.Icon className="w-6 h-6 text-white" />
+                      </div>
+                      {badge > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-950/30">
+                          {badge > 9 ? '9+' : badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
+                  </button>
+                );
+              })}
               {myVendor && (
                 <button
                   onClick={() => onNavigate(`vendor/${myVendor.id}`)}
@@ -903,18 +933,28 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               </button>
             </div>
             <div className="grid grid-cols-5 gap-2 justify-items-center">
-              {mobileLauncherTiles.map(app => (
-                <button
-                  key={app.screen}
-                  onClick={() => onNavigate(app.screen)}
-                  className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-slate-900/75 dark:bg-black/60 border border-slate-700 shadow-sm active:scale-95 transition-transform"
-                >
-                  <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm`}>
-                    <app.Icon className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-[10px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
-                </button>
-              ))}
+              {mobileLauncherTiles.map(app => {
+                const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+                return (
+                  <button
+                    key={app.screen}
+                    onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+                    className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-slate-900/75 dark:bg-black/60 border border-slate-700 shadow-sm active:scale-95 transition-transform"
+                  >
+                    <div className="relative">
+                      <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm`}>
+                        <app.Icon className="w-5 h-5 text-white" />
+                      </div>
+                      {badge > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-900/50">
+                          {badge > 9 ? '9+' : badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -1036,44 +1076,88 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             </div>
           </div>
 
-          {/* Active Initiatives */}
+          {/* Community Initiatives — live from installed hub app */}
           <div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-4 tracking-tight">Community Initiatives</h2>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Community Initiatives</h2>
+                {initiativesAppInfo && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                    {initiativesAppInfo.faviconUrl
+                      ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : <Lightbulb className="w-3 h-3 text-purple-400" />
+                    }
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
+                  </div>
+                )}
+              </div>
+              {activeInitiatives.length > 0 && (
+                <button onClick={() => onNavigate('initiatives')} className="text-xs font-semibold text-purple-500 hover:text-purple-400 transition-colors">
+                  See all
+                </button>
+              )}
+            </div>
+
+            {liveInitiatives === null && (
+              <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading initiatives…</span>
+              </div>
+            )}
+
+            {liveInitiatives !== null && activeInitiatives.length === 0 && (
+              <div className="text-sm text-slate-400 dark:text-zinc-500 py-2">
+                No active initiatives yet.{' '}
+                <button onClick={() => onNavigate('initiatives')} className="text-purple-500 hover:underline">Start one</button>
+              </div>
+            )}
 
             <div className="space-y-3">
-              {activeInitiatives.map(initiative => (
-                <button
-                  key={initiative.id}
-                  onClick={() => setSelectedInitiative(initiative)}
-                  className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0">
-                        <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{initiative.title}</h3>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-slate-400">
-                          <Users className="w-3 h-3 shrink-0" />
-                          <span>{initiative.participants} participants</span>
-                          <span>·</span>
-                          <div className="flex-1 max-w-[80px] h-1 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
+              {activeInitiatives.map(initiative => {
+                const memberCount = initiative.members?.length ?? 0;
+                const statusLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
+                const statusStyle = initiative.status === 'active'
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                  : initiative.status === 'completed'
+                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                  : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+                return (
+                  <button
+                    key={initiative.id}
+                    onClick={() => onNavigate(`initiatives/${initiative.id}`)}
+                    className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0 overflow-hidden">
+                          {initiative.imageUrl
+                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+                            : <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                          }
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{initiative.title}</h3>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-slate-400">
+                            <Users className="w-3 h-3 shrink-0" />
+                            <span>{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+                            <span>·</span>
+                            <div className="flex-1 max-w-[80px] h-1 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
+                            </div>
+                            <span>{initiative.progress}%</span>
                           </div>
-                          <span>{initiative.progress}%</span>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusStyle}`}>
+                          {statusLabel}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${initiative.status === 'In Progress' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'}`}>
-                        {initiative.status}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />
-                    </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -1131,16 +1215,27 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <span className="text-[10px] font-semibold leading-none">Start</span>
           </button>
 
-          {MOBILE_DOCK_APPS.map(app => (
-            <button
-              key={app.screen}
-              onClick={() => onNavigate(app.screen)}
-              className="flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-            >
-              <app.Icon className="w-5 h-5" />
-              <span className="text-[10px] font-medium leading-none">{app.label}</span>
-            </button>
-          ))}
+          {MOBILE_DOCK_APPS.map(app => {
+            const notifyFeature = APP_TILES.find(t => t.screen === app.screen)?.notifyFeature;
+            const badge = notifyFeature ? notifCounts[notifyFeature] : 0;
+            return (
+              <button
+                key={app.screen}
+                onClick={() => handleTileNavigate(app.screen, notifyFeature)}
+                className="flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+              >
+                <div className="relative">
+                  <app.Icon className="w-5 h-5" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium leading-none">{app.label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
@@ -1421,110 +1516,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
       {/* ── Initiative Detail Modal ── */}
       <AnimatePresence>
-        {selectedInitiative && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSelectedInitiative(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 24, scale: 0.97 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 340 }}
-              className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header gradient */}
-              <div className="relative bg-gradient-to-br from-purple-600 via-pink-600 to-rose-600 px-6 pt-6 pb-8">
-                <button
-                  onClick={() => setSelectedInitiative(null)}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
-                    <Lightbulb className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="pr-8">
-                    <h2 className="text-xl font-bold text-white leading-tight">{selectedInitiative.title}</h2>
-                    <span className={`inline-block mt-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                      selectedInitiative.status === 'In Progress'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-white/15 text-white/80'
-                    }`}>
-                      {selectedInitiative.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Body */}
-              <div className="px-6 py-5 space-y-5">
-                {/* Progress */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Progress</span>
-                    <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedInitiative.progress}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${selectedInitiative.progress}%` }}
-                      transition={{ duration: 0.6, ease: 'easeOut', delay: 0.15 }}
-                      className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Goal */}
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Goal</p>
-                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{selectedInitiative.goal}</p>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">What's happening</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{selectedInitiative.description}</p>
-                </div>
-
-                {/* Participants */}
-                <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                  <Users className="w-4 h-4 text-purple-500" />
-                  <span>
-                    <span className="font-semibold text-slate-900 dark:text-white">{selectedInitiative.participants}</span> neighbors participating
-                  </span>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => {
-                      sessionStorage.setItem('citinet-deeplink-initiative', String(selectedInitiative.id));
-                      setSelectedInitiative(null);
-                      onNavigate('initiatives');
-                    }}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all"
-                  >
-                    <Target className="w-4 h-4" /> View Initiative
-                  </button>
-                  <button
-                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                    aria-label="Share initiative"
-                    title="Share"
-                  >
-                    <Share2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
+        {selectedInitiative && null /* initiative cards now deep-link directly */}
       </AnimatePresence>
     </div>
   );

@@ -312,14 +312,25 @@ class HubService {
   /** Update the current user's profile fields on the server and in localStorage. */
   async updateProfile(
     hubSlug: string,
-    updates: { displayName?: string; location?: string; bio?: string; tags?: string[] }
+    updates: {
+      displayName?: string; location?: string; bio?: string; tags?: string[];
+      profileHeadline?: string; website?: string;
+      bannerMode?: 'image' | 'solid' | 'gradient'; bannerColor?: string;
+      bannerGradientFrom?: string; bannerGradientTo?: string;
+    }
   ): Promise<HubUser> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const body: Record<string, unknown> = {};
-    if (updates.displayName !== undefined) body.display_name = updates.displayName;
-    if (updates.location    !== undefined) body.location     = updates.location;
-    if (updates.bio         !== undefined) body.bio          = updates.bio;
-    if (updates.tags        !== undefined) body.tags         = updates.tags;
+    if (updates.displayName       !== undefined) body.display_name        = updates.displayName;
+    if (updates.location          !== undefined) body.location             = updates.location;
+    if (updates.bio               !== undefined) body.bio                  = updates.bio;
+    if (updates.tags              !== undefined) body.tags                 = updates.tags;
+    if (updates.profileHeadline   !== undefined) body.profile_headline     = updates.profileHeadline;
+    if (updates.website           !== undefined) body.website              = updates.website;
+    if (updates.bannerMode        !== undefined) body.banner_mode          = updates.bannerMode;
+    if (updates.bannerColor       !== undefined) body.banner_color         = updates.bannerColor;
+    if (updates.bannerGradientFrom !== undefined) body.banner_gradient_from = updates.bannerGradientFrom;
+    if (updates.bannerGradientTo  !== undefined) body.banner_gradient_to   = updates.bannerGradientTo;
 
     const res = await fetch(`${tunnelUrl}/api/auth/profile`, {
       method: 'PATCH',
@@ -331,13 +342,44 @@ class HubService {
       throw new Error(err.error || `Failed (${res.status})`);
     }
 
-    // Persist to localStorage so the rest of the app sees it immediately
     return this.updateUserProfile(hubSlug, {
-      displayName: updates.displayName,
-      location:    updates.location,
-      bio:         updates.bio,
-      tags:        updates.tags,
+      displayName:       updates.displayName,
+      location:          updates.location,
+      bio:               updates.bio,
+      tags:              updates.tags,
+      profileHeadline:   updates.profileHeadline,
+      website:           updates.website,
+      bannerMode:        updates.bannerMode,
+      bannerColor:       updates.bannerColor,
+      bannerGradientFrom: updates.bannerGradientFrom,
+      bannerGradientTo:  updates.bannerGradientTo,
     });
+  }
+
+  /** Upload a profile banner image. Saves to MinIO and updates banner_mode to 'image'. */
+  async uploadProfileBanner(hubSlug: string, file: File): Promise<string> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const form = new FormData();
+    form.append('banner', file);
+    const res = await fetch(`${tunnelUrl}/api/auth/profile-banner`, {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Upload failed (${res.status})`);
+    }
+    const { banner_key } = await res.json();
+    return banner_key;
+  }
+
+  /** Resolve a profile banner image URL for a given user. Pass bannerKey for cache-busting after re-upload. */
+  getProfileBannerUrl(hubSlug: string, userId: string, bannerKey?: string | null): string | null {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.hub?.tunnelUrl) return null;
+    const base = `${conn.hub.tunnelUrl}/api/auth/profile-banner/${encodeURIComponent(userId)}`;
+    return bannerKey ? `${base}?v=${encodeURIComponent(bannerKey)}` : base;
   }
 
   /** Fetch a single member's public profile from the server. */
@@ -443,12 +485,14 @@ class HubService {
   /** Update profile fields for the current user on a hub (stored locally) */
   updateUserProfile(
     hubSlug: string,
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName'>>
   ): HubUser {
     const connections = this.getAllHubConnections();
     const connection = connections[hubSlug];
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
-    Object.assign(connection.user, updates);
+    // Filter out undefined so partial updates don't overwrite existing fields
+    const filtered = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+    Object.assign(connection.user, filtered);
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     return connection.user;
   }
@@ -1254,12 +1298,18 @@ class HubService {
   }
 
   /** Post a reply to a discussion. */
-  async createReply(hubSlug: string, postId: string, body: string): Promise<HubPostReply> {
+  async createReply(
+    hubSlug: string,
+    postId: string,
+    body: string,
+    replyToReplyId?: string | null,
+    replyToUserId?: string | null,
+  ): Promise<HubPostReply> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const response = await fetch(`${tunnelUrl}/api/posts/${postId}/replies`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, reply_to_reply_id: replyToReplyId ?? null, reply_to_user_id: replyToUserId ?? null }),
     });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     return response.json();

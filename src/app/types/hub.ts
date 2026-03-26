@@ -92,6 +92,20 @@ export interface HubUser {
   bio?: string;
   /** Avatar image key (MinIO key, resolved via /api/auth/avatar/:userId) */
   avatarUrl?: string;
+  /** One-line profile headline */
+  profileHeadline?: string;
+  /** Personal website URL */
+  website?: string;
+  /** Profile banner display mode */
+  bannerMode?: 'image' | 'solid' | 'gradient';
+  /** Solid banner color (hex) */
+  bannerColor?: string;
+  /** Gradient banner start color (hex) */
+  bannerGradientFrom?: string;
+  /** Gradient banner end color (hex) */
+  bannerGradientTo?: string;
+  /** Banner image MinIO key */
+  bannerImageFileName?: string;
 }
 
 /** What we store per hub in localStorage */
@@ -159,6 +173,13 @@ export interface HubMember {
   is_admin: boolean;
   created_at: string;
   avatar_url?: string | null;
+  profile_headline?: string | null;
+  banner_mode?: 'image' | 'solid' | 'gradient' | null;
+  banner_color?: string | null;
+  banner_gradient_from?: string | null;
+  banner_gradient_to?: string | null;
+  banner_image_file_name?: string | null;
+  website?: string | null;
 }
 
 /** A conversation participant */
@@ -221,6 +242,9 @@ export interface HubPostReply {
   author_id: string;
   author_username: string;
   created_at: string;
+  reply_to_reply_id?: string | null;
+  reply_to_user_id?: string | null;
+  reply_to_username?: string | null;
 }
 
 /** A file on the hub (personal or shared) */
