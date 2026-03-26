@@ -1,32 +1,34 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import {
   MapPin, Shield, Calendar, MessageCircle,
-  Loader2, AlertCircle, Tag, X, Globe, ImagePlus, Palette, Pencil,
+  Loader2, AlertCircle, Tag, Globe,
+  ImagePlus, Palette, Pencil, ArrowLeft,
+  FileText, Pin, Hash, Building2,
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
+import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
 import type { HubMember, HubPost } from '../types/hub';
 
+// ── Helpers ────────────────────────────────────────────────
+
 const AVATAR_COLORS = [
   'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
   'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500', 'from-violet-500 to-purple-500',
-  'from-sky-500 to-blue-500', 'from-lime-500 to-green-500',
+  'from-pink-500 to-rose-500',    'from-violet-500 to-purple-500',
+  'from-sky-500 to-blue-500',     'from-lime-500 to-green-500',
 ];
 function avatarColor(username: string): string {
   let h = 0;
   for (let i = 0; i < username.length; i++) h = username.charCodeAt(i) + ((h << 5) - h);
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
-
 function formatJoinDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  } catch { return ''; }
+  try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); }
+  catch { return ''; }
 }
-
 function formatTimestamp(iso: string): string {
   try {
     const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -45,15 +47,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
 };
 
-const BANNER_SOLID_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#be123c', '#b45309', '#374151'];
+const BANNER_SOLID_COLORS = ['#0f766e','#0369a1','#1d4ed8','#6d28d9','#be123c','#b45309','#374151'];
 const BANNER_GRADIENTS = [
-  { from: '#2563eb', to: '#7c3aed' },
-  { from: '#0f766e', to: '#2563eb' },
-  { from: '#be123c', to: '#7c2d12' },
-  { from: '#1d4ed8', to: '#0f766e' },
-  { from: '#c2410c', to: '#be123c' },
-  { from: '#374151', to: '#111827' },
+  { from: '#2563eb', to: '#7c3aed' }, { from: '#0f766e', to: '#2563eb' },
+  { from: '#be123c', to: '#7c2d12' }, { from: '#1d4ed8', to: '#0f766e' },
+  { from: '#c2410c', to: '#be123c' }, { from: '#374151', to: '#111827' },
 ];
+
+type Tab = 'overview' | 'posts';
+
+// ── Component ──────────────────────────────────────────────
 
 interface ProfileScreenProps {
   userId: string;
@@ -64,21 +67,22 @@ interface ProfileScreenProps {
 export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps) {
   const { currentHub, currentUser, updateUserProfile } = useHub();
   const slug = currentHub?.slug ?? '';
+  const hubName = currentHub?.name ?? 'Hub';
 
-  const [member, setMember] = useState<HubMember | null>(null);
-  const [posts, setPosts] = useState<HubPost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [member, setMember]           = useState<HubMember | null>(null);
+  const [posts, setPosts]             = useState<HubPost[]>([]);
+  const [pinCount, setPinCount]       = useState(0);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState('');
+  const [activeTab, setActiveTab]     = useState<Tab>('overview');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
+  const [showBannerEditor, setShowBannerEditor] = useState(false);
+  const [savingBanner, setSavingBanner] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !!currentUser?.hubUserId && currentUser.hubUserId === userId;
   const isAdmin = currentUser?.isAdmin === true ||
     (!!currentUser?.username && (currentHub?.tunnelUrl ?? '').includes('localhost'));
-
-  // Banner editor (own profile only)
-  const [showBannerEditor, setShowBannerEditor] = useState(false);
-  const [savingBanner, setSavingBanner] = useState(false);
-  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!slug || !userId) return;
@@ -87,11 +91,17 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     Promise.allSettled([
       hubService.getMember(slug, userId),
       hubService.listPosts(slug),
-    ]).then(([memberRes, postsRes]) => {
-      if (memberRes.status === 'fulfilled') setMember(memberRes.value);
-      else setError('Could not load profile.');
-      if (postsRes.status === 'fulfilled')
-        setPosts(postsRes.value.filter(p => p.author_id === userId).slice(0, 10));
+      atlasService.getPins(slug),
+    ]).then(([memberRes, postsRes, pinsRes]) => {
+      if (memberRes.status === 'fulfilled') {
+        setMember(memberRes.value);
+        if (postsRes.status === 'fulfilled')
+          setPosts(postsRes.value.filter(p => p.author_id === userId));
+        if (pinsRes.status === 'fulfilled')
+          setPinCount(pinsRes.value.filter(p => p.authorUsername === memberRes.value?.username).length);
+      } else {
+        setError('Could not load profile.');
+      }
       setLoading(false);
     });
   }, [slug, userId]);
@@ -99,27 +109,23 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const avatarUrl = member ? hubService.getAvatarUrl(slug, member.user_id) : null;
   const displayName = member?.display_name || member?.username || '';
 
-  // Banner style — for own profile prefer currentUser fields (immediately reflects edits)
-  const bannerSource = isOwnProfile
-    ? {
-        banner_mode: currentUser?.bannerMode ?? member?.banner_mode,
-        banner_color: currentUser?.bannerColor ?? member?.banner_color,
-        banner_gradient_from: currentUser?.bannerGradientFrom ?? member?.banner_gradient_from,
-        banner_gradient_to: currentUser?.bannerGradientTo ?? member?.banner_gradient_to,
-        banner_image_file_name: currentUser?.bannerImageFileName ?? member?.banner_image_file_name,
-      }
-    : member;
+  const bannerSource = isOwnProfile ? {
+    banner_mode:           currentUser?.bannerMode           ?? member?.banner_mode,
+    banner_color:          currentUser?.bannerColor          ?? member?.banner_color,
+    banner_gradient_from:  currentUser?.bannerGradientFrom   ?? member?.banner_gradient_from,
+    banner_gradient_to:    currentUser?.bannerGradientTo     ?? member?.banner_gradient_to,
+    banner_image_file_name: currentUser?.bannerImageFileName ?? member?.banner_image_file_name,
+  } : member;
 
   const bannerStyle = useMemo((): React.CSSProperties => {
     if (bannerSource?.banner_mode === 'image' && bannerSource.banner_image_file_name) {
-      const url = hubService.getProfileBannerUrl(slug, userId, bannerSource?.banner_image_file_name);
+      const url = hubService.getProfileBannerUrl(slug, userId, bannerSource.banner_image_file_name);
       if (url) return { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
     }
     if (bannerSource?.banner_mode === 'solid' && bannerSource.banner_color)
       return { backgroundColor: bannerSource.banner_color };
     if (bannerSource?.banner_mode === 'gradient' && bannerSource.banner_gradient_from && bannerSource.banner_gradient_to)
       return { backgroundImage: `linear-gradient(135deg, ${bannerSource.banner_gradient_from}, ${bannerSource.banner_gradient_to})` };
-    // Default: avatar-derived gradient
     return {};
   }, [bannerSource, slug, userId]);
 
@@ -127,12 +133,18 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
   const saveBannerFields = async (fields: Parameters<typeof hubService.updateProfile>[1]) => {
     setSavingBanner(true);
+    updateUserProfile({
+      bannerMode: fields.bannerMode,
+      bannerColor: fields.bannerColor,
+      bannerGradientFrom: fields.bannerGradientFrom,
+      bannerGradientTo: fields.bannerGradientTo,
+    });
     try {
       await hubService.updateProfile(slug, fields);
-      // Refresh member data to reflect the change
       hubService.getMember(slug, userId).then(setMember).catch(() => {});
     } catch { /* silent */ }
     setSavingBanner(false);
+    setShowBannerEditor(false);
   };
 
   const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,202 +166,143 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     onNavigate('messages');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-      </div>
-    );
-  }
+  // ── Loading / Error ──────────────────────────────────────
 
-  if (error || !member) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col items-center justify-center gap-3 text-slate-500">
-        <AlertCircle className="w-8 h-8 text-red-400" />
-        <p className="text-sm">{error || 'Profile not found'}</p>
-        <button onClick={onBack} className="text-sm text-purple-600 hover:underline">Go back</button>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+    </div>
+  );
+
+  if (error || !member) return (
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col items-center justify-center gap-3">
+      <AlertCircle className="w-8 h-8 text-red-400" />
+      <p className="text-sm text-slate-500">{error || 'Profile not found'}</p>
+      <button onClick={onBack} className="text-sm text-purple-600 hover:underline">Go back</button>
+    </div>
+  );
+
+  // ── Render ───────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="profile-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#profile-dots)" opacity="0.07"/>
-        </svg>
-      </div>
 
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
+      {/* ── Sticky header ── */}
+      <div className="sticky top-0 z-20 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <span className="text-lg font-bold text-slate-900 dark:text-white truncate flex-1">
+          <button onClick={onBack} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0">
+            <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+          </button>
+          <span className="text-base font-semibold text-slate-900 dark:text-white truncate flex-1">
             {displayName || member.username}
           </span>
           {isOwnProfile && (
-            <button
-              onClick={() => onNavigate('account')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Edit Profile
+            <button onClick={() => onNavigate('account')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0">
+              <Pencil className="w-3.5 h-3.5" /> Edit
             </button>
           )}
-          <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close">
-            <X className="w-4 h-4 text-white" />
-          </button>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 relative z-0">
+      <div className="max-w-2xl mx-auto px-4 pt-3 pb-12 space-y-3">
 
-        {/* ── Hero card ── */}
+        {/* ══ IDENTITY CARD ══════════════════════════════════ */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden"
+          className="rounded-2xl border border-white/10 overflow-hidden relative"
         >
-          {/* Banner */}
+          {/* Full-card banner background — the whole card sits on the banner */}
           <div
-            className={`h-32 relative ${hasBannerStyle ? '' : `bg-gradient-to-r ${avatarColor(member.username)}`} ${isOwnProfile ? 'cursor-pointer' : ''}`}
-            style={hasBannerStyle ? bannerStyle : {}}
-            onClick={() => isOwnProfile && setShowBannerEditor(v => !v)}
-            role={isOwnProfile ? 'button' : undefined}
-            aria-label={isOwnProfile ? 'Edit banner' : undefined}
-          >
+            className={`absolute inset-0 ${hasBannerStyle ? '' : `bg-gradient-to-br ${avatarColor(member.username)}`}`}
+            style={hasBannerStyle ? { ...bannerStyle, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+          />
+          {/* Slight dark scrim for overall legibility */}
+          <div className="absolute inset-0 bg-black/25" />
+
+          {/* Banner strip — height anchor + customize button */}
+          <div className="relative h-24">
             {isOwnProfile && (
               <>
-                <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
-                    {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
-                    Edit Banner
-                  </div>
-                </div>
                 <button
                   type="button"
-                  onClick={e => { e.stopPropagation(); setShowBannerEditor(v => !v); }}
-                  className="absolute top-3 right-3 p-1.5 rounded-lg bg-black/50 hover:bg-black/65 text-white transition-colors"
-                  aria-label="Customize banner"
+                  onClick={() => setShowBannerEditor(v => !v)}
+                  className="absolute top-2.5 right-2.5 inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-black/50 hover:bg-black/65 text-white text-xs font-semibold transition-colors"
                 >
-                  <Palette className="w-4 h-4" />
+                  {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Palette className="w-3.5 h-3.5" />}
+                  Customize
                 </button>
                 <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
               </>
             )}
           </div>
 
-          <div className="px-6 pb-6">
-            {/* Avatar floats out of banner */}
-            <div className="flex items-end gap-4 mb-3">
-              <div className="relative -mt-12 shrink-0">
+          {/* Identity body — frosted glass layer over the banner */}
+          <div className="relative px-5 pb-5 backdrop-blur-xl bg-black/30 border-t border-white/10">
+            <div className="flex gap-4 -mt-10 items-end">
+              {/* Avatar */}
+              <div className="shrink-0 relative z-10">
                 {member.avatar_url && avatarUrl
-                  ? <img
-                      src={avatarUrl}
-                      alt={displayName}
-                      className="w-20 h-20 rounded-2xl object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
+                  ? <img src={avatarUrl} alt={displayName}
+                      className="w-20 h-20 rounded-full object-cover ring-2 ring-white/20 shadow-lg"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
-                  : <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white dark:ring-zinc-900 shadow-lg`}>
+                  : <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-2 ring-white/20 shadow-lg`}>
                       {(displayName || member.username).charAt(0).toUpperCase()}
                     </div>
                 }
               </div>
-              <div className="mb-1 flex-1 min-w-0">
-                {member.is_admin && (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                    <Shield className="w-3 h-3" /> Admin
-                  </span>
-                )}
+
+              {/* Name block */}
+              <div className="flex-1 min-w-0 pb-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl font-bold text-white leading-tight truncate drop-shadow">
+                    {displayName || member.username}
+                  </h1>
+                  {member.is_admin && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/30 shrink-0">
+                      <Shield className="w-3 h-3" /> Admin
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-mono text-white/45">@{member.username}</p>
               </div>
             </div>
 
-            {/* Banner editor (own profile only) */}
-            {isOwnProfile && showBannerEditor && (
-              <div className="mb-4 rounded-xl border border-slate-200 dark:border-zinc-700 p-3 bg-slate-50 dark:bg-zinc-800/40 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Banner Style</p>
-                  <button
-                    type="button"
-                    onClick={() => bannerInputRef.current?.click()}
-                    disabled={savingBanner}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 dark:hover:bg-zinc-600 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60"
-                  >
-                    {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
-                    Upload Image
-                  </button>
-                </div>
-                <div>
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Solid Colors</p>
-                  <div className="flex flex-wrap gap-2">
-                    {BANNER_SOLID_COLORS.map(color => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => saveBannerFields({ bannerMode: 'solid', bannerColor: color })}
-                        className="w-7 h-7 rounded-full border-2 border-white dark:border-zinc-700 shadow-sm hover:scale-110 transition-transform"
-                        style={{ backgroundColor: color }}
-                        aria-label={color}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Gradients</p>
-                  <div className="flex flex-wrap gap-2">
-                    {BANNER_GRADIENTS.map((g, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => saveBannerFields({ bannerMode: 'gradient', bannerGradientFrom: g.from, bannerGradientTo: g.to })}
-                        className="w-14 h-7 rounded-full border-2 border-white dark:border-zinc-700 shadow-sm hover:scale-105 transition-transform"
-                        style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
-                        aria-label={`Gradient ${i + 1}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {/* Headline */}
+            {member.profile_headline && (
+              <p className="mt-3 text-sm font-medium text-white/80 leading-snug">
+                {member.profile_headline}
+              </p>
             )}
 
-            {/* Identity */}
-            <div>
-              {displayName && displayName !== member.username && (
-                <h1 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">{displayName}</h1>
-              )}
-              <p className="text-sm font-mono text-slate-500 dark:text-slate-400">@{member.username}</p>
-              {member.profile_headline && (
-                <p className="mt-1 text-sm font-medium text-slate-700 dark:text-slate-300">{member.profile_headline}</p>
-              )}
-            </div>
-
-            {/* Meta */}
-            <div className="mt-3 space-y-1.5">
+            {/* Identity metadata — civic, local, network */}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+              <div className="flex items-center gap-2 text-xs">
+                <Building2 className="w-3.5 h-3.5 text-purple-300 shrink-0" />
+                <span className="text-white/50">Member of</span>
+                <span className="font-semibold text-purple-200 truncate">{hubName}</span>
+              </div>
               {member.location && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
-                  <span>{member.location}</span>
+                <div className="flex items-center gap-2 text-xs text-white/55">
+                  <MapPin className="w-3.5 h-3.5 shrink-0 text-white/40" />
+                  <span className="truncate">{member.location}</span>
                 </div>
               )}
               {member.created_at && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  <Calendar className="w-3.5 h-3.5 shrink-0" />
-                  <span>Member since {formatJoinDate(member.created_at)}</span>
+                <div className="flex items-center gap-2 text-xs text-white/55">
+                  <Calendar className="w-3.5 h-3.5 shrink-0 text-white/40" />
+                  <span>Since {formatJoinDate(member.created_at)}</span>
                 </div>
               )}
               {member.website && (
-                <div className="flex items-center gap-1.5 text-xs">
-                  <Globe className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                <div className="flex items-center gap-2 text-xs">
+                  <Globe className="w-3.5 h-3.5 shrink-0 text-white/40" />
                   <a
                     href={member.website.startsWith('http') ? member.website : `https://${member.website}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-purple-600 dark:text-purple-400 hover:underline truncate"
-                    onClick={e => e.stopPropagation()}
+                    className="text-purple-300 hover:text-purple-200 hover:underline truncate"
                   >
                     {member.website.replace(/^https?:\/\//, '')}
                   </a>
@@ -357,89 +310,234 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
               )}
             </div>
 
-            {/* Bio */}
-            {member.bio && (
-              <p className="mt-4 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{member.bio}</p>
-            )}
-
-            {/* Tags */}
-            {(member.tags?.length ?? 0) > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {member.tags!.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => { sessionStorage.setItem('citinet-filter-tag', tag); onNavigate('discover'); }}
-                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
-                  >
-                    <Tag className="w-3 h-3" />{tag}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Actions */}
-            {!isOwnProfile && (
-              <div className="mt-5">
+            {/* Action buttons */}
+            <div className="mt-4 flex items-center gap-2">
+              {isOwnProfile ? (
+                <button
+                  onClick={() => onNavigate('account')}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit Profile
+                </button>
+              ) : (
                 <button
                   onClick={handleMessage}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-semibold shadow-sm transition-all"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-semibold shadow-sm transition-all"
                 >
                   <MessageCircle className="w-4 h-4" /> Message
                 </button>
+              )}
+            </div>
+
+            {/* Banner editor */}
+            {isOwnProfile && showBannerEditor && (
+              <div className="mt-4 rounded-xl border border-white/15 p-3 bg-black/30 backdrop-blur-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-white/80">Banner Style</p>
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    disabled={savingBanner}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white/80 transition-colors disabled:opacity-60"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" /> Upload Image
+                  </button>
+                </div>
+                <div>
+                  <p className="text-[11px] font-medium text-white/45 mb-1.5">Solid Colors</p>
+                  <div className="flex flex-wrap gap-2">
+                    {BANNER_SOLID_COLORS.map(color => (
+                      <button key={color} type="button"
+                        onClick={() => saveBannerFields({ bannerMode: 'solid', bannerColor: color })}
+                        className="w-7 h-7 rounded-full border-2 border-white/30 shadow-sm hover:scale-110 transition-transform"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-medium text-white/45 mb-1.5">Gradients</p>
+                  <div className="flex flex-wrap gap-2">
+                    {BANNER_GRADIENTS.map((g, i) => (
+                      <button key={i} type="button"
+                        onClick={() => saveBannerFields({ bannerMode: 'gradient', bannerGradientFrom: g.from, bannerGradientTo: g.to })}
+                        className="w-14 h-7 rounded-full border-2 border-white/30 shadow-sm hover:scale-105 transition-transform"
+                        style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </motion.div>
 
-        {/* ── Recent Posts ── */}
-        {posts.length > 0 && (
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Recent Posts</h2>
-            <div className="space-y-2">
-              {posts.map((post, i) => (
-                <motion.button
-                  key={post.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
-                  onClick={() => setSelectedPost(post)}
-                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all group"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
-                          {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-                        </span>
-                        <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(post.created_at)}</span>
-                      </div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-                        {post.title}
-                      </p>
-                      {post.body && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
-                      )}
+        {/* ══ CONTRIBUTION STATS ═════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="grid grid-cols-3 gap-3"
+        >
+          {[
+            { icon: FileText, label: 'Posts',     value: posts.length,           color: 'text-blue-500',   bg: 'bg-blue-50 dark:bg-blue-500/10' },
+            { icon: Pin,       label: 'Pins',      value: pinCount,               color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
+            { icon: Hash,      label: 'Interests', value: member.tags?.length ?? 0, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10' },
+          ].map(({ icon: Icon, label, value, color, bg }) => (
+            <div key={label} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 py-2.5 flex items-center justify-center gap-2">
+              <div className={`w-6 h-6 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+                <Icon className={`w-3.5 h-3.5 ${color}`} />
+              </div>
+              <span className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">{value}</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">{label}</span>
+            </div>
+          ))}
+        </motion.div>
+
+        {/* ══ TABS ═══════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.08 }}
+          className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden"
+        >
+          {/* Tab bar */}
+          <div className="flex border-b border-slate-100 dark:border-zinc-800">
+            {(['overview', 'posts'] as Tab[]).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-3 text-sm font-semibold transition-colors relative ${
+                  activeTab === tab
+                    ? 'text-purple-600 dark:text-purple-400'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                {tab === 'overview' ? 'Overview' : `Posts${posts.length > 0 ? ` (${posts.length})` : ''}`}
+                {activeTab === tab && (
+                  <motion.div layoutId="profile-tab-indicator" className="absolute bottom-0 inset-x-0 h-0.5 bg-purple-500 dark:bg-purple-400" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <AnimatePresence mode="wait">
+
+            {/* ── Overview tab ── */}
+            {activeTab === 'overview' && (
+              <motion.div
+                key="overview"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="p-5 space-y-5"
+              >
+                {/* Bio */}
+                {member.bio ? (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">About</p>
+                    <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{member.bio}</p>
+                  </div>
+                ) : isOwnProfile ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-zinc-700 p-4 text-center">
+                    <p className="text-sm text-slate-400 dark:text-slate-500 mb-2">Add a bio to tell your community who you are.</p>
+                    <button onClick={() => onNavigate('account')} className="text-sm text-purple-600 dark:text-purple-400 font-semibold hover:underline">
+                      Complete your profile
+                    </button>
+                  </div>
+                ) : null}
+
+                {/* Community focus — tags */}
+                {(member.tags?.length ?? 0) > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Community Focus</p>
+                    <div className="flex flex-wrap gap-2">
+                      {member.tags!.map(tag => (
+                        <button
+                          key={tag}
+                          onClick={() => { sessionStorage.setItem('citinet-filter-tag', tag); onNavigate('discover'); }}
+                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors font-medium"
+                        >
+                          <Tag className="w-3 h-3" />{tag}
+                        </button>
+                      ))}
                     </div>
-                    {post.reply_count > 0 && (
-                      <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">
-                        <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
-                      </div>
+                  </div>
+                )}
+
+                {/* Empty overview */}
+                {!member.bio && (member.tags?.length ?? 0) === 0 && !isOwnProfile && (
+                  <div className="py-6 text-center">
+                    <p className="text-sm text-slate-400 dark:text-slate-500">No overview yet.</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* ── Posts tab ── */}
+            {activeTab === 'posts' && (
+              <motion.div
+                key="posts"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+              >
+                {posts.length > 0 ? (
+                  <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                    {posts.map((post, i) => (
+                      <motion.button
+                        key={post.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.04 }}
+                        onClick={() => setSelectedPost(post)}
+                        className="w-full text-left px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
+                                {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
+                              </span>
+                              <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(post.created_at)}</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
+                              {post.title}
+                            </p>
+                            {post.body && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
+                            )}
+                          </div>
+                          {post.reply_count > 0 && (
+                            <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">
+                              <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
+                            </div>
+                          )}
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-10 text-center">
+                    <FileText className="w-8 h-8 text-slate-200 dark:text-zinc-700 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400 dark:text-slate-500">
+                      {isOwnProfile ? 'You haven\'t posted yet.' : 'No posts yet.'}
+                    </p>
+                    {isOwnProfile && (
+                      <button onClick={() => onNavigate('feed')} className="mt-2 text-sm text-purple-600 dark:text-purple-400 font-semibold hover:underline">
+                        Start a discussion
+                      </button>
                     )}
                   </div>
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        )}
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
 
-        {posts.length === 0 && (
-          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-8 text-center">
-            <MessageCircle className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
-            <p className="text-sm text-slate-500 dark:text-slate-400">No posts yet</p>
-          </div>
-        )}
-
-        <div className="h-8" />
       </div>
 
       {selectedPost && (

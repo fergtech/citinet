@@ -37,6 +37,21 @@ export function HubBackground() {
     );
   }
 
+  if (bgType === 'preset' && bgValue) {
+    return (
+      <div
+        className="fixed inset-0 -z-10 pointer-events-none"
+        style={{
+          backgroundImage: `url(/default_backgrounds/${encodeURIComponent(bgValue)})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundAttachment: 'fixed',
+          filter: `brightness(${bgBrightness})`,
+        }}
+      />
+    );
+  }
+
   // Default: gradient + dot grid
   return (
     <div className="fixed inset-0 -z-10 pointer-events-none bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">

@@ -1,4 +1,4 @@
-import { Network, Plus, MapPin, X, Download, Share } from 'lucide-react';
+import { Network, Plus, MapPin, X, Download, Share, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
@@ -6,6 +6,8 @@ interface WelcomeScreenProps {
   onJoinNetwork: () => void;
   onCreateNetwork: () => void;
 }
+
+const INFO_SITE_URL = 'https://citinet-info.vercel.app';
 
 export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
   const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
@@ -27,12 +29,8 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
-        <a
-          href="https://citinet-info.vercel.app"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-white tracking-tight hover:text-white/85 transition-colors"
-        >
+        <a href={INFO_SITE_URL} target="_blank" rel="noopener noreferrer"
+          className="text-white tracking-tight hover:text-white/85 transition-colors">
           [citinet]
         </a>
       </div>
@@ -113,6 +111,15 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
         <p className="text-white/70 text-sm font-light mt-8">
           Participating in citinet means joining shared civic digital space
         </p>
+        <a
+          href={INFO_SITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-medium transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          About CitiNet
+        </a>
       </div>
 
       {/* Install / Add to Home Screen banner */}
