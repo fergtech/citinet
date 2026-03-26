@@ -553,6 +553,7 @@ class HubService {
     const currentSlug = this.slugify(result.info?.name || connection.hub.name);
     this.updateHubStatus(currentSlug, status, result.status ? {
       activeMembers: result.status.user_count,
+      onlineNow: result.status.online_now ?? 0,
       uptime: result.status.uptime,
       storageUsed: result.status.storage_used,
       nodeType: result.info?.node_type,
@@ -599,6 +600,7 @@ class HubService {
         connections[slug].hub.meta = {
           ...connections[slug].hub.meta,
           activeMembers: probe.status.user_count,
+          onlineNow: probe.status.online_now ?? 0,
           uptime: probe.status.uptime,
           storageUsed: probe.status.storage_used,
         };

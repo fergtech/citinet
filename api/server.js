@@ -260,6 +260,8 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_gradient_to     TEXT`);
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS website                TEXT`);
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS last_seen_at          TIMESTAMPTZ`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_users_last_seen ON hub_users(last_seen_at)`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS logo_file_name TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_mode TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
@@ -323,6 +325,8 @@ async function authenticate(req, res, next) {
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Invalid or expired token' });
     req.user = result.rows[0];
+    // Fire-and-forget presence heartbeat — no await so it never blocks the request
+    pool.query('UPDATE hub_users SET last_seen_at = NOW() WHERE id = $1', [req.user.id]).catch(() => {});
     next();
   } catch {
     res.status(500).json({ error: 'Auth check failed' });
@@ -442,16 +446,22 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
 
 app.get('/api/status', async (_req, res) => {
   let userCount = 0;
+  let onlineNow = 0;
   try {
     const r = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
     userCount = parseInt(r.rows[0].c, 10);
+    const o = await pool.query(
+      `SELECT COUNT(*) AS c FROM hub_users WHERE last_seen_at > NOW() - INTERVAL '5 minutes'`
+    );
+    onlineNow = parseInt(o.rows[0].c, 10);
   } catch { /* db not ready yet */ }
 
   res.json({
-    online:     true,
-    uptime:     uptimeStr(),
-    user_count: userCount,
-    node_name:  process.env.HUB_NAME || '',
+    online:      true,
+    uptime:      uptimeStr(),
+    user_count:  userCount,
+    online_now:  onlineNow,
+    node_name:   process.env.HUB_NAME || '',
   });
 });
 
