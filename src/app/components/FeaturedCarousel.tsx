@@ -59,7 +59,7 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
     slidesToShow: 1,
     slidesToScroll: 1,
     autoplay: displayItems.length > 1,
-    autoplaySpeed: 5000,
+    autoplaySpeed: 7000,
     arrows: false,
     pauseOnHover: true,
     customPaging: () => (
@@ -85,7 +85,7 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
             <div key={item.id} className="px-0.5 sm:px-1">
               <div
                 onClick={() => clickable && onPostClick!(item.refId!)}
-                className={`relative w-full h-56 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 shadow-lg hover:shadow-xl transition-shadow duration-300 group ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`relative w-full h-52 md:h-64 rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-900 shadow-lg hover:shadow-xl transition-shadow duration-300 group ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 {/* Background */}
                 {item.mediaType === 'video' && mediaUrl ? (
@@ -107,8 +107,11 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
                   <div className={`absolute inset-0 bg-gradient-to-br ${cardGradient(item.categoryLabel)}`} />
                 )}
 
-                {/* Scrim */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                {/* Gradient scrim — heavy at bottom for legibility */}
+                <div
+                  className="absolute inset-0"
+                  style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.65) 70%, rgba(0,0,0,0.88) 100%)' }}
+                />
 
                 {/* Video badge */}
                 {item.mediaType === 'video' && (
@@ -118,20 +121,33 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
                   </div>
                 )}
 
-                {/* Text content */}
+                {/* Text content — bottom-left */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 text-white">
-                  {item.categoryLabel && (
-                    <div className="mb-2 sm:mb-3">
-                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium uppercase tracking-wide backdrop-blur-sm ring-1 ring-white/20 ${labelBg(item.categoryLabel)}`}>
+                  {/* Author row: avatar + name + role chip + category */}
+                  <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+                    {item.authorUsername && (
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 ring-1 ring-white/30">
+                        {item.authorUsername.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {item.authorUsername && (
+                      <span className="text-xs text-white/80 font-medium">{item.authorUsername}</span>
+                    )}
+                    {item.authorUsername && <span className="text-white/30 text-xs">·</span>}
+                    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md backdrop-blur-sm ring-1 ring-white/20 ${item.type === 'custom' ? 'bg-purple-600/80 text-white' : 'bg-white/20 text-white/90'}`}>
+                      {item.type === 'custom' ? 'Admin Pick' : 'Member'}
+                    </span>
+                    {item.categoryLabel && item.type !== 'custom' && (
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide backdrop-blur-sm ring-1 ring-white/20 ${labelBg(item.categoryLabel)}`}>
                         {item.categoryLabel}
                       </span>
-                    </div>
-                  )}
-                  <h3 className="text-lg sm:text-xl md:text-2xl font-semibold tracking-tight line-clamp-2 mb-1">
+                    )}
+                  </div>
+                  <h3 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight line-clamp-2 leading-tight mb-1.5">
                     {item.title}
                   </h3>
                   {item.caption && (
-                    <p className="text-white/80 text-sm font-light line-clamp-2">{item.caption}</p>
+                    <p className="text-white/80 text-sm line-clamp-2 max-w-[80%]">{item.caption}</p>
                   )}
                 </div>
               </div>

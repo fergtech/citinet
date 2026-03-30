@@ -3,7 +3,7 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid,
+  LayoutGrid, Plus, Sparkles, Vote, ScrollText,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,6 +11,7 @@ import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { featuredService } from '../services/featuredService';
+import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
@@ -31,6 +32,8 @@ const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradi
   { Icon: Wrench,        label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
   { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
+  { Icon: Vote,          label: 'Polls',       screen: 'polls',       gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600' },
+  { Icon: ScrollText,    label: 'Mod Log',     screen: 'mod-log',     gradient: 'bg-gradient-to-br from-slate-600 to-slate-700' },
 ];
 
 const MOBILE_DOCK_APPS = [
@@ -82,6 +85,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       // ignore — fall through silently
     }
   }
+
+  // Feature request modal
+  const [showRequestModal, setShowRequestModal] = useState(false);
 
   // Mobile start/menu
   const [showMobileStartMenu, setShowMobileStartMenu] = useState(false);
@@ -307,6 +313,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...APP_TILES, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : APP_TILES;
+
+  const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-cyan-200 border border-cyan-300/35 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-cyan-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70';
 
   return (
     <div className="min-h-screen flex relative">
@@ -934,6 +942,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   <span className="text-[11px] font-medium text-purple-300 text-center leading-tight truncate w-full">{myVendor.name}</span>
                 </button>
               )}
+              <button
+                onClick={() => setShowRequestModal(true)}
+                className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-indigo-500/15 transition-all group active:scale-95"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all">
+                  <Sparkles className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-[11px] font-medium text-indigo-300 text-center leading-tight">Suggest</span>
+              </button>
             </div>
           </div>
         </div>
@@ -973,6 +990,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   </button>
                 );
               })}
+              <button
+                onClick={() => setShowRequestModal(true)}
+                className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-indigo-950/60 border border-indigo-500/30 shadow-sm active:scale-95 transition-transform"
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm">
+                  <Plus className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-[10px] font-medium text-indigo-300 text-center leading-tight">Suggest</span>
+              </button>
             </div>
           </div>
 
@@ -1049,15 +1075,92 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             )}
             </div>
 
-            {/* Right: Events + Initiatives */}
-            <div className="flex flex-col gap-8">
+            {/* Right: Initiatives + Events */}
+            <div className="flex flex-col gap-6">
+          {/* Community Initiatives — compact list */}
+          {(liveInitiatives === null || activeInitiatives.length > 0) && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Initiatives</h2>
+                  {initiativesAppInfo && (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                      {initiativesAppInfo.faviconUrl
+                        ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        : <Lightbulb className="w-3 h-3 text-purple-400" />
+                      }
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
+                    </div>
+                  )}
+                </div>
+                {activeInitiatives.length > 0 && (
+                  <button onClick={() => onNavigate('initiatives')} className={`${sectionLinkClass} text-xs`}>
+                    See all →
+                  </button>
+                )}
+              </div>
+
+              {liveInitiatives === null ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading…</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeInitiatives.map(initiative => {
+                    const memberCount = initiative.members?.length ?? 0;
+                    const iLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
+                    const iStyle = initiative.status === 'active'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                      : initiative.status === 'completed'
+                      ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                      : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+                    const iGradient = initiative.status === 'active'
+                      ? 'from-emerald-500/25 to-teal-500/20 dark:from-emerald-900/50 dark:to-teal-900/40'
+                      : initiative.status === 'completed'
+                      ? 'from-slate-300/60 to-slate-400/40 dark:from-zinc-700 dark:to-zinc-800'
+                      : 'from-amber-400/25 to-orange-400/20 dark:from-amber-900/50 dark:to-orange-900/40';
+                    return (
+                      <button
+                        key={initiative.id}
+                        onClick={() => onNavigate(`initiatives/${initiative.id}`)}
+                        className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-3.5 border border-slate-200 dark:border-zinc-800 hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
+                      >
+                        <div className={`w-12 h-12 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${!initiative.imageUrl ? `bg-gradient-to-br ${iGradient}` : ''}`}>
+                          {initiative.imageUrl
+                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            : <Lightbulb className="w-5 h-5 text-white/60" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1 leading-tight flex-1">{initiative.title}</h3>
+                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${iStyle}`}>{iLabel}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Users className="w-3 h-3 text-slate-400" />
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+                            <span className="font-mono text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto">{initiative.progress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Upcoming Events */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Upcoming Events</h2>
               <button
                 onClick={() => onNavigate('atlas')}
-                className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
+                className={`${sectionLinkClass} text-sm`}
               >
                 Atlas →
               </button>
@@ -1091,91 +1194,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   </div>
                 </button>
               ))}
-            </div>
-          </div>
-
-          {/* Community Initiatives — live from installed hub app */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Community Initiatives</h2>
-                {initiativesAppInfo && (
-                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-                    {initiativesAppInfo.faviconUrl
-                      ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : <Lightbulb className="w-3 h-3 text-purple-400" />
-                    }
-                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
-                  </div>
-                )}
-              </div>
-              {activeInitiatives.length > 0 && (
-                <button onClick={() => onNavigate('initiatives')} className="text-xs font-semibold text-purple-500 hover:text-purple-400 transition-colors">
-                  See all
-                </button>
-              )}
-            </div>
-
-            {liveInitiatives === null && (
-              <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Loading initiatives…</span>
-              </div>
-            )}
-
-            {liveInitiatives !== null && activeInitiatives.length === 0 && (
-              <div className="text-sm text-slate-400 dark:text-zinc-500 py-2">
-                No active initiatives yet.{' '}
-                <button onClick={() => onNavigate('initiatives')} className="text-purple-500 hover:underline">Start one</button>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {activeInitiatives.map(initiative => {
-                const memberCount = initiative.members?.length ?? 0;
-                const statusLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
-                const statusStyle = initiative.status === 'active'
-                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                  : initiative.status === 'completed'
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
-                  : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
-                return (
-                  <button
-                    key={initiative.id}
-                    onClick={() => onNavigate(`initiatives/${initiative.id}`)}
-                    className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0 overflow-hidden">
-                          {initiative.imageUrl
-                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
-                            : <Lightbulb className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                          }
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">{initiative.title}</h3>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-600 dark:text-slate-400">
-                            <Users className="w-3 h-3 shrink-0" />
-                            <span>{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
-                            <span>·</span>
-                            <div className="flex-1 max-w-[80px] h-1 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
-                            </div>
-                            <span>{initiative.progress}%</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusStyle}`}>
-                          {statusLabel}
-                        </span>
-                        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors" />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -1360,6 +1378,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </>
         )}
       </AnimatePresence>
+
+      {/* Feature request modal */}
+      {showRequestModal && (
+        <FeatureRequestModal
+          hubSlug={hubSlug}
+          onClose={() => setShowRequestModal(false)}
+        />
+      )}
 
       {/* Featured post detail modal */}
       {featuredPost && (
@@ -1546,56 +1572,70 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
   Icon: React.ElementType;
   iconBg: string;
   label: string;
+  barColor: string;
+  verbColor: string;
 }> = {
-  discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    label: 'Discussion' },
-  announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   label: 'Announcement' },
-  project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', label: 'Project' },
-  request:         { Icon: Users,         iconBg: 'bg-rose-500',    label: 'Request' },
-  file_shared:     { Icon: FolderOpen,    iconBg: 'bg-violet-500',  label: 'File Shared' },
-  neighbor_joined: { Icon: Users,         iconBg: 'bg-teal-500',    label: 'New Neighbor' },
-  pin_added:       { Icon: MapPin,        iconBg: 'bg-orange-500',  label: 'Atlas Pin' },
+  discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    label: 'Discussion',   barColor: 'bg-blue-500',   verbColor: 'text-blue-600 dark:text-blue-400' },
+  announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   label: 'Announcement', barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
+  project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', label: 'Project',      barColor: 'bg-emerald-500',verbColor: 'text-emerald-600 dark:text-emerald-400' },
+  request:         { Icon: Users,         iconBg: 'bg-rose-500',    label: 'Request',      barColor: 'bg-rose-500',   verbColor: 'text-rose-600 dark:text-rose-400' },
+  file_shared:     { Icon: FolderOpen,    iconBg: 'bg-amber-500',   label: 'File Shared',  barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
+  neighbor_joined: { Icon: Users,         iconBg: 'bg-violet-500',  label: 'New Neighbor', barColor: 'bg-violet-500', verbColor: 'text-violet-600 dark:text-violet-400' },
+  pin_added:       { Icon: MapPin,        iconBg: 'bg-indigo-500',  label: 'Atlas Pin',    barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
+};
+
+const ACTIVITY_LOCATION: Record<string, string> = {
+  feed:        'in Discussions',
+  files:       'in Files',
+  atlas:       'in Atlas',
+  neighbors:   'in Neighbors',
+  marketplace: 'in Exchange',
 };
 
 function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
   const cfg = ACTIVITY_CONFIG[item.type];
   const initial = item.actor.charAt(0).toUpperCase();
+  const location = ACTIVITY_LOCATION[item.navigateTo] ?? '';
 
   return (
     <button
       onClick={onClick}
-      className="min-w-[280px] w-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md transition-all text-left group"
+      className="w-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
     >
-      <div className="px-4 py-3 flex items-start gap-3 min-w-0">
-        {/* Left: type icon */}
-        <div className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>
-          <cfg.Icon className="w-4 h-4 text-white" />
-        </div>
+      {/* Left accent bar */}
+      <div className={`w-1 shrink-0 self-stretch ${cfg.barColor} rounded-l-xl`} />
 
-        {/* Center: content */}
-        <div className="flex-1 min-w-0">
-          {/* Row 1: actor · summary · timestamp */}
-          <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
-            {/* Actor avatar (personal) */}
-            {item.actorAvatarUrl ? (
-              <img
-                src={item.actorAvatarUrl}
-                alt={item.actor}
-                className="w-4 h-4 rounded-full object-cover shrink-0"
-                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-              />
-            ) : (
-              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
-                {initial}
-              </div>
-            )}
-            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 shrink-0 max-w-[6rem] truncate">{item.actor}</span>
-            <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0">·</span>
-            <span className="text-xs text-slate-400 dark:text-slate-500 truncate">{item.summary}</span>
-            <span className="text-xs text-slate-400 dark:text-slate-500 ml-auto pl-2 shrink-0 whitespace-nowrap">{timeAgo(item.timestamp)}</span>
+      <div className="flex items-start gap-3 px-4 py-3 flex-1 min-w-0">
+        {/* Avatar */}
+        {item.actorAvatarUrl ? (
+          <img
+            src={item.actorAvatarUrl}
+            alt={item.actor}
+            className="w-10 h-10 rounded-full object-cover shrink-0"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+            {initial}
           </div>
-          {/* Row 2: title */}
-          <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
-          {/* Row 3: CTA (if present) — own line so it never overlaps */}
+        )}
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Row 1: name + verb */}
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+            <span className="text-sm text-slate-800 dark:text-slate-200">{item.actor}</span>
+            <span className={`text-sm font-semibold ${cfg.verbColor}`}>{item.summary}</span>
+          </div>
+          {/* Row 2: location · timestamp */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {location && <span className="text-xs text-slate-500 dark:text-slate-400">{location}</span>}
+            {location && <span className="text-xs text-slate-400 dark:text-slate-500">·</span>}
+            <span className="font-mono text-xs text-slate-400 dark:text-slate-500">{timeAgo(item.timestamp)}</span>
+          </div>
+          {/* Row 3: title as caption */}
+          <p className="text-sm text-slate-700 dark:text-slate-300 mt-1 line-clamp-2 leading-snug">{item.title}</p>
+          {/* CTA */}
           {item.cta && (
             <div className="mt-1.5">
               <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
@@ -1604,6 +1644,9 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
             </div>
           )}
         </div>
+
+        {/* Chevron */}
+        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-1" />
       </div>
     </button>
   );

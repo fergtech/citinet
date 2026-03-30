@@ -103,6 +103,20 @@ class FeaturedService {
     return rowToItem(await res.json());
   }
 
+  async reorderFeatured(hubSlug: string, ids: string[]): Promise<void> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) throw new Error('Not connected to hub');
+    const res = await fetch(`${conn.baseUrl}/api/featured/reorder`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to reorder' }));
+      throw new Error((err as { error?: string }).error ?? 'Failed to reorder');
+    }
+  }
+
   async remove(hubSlug: string, id: string): Promise<void> {
     const conn = this.getConn(hubSlug);
     if (!conn) return;

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { featuredService } from '../services/featuredService';
+import { requestsService, type HubRequest, type RequestStatus } from '../services/requestsService';
 import type { HubMember, HubPost } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
@@ -13,7 +14,7 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -45,8 +46,18 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [customCaption, setCustomCaption] = useState('');
   const [customLabel, setCustomLabel] = useState('');
   const [customImageUrl, setCustomImageUrl] = useState('');
+  const [customImageFile, setCustomImageFile] = useState<File | null>(null);
+  const [customImagePreview, setCustomImagePreview] = useState('');
+  const [customImageMode, setCustomImageMode] = useState<'upload' | 'url'>('upload');
   const [customSaving, setCustomSaving] = useState(false);
   const [customError, setCustomError] = useState('');
+
+  function handleImageFileSelect(file: File) {
+    if (!file.type.startsWith('image/')) return;
+    if (customImagePreview) URL.revokeObjectURL(customImagePreview);
+    setCustomImageFile(file);
+    setCustomImagePreview(URL.createObjectURL(file));
+  }
 
   // isAdmin: explicit flag (new sessions) OR effectively-local hub (Mission 1).
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
@@ -116,6 +127,38 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     if (activeTab === 'apps') loadApps();
   }, [activeTab]);
 
+  // ── Requests tab state ───────────────────────────────────
+  const [hubRequests, setHubRequests] = useState<HubRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
+  const [requestNote, setRequestNote] = useState<Record<string, string>>({});
+
+  const loadRequests = async () => {
+    setRequestsLoading(true);
+    try {
+      const list = await requestsService.list(hubSlug ?? '');
+      setHubRequests(list);
+    } catch {}
+    setRequestsLoading(false);
+  };
+
+  const handleUpdateRequestStatus = async (id: string, status: RequestStatus) => {
+    setRequestUpdating(id);
+    try {
+      await requestsService.updateStatus(hubSlug ?? '', id, status, requestNote[id]?.trim() || undefined);
+      setHubRequests(prev => prev.map(r => r.id === id ? { ...r, status, adminNote: requestNote[id]?.trim() || r.adminNote } : r));
+      setExpandedRequest(null);
+    } catch {}
+    setRequestUpdating(null);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'requests') loadRequests();
+  }, [activeTab]);
+
+  const hubSlug = currentHub?.slug ?? '';
+
   const saveDescription = async () => {
     setDescriptionSaving(true);
     setDescriptionError('');
@@ -158,14 +201,25 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     }
   };
 
-  const handleToggleAdmin = async (member: HubMember) => {
+  const handleSetRole = async (member: HubMember, role: 'member' | 'moderator' | 'admin') => {
     if (!currentHub?.slug) return;
     setMemberActionId(member.user_id);
     try {
-      await hubService.toggleMemberAdmin(currentHub.slug, member.user_id, !member.is_admin);
-      setMembers(prev => prev.map(m => m.user_id === member.user_id ? { ...m, is_admin: !m.is_admin } : m));
+      const { headers, tunnelUrl } = (hubService as any).getAuthHeaders(currentHub.slug);
+      const res = await fetch(`${tunnelUrl}/api/members/${member.user_id}/role`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }));
+        throw new Error(err.error ?? 'Failed to update role');
+      }
+      setMembers(prev => prev.map(m =>
+        m.user_id === member.user_id ? { ...m, role, is_admin: role === 'admin' } : m
+      ));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update member');
+      alert(err instanceof Error ? err.message : 'Failed to update role');
     } finally {
       setMemberActionId(null);
     }
@@ -234,19 +288,39 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     }
   };
 
+  const handleReorder = async (index: number, direction: 'up' | 'down') => {
+    const swapIdx = direction === 'up' ? index - 1 : index + 1;
+    if (swapIdx < 0 || swapIdx >= featuredItems.length) return;
+    const newItems = [...featuredItems];
+    [newItems[index], newItems[swapIdx]] = [newItems[swapIdx], newItems[index]];
+    setFeaturedItems(newItems);
+    try {
+      await featuredService.reorderFeatured(currentHub!.slug, newItems.map(i => i.id));
+    } catch {
+      await loadFeatured(); // roll back on error
+    }
+  };
+
   const handleAddCustom = async () => {
     if (!currentHub?.slug || !customTitle.trim()) return;
     setCustomSaving(true);
     setCustomError('');
     try {
+      let imageUrl = customImageUrl.trim() || undefined;
+      if (customImageMode === 'upload' && customImageFile) {
+        const uploaded = await hubService.uploadFile(currentHub.slug, customImageFile, true);
+        imageUrl = hubService.getPublicFileUrl(currentHub.slug, uploaded.name) ?? undefined;
+      }
       await featuredService.addCustom(currentHub.slug, {
         title:         customTitle.trim(),
         caption:       customCaption.trim() || undefined,
         categoryLabel: customLabel.trim() || undefined,
-        imageUrl:      customImageUrl.trim() || undefined,
+        imageUrl,
       });
       setCustomTitle(''); setCustomCaption(''); setCustomLabel('');
-      setCustomImageUrl(''); setShowCustomForm(false);
+      setCustomImageUrl(''); setCustomImageFile(null);
+      if (customImagePreview) URL.revokeObjectURL(customImagePreview);
+      setCustomImagePreview(''); setShowCustomForm(false);
       await loadFeatured();
     } catch (err) {
       setCustomError(err instanceof Error ? err.message : 'Failed to add card');
@@ -304,10 +378,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           {/* Tabs */}
           <div className="flex gap-1 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
             {([
-              { id: 'info',     icon: <Settings className="w-4 h-4" />,    label: 'Hub Info' },
-              { id: 'featured', icon: <Star className="w-4 h-4" />,      label: 'Featured' },
-              { id: 'members',  icon: <Users className="w-4 h-4" />,     label: 'Members' },
-              { id: 'apps',     icon: <LayoutGrid className="w-4 h-4" />, label: 'Apps' },
+              { id: 'info',     icon: <Settings className="w-4 h-4" />,      label: 'Hub Info' },
+              { id: 'featured', icon: <Star className="w-4 h-4" />,          label: 'Featured' },
+              { id: 'members',  icon: <Users className="w-4 h-4" />,         label: 'Members' },
+              { id: 'apps',     icon: <LayoutGrid className="w-4 h-4" />,    label: 'Apps' },
+              { id: 'requests', icon: <ClipboardList className="w-4 h-4" />, label: 'Requests' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -486,14 +561,26 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               )}
 
               <div className="divide-y divide-slate-100 dark:divide-zinc-800">
-                {featuredItems.map(item => (
-                  <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className={`w-10 h-10 rounded-lg shrink-0 flex items-center justify-center ${
+                {featuredItems.map((item, index) => (
+                  <div key={item.id} className="flex items-center gap-2 px-4 py-3">
+                    {/* Thumbnail */}
+                    <div className={`w-10 h-10 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${
                       item.mediaType === 'gradient' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' :
                       item.mediaType === 'video' ? 'bg-zinc-800' : 'bg-slate-100 dark:bg-zinc-800'
                     }`}>
-                      <Star className="w-4 h-4 text-white" />
+                      {(item.imageUrl || item.mediaFileName) && item.mediaType === 'image' ? (
+                        <img
+                          src={item.imageUrl ?? hubService.getPublicFileUrl(currentHub?.slug ?? '', item.mediaFileName!) ?? ''}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <Star className="w-4 h-4 text-white" />
+                      )}
                     </div>
+
+                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
                       <p className="text-xs text-slate-400 dark:text-slate-500">
@@ -502,6 +589,28 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         {item.mediaType !== 'gradient' && ` · ${item.mediaType}`}
                       </p>
                     </div>
+
+                    {/* Up / Down */}
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        onClick={() => handleReorder(index, 'up')}
+                        disabled={index === 0}
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Move up"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleReorder(index, 'down')}
+                        disabled={index === featuredItems.length - 1}
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Move down"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Remove */}
                     <button
                       onClick={() => handleRemoveFeatured(item.id)}
                       className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 transition-colors shrink-0"
@@ -599,13 +708,58 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       placeholder="Category label (e.g. EVENT)"
                       className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
                     />
-                    <input
-                      type="url"
-                      value={customImageUrl}
-                      onChange={e => setCustomImageUrl(e.target.value)}
-                      placeholder="Image URL (optional — leave blank for gradient)"
-                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
-                    />
+                    {/* Image — upload or URL */}
+                    <div className="space-y-2">
+                      <div className="flex gap-1 p-0.5 bg-slate-100 dark:bg-zinc-800 rounded-lg">
+                        <button
+                          type="button"
+                          onClick={() => setCustomImageMode('upload')}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                          Upload image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomImageMode('url')}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                        >
+                          Image URL
+                        </button>
+                      </div>
+
+                      {customImageMode === 'upload' ? (
+                        customImagePreview ? (
+                          <div className="relative rounded-lg overflow-hidden h-32 bg-slate-100 dark:bg-zinc-800">
+                            <img src={customImagePreview} alt="" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => { setCustomImageFile(null); URL.revokeObjectURL(customImagePreview); setCustomImagePreview(''); }}
+                              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label
+                            className="flex flex-col items-center justify-center gap-2 h-28 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-purple-400 hover:bg-purple-50/30 dark:hover:bg-purple-900/10 transition-colors cursor-pointer"
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFileSelect(f); }}
+                          >
+                            <ImagePlus className="w-6 h-6 text-slate-400" />
+                            <span className="text-xs text-slate-500 dark:text-slate-400 text-center px-4">Drag an image here, or click to browse<br /><span className="text-slate-400 dark:text-zinc-500">Leave blank for a gradient background</span></span>
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFileSelect(f); }} />
+                          </label>
+                        )
+                      ) : (
+                        <input
+                          type="url"
+                          value={customImageUrl}
+                          onChange={e => setCustomImageUrl(e.target.value)}
+                          placeholder="https://… (optional — leave blank for gradient)"
+                          className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
+                        />
+                      )}
+                    </div>
                     {customError && <p className="text-xs text-red-500 dark:text-red-400">{customError}</p>}
                     <div className="flex gap-2">
                       <button
@@ -617,7 +771,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         Add card
                       </button>
                       <button
-                        onClick={() => { setShowCustomForm(false); setCustomError(''); }}
+                        onClick={() => { setShowCustomForm(false); setCustomError(''); setCustomImageFile(null); if (customImagePreview) URL.revokeObjectURL(customImagePreview); setCustomImagePreview(''); }}
                         className="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
                         Cancel
@@ -668,8 +822,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
             <div className="divide-y divide-slate-100 dark:divide-zinc-800">
               {members.map(member => {
-                const isSelf = member.user_id === currentUser?.hubUserId;
-                const busy = memberActionId === member.user_id;
+                const isSelf   = member.user_id === currentUser?.hubUserId;
+                const busy     = memberActionId === member.user_id;
+                const memRole  = member.role ?? (member.is_admin ? 'admin' : 'member');
                 return (
                   <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0 relative overflow-hidden">
@@ -679,15 +834,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
                           {member.username}
                           {isSelf && <span className="text-slate-400 dark:text-slate-500 font-normal"> (you)</span>}
                         </span>
-                        {member.is_admin && (
-                          <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0">
-                            <Crown className="w-3 h-3" />
-                            Admin
+                        {memRole === 'admin' && (
+                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0 font-semibold">
+                            <Crown className="w-2.5 h-2.5" /> Admin
+                          </span>
+                        )}
+                        {memRole === 'moderator' && (
+                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shrink-0 font-semibold">
+                            <Shield className="w-2.5 h-2.5" /> Mod
                           </span>
                         )}
                       </div>
@@ -697,29 +856,38 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         </span>
                       )}
                     </div>
-                    {currentUser?.isAdmin && (
+                    {currentUser?.isAdmin && !isSelf && (
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => handleToggleAdmin(member)}
-                          disabled={busy}
-                          title={member.is_admin ? 'Remove admin' : 'Make admin'}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            member.is_admin
-                              ? 'text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20'
-                              : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                          }`}
-                        >
-                          <Shield className="w-4 h-4" />
-                        </button>
-                        {!isSelf && (
-                          <button
-                            onClick={() => handleRemoveMember(member)}
-                            disabled={busy}
-                            title="Remove member"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                        {busy ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                        ) : (
+                          <>
+                            {memRole === 'member' && (
+                              <button
+                                onClick={() => handleSetRole(member, 'moderator')}
+                                title="Promote to moderator"
+                                className="px-2 py-1 rounded-lg text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                              >
+                                + Mod
+                              </button>
+                            )}
+                            {memRole === 'moderator' && (
+                              <button
+                                onClick={() => handleSetRole(member, 'member')}
+                                title="Remove moderator role"
+                                className="px-2 py-1 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                              >
+                                − Mod
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleRemoveMember(member)}
+                              title="Remove member"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     )}
@@ -835,6 +1003,170 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ─── Requests Tab ─── */}
+        {activeTab === 'requests' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Feature Requests</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Member-submitted suggestions for new functionality</p>
+              </div>
+              <button
+                onClick={loadRequests}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-400 ${requestsLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {requestsLoading ? (
+              <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Loading requests…</span>
+              </div>
+            ) : hubRequests.length === 0 ? (
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+                <ClipboardList className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-slate-400 dark:text-zinc-500">No suggestions yet</p>
+                <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">Members can submit feature requests from the dashboard</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {hubRequests.map(req => {
+                  const isExpanded = expandedRequest === req.id;
+                  const STATUS_COLORS: Record<RequestStatus, string> = {
+                    submitted:           'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',
+                    needs_clarification: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+                    under_review:        'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+                    approved:            'bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+                    building:            'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+                    shipped:             'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+                    declined:            'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400',
+                  };
+                  const PRIORITY_LABEL: Record<string, string> = {
+                    nice_to_have: 'Nice to have',
+                    important:    'Important',
+                    urgent:       'Urgent',
+                  };
+                  const STATUS_LABEL: Record<RequestStatus, string> = {
+                    submitted:           'Submitted',
+                    needs_clarification: 'Needs Clarification',
+                    under_review:        'Under Review',
+                    approved:            'Approved',
+                    building:            'Building',
+                    shipped:             'Shipped',
+                    declined:            'Declined',
+                  };
+                  return (
+                    <div key={req.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                      <button
+                        onClick={() => setExpandedRequest(isExpanded ? null : req.id)}
+                        className="w-full flex items-start gap-3 p-4 text-left hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[req.status]}`}>
+                              {STATUS_LABEL[req.status]}
+                            </span>
+                            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-medium">
+                              {PRIORITY_LABEL[req.priority] ?? req.priority}
+                            </span>
+                            {req.scope === 'all_hubs' && (
+                              <span className="text-[10px] text-indigo-500 font-medium">Network-wide</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-2">{req.problem}</p>
+                          {req.authorUsername && (
+                            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">by {req.authorUsername}</p>
+                          )}
+                        </div>
+                        <ChevronRight className={`w-4 h-4 text-slate-300 dark:text-zinc-600 shrink-0 mt-0.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-100 dark:border-zinc-800 p-4 space-y-4">
+                          {req.whoItHelps && (
+                            <div>
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Who it helps</p>
+                              <p className="text-sm text-slate-700 dark:text-slate-300">{req.whoItHelps}</p>
+                            </div>
+                          )}
+                          {req.expectedOutcome && (
+                            <div>
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Expected outcome</p>
+                              <p className="text-sm text-slate-700 dark:text-slate-300">{req.expectedOutcome}</p>
+                            </div>
+                          )}
+                          <div className="flex gap-4 flex-wrap text-xs text-slate-400 dark:text-zinc-500">
+                            <span>Data: <span className="text-slate-600 dark:text-zinc-300">{req.dataInvolved}</span></span>
+                            <span>Scope: <span className="text-slate-600 dark:text-zinc-300">{req.scope === 'hub_only' ? 'This hub' : 'All hubs'}</span></span>
+                          </div>
+
+                          {/* Admin note field */}
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Admin note (optional)</label>
+                            <textarea
+                              value={requestNote[req.id] ?? req.adminNote ?? ''}
+                              onChange={e => setRequestNote(prev => ({ ...prev, [req.id]: e.target.value }))}
+                              rows={2}
+                              placeholder="Add a note for the requester…"
+                              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-300 dark:placeholder-zinc-600 focus:outline-none focus:border-indigo-400 resize-none"
+                            />
+                          </div>
+
+                          {/* Linked poll chip */}
+                          {req.pollId && (
+                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/40">
+                              <Link className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                              <span className="text-xs text-indigo-700 dark:text-indigo-300 flex-1 min-w-0 truncate">
+                                Poll: {req.pollQuestion ?? 'Linked poll'}
+                              </span>
+                              {req.pollClosed === true && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                  req.status === 'approved'
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                                }`}>
+                                  {req.status === 'approved' ? 'PASSED' : 'CLOSED'}
+                                </span>
+                              )}
+                              {req.pollClosed === false && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                                  OPEN
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Status action buttons */}
+                          <div className="flex flex-wrap gap-2">
+                            {(['needs_clarification', 'under_review', 'approved', 'building', 'shipped', 'declined'] as RequestStatus[])
+                              .filter(s => s !== req.status)
+                              .map(s => (
+                                <button
+                                  key={s}
+                                  onClick={() => handleUpdateRequestStatus(req.id, s)}
+                                  disabled={requestUpdating === req.id}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${STATUS_COLORS[s]}`}
+                                >
+                                  {requestUpdating === req.id
+                                    ? <Loader2 className="w-3 h-3 animate-spin inline" />
+                                    : `Mark ${STATUS_LABEL[s]}`
+                                  }
+                                </button>
+                              ))
+                            }
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

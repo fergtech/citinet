@@ -84,6 +84,8 @@ export interface HubUser {
   authToken?: string;
   /** Whether this user is a hub admin */
   isAdmin?: boolean;
+  /** Platform governance role: 'admin' | 'moderator' | 'member' */
+  hubRole?: 'admin' | 'moderator' | 'member';
   /** User's email address */
   email?: string;
   /** User's location/neighborhood */
@@ -172,6 +174,7 @@ export interface HubMember {
   bio?: string | null;
   tags?: string[] | null;
   is_admin: boolean;
+  role: 'admin' | 'moderator' | 'member';
   created_at: string;
   avatar_url?: string | null;
   profile_headline?: string | null;

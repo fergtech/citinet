@@ -1,5 +1,5 @@
 /**
- * Citinet Hub API — Mission 1
+ * Citinet Hub API — Mission 1 + Governance (Tier 1)
  *
  * Endpoints:
  *   GET    /health                        — readiness probe
@@ -262,6 +262,51 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS website                TEXT`);
     await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS last_seen_at          TIMESTAMPTZ`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_users_last_seen ON hub_users(last_seen_at)`);
+    // Governance — role system
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'member'`);
+    await client.query(`UPDATE hub_users SET role = 'admin' WHERE is_admin = TRUE AND role = 'member'`);
+    // Governance — moderation log
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_mod_log (
+        id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        actor_id    UUID        REFERENCES hub_users(id) ON DELETE SET NULL,
+        action_type VARCHAR(50) NOT NULL,
+        target_type VARCHAR(20),
+        target_id   TEXT,
+        target_name TEXT,
+        reason      TEXT,
+        meta        JSONB,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_mod_log_created ON hub_mod_log(created_at DESC)`);
+    // Governance — polls
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_polls (
+        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        question   TEXT        NOT NULL,
+        options    JSONB       NOT NULL DEFAULT '[]',
+        created_by UUID        REFERENCES hub_users(id) ON DELETE SET NULL,
+        closes_at  TIMESTAMPTZ,
+        closed     BOOLEAN     NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_poll_votes (
+        id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        poll_id      UUID        NOT NULL REFERENCES hub_polls(id) ON DELETE CASCADE,
+        voter_id     UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        option_index INT         NOT NULL,
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(poll_id, voter_id)
+      )
+    `);
+    // Governance linkage migrations
+    await client.query(`ALTER TABLE hub_polls    ADD COLUMN IF NOT EXISTS request_id  UUID REFERENCES hub_requests(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE hub_polls    ADD COLUMN IF NOT EXISTS quorum_pct  INT  NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE hub_polls    ADD COLUMN IF NOT EXISTS pass_pct    INT  NOT NULL DEFAULT 50`);
+    await client.query(`ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS poll_id     UUID REFERENCES hub_polls(id)    ON DELETE SET NULL`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS logo_file_name TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_mode TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
@@ -317,7 +362,7 @@ async function authenticate(req, res, next) {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.is_admin
+      `SELECT u.id, u.username, u.is_admin, u.role
        FROM hub_sessions s
        JOIN hub_users u ON s.user_id = u.id
        WHERE s.token = $1`,
@@ -331,6 +376,22 @@ async function authenticate(req, res, next) {
   } catch {
     res.status(500).json({ error: 'Auth check failed' });
   }
+}
+
+// ── Governance helpers ────────────────────────────────────
+
+/** True for admins AND moderators — used for content moderation gates */
+function isMod(user) {
+  return user.role === 'admin' || user.role === 'moderator' || user.is_admin === true;
+}
+
+/** Write an immutable mod-log entry. Fire-and-forget safe. */
+async function logMod(actorId, actionType, targetType, targetId, targetName, reason, meta) {
+  return pool.query(
+    `INSERT INTO hub_mod_log (actor_id, action_type, target_type, target_id, target_name, reason, meta)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [actorId ?? null, actionType, targetType ?? null, targetId ? String(targetId) : null, targetName ?? null, reason ?? null, meta ? JSON.stringify(meta) : null]
+  ).catch(err => console.error('logMod error:', err));
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -485,10 +546,10 @@ app.post('/api/auth/register', async (req, res) => {
     const isFirst = parseInt(countRes.rows[0].c, 10) === 0;
 
     const result = await pool.query(
-      `INSERT INTO hub_users (username, email, password_hash, is_admin)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, username, is_admin, avatar_url`,
-      [username.trim().toLowerCase(), email || '', hash, isFirst]
+      `INSERT INTO hub_users (username, email, password_hash, is_admin, role)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, username, is_admin, role, avatar_url`,
+      [username.trim().toLowerCase(), email || '', hash, isFirst, isFirst ? 'admin' : 'member']
     );
 
     const user = result.rows[0];
@@ -503,6 +564,7 @@ app.post('/api/auth/register', async (req, res) => {
       userId: user.id,
       username: user.username,
       isAdmin: user.is_admin,
+      role:    user.role,
       avatar_url:   user.avatar_url   || null,
       display_name: user.display_name || null,
       location:     user.location     || null,
@@ -547,6 +609,7 @@ app.post('/api/auth/login', async (req, res) => {
       userId: user.id,
       username: user.username,
       isAdmin: user.is_admin,
+      role:    user.role ?? (user.is_admin ? 'admin' : 'member'),
       avatar_url:   user.avatar_url   || null,
       display_name: user.display_name || null,
       location:     user.location     || null,
@@ -768,12 +831,45 @@ app.patch('/api/members/:id/admin', authenticate, async (req, res) => {
   }
 });
 
+// Set member role (admin only)
+app.patch('/api/members/:id/role', authenticate, async (req, res) => {
+  if (req.user.role !== 'admin' && !req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const targetId = req.params.id;
+  const { role } = req.body;
+  const VALID_ROLES = ['member', 'moderator', 'admin'];
+  if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+  if (role !== 'admin' && targetId === req.user.id) {
+    const { rows } = await pool.query(`SELECT COUNT(*) AS c FROM hub_users WHERE role = 'admin' OR is_admin = TRUE`);
+    if (parseInt(rows[0].c, 10) <= 1) return res.status(400).json({ error: 'Cannot demote the last admin' });
+  }
+  try {
+    const { rows: target } = await pool.query('SELECT username, role FROM hub_users WHERE id = $1', [targetId]);
+    if (!target[0]) return res.status(404).json({ error: 'Member not found' });
+    const prevRole = target[0].role;
+    const { rows } = await pool.query(
+      `UPDATE hub_users SET role = $1, is_admin = ($1 = 'admin'), updated_at = NOW() WHERE id = $2
+       RETURNING id, username, role, is_admin`,
+      [role, targetId]
+    );
+    const action = role === 'moderator' ? 'promote_moderator'
+                 : prevRole === 'moderator' ? 'demote_moderator'
+                 : role === 'admin' ? 'promote_admin' : 'demote_admin';
+    logMod(req.user.id, action, 'user', targetId, target[0].username, null, { from: prevRole, to: role });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Set role error:', err);
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
 // Remove a member (admin only, cannot remove yourself)
 app.delete('/api/members/:id', authenticate, async (req, res) => {
-  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  if (!req.user.is_admin && req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot remove yourself' });
   try {
+    const { rows } = await pool.query('SELECT username FROM hub_users WHERE id = $1', [req.params.id]);
     await pool.query('DELETE FROM hub_users WHERE id = $1', [req.params.id]);
+    logMod(req.user.id, 'remove_member', 'user', req.params.id, rows[0]?.username ?? null, null, null);
     res.sendStatus(204);
   } catch (err) {
     console.error('Remove member error:', err);
@@ -1442,14 +1538,21 @@ app.patch('/api/posts/:id', authenticate, async (req, res) => {
   }
 });
 
-// Delete a post (author or admin)
+// Delete a post (author, admin, or moderator)
 app.delete('/api/posts/:id', authenticate, async (req, res) => {
+  const canMod = isMod(req.user);
   try {
-    const result = await pool.query(
-      `DELETE FROM hub_posts WHERE id = $1 AND (author_id = $2 OR $3 = true) RETURNING id`,
-      [req.params.id, req.user.id, req.user.is_admin]
+    const { rows: post } = await pool.query(
+      `SELECT p.id, p.title, p.author_id, u.username AS author_username
+       FROM hub_posts p LEFT JOIN hub_users u ON p.author_id = u.id WHERE p.id = $1`,
+      [req.params.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
+    if (!post[0]) return res.status(404).json({ error: 'Post not found' });
+    if (post[0].author_id !== req.user.id && !canMod) return res.status(403).json({ error: 'Not authorised' });
+    await pool.query('DELETE FROM hub_posts WHERE id = $1', [req.params.id]);
+    if (post[0].author_id !== req.user.id) {
+      logMod(req.user.id, 'delete_post', 'post', req.params.id, post[0].title ?? null, null, { author: post[0].author_username });
+    }
     res.sendStatus(204);
   } catch (err) {
     console.error('Delete post error:', err);
@@ -1579,9 +1682,9 @@ app.get('/api/featured', authenticate, async (_req, res) => {
   }
 });
 
-// Pin a post or add a custom card (admin only)
+// Pin a post or add a custom card (admin or moderator)
 app.post('/api/featured', authenticate, async (req, res) => {
-  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
   const { type = 'post', ref_id, title, caption, category_label, image_url } = req.body || {};
 
   try {
@@ -1624,6 +1727,7 @@ app.post('/api/featured', authenticate, async (req, res) => {
       [type, ref_id || null, resolvedTitle, resolvedCaption, resolvedLabel,
        image_url || null, displayOrder, req.user.id]
     );
+    logMod(req.user.id, 'pin_featured', 'featured', rows[0].id, resolvedTitle, null, { type });
     res.json(rows[0]);
   } catch (err) {
     console.error('Create featured error:', err);
@@ -1631,18 +1735,379 @@ app.post('/api/featured', authenticate, async (req, res) => {
   }
 });
 
-// Remove a featured item (admin only)
+// Remove a featured item (admin or moderator)
 app.delete('/api/featured/:id', authenticate, async (req, res) => {
-  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
   try {
     const { rows } = await pool.query(
-      'DELETE FROM hub_featured WHERE id = $1 RETURNING id', [req.params.id]
+      'DELETE FROM hub_featured WHERE id = $1 RETURNING id, title', [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Featured item not found' });
+    logMod(req.user.id, 'remove_featured', 'featured', req.params.id, rows[0].title ?? null, null, null);
     res.sendStatus(204);
   } catch (err) {
     console.error('Delete featured error:', err);
     res.status(500).json({ error: 'Failed to delete featured item' });
+  }
+});
+
+app.patch('/api/featured/reorder', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'ids must be an array of strings' });
+  }
+  try {
+    await Promise.all(
+      ids.map((id, index) =>
+        pool.query('UPDATE hub_featured SET display_order = $1 WHERE id = $2', [index, id])
+      )
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Reorder featured error:', err);
+    res.status(500).json({ error: 'Failed to reorder' });
+  }
+});
+
+// ── Feature requests routes ────────────────────────────────
+
+// Ensure hub_requests table exists
+pool.query(`
+  CREATE TABLE IF NOT EXISTS hub_requests (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    author_id       UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+    problem         TEXT NOT NULL,
+    who_it_helps    TEXT,
+    expected_outcome TEXT,
+    data_involved   TEXT NOT NULL DEFAULT 'none',
+    scope           TEXT NOT NULL DEFAULT 'hub_only',
+    priority        TEXT NOT NULL DEFAULT 'nice_to_have',
+    status          TEXT NOT NULL DEFAULT 'submitted',
+    admin_note      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`).catch(err => console.error('hub_requests table creation error:', err));
+
+// Submit a feature request (any authenticated user)
+app.post('/api/requests', authenticate, async (req, res) => {
+  const { problem, who_it_helps, expected_outcome, data_involved, scope, priority } = req.body || {};
+  if (!problem?.trim()) return res.status(400).json({ error: 'problem is required' });
+
+  const VALID_DATA     = ['none', 'public', 'private'];
+  const VALID_SCOPE    = ['hub_only', 'all_hubs'];
+  const VALID_PRIORITY = ['nice_to_have', 'important', 'urgent'];
+
+  if (data_involved && !VALID_DATA.includes(data_involved))
+    return res.status(400).json({ error: `data_involved must be one of: ${VALID_DATA.join(', ')}` });
+  if (scope && !VALID_SCOPE.includes(scope))
+    return res.status(400).json({ error: `scope must be one of: ${VALID_SCOPE.join(', ')}` });
+  if (priority && !VALID_PRIORITY.includes(priority))
+    return res.status(400).json({ error: `priority must be one of: ${VALID_PRIORITY.join(', ')}` });
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_requests (author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority, status, admin_note, created_at, updated_at,
+                 (SELECT username FROM hub_users WHERE id = $1) AS author_username`,
+      [
+        req.user.id,
+        problem.trim(),
+        who_it_helps?.trim() || null,
+        expected_outcome?.trim() || null,
+        data_involved || 'none',
+        scope || 'hub_only',
+        priority || 'nice_to_have',
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Submit request error:', err);
+    res.status(500).json({ error: 'Failed to submit request' });
+  }
+});
+
+// List all requests (admin only)
+app.get('/api/requests', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.author_id, r.problem, r.who_it_helps, r.expected_outcome,
+              r.data_involved, r.scope, r.priority, r.status, r.admin_note,
+              r.poll_id, r.created_at, r.updated_at, u.username AS author_username,
+              p.question AS poll_question, p.closed AS poll_closed,
+              p.quorum_pct, p.pass_pct
+       FROM hub_requests r
+       LEFT JOIN hub_users u  ON r.author_id = u.id
+       LEFT JOIN hub_polls p  ON r.poll_id   = p.id
+       ORDER BY
+         CASE r.priority WHEN 'urgent' THEN 0 WHEN 'important' THEN 1 ELSE 2 END,
+         r.created_at DESC`
+    );
+    res.json({ requests: rows });
+  } catch (err) {
+    console.error('List requests error:', err);
+    res.status(500).json({ error: 'Failed to list requests' });
+  }
+});
+
+// Update request status (admin or moderator)
+app.patch('/api/requests/:id', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  const { status, admin_note } = req.body || {};
+  const VALID_STATUS = ['submitted', 'needs_clarification', 'under_review', 'approved', 'building', 'shipped', 'declined'];
+  if (status && !VALID_STATUS.includes(status))
+    return res.status(400).json({ error: `status must be one of: ${VALID_STATUS.join(', ')}` });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_requests
+       SET status = COALESCE($1, status),
+           admin_note = COALESCE($2, admin_note),
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [status || null, admin_note !== undefined ? admin_note : null, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Request not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Update request error:', err);
+    res.status(500).json({ error: 'Failed to update request' });
+  }
+});
+
+// ── Moderation log routes ─────────────────────────────────
+
+// List mod log (all authenticated members — public governance record)
+app.get('/api/mod-log', authenticate, async (req, res) => {
+  const limit  = Math.min(parseInt(req.query.limit  ?? '50', 10), 100);
+  const offset = parseInt(req.query.offset ?? '0', 10);
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.id, l.action_type, l.target_type, l.target_id, l.target_name,
+              l.reason, l.meta, l.created_at,
+              u.id AS actor_id, u.username AS actor_username, u.avatar_url AS actor_avatar_url
+       FROM hub_mod_log l
+       LEFT JOIN hub_users u ON l.actor_id = u.id
+       ORDER BY l.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    const { rows: total } = await pool.query('SELECT COUNT(*) AS c FROM hub_mod_log');
+    res.json({ entries: rows, total: parseInt(total[0].c, 10) });
+  } catch (err) {
+    console.error('Mod log error:', err);
+    res.status(500).json({ error: 'Failed to load mod log' });
+  }
+});
+
+// ── Polls routes ──────────────────────────────────────────
+
+// Helper: compute outcome of a closed poll (null = no quorum, true = passed, false = failed)
+function computePollOutcome(vote_counts, total_votes, member_count, quorum_pct, pass_pct) {
+  if (quorum_pct > 0 && member_count > 0) {
+    const needed = Math.ceil(member_count * quorum_pct / 100);
+    if (total_votes < needed) return null; // quorum not met
+  }
+  if (total_votes === 0) return null;
+  const maxVotes = Math.max(...vote_counts);
+  const leadingPct = Math.round((maxVotes / total_votes) * 100);
+  return leadingPct >= pass_pct;
+}
+
+// Helper: after a vote, check thresholds and auto-close + advance request if passed
+async function checkPollThreshold(pollId) {
+  try {
+    const { rows: polls } = await pool.query(
+      `SELECT p.id, p.question, p.options, p.quorum_pct, p.pass_pct, p.request_id, p.closed
+       FROM hub_polls p WHERE p.id = $1`, [pollId]
+    );
+    const poll = polls[0];
+    if (!poll || poll.closed) return;
+
+    const { rows: votes } = await pool.query(
+      `SELECT option_index FROM hub_poll_votes WHERE poll_id = $1`, [pollId]
+    );
+    const { rows: members } = await pool.query(`SELECT COUNT(*) AS c FROM hub_users`);
+    const memberCount = parseInt(members[0].c, 10);
+    const totalVotes = votes.length;
+    const voteCounts = Array.from({ length: poll.options.length }, (_, i) =>
+      votes.filter(v => v.option_index === i).length
+    );
+
+    // Only auto-close if quorum is set AND met, or if pass_pct is 100 (unanimous required)
+    if (poll.quorum_pct === 0) return; // no auto-close without a quorum target
+    const needed = Math.ceil(memberCount * poll.quorum_pct / 100);
+    if (totalVotes < needed) return; // quorum not yet met
+
+    const outcome = computePollOutcome(voteCounts, totalVotes, memberCount, poll.quorum_pct, poll.pass_pct);
+    if (outcome === null) return;
+
+    // Close the poll
+    await pool.query(`UPDATE hub_polls SET closed = TRUE WHERE id = $1`, [pollId]);
+    logMod(null, 'close_poll', 'poll', pollId, poll.question, 'Auto-closed: quorum reached', { outcome, total_votes: totalVotes, member_count: memberCount });
+
+    // Advance linked request if passed
+    if (poll.request_id && outcome === true) {
+      await pool.query(
+        `UPDATE hub_requests SET status = 'approved', updated_at = NOW() WHERE id = $1 AND status NOT IN ('shipped','declined','approved')`,
+        [poll.request_id]
+      );
+      logMod(null, 'approve_request', 'request', poll.request_id, null, 'Auto-approved: linked poll passed', { poll_id: pollId });
+    }
+  } catch (err) {
+    console.error('checkPollThreshold error:', err);
+  }
+}
+
+// Create a poll (admin or moderator)
+app.post('/api/polls', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  const { question, options, closes_at, request_id, quorum_pct, pass_pct } = req.body || {};
+  if (!question?.trim()) return res.status(400).json({ error: 'question is required' });
+  if (!Array.isArray(options) || options.length < 2 || options.length > 5)
+    return res.status(400).json({ error: 'options must be an array of 2–5 strings' });
+  if (options.some(o => typeof o !== 'string' || !o.trim()))
+    return res.status(400).json({ error: 'All options must be non-empty strings' });
+  const qPct  = typeof quorum_pct === 'number' ? Math.min(100, Math.max(0, quorum_pct)) : 0;
+  const pPct  = typeof pass_pct   === 'number' ? Math.min(100, Math.max(1, pass_pct))   : 50;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_polls (question, options, created_by, closes_at, request_id, quorum_pct, pass_pct)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, question, options, created_by, closes_at, closed, created_at, request_id, quorum_pct, pass_pct`,
+      [question.trim(), JSON.stringify(options.map(o => o.trim())), req.user.id, closes_at || null, request_id || null, qPct, pPct]
+    );
+    // Back-link: update request with this poll_id
+    if (request_id) {
+      await pool.query(`UPDATE hub_requests SET poll_id = $1 WHERE id = $2`, [rows[0].id, request_id]);
+    }
+    logMod(req.user.id, 'create_poll', 'poll', rows[0].id, question.trim(), null, { request_id: request_id || null, quorum_pct: qPct, pass_pct: pPct });
+    res.status(201).json({ ...rows[0], vote_counts: options.map(() => 0), my_vote: null, total_votes: 0, passed: null });
+  } catch (err) {
+    console.error('Create poll error:', err);
+    res.status(500).json({ error: 'Failed to create poll' });
+  }
+});
+
+// List polls with vote counts + caller's own vote + outcome
+app.get('/api/polls', authenticate, async (req, res) => {
+  try {
+    const { rows: polls } = await pool.query(
+      `SELECT p.id, p.question, p.options, p.created_by, p.closes_at, p.closed,
+              p.created_at, p.request_id, p.quorum_pct, p.pass_pct,
+              u.username AS created_by_username,
+              r.problem  AS request_problem
+       FROM hub_polls p
+       LEFT JOIN hub_users    u ON p.created_by  = u.id
+       LEFT JOIN hub_requests r ON p.request_id  = r.id
+       ORDER BY p.created_at DESC`
+    );
+    if (polls.length === 0) return res.json({ polls: [] });
+
+    const pollIds = polls.map(p => p.id);
+    const { rows: allVotes } = await pool.query(
+      `SELECT poll_id, option_index, voter_id FROM hub_poll_votes WHERE poll_id = ANY($1)`,
+      [pollIds]
+    );
+    const { rows: members } = await pool.query(`SELECT COUNT(*) AS c FROM hub_users`);
+    const memberCount = parseInt(members[0].c, 10);
+
+    const result = polls.map(poll => {
+      const votes = allVotes.filter(v => v.poll_id === poll.id);
+      const vote_counts = Array.from({ length: poll.options.length }, (_, i) =>
+        votes.filter(v => v.option_index === i).length
+      );
+      const myVote = votes.find(v => v.voter_id === req.user.id);
+      const isClosed = poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date());
+      const passed   = isClosed
+        ? computePollOutcome(vote_counts, votes.length, memberCount, poll.quorum_pct, poll.pass_pct)
+        : null;
+      return {
+        ...poll,
+        vote_counts,
+        total_votes:  votes.length,
+        member_count: memberCount,
+        my_vote:      myVote != null ? myVote.option_index : null,
+        passed,
+      };
+    });
+    res.json({ polls: result });
+  } catch (err) {
+    console.error('List polls error:', err);
+    res.status(500).json({ error: 'Failed to list polls' });
+  }
+});
+
+// Vote on a poll (any member, one vote per poll — upsert to allow changing)
+app.post('/api/polls/:id/vote', authenticate, async (req, res) => {
+  const { option_index } = req.body || {};
+  if (typeof option_index !== 'number' || option_index < 0)
+    return res.status(400).json({ error: 'option_index must be a non-negative integer' });
+  try {
+    const { rows: poll } = await pool.query(
+      'SELECT id, options, closed, closes_at, quorum_pct FROM hub_polls WHERE id = $1', [req.params.id]
+    );
+    if (!poll[0]) return res.status(404).json({ error: 'Poll not found' });
+    if (poll[0].closed || (poll[0].closes_at && new Date(poll[0].closes_at) < new Date()))
+      return res.status(400).json({ error: 'Poll is closed' });
+    if (option_index >= poll[0].options.length)
+      return res.status(400).json({ error: 'Invalid option_index' });
+    await pool.query(
+      `INSERT INTO hub_poll_votes (poll_id, voter_id, option_index)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (poll_id, voter_id) DO UPDATE SET option_index = $3, created_at = NOW()`,
+      [req.params.id, req.user.id, option_index]
+    );
+    // Fire-and-forget threshold check
+    if (poll[0].quorum_pct > 0) checkPollThreshold(req.params.id);
+    res.json({ ok: true, option_index });
+  } catch (err) {
+    console.error('Vote error:', err);
+    res.status(500).json({ error: 'Failed to record vote' });
+  }
+});
+
+// Close a poll manually (admin or moderator)
+app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_polls SET closed = TRUE WHERE id = $1 RETURNING id, question, request_id, quorum_pct, pass_pct`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Poll not found' });
+
+    // Compute outcome and advance linked request if passed
+    const { rows: votes } = await pool.query(`SELECT option_index FROM hub_poll_votes WHERE poll_id = $1`, [req.params.id]);
+    const { rows: members } = await pool.query(`SELECT COUNT(*) AS c FROM hub_users`);
+    const memberCount = parseInt(members[0].c, 10);
+    const voteCounts = Array.from({ length: 0 }, () => 0); // placeholder — recomputed below
+    const totalVotes = votes.length;
+    const poll = rows[0];
+    const optionCountRes = await pool.query(`SELECT options FROM hub_polls WHERE id = $1`, [req.params.id]);
+    const optionCount = (optionCountRes.rows[0]?.options ?? []).length;
+    const fullCounts = Array.from({ length: optionCount }, (_, i) =>
+      votes.filter(v => v.option_index === i).length
+    );
+    const outcome = computePollOutcome(fullCounts, totalVotes, memberCount, poll.quorum_pct, poll.pass_pct);
+
+    logMod(req.user.id, 'close_poll', 'poll', req.params.id, poll.question, null, { outcome, total_votes: totalVotes });
+
+    if (poll.request_id && outcome === true) {
+      await pool.query(
+        `UPDATE hub_requests SET status = 'approved', updated_at = NOW() WHERE id = $1 AND status NOT IN ('shipped','declined','approved')`,
+        [poll.request_id]
+      );
+      logMod(req.user.id, 'approve_request', 'request', poll.request_id, null, 'Poll passed', { poll_id: req.params.id });
+    }
+
+    res.json({ ok: true, passed: outcome });
+  } catch (err) {
+    console.error('Close poll error:', err);
+    res.status(500).json({ error: 'Failed to close poll' });
   }
 });
 

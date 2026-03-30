@@ -191,6 +191,7 @@ class HubService {
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
       isAdmin: result.isAdmin === true,
+      hubRole: result.role ?? (result.isAdmin ? 'admin' : 'member'),
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
@@ -238,6 +239,7 @@ class HubService {
       hubUserId: result.userId || result.user_id,
       authToken: result.token,
       isAdmin: result.isAdmin === true,
+      hubRole: result.role ?? (result.isAdmin ? 'admin' : 'member'),
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
@@ -744,9 +746,10 @@ class HubService {
     const rawMembers: any[] = Array.isArray(data) ? data : (data.members || []);
 
     return rawMembers.map((m: any) => ({
-      user_id: m.user_id || m.id || m.userId || '',
-      username: m.username || m.name || m.display_name || 'Unknown',
-      is_admin: Boolean(m.is_admin || m.isAdmin || false),
+      user_id:   m.user_id || m.id || m.userId || '',
+      username:  m.username || m.name || m.display_name || 'Unknown',
+      is_admin:  Boolean(m.is_admin || m.isAdmin || false),
+      role:      (m.role as 'admin' | 'moderator' | 'member') ?? (m.is_admin ? 'admin' : 'member'),
       created_at: m.created_at || m.createdAt || m.joined_at || '',
     }));
   }

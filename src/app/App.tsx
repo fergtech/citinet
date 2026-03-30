@@ -24,6 +24,8 @@ import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
+import { PollsScreen } from './components/PollsScreen';
+import { ModLogScreen } from './components/ModLogScreen';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -216,6 +218,16 @@ function HubMessagesRoute() {
 function HubNetworkRoute() {
   const navigate = useNavigate();
   return <NetworkScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+}
+
+function HubPollsRoute() {
+  const navigate = useNavigate();
+  return <PollsScreen onBack={() => navigate(-1)} />;
+}
+
+function HubModLogRoute() {
+  const navigate = useNavigate();
+  return <ModLogScreen onBack={() => navigate(-1)} />;
 }
 
 function HubMarketplaceRoute() {
@@ -619,6 +631,8 @@ function HubModeRoutes() {
       <Route path="/profile/:userId" element={<HubGuard><HubProfileRoute /></HubGuard>} />
       <Route path="/hub-management" element={<HubGuard><HubManagementRoute /></HubGuard>} />
       <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
+      <Route path="/polls" element={<HubGuard><HubPollsRoute /></HubGuard>} />
+      <Route path="/mod-log" element={<HubGuard><HubModLogRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
