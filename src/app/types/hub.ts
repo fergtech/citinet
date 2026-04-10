@@ -294,7 +294,11 @@ export interface HubSpace {
   name: string;
   description?: string | null;
   visibility: 'public' | 'private' | 'invite-only';
-  banner_file_name?: string | null;
+  banner_mode?: 'image' | 'solid' | 'gradient' | null;
+  banner_color?: string | null;
+  banner_gradient_from?: string | null;
+  banner_gradient_to?: string | null;
+  banner_image_file_name?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at?: string;
@@ -303,6 +307,19 @@ export interface HubSpace {
   my_role?: 'owner' | 'admin' | 'moderator' | 'member' | null;
   /** Caller's membership status */
   my_status?: 'active' | 'pending' | 'invited' | null;
+}
+
+/** A file attached to a space post */
+export interface HubSpaceFile {
+  id: string;
+  file_name: string;
+  file_key: string;
+  mime_type?: string;
+  size_bytes?: number;
+  uploaded_at?: string;
+  uploaded_by?: string;
+  post_id?: string;
+  post_title?: string;
 }
 
 /** A member of a space */

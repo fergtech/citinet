@@ -1,4 +1,4 @@
-import type { HubSpace, HubSpaceMember, HubPost } from '../types/hub';
+import type { HubSpace, HubSpaceMember, HubPost, HubSpaceFile } from '../types/hub';
 import { hubService } from './hubService';
 
 class SpacesService {
@@ -45,7 +45,7 @@ class SpacesService {
     return res.json();
   }
 
-  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string }>): Promise<HubSpace> {
+  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string; banner_mode: string; banner_color: string; banner_gradient_from: string; banner_gradient_to: string }>): Promise<HubSpace> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}`, {
       method: 'PATCH',
@@ -145,18 +145,54 @@ class SpacesService {
     return res.json();
   }
 
-  async createPost(hubSlug: string, spaceSlug: string, data: { title: string; body?: string; category?: string }): Promise<HubPost> {
+  async createPost(hubSlug: string, spaceSlug: string, data: { title: string; body?: string; category?: string; mediaFile?: File }): Promise<HubPost> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
+    const formData = new FormData();
+    formData.append('title', data.title);
+    if (data.body) formData.append('body', data.body);
+    if (data.category) formData.append('category', data.category);
+    if (data.mediaFile) formData.append('media', data.mediaFile);
     const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}/posts`, {
       method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      headers, // no Content-Type — let browser set multipart boundary
+      body: formData,
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `Failed to create post`);
     }
     return res.json();
+  }
+
+  async getFiles(hubSlug: string, spaceSlug: string): Promise<HubSpaceFile[]> {
+    const { headers, baseUrl } = this.getAuth(hubSlug);
+    const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}/files`, { headers });
+    if (!res.ok) throw new Error(`Failed to load files`);
+    return res.json();
+  }
+
+  async uploadBanner(hubSlug: string, spaceSlug: string, file: File): Promise<{ file_name: string }> {
+    const { headers, baseUrl } = this.getAuth(hubSlug);
+    const formData = new FormData();
+    formData.append('banner', file);
+    const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}/banner`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Failed to upload banner`);
+    }
+    return res.json();
+  }
+
+  getSpaceFileUrl(_hubSlug: string, spaceSlug: string, fileName: string, conn: { tunnelUrl: string; authToken?: string }): string {
+    return `${conn.tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(fileName)}`;
+  }
+
+  getSpaceBannerUrl(tunnelUrl: string, spaceSlug: string): string {
+    return `${tunnelUrl}/api/spaces/${spaceSlug}/banner`;
   }
 
   async deleteSpace(hubSlug: string, spaceSlug: string): Promise<void> {

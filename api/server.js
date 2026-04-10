@@ -357,9 +357,15 @@ async function initDb() {
         PRIMARY KEY (space_id, user_id)
       )
     `);
-    await client.query(`ALTER TABLE hub_posts ADD COLUMN IF NOT EXISTS space_id        UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`);
-    await client.query(`ALTER TABLE hub_posts ADD COLUMN IF NOT EXISTS shared_to_feed  BOOLEAN DEFAULT FALSE`);
+    await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS space_id           UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS shared_to_feed     BOOLEAN DEFAULT FALSE`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_posts_space_id ON hub_posts(space_id)`);
+    await client.query(`ALTER TABLE hub_files  ADD COLUMN IF NOT EXISTS space_id           UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_mode        TEXT`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_color       TEXT`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_to   TEXT`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
   } finally {
     client.release();
   }
@@ -1236,6 +1242,7 @@ app.get('/api/files', authenticate, async (req, res) => {
        FROM hub_files
        WHERE (owner_id = $1 OR is_public = true)
          AND file_name NOT LIKE 'bg-%'
+         AND space_id IS NULL
        ORDER BY uploaded_at DESC`,
       [req.user.id]
     );
@@ -1448,6 +1455,54 @@ app.get('/api/public/files/:filename', async (req, res) => {
   } catch (err) {
     console.error('Public file error:', err);
     res.status(500).json({ error: 'Failed to load file' });
+  }
+});
+
+// GET /api/spaces/:slug/files/:filename — serve a space-scoped file (auth + membership required)
+app.get('/api/spaces/:slug/files/:filename', authenticate, async (req, res) => {
+  const fileName = decodeURIComponent(req.params.filename);
+  try {
+    const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
+    const { rows: memRows } = await pool.query(
+      `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
+      [spaceRows[0].id, req.user.id]
+    );
+    if (!memRows[0] || memRows[0].status !== 'active') return res.status(403).json({ error: 'Members only' });
+
+    const { rows } = await pool.query(
+      `SELECT * FROM hub_files WHERE file_name = $1 AND space_id = $2 LIMIT 1`,
+      [fileName, spaceRows[0].id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'File not found' });
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+    const file = rows[0];
+    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
+    const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+    stream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/spaces/:slug/banner — serve space banner image
+app.get('/api/spaces/:slug/banner', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, banner_image_file_name FROM hub_spaces WHERE slug = $1`, [req.params.slug]
+    );
+    if (!rows[0]?.banner_image_file_name) return res.status(404).json({ error: 'No banner' });
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+    const fileKey = `space-banners/${rows[0].id}/${rows[0].banner_image_file_name}`;
+    const stream = await minioClient.getObject(STORAGE_BUCKET, fileKey);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    stream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2916,7 +2971,8 @@ app.post('/api/spaces', authenticate, async (req, res) => {
     );
     // Return full space with caller's role/status/member_count so frontend has correct state immediately
     const { rows: full } = await pool.query(`
-      SELECT s.*,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         me.role   AS my_role,
         me.status AS my_status
@@ -2937,7 +2993,8 @@ app.post('/api/spaces', authenticate, async (req, res) => {
 app.get('/api/spaces', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT s.*,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         sm2.role  AS my_role,
         sm2.status AS my_status
@@ -2957,7 +3014,8 @@ app.get('/api/spaces', authenticate, async (req, res) => {
 app.get('/api/spaces/mine', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT s.*,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         me.role   AS my_role,
         me.status AS my_status
@@ -2977,7 +3035,8 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
 app.get('/api/spaces/:slug', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT s.*,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         me.role   AS my_role,
         me.status AS my_status
@@ -3007,18 +3066,24 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
     if (!memRows[0] || !canManageSpace(memRows[0].role))
       return res.status(403).json({ error: 'Only space admins can edit settings' });
 
-    const { name, description, visibility } = req.body;
+    const { name, description, visibility, banner_mode, banner_color, banner_gradient_from, banner_gradient_to } = req.body;
     if (visibility && !['public', 'private', 'invite-only'].includes(visibility))
       return res.status(400).json({ error: 'invalid visibility' });
 
     const { rows } = await pool.query(`
       UPDATE hub_spaces SET
-        name        = COALESCE($1, name),
-        description = COALESCE($2, description),
-        visibility  = COALESCE($3, visibility),
-        updated_at  = NOW()
-      WHERE id = $4 RETURNING *
-    `, [name || null, description !== undefined ? description : null, visibility || null, space.id]);
+        name                 = COALESCE($1, name),
+        description          = COALESCE($2, description),
+        visibility           = COALESCE($3, visibility),
+        banner_mode          = COALESCE($4, banner_mode),
+        banner_color         = COALESCE($5, banner_color),
+        banner_gradient_from = COALESCE($6, banner_gradient_from),
+        banner_gradient_to   = COALESCE($7, banner_gradient_to),
+        updated_at           = NOW()
+      WHERE id = $8 RETURNING *
+    `, [name || null, description !== undefined ? description : null, visibility || null,
+        banner_mode || null, banner_color || null, banner_gradient_from || null, banner_gradient_to || null,
+        space.id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3232,10 +3297,54 @@ app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/spaces/:slug/posts — create a post in this space
-app.post('/api/spaces/:slug/posts', authenticate, async (req, res) => {
-  const { title, body, category = 'DISCUSSION' } = req.body;
-  if (!title) return res.status(400).json({ error: 'title required' });
+// POST /api/spaces/:slug/posts — create a post in this space (supports media upload)
+app.post('/api/spaces/:slug/posts', authenticate, upload.single('media'), async (req, res) => {
+  const { title, body, category = 'DISCUSSION' } = req.body || {};
+  if (!title?.trim()) return res.status(400).json({ error: 'title required' });
+  try {
+    const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
+    const spaceId = spaceRows[0].id;
+    const { rows: memRows } = await pool.query(
+      `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
+      [spaceId, req.user.id]
+    );
+    if (!memRows[0] || memRows[0].status !== 'active')
+      return res.status(403).json({ error: 'Join this space to post' });
+
+    let mediaFileId = null;
+    if (req.file) {
+      const fileKey = `spaces/${spaceId}/${req.user.id}/${req.file.originalname}`;
+      if (minioClient) {
+        await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, { 'Content-Type': req.file.mimetype });
+      }
+      const fr = await pool.query(
+        `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, space_id)
+         VALUES ($1, $2, $3, $4, $5, false, $6)
+         ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW()
+         RETURNING id`,
+        [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id, spaceId]
+      );
+      mediaFileId = fr.rows[0].id;
+    }
+
+    const { rows } = await pool.query(`
+      INSERT INTO hub_posts (category, title, body, author_id, space_id, media_file_id)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *
+    `, [category, title.trim(), body?.trim() || '', req.user.id, spaceId, mediaFileId]);
+    res.status(201).json({
+      ...rows[0],
+      author_username: req.user.username,
+      media_file_name: req.file?.originalname || null,
+      reply_count: 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/spaces/:slug/files — files attached to this space's posts
+app.get('/api/spaces/:slug/files', authenticate, async (req, res) => {
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3244,13 +3353,46 @@ app.post('/api/spaces/:slug/posts', authenticate, async (req, res) => {
       [spaceRows[0].id, req.user.id]
     );
     if (!memRows[0] || memRows[0].status !== 'active')
-      return res.status(403).json({ error: 'Join this space to post' });
+      return res.status(403).json({ error: 'Join this space to view files' });
 
     const { rows } = await pool.query(`
-      INSERT INTO hub_posts (category, title, body, author_id, space_id)
-      VALUES ($1, $2, $3, $4, $5) RETURNING *
-    `, [category, title, body || '', req.user.id, spaceRows[0].id]);
-    res.status(201).json(rows[0]);
+      SELECT f.id, f.file_name, f.file_key, f.mime_type, f.size_bytes, f.uploaded_at,
+             u.username AS uploaded_by, p.id AS post_id, p.title AS post_title
+      FROM hub_files f
+      LEFT JOIN hub_users u ON u.id = f.owner_id
+      LEFT JOIN hub_posts p ON p.media_file_id = f.id
+      WHERE f.space_id = $1
+      ORDER BY f.uploaded_at DESC
+    `, [spaceRows[0].id]);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/spaces/:slug/banner — upload banner image (owner/admin)
+app.post('/api/spaces/:slug/banner', authenticate, uploadBg.single('banner'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  try {
+    const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
+    const { rows: memRows } = await pool.query(
+      `SELECT role FROM hub_space_members WHERE space_id = $1 AND user_id = $2 AND status = 'active'`,
+      [spaceRows[0].id, req.user.id]
+    );
+    if (!memRows[0] || !canManageSpace(memRows[0].role))
+      return res.status(403).json({ error: 'Only space admins can change the banner' });
+
+    const fileKey = `space-banners/${spaceRows[0].id}/${req.file.originalname}`;
+    if (minioClient) {
+      await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, { 'Content-Type': req.file.mimetype });
+    }
+    const fileName = req.file.originalname;
+    await pool.query(
+      `UPDATE hub_spaces SET banner_mode = 'image', banner_image_file_name = $1, updated_at = NOW() WHERE id = $2`,
+      [fileName, spaceRows[0].id]
+    );
+    res.json({ file_name: fileName, file_key: fileKey });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
