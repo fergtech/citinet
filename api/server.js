@@ -2914,7 +2914,19 @@ app.post('/api/spaces', authenticate, async (req, res) => {
       `INSERT INTO hub_space_members (space_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active')`,
       [space.id, req.user.id]
     );
-    res.status(201).json(space);
+    // Return full space with caller's role/status/member_count so frontend has correct state immediately
+    const { rows: full } = await pool.query(`
+      SELECT s.*,
+        COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        me.role   AS my_role,
+        me.status AS my_status
+      FROM hub_spaces s
+      LEFT JOIN hub_space_members sm ON sm.space_id = s.id
+      LEFT JOIN hub_space_members me ON me.space_id = s.id AND me.user_id = $1
+      WHERE s.id = $2
+      GROUP BY s.id, me.role, me.status
+    `, [req.user.id, space.id]);
+    res.status(201).json(full[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'A space with that slug already exists' });
     res.status(500).json({ error: err.message });
@@ -3008,6 +3020,27 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
       WHERE id = $4 RETURNING *
     `, [name || null, description !== undefined ? description : null, visibility || null, space.id]);
     res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/spaces/:slug — delete space (owner only)
+app.delete('/api/spaces/:slug', authenticate, async (req, res) => {
+  try {
+    const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
+    const spaceId = spaceRows[0].id;
+    const { rows: memRows } = await pool.query(
+      `SELECT role FROM hub_space_members WHERE space_id = $1 AND user_id = $2 AND status = 'active'`,
+      [spaceId, req.user.id]
+    );
+    if (memRows[0]?.role !== 'owner' && !req.user.is_admin)
+      return res.status(403).json({ error: 'Only the space owner can delete it' });
+    // Null out space_id on posts (keep posts, just detach from space)
+    await pool.query(`UPDATE hub_posts SET space_id = NULL WHERE space_id = $1`, [spaceId]);
+    await pool.query(`DELETE FROM hub_spaces WHERE id = $1`, [spaceId]);
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

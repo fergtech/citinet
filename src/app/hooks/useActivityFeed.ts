@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
+import { spacesService } from '../services/spacesService';
 
 export type ActivityType =
   | 'discussion'
@@ -9,7 +10,8 @@ export type ActivityType =
   | 'request'
   | 'file_shared'
   | 'neighbor_joined'
-  | 'pin_added';
+  | 'pin_added'
+  | 'space_created';
 
 export interface ActivityItem {
   id: string;
@@ -77,11 +79,12 @@ export function useActivityFeed(hubSlug: string) {
     if (!hubSlug) return;
     setLoading(true);
 
-    const [postsResult, filesResult, membersResult, pinsResult] = await Promise.allSettled([
+    const [postsResult, filesResult, membersResult, pinsResult, spacesResult] = await Promise.allSettled([
       hubService.listPosts(hubSlug),
       hubService.listFiles(hubSlug),
       hubService.listMembers(hubSlug),
       atlasService.getPins(hubSlug),
+      spacesService.listAll(hubSlug),
     ]);
 
     const raw: ActivityItem[] = [];
@@ -189,6 +192,29 @@ export function useActivityFeed(hubSlug: string) {
           timestamp: new Date(pin.createdAt),
           navigateTo: 'atlas',
           itemId: pin.id,
+        });
+      }
+    }
+
+    // ── Spaces → space_created
+    if (spacesResult.status === 'fulfilled') {
+      const recentSpaces = [...spacesResult.value]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 3);
+
+      for (const space of recentSpaces) {
+        const creatorId = space.created_by;
+        const actor = creatorId ? (memberByUserId[creatorId]?.username ?? 'A neighbor') : 'A neighbor';
+        raw.push({
+          id: `space-${space.id}`,
+          type: 'space_created',
+          actor,
+          actorAvatarUrl: creatorId ? avatarUrl(creatorId) : undefined,
+          summary: 'created a space',
+          title: space.name,
+          timestamp: new Date(space.created_at),
+          navigateTo: 'spaces',
+          cta: 'View Space',
         });
       }
     }

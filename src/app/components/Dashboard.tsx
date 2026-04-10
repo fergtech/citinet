@@ -1063,6 +1063,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       } else if (item.type === 'pin_added' && item.itemId) {
                         sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
                         onNavigate('atlas');
+                      } else if (item.type === 'space_created') {
+                        onNavigate('spaces');
                       } else if (item.type === 'neighbor_joined') {
                         sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
                         onNavigate('feed');
@@ -1583,6 +1585,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
   file_shared:     { Icon: FolderOpen,    iconBg: 'bg-amber-500',   label: 'File Shared',  barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
   neighbor_joined: { Icon: Users,         iconBg: 'bg-violet-500',  label: 'New Neighbor', barColor: 'bg-violet-500', verbColor: 'text-violet-600 dark:text-violet-400' },
   pin_added:       { Icon: MapPin,        iconBg: 'bg-indigo-500',  label: 'Atlas Pin',    barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
+  space_created:   { Icon: Layers,        iconBg: 'bg-purple-500',  label: 'New Space',    barColor: 'bg-purple-500', verbColor: 'text-purple-600 dark:text-purple-400' },
 };
 
 const ACTIVITY_LOCATION: Record<string, string> = {

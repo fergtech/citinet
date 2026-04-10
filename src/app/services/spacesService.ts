@@ -159,6 +159,18 @@ class SpacesService {
     return res.json();
   }
 
+  async deleteSpace(hubSlug: string, spaceSlug: string): Promise<void> {
+    const { headers, baseUrl } = this.getAuth(hubSlug);
+    const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Failed to delete space`);
+    }
+  }
+
   async shareToFeed(hubSlug: string, postId: string): Promise<void> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/posts/${postId}/share-to-feed`, {

@@ -330,11 +330,12 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
 
 type SpaceTab = 'feed' | 'members' | 'settings';
 
-function SpaceDetail({ hubSlug, space, myUserId, onSpaceUpdated }: {
+function SpaceDetail({ hubSlug, space, myUserId, onSpaceUpdated, onSpaceDeleted }: {
   hubSlug: string;
   space: HubSpace;
   myUserId?: string;
   onSpaceUpdated: (s: HubSpace) => void;
+  onSpaceDeleted: (spaceId: string) => void;
 }) {
   const [tab, setTab] = useState<SpaceTab>('feed');
   const [posts, setPosts] = useState<HubPost[]>([]);
@@ -353,6 +354,8 @@ function SpaceDetail({ hubSlug, space, myUserId, onSpaceUpdated }: {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isActive = space.my_status === 'active';
   const isPending = space.my_status === 'pending';
@@ -429,6 +432,18 @@ function SpaceDetail({ hubSlug, space, myUserId, onSpaceUpdated }: {
       setSharedPosts(prev => new Set([...prev, postId]));
     } catch {}
     finally { setSharingPost(null); }
+  }
+
+  async function handleDelete() {
+    setDeleting(true); setSettingsError('');
+    try {
+      await spacesService.deleteSpace(hubSlug, space.slug);
+      onSpaceDeleted(space.id);
+    } catch (err: any) {
+      setSettingsError(err.message);
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   }
 
   async function saveSettings(e: React.FormEvent) {
@@ -703,6 +718,32 @@ function SpaceDetail({ hubSlug, space, myUserId, onSpaceUpdated }: {
                settingsSaved ? <><Check className="w-4 h-4" /> Saved</> :
                <><Settings className="w-4 h-4" /> Save Settings</>}
             </button>
+
+            {space.my_role === 'owner' && (
+              <div className="pt-4 mt-4 border-t border-zinc-800">
+                {!confirmDelete ? (
+                  <button type="button" onClick={() => setConfirmDelete(true)}
+                    className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-red-950 border border-zinc-700 hover:border-red-800 text-sm text-zinc-400 hover:text-red-400 transition-colors">
+                    Delete Space
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-red-400 text-center">This will permanently delete the space and all its membership data. Posts will be kept but detached.</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setConfirmDelete(false)}
+                        className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-sm text-zinc-300 hover:bg-zinc-700">
+                        Cancel
+                      </button>
+                      <button type="button" onClick={handleDelete} disabled={deleting}
+                        className="flex-1 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
+                        {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Yes, Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         )}
       </div>
@@ -769,6 +810,12 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
     setAllSpaces(prev => [space, ...prev]);
     setSelected(space);
     setShowCreate(false);
+  }
+
+  function handleDeleted(spaceId: string) {
+    setMySpaces(prev => prev.filter(s => s.id !== spaceId));
+    setAllSpaces(prev => prev.filter(s => s.id !== spaceId));
+    setSelected(null);
   }
 
   const displaySpaces = showAll
@@ -893,6 +940,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
               space={selected}
               myUserId={myUserId}
               onSpaceUpdated={handleSpaceUpdated}
+              onSpaceDeleted={handleDeleted}
             />
           </>
         ) : (
