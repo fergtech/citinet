@@ -118,6 +118,20 @@ function generateEnvContent(config: HubScriptConfig): string {
     '',
     '# Registry -- leave empty for local/private hubs',
     'REGISTRY_URL=',
+    '',
+    '# Data Directory — where database and cache data is stored (postgres + redis).',
+    '# Change this to any local path and restart to relocate.',
+    '#   Windows example:  DATA_DIR=D:\\citinet-hub\\data',
+    '#   Linux example:    DATA_DIR=/mnt/external/citinet',
+    '#   macOS example:    DATA_DIR=/Volumes/MyDrive/citinet',
+    'DATA_DIR=' + (config.dataDir ?? './data'),
+    '',
+    '# Files Directory — where uploaded user files (MinIO) are stored.',
+    '# Can be a different drive or even a remote network share (NFS/SMB).',
+    '# Defaults to a subfolder of DATA_DIR if left as-is.',
+    '#   Local example:   FILES_DIR=/mnt/external/citinet-files',
+    '#   Network example: FILES_DIR=/mnt/nas/hub-files  (mount the share first)',
+    'FILES_DIR=' + (config.dataDir ?? './data') + '/storage',
   ].join('\n');
 }
 
@@ -129,19 +143,18 @@ function generateEnvContent(config: HubScriptConfig): string {
 // because they use string concatenation, not TypeScript template interpolation.
 // ─────────────────────────────────────────────────────────
 
-function getComposeYaml(dataDir?: string): string {
+function getComposeYaml(): string {
   // Build the YAML using string concatenation so ${VAR} references are
   // literal in the output and not interpreted by TypeScript.
   const v = (name: string) => '${' + name + '}';
   const vd = (name: string, def: string) => '${' + name + ':-' + def + '}';
 
-  // When a custom data directory is specified, use bind mounts so data lands
-  // on the user's chosen drive. Otherwise fall back to Docker-managed named volumes.
-  const toComposePath = (sub: string) =>
-    dataDir ? dataDir.replace(/\\/g, '/') + '/' + sub : null;
-  const dbVol      = toComposePath('db')      ?? 'citinet-db-data';
-  const storageVol = toComposePath('storage') ?? 'citinet-storage-data';
-  const redisVol   = toComposePath('redis')   ?? 'citinet-redis-data';
+  // DATA_DIR controls postgres + redis. FILES_DIR controls MinIO so file
+  // storage can live on a separate drive or remote network share independently.
+  // Both are set in .env and can be changed at any time without regenerating.
+  const dbVol      = vd('DATA_DIR', './data') + '/db';
+  const storageVol = vd('FILES_DIR', './data/storage');
+  const redisVol   = vd('DATA_DIR', './data') + '/redis';
 
   return [
     'services:',
@@ -247,13 +260,6 @@ function getComposeYaml(dataDir?: string): string {
     'networks:',
     '  citinet-network:',
     '    driver: bridge',
-    '',
-    ...(dataDir ? [] : [
-      'volumes:',
-      '  citinet-db-data:',
-      '  citinet-storage-data:',
-      '  citinet-redis-data:',
-    ]),
   ].join('\n');
 }
 
@@ -324,7 +330,7 @@ function buildBashTailscaleSection(config: HubScriptConfig): string[] {
 
 function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml(config.dataDir);
+  const composeYaml = getComposeYaml();
   const isTailscale = config.visibility === 'tailscale';
 
   const tailscaleLines = isTailscale
@@ -370,13 +376,14 @@ function generateBashScript(config: HubScriptConfig): string {
     'step "Creating hub directory"',
     'mkdir -p "$HUB_DIR"',
     'ok "Directory: $HUB_DIR"',
-    ...(config.dataDir ? [
-      '',
-      '# === Create data directories (bind-mount targets) ===',
-      'DATA_DIR="' + config.dataDir + '"',
-      'mkdir -p "$DATA_DIR/db" "$DATA_DIR/storage" "$DATA_DIR/redis"',
-      'ok "Data directories: $DATA_DIR"',
-    ] : []),
+    '',
+    '# === Create data directories (bind-mount targets) ===',
+    'DATA_DIR="' + (config.dataDir ?? '$HUB_DIR/data') + '"',
+    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/redis"',
+    'ok "DB + cache at: $DATA_DIR"',
+    'FILES_DIR="$DATA_DIR/storage"',
+    'mkdir -p "$FILES_DIR"',
+    'ok "File storage at: $FILES_DIR"',
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'step "Writing configuration"',
@@ -534,6 +541,10 @@ function generateBashScript(config: HubScriptConfig): string {
     'echo "  Logs:  cd $HUB_DIR && $COMPOSE_CMD logs -f"',
     'echo "  Stop:  cd $HUB_DIR && $COMPOSE_CMD down"',
     'echo ""',
+    'echo "  Data is stored at: $DATA_DIR"',
+    'echo "  To move to a new drive: stop the hub, copy that folder to the new location,"',
+    'echo "  then edit $HUB_DIR/.env (change DATA_DIR=) and start again."',
+    'echo ""',
   ];
 
   return lines.join('\n');
@@ -610,7 +621,7 @@ function buildPsTailscaleSection(config: HubScriptConfig): string[] {
 
 function generatePowerShellScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml(config.dataDir);
+  const composeYaml = getComposeYaml();
   const isTailscale = config.visibility === 'tailscale';
 
   // Escape single quotes in content for PS array literal ('...' -> '..''...')
@@ -654,13 +665,14 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Step "Creating hub directory"',
     'New-Item -ItemType Directory -Force -Path $HubDir | Out-Null',
     'Ok "Directory: $HubDir"',
-    ...(config.dataDir ? [
-      '',
-      '# === Create data directories (bind-mount targets) ===',
-      '$DataDir = "' + config.dataDir + '"',
-      'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\storage","$DataDir\\redis" | Out-Null',
-      'Ok "Data directories: $DataDir"',
-    ] : []),
+    '',
+    '# === Create data directories (bind-mount targets) ===',
+    '$DataDir = "' + (config.dataDir ?? '$HubDir\\data') + '"',
+    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\redis" | Out-Null',
+    'Ok "DB + cache at: $DataDir"',
+    '$FilesDir = "$DataDir\\storage"',
+    'New-Item -ItemType Directory -Force -Path $FilesDir | Out-Null',
+    'Ok "File storage at: $FilesDir"',
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'Step "Writing configuration"',
@@ -830,6 +842,10 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Write-Host "  Return to the Citinet app -- your hub was detected automatically."',
     'Write-Host "  Logs: cd $HubDir; $ComposeCmd logs -f"',
     'Write-Host "  Stop: cd $HubDir; $ComposeCmd down"',
+    'Write-Host ""',
+    'Write-Host "  Data is stored at: $DataDir"',
+    'Write-Host "  To move to a new drive: stop the hub, copy that folder to the new location,"',
+    'Write-Host "  then edit $HubDir\\.env (change DATA_DIR=) and start again."',
     'Write-Host ""',
   ];
 

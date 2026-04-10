@@ -5,6 +5,11 @@ on:
     branches: [master]
     paths:
       - 'api/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'package.json'
   workflow_dispatch:
 
 jobs:
@@ -34,7 +39,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ./api
+          context: .
+          file: api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           provenance: false

@@ -24,6 +24,8 @@
 
 const express = require('express');
 const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
@@ -422,6 +424,14 @@ function uptimeStr() {
 // redirect there with this hub's URL pre-filled so the join flow auto-connects.
 // Otherwise return a minimal HTML page that identifies this as a Citinet hub API.
 app.get('/', (req, res) => {
+  // If the portal is bundled into this image, serve it directly.
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+
+  // Fallback: no bundled portal — redirect to PORTAL_URL if configured,
+  // otherwise show the plain hub info page.
   const portalUrl = process.env.PORTAL_URL || '';
   const tunnelUrl = process.env.TUNNEL_URL || `${req.protocol}://${req.get('host')}`;
   const hubName   = process.env.HUB_NAME   || 'Citinet Hub';
@@ -2837,6 +2847,17 @@ app.post('/api/initiatives/:id/join', authenticate, async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
+
+// ── Serve portal (bundled into image at build time) ───────
+// When the dist/ folder exists, the hub serves its own UI at /.
+// API routes defined above always take precedence.
+// The SPA fallback returns index.html for any unmatched GET so
+// React Router handles client-side navigation (e.g. /feed, /atlas).
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
 
 // ── Start ─────────────────────────────────────────────────
 
