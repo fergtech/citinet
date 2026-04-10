@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node --experimental-global-webcrypto node_modules/.bin/vite build",
     "preview": "vite preview",
     "hub:setup": "node scripts/setup-hub.js",
     "hub:verify": "node scripts/setup-hub.js"

@@ -287,6 +287,36 @@ export interface HubVendor {
   listing_count?: number;
 }
 
+/** A community space within a hub */
+export interface HubSpace {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  visibility: 'public' | 'private' | 'invite-only';
+  banner_file_name?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at?: string;
+  member_count?: number;
+  /** Caller's role in this space (null if not a member) */
+  my_role?: 'owner' | 'admin' | 'moderator' | 'member' | null;
+  /** Caller's membership status */
+  my_status?: 'active' | 'pending' | 'invited' | null;
+}
+
+/** A member of a space */
+export interface HubSpaceMember {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  profile_headline?: string | null;
+  role: 'owner' | 'admin' | 'moderator' | 'member';
+  status: 'active' | 'pending' | 'invited';
+  joined_at: string;
+}
+
 /** A product or service listed on the hub marketplace */
 export interface HubListing {
   id: string;

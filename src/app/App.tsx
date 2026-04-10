@@ -26,6 +26,7 @@ import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
 import { PollsScreen } from './components/PollsScreen';
 import { ModLogScreen } from './components/ModLogScreen';
+import { SpacesScreen } from './components/SpacesScreen';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -228,6 +229,11 @@ function HubPollsRoute() {
 function HubModLogRoute() {
   const navigate = useNavigate();
   return <ModLogScreen onBack={() => navigate(-1)} />;
+}
+
+function HubSpacesRoute() {
+  const navigate = useNavigate();
+  return <SpacesScreen onBack={() => navigate(-1)} />;
 }
 
 function HubMarketplaceRoute() {
@@ -633,6 +639,7 @@ function HubModeRoutes() {
       <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
       <Route path="/polls" element={<HubGuard><HubPollsRoute /></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubModLogRoute /></HubGuard>} />
+      <Route path="/spaces" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
