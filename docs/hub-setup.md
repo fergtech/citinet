@@ -70,7 +70,7 @@ When it finishes, the hub is running. Visit `http://localhost:9090/health` to co
 
 ## Part 3 — First Login
 
-Navigate to `http://localhost:9090` (or your hub's LAN/tunnel URL).
+Navigate to `http://localhost:9090` on the hub machine, or use your LAN hostname / tunnel URL from another device.
 
 The first account you register on the hub becomes the **admin**. Sign up with whatever username and password you want.
 
@@ -109,10 +109,12 @@ See [remote-file-storage.md](./remote-file-storage.md) for the full guide.
 |---|---|
 | Hub machine | `http://localhost:9090` |
 | Local network | `http://<hub-ip>:9090` |
-| LAN hostname (if configured) | `http://citinet:9090` |
+| LAN hostname (if configured in router DNS) | `http://citinet:9090` |
 | Anywhere (Tailscale Funnel) | `https://<machine>.<tailnet>.ts.net` |
 
 ### Making the Hub Reachable at `citinet:9090` on Your LAN
+
+Quick reference: [router-dns-quick-reference.md](./router-dns-quick-reference.md)
 
 1. **Set a static IP on the hub machine** (via NetworkManager, router reservation, or dhcpcd)
 2. **Add a DNS entry in your router**: `citinet` → the hub's IP

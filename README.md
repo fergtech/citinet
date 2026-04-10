@@ -118,8 +118,11 @@ That's it. No script regeneration. No Docker volume fiddling. Swap drives like l
 ```
 Local machine:     http://localhost:9090
 Local network:     http://<your-local-ip>:9090
+LAN hostname:      http://citinet:9090   (if your router DNS maps citinet to the hub IP)
 Anywhere (Tailscale): https://<machine>.<tailnet>.ts.net
 ```
+
+Quick reference: see [docs/router-dns-quick-reference.md](./docs/router-dns-quick-reference.md) for the router DNS steps that map `citinet` to your hub IP.
 
 > Tailscale Funnel cannot be accessed from the machine serving it. Use `localhost:9090` locally.
 
