@@ -132,6 +132,7 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: false,
     open: true,
+    allowedHosts: true,
   },
   optimizeDeps: {
     include: ['react', 'react-dom'],

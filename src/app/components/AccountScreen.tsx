@@ -159,17 +159,12 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     setAvatarUploading(true);
     try {
       await hubService.uploadAvatar(currentHub.slug, file);
-      // Swap blob URL for a cache-busted real URL so preview stays stable
+      // Swap blob URL for a cache-busted URL using the live tunnelUrl (so it works on any machine)
       const freshUrl = currentUser?.hubUserId
         ? `${hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)}?t=${Date.now()}`
         : null;
       URL.revokeObjectURL(previewUrl);
-      if (freshUrl) {
-        updateUserProfile({ avatarUrl: freshUrl });
-        setAvatarPreview(freshUrl);
-      } else {
-        setAvatarPreview(null);
-      }
+      setAvatarPreview(freshUrl);
     } catch (err) {
       URL.revokeObjectURL(previewUrl);
       setAvatarPreview(null);
@@ -331,6 +326,12 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   // ── Section content (shared between desktop panel + mobile drill) ──────────
 
+  // Always derive avatar URL from live tunnelUrl so it works on any machine (not just the one that uploaded)
+  const resolvedAvatarSrc = avatarPreview
+    ?? (currentHub?.slug && currentUser?.hubUserId
+        ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)
+        : null);
+
   const bannerStyle: React.CSSProperties = bannerPreview
     ? { backgroundImage: `url(${bannerPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : currentUser?.bannerMode === 'image' && currentUser?.hubUserId
@@ -396,8 +397,8 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <div className="flex items-center gap-4 mb-6">
           <button onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}
             className="relative w-16 h-16 rounded-full shrink-0 group focus:outline-none focus:ring-2 focus:ring-purple-500" aria-label="Change profile picture">
-            {(avatarPreview || currentUser?.avatarUrl) ? (
-              <img src={avatarPreview ?? currentUser!.avatarUrl} alt="Profile"
+            {resolvedAvatarSrc ? (
+              <img src={resolvedAvatarSrc} alt="Profile"
                 className="w-16 h-16 rounded-full object-cover"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             ) : (

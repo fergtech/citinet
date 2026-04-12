@@ -66,7 +66,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       const encoded = params.get('_cc');
       if (encoded) {
         try {
-          const conn = JSON.parse(atob(encoded));
+          const conn = JSON.parse(decodeURIComponent(atob(encoded)));
           const hubs = hubService.getAllHubConnections();
           hubs[slug] = conn;
           localStorage.setItem('citinet-hubs', JSON.stringify(hubs));

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   File, FileText, FileImage, FileVideo, FileAudio,
   Download, Search, Loader2, FolderOpen, AlertCircle, RefreshCw,
@@ -211,6 +211,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     return 'other';
   };
 
+  // Track whether the current previewUrl is a blob (needs revocation) or a direct URL (does not).
+  const previewUrlIsBlobRef = React.useRef(false);
+
   const openPreview = async (file: HubFile) => {
     const category = getFileCategory(file);
     if (category === 'other') {
@@ -220,11 +223,26 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     }
 
     setPreviewFile(file);
-    setPreviewLoading(true);
     setPreviewError('');
     setPreviewUrl(null);
+
+    // For public files, pass the URL directly so the browser can stream with Range requests.
+    // This is critical for video — bypasses the full-download-before-play problem.
+    if (file.is_public) {
+      const directUrl = hubService.getPublicFileUrl(slug, file.name);
+      if (directUrl) {
+        previewUrlIsBlobRef.current = false;
+        setPreviewUrl(directUrl);
+        setPreviewLoading(false);
+        return;
+      }
+    }
+
+    // Private files: fall back to authenticated blob download.
+    setPreviewLoading(true);
     try {
       const blobUrl = await hubService.fetchFileBlob(slug, file.name);
+      previewUrlIsBlobRef.current = true;
       setPreviewUrl(blobUrl);
     } catch (err) {
       setPreviewError(err instanceof Error ? err.message : 'Failed to load preview');
@@ -234,7 +252,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   };
 
   const closePreview = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewUrl && previewUrlIsBlobRef.current) URL.revokeObjectURL(previewUrl);
     setPreviewFile(null);
     setPreviewUrl(null);
     setPreviewError('');

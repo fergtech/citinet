@@ -683,10 +683,12 @@ app.get('/api/auth/avatar/:userId', async (req, res) => {
     const user = result.rows[0];
     if (!user || !user.avatar_url) return res.status(404).json({ error: 'No avatar' });
 
-    const stat = await minioClient.statObject(STORAGE_BUCKET, user.avatar_url).catch(() => null);
+    const ext = (user.avatar_url.split('.').pop() || 'jpg').toLowerCase();
+    const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif' };
+    const contentType = mimeMap[ext] || 'image/jpeg';
     const stream = await minioClient.getObject(STORAGE_BUCKET, user.avatar_url);
-    res.setHeader('Content-Type', stat?.metaData?.['content-type'] || 'image/jpeg');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     stream.pipe(res);
   } catch (err) {
     console.error('Avatar serve error:', err);
@@ -722,10 +724,12 @@ app.get('/api/auth/profile-banner/:userId', async (req, res) => {
     const result = await pool.query('SELECT banner_image_file_name FROM hub_users WHERE id = $1', [req.params.userId]);
     const user = result.rows[0];
     if (!user?.banner_image_file_name) return res.status(404).json({ error: 'No banner' });
-    const stat = await minioClient.statObject(STORAGE_BUCKET, user.banner_image_file_name).catch(() => null);
+    const ext = (user.banner_image_file_name.split('.').pop() || 'jpg').toLowerCase();
+    const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif' };
+    const contentType = mimeMap[ext] || 'image/jpeg';
     const stream = await minioClient.getObject(STORAGE_BUCKET, user.banner_image_file_name);
-    res.setHeader('Content-Type', stat?.metaData?.['content-type'] || 'image/jpeg');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     stream.pipe(res);
   } catch (err) {
     console.error('Profile banner serve error:', err);
@@ -1264,11 +1268,39 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
 
     if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
 
-    const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
-    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    const mimeType = file.mime_type || 'application/octet-stream';
+    const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
+
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
-    if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
-    stream.pipe(res);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const rangeHeader = req.headers['range'];
+    if (rangeHeader && totalSize) {
+      const [unit, rangeStr] = rangeHeader.split('=');
+      if (unit !== 'bytes' || !rangeStr) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const [startStr, endStr] = rangeStr.split('-');
+      const start = parseInt(startStr, 10);
+      const end = endStr ? parseInt(endStr, 10) : totalSize - 1;
+      if (isNaN(start) || isNaN(end) || start > end || end >= totalSize) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader('Content-Length', chunkSize);
+      const stream = await minioClient.getPartialObject(STORAGE_BUCKET, file.file_key, start, chunkSize);
+      stream.pipe(res);
+    } else {
+      if (totalSize) res.setHeader('Content-Length', totalSize);
+      const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+      stream.pipe(res);
+    }
   } catch (err) {
     console.error('Download error:', err);
     res.status(500).json({ error: 'Download failed' });

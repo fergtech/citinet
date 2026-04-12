@@ -48,7 +48,7 @@ export function hubPath(path: string, slug?: string): string {
 export function navigateToHub(slug: string, connection?: object): void {
   const url = new URL(getHubUrl(slug));
   if (connection) {
-    url.searchParams.set('_cc', btoa(JSON.stringify(connection)));
+    url.searchParams.set('_cc', btoa(encodeURIComponent(JSON.stringify(connection))));
   }
   window.location.href = url.toString();
 }
