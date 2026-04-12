@@ -686,12 +686,26 @@ class HubService {
     return this.getHubPortalUrl(hubSlug);
   }
 
-  /** Normalize a tunnel URL (strip trailing slashes, ensure https) */
+  /** Normalize a hub URL (strip trailing slashes, infer http for LAN/private hosts) */
   normalizeTunnelUrl(url: string): string {
     let clean = url.trim();
-    // Add https:// if no protocol specified
+    // Add a protocol if no protocol specified.
+    // Use http:// for LAN/private/local hosts so bare inputs like citinet:9090
+    // work on the local network, but keep https:// for public tunnel-style hosts.
     if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      clean = `https://${clean}`;
+      const hostPart = clean.split('/')[0];
+      const hostname = hostPart.split(':')[0].toLowerCase();
+      const looksLocal =
+        hostname === 'localhost' ||
+        hostname === 'citinet' ||
+        hostname.endsWith('.local') ||
+        hostname.endsWith('.lan') ||
+        /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
+        /^10\./.test(hostname) ||
+        /^192\.168\./.test(hostname) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+
+      clean = `${looksLocal ? 'http' : 'https'}://${clean}`;
     }
     // Remove trailing slashes
     clean = clean.replace(/\/+$/, '');

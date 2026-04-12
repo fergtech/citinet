@@ -3,7 +3,7 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid, Plus, Sparkles, Vote, ScrollText,
+  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,6 +22,7 @@ import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
 
 const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
+  { Icon: Layers,        label: 'Spaces',      screen: 'spaces',      gradient: 'bg-gradient-to-br from-purple-500 to-violet-600' },
   { Icon: MessageCircle, label: 'Discussions', screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
   { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
@@ -1062,6 +1063,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       } else if (item.type === 'pin_added' && item.itemId) {
                         sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
                         onNavigate('atlas');
+                      } else if (item.type === 'space_created') {
+                        onNavigate('spaces');
                       } else if (item.type === 'neighbor_joined') {
                         sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
                         onNavigate('feed');
@@ -1582,6 +1585,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
   file_shared:     { Icon: FolderOpen,    iconBg: 'bg-amber-500',   label: 'File Shared',  barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
   neighbor_joined: { Icon: Users,         iconBg: 'bg-violet-500',  label: 'New Neighbor', barColor: 'bg-violet-500', verbColor: 'text-violet-600 dark:text-violet-400' },
   pin_added:       { Icon: MapPin,        iconBg: 'bg-indigo-500',  label: 'Atlas Pin',    barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
+  space_created:   { Icon: Layers,        iconBg: 'bg-purple-500',  label: 'New Space',    barColor: 'bg-purple-500', verbColor: 'text-purple-600 dark:text-purple-400' },
 };
 
 const ACTIVITY_LOCATION: Record<string, string> = {

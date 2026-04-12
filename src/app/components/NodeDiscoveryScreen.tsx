@@ -113,7 +113,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     const trimmed = url.trim();
     if (!trimmed) return false;
     try {
-      new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+      new URL(hubService.normalizeTunnelUrl(trimmed));
       return true;
     } catch { return false; }
   };

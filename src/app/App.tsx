@@ -26,6 +26,7 @@ import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
 import { PollsScreen } from './components/PollsScreen';
 import { ModLogScreen } from './components/ModLogScreen';
+import { SpacesScreen } from './components/SpacesScreen';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -228,6 +229,11 @@ function HubPollsRoute() {
 function HubModLogRoute() {
   const navigate = useNavigate();
   return <ModLogScreen onBack={() => navigate(-1)} />;
+}
+
+function HubSpacesRoute() {
+  const navigate = useNavigate();
+  return <SpacesScreen onBack={() => navigate(-1)} />;
 }
 
 function HubMarketplaceRoute() {
@@ -633,9 +639,47 @@ function HubModeRoutes() {
       <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
       <Route path="/polls" element={<HubGuard><HubPollsRoute /></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubModLogRoute /></HubGuard>} />
+      <Route path="/spaces" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Hub origin auto-detection
+// When the portal is bundled into the hub API and served directly
+// (e.g. http://citinet:9090), probe /api/info at the current origin.
+// If it responds, auto-connect to that hub so users land straight
+// on the hub UI without any manual setup.
+// ──────────────────────────────────────────────
+
+function AppInner() {
+  const subdomain = getSubdomain();
+  const { onHubJoined } = useHub();
+  const [probing, setProbing] = useState(!subdomain);
+
+  useEffect(() => {
+    if (subdomain) return;
+    fetch('/api/info', { signal: AbortSignal.timeout(2000) })
+      .then(r => r.ok ? r.json() : null)
+      .then(async info => {
+        if (!info?.hub_slug) return;
+        const hub = await hubService.joinHub(window.location.origin, info, undefined);
+        onHubJoined(hub);
+        navigateToHub(hub.slug, hubService.getHubConnection(hub.slug) ?? { hub });
+      })
+      .catch(() => {})
+      .finally(() => setProbing(false));
+  }, []);
+
+  if (probing) return <div className="min-h-screen bg-white dark:bg-zinc-950" />;
+
+  return (
+    <div className="w-full">
+      {subdomain ? <HubModeRoutes /> : <OnboardingModeRoutes />}
+      {subdomain ? <HubFloatingSupportLauncher /> : null}
+    </div>
   );
 }
 
@@ -656,15 +700,10 @@ export default function App() {
     return () => matchMedia.removeEventListener('change', listener);
   }, []);
 
-  const subdomain = getSubdomain();
-
   return (
     <BrowserRouter>
       <HubProvider>
-        <div className="w-full">
-          {subdomain ? <HubModeRoutes /> : <OnboardingModeRoutes />}
-          {subdomain ? <HubFloatingSupportLauncher /> : null}
-        </div>
+        <AppInner />
       </HubProvider>
     </BrowserRouter>
   );

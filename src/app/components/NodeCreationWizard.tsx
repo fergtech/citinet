@@ -17,7 +17,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, ArrowRight, MapPin, Eye, User, Lock,
   Download, Terminal, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, ChevronDown,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive,
 } from 'lucide-react';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
@@ -172,7 +172,6 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   const detectedOS = useRef<'windows' | 'mac' | 'linux'>(detectOS());
   const [scriptDownloaded, setScriptDownloaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Waiting step state
   const [pollAttempt, setPollAttempt] = useState(0);
@@ -552,32 +551,20 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       />
                     </div>
 
-                    {/* Advanced — data directory */}
-                    <div className="border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvanced(v => !v)}
-                        className="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
-                      >
-                        <span className="flex items-center gap-2">
-                          <HardDrive className="w-4 h-4" />
-                          Advanced
-                        </span>
-                        <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-                      </button>
-                      {showAdvanced && (
-                        <div className="px-4 pb-4 pt-1 bg-slate-50 dark:bg-zinc-800/50 border-t border-slate-200 dark:border-zinc-700">
-                          <FieldLabel label="Data storage location" hint="optional" />
-                          <TextInput
-                            value={data.dataDir}
-                            onChange={v => set({ dataDir: v })}
-                            placeholder="e.g. H:\citinet-hub\data  or  /mnt/data/citinet"
-                          />
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
-                            Where Docker stores hub data (Postgres, files, cache). Leave blank to use Docker's default location on your system drive.
-                          </p>
-                        </div>
-                      )}
+                    {/* Data storage location */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <HardDrive className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                        <FieldLabel label="Data storage location" hint="optional" />
+                      </div>
+                      <TextInput
+                        value={data.dataDir}
+                        onChange={v => set({ dataDir: v })}
+                        placeholder="e.g. H:\citinet-hub\data  or  /mnt/data/citinet"
+                      />
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+                        Where your hub stores all data (database, files, cache). Defaults to a <code className="font-mono">data/</code> folder inside your hub directory. You can point this to any drive — internal, external, or NAS — and change it any time by editing <code className="font-mono">.env</code> and restarting.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -842,6 +829,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         {[
                           'Create a citinet-hub folder in your home directory',
                           'Write your hub configuration (all secrets pre-generated)',
+                          `Store all data at: ${data.dataDir.trim() || '~/citinet-hub/data'} — edit .env to move it to any drive at any time`,
                           'Install Docker if not already installed',
                           data.visibility === 'tailscale'
                             ? 'Install Tailscale, authenticate with your key, enable public Funnel'

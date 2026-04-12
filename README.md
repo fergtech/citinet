@@ -11,7 +11,7 @@ CitiNet gives neighborhoods and communities their own digital home base — inde
 
 A hub runs on hardware your community controls. Your data stays on your machines. Your community sets the rules. No platform can monetize, moderate, or shut it down on your behalf.
 
-See [VISION.md](./VISION.md) for the full picture of where this is headed.
+See [docs/vision.md](./docs/vision.md) for the full picture of where this is headed.
 
 ---
 
@@ -83,25 +83,46 @@ All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage/cach
 
 ### Choosing Where Your Data Lives
 
+All hub data (database, files, cache) lives under a single `DATA_DIR` path set in `~/citinet-hub/.env`. The default is `./data` (a folder next to `docker-compose.yml`). Point it at any drive — internal, external, USB, NAS — and swap freely.
+
 ```env
-# In ~/citinet-hub/.env — use any path on any drive
-DATA_DIR=D:/my-hub-data          # Windows
-DATA_DIR=/mnt/external/citinet   # Linux
+# ~/citinet-hub/.env
+DATA_DIR=./data                  # default — ~/citinet-hub/data/
+DATA_DIR=D:\citinet-hub\data     # Windows external drive
+DATA_DIR=/mnt/external/citinet   # Linux external drive
+DATA_DIR=/Volumes/MyDrive/citi   # macOS external drive
 ```
 
-Restart the stack after changing:
+**To move your data to a new drive:**
+
 ```bash
+# 1. Stop the hub
 docker compose -f ~/citinet-hub/docker-compose.yml down
+
+# 2. Copy data to the new location (Linux/macOS)
+cp -r ~/citinet-hub/data /mnt/new-drive/citinet
+# Windows (PowerShell):
+# robocopy "$env:USERPROFILE\citinet-hub\data" "D:\citinet-hub\data" /E /MOVE
+
+# 3. Edit .env — change DATA_DIR to the new path
+nano ~/citinet-hub/.env
+
+# 4. Start the hub again
 docker compose -f ~/citinet-hub/docker-compose.yml up -d
 ```
+
+That's it. No script regeneration. No Docker volume fiddling. Swap drives like legos.
 
 ### Accessing Your Hub
 
 ```
 Local machine:     http://localhost:9090
 Local network:     http://<your-local-ip>:9090
+LAN hostname:      http://citinet:9090   (if your router DNS maps citinet to the hub IP)
 Anywhere (Tailscale): https://<machine>.<tailnet>.ts.net
 ```
+
+Quick reference: see [docs/router-dns-quick-reference.md](./docs/router-dns-quick-reference.md) for the router DNS steps that map `citinet` to your hub IP.
 
 > Tailscale Funnel cannot be accessed from the machine serving it. Use `localhost:9090` locally.
 
@@ -236,7 +257,7 @@ docker push ghcr.io/fergtech/citinet-api:latest
 | Messages at rest | Plaintext in Postgres ⚠️ (E2E encryption planned Mission 3) |
 | Files at rest | Unencrypted in MinIO ⚠️ (encryption planned Mission 3) |
 
-See [SECURITY.md](./SECURITY.md) for the full security backlog.
+See [SECURITY.md](./SECURITY.md) for the full security backlog and hardening roadmap.
 
 ---
 
