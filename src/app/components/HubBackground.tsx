@@ -30,7 +30,6 @@ export function HubBackground() {
           backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundAttachment: 'fixed',
           filter: `brightness(${bgBrightness})`,
         }}
       />
@@ -45,7 +44,6 @@ export function HubBackground() {
           backgroundImage: `url(/default_backgrounds/${encodeURIComponent(bgValue)})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          backgroundAttachment: 'fixed',
           filter: `brightness(${bgBrightness})`,
         }}
       />

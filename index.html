@@ -3,7 +3,7 @@
   <html lang="en">
     <head>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
       <!-- Primary Meta Tags -->
       <title>citinet — Community Network Platform</title>
@@ -28,7 +28,11 @@
       <meta name="twitter:image" content="https://citinet.cloud/icons/og-image.png" />
 
       <!-- PWA Meta Tags -->
-      <meta name="theme-color" content="#9333ea" />
+      <!-- fallback used by browsers that ignore media-specific theme-color -->
+      <meta name="theme-color" content="#18181b" />
+      <!-- theme-color matches the app background per color scheme so the status bar blends seamlessly -->
+      <meta name="theme-color" content="#18181b" media="(prefers-color-scheme: dark)" />
+      <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
       <meta name="mobile-web-app-capable" content="yes" />
       <meta name="application-name" content="citinet" />
 

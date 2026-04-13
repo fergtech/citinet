@@ -517,7 +517,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Solid Color</p>
         <div className="flex flex-wrap gap-2">
           {[
-            { color: '#0f172a', label: 'Deep Navy' }, { color: '#052e16', label: 'Forest' },
+            { color: '#18181b', label: 'Deep Navy' }, { color: '#052e16', label: 'Forest' },
             { color: '#1e1b4b', label: 'Deep Purple' }, { color: '#1c1917', label: 'Charcoal' },
             { color: '#3b0764', label: 'Plum' }, { color: '#042f2e', label: 'Ocean' },
             { color: '#fef9ee', label: 'Warm White' }, { color: '#f0f4ff', label: 'Cool White' },
@@ -648,18 +648,17 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     </div>
   );
 
-  const tunnelUrl = currentHub?.tunnelUrl ?? '';
-  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const hubLanIp = currentHub?.lanIp;
   const currentHostname = window.location.hostname;
   const accessedLocally = currentHostname === 'localhost' || currentHostname === '127.0.0.1' || /^10\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\./.test(currentHostname);
-  const hubPortalOrigin = tunnelUrl && !isLocalHub ? (() => { try { return new URL(tunnelUrl).origin; } catch { return null; } })() : null;
-  const onHubPortal = accessedLocally || !hubPortalOrigin || window.location.origin === hubPortalOrigin;
+  // Show the "Switch to Local" card only when: we have a LAN IP, and we're NOT already on a LAN address
+  const showLocalSwitch = !!hubLanIp && !accessedLocally;
 
   const handleOpenHubPortal = () => {
-    if (!hubPortalOrigin || !currentHub?.slug) return;
+    if (!hubLanIp || !currentHub?.slug) return;
     const conn = hubService.getHubConnection(currentHub.slug);
     const cc = btoa(encodeURIComponent(JSON.stringify(conn)));
-    window.open(`${hubPortalOrigin}/?hub=${currentHub.slug}&_cc=${cc}`, '_blank');
+    window.open(`http://${hubLanIp}:9090/?hub=${currentHub.slug}&_cc=${cc}`, '_blank');
   };
 
   const hubSection = (
@@ -684,7 +683,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </div>
       </div>
 
-      {!onHubPortal && (
+      {showLocalSwitch && (
         <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 p-5">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
@@ -693,14 +692,14 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-0.5">Switch to Local Connection</h3>
               <p className="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed mb-3">
-                On the same network as your hub? Open it directly — no internet required. Your session transfers automatically, no login needed. Add it to your home screen for permanent local access.
+                On the same Wi-Fi as your hub? Connect directly — no internet required. Opens in your browser (not this app). Your session transfers automatically — no login needed. Install it from there as a separate local shortcut.
               </p>
               <button
                 onClick={handleOpenHubPortal}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Open Hub Portal
+                Open Local Hub
               </button>
             </div>
           </div>

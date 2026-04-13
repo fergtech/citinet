@@ -32,3 +32,46 @@
   -ms-user-select: none;
   user-select: none;
 }
+
+/* ── TipTap Notes Editor ────────────────────────── */
+.tiptap-editor .ProseMirror { outline: none; }
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+.dark .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before { color: #52525b; }
+.tiptap-editor .ProseMirror ul { list-style: disc; padding-left: 1.4rem; margin: 0.25rem 0; }
+.tiptap-editor .ProseMirror ol { list-style: decimal; padding-left: 1.4rem; margin: 0.25rem 0; }
+.tiptap-editor .ProseMirror li { margin: 0.1rem 0; }
+.tiptap-editor .ProseMirror p { margin: 0.2rem 0; }
+.tiptap-editor .ProseMirror ul[data-type="taskList"] { list-style: none; padding: 0; }
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5rem; }
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li > label { flex: 0 0 auto; margin-top: 3px; cursor: pointer; }
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] { width: 14px; height: 14px; accent-color: #7c3aed; cursor: pointer; }
+.tiptap-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #9ca3af; }
+.tiptap-editor .ProseMirror strong { font-weight: 600; }
+.tiptap-editor .ProseMirror em { font-style: italic; }
+.tiptap-editor .ProseMirror u { text-decoration: underline; }
+
+/* ── Prevent iOS auto-zoom on input focus ───────────────── */
+/* iOS Safari zooms when font-size < 16px. This rule prevents that
+   without disabling pinch-zoom. Visual size is unchanged by Tailwind
+   utility classes which override font-size at render time. */
+@media (hover: none) and (pointer: coarse) {
+  input, textarea, select, [contenteditable] {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Safe area utilities (viewport-fit=cover) ────────────────
+   viewport-fit=cover lets content reach the bottom home-bar area.
+   These classes are used on fixed bottom elements (install banners,
+   floating launcher) so they respect the home indicator.
+   We use `default` status bar style so iOS owns the top safe area —
+   no #root padding needed. theme-color matching handles the visual. */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom) !important; }
+.pt-safe { padding-top:    env(safe-area-inset-top)    !important; }
+.mb-safe { margin-bottom:  env(safe-area-inset-bottom) !important; }

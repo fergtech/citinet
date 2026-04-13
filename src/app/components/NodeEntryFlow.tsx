@@ -435,14 +435,18 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug }: NodeEntryFl
                 {isIOS ? <Share className="w-5 h-5 text-white" /> : <Download className="w-5 h-5 text-white" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm">Add CitiNet to your home screen</p>
+                <p className="text-white font-semibold text-sm">
+                  {locationName ? `Install ${locationName} as your local portal` : 'Add CitiNet to your home screen'}
+                </p>
                 {isIOS ? (
                   <p className="text-zinc-400 text-xs mt-0.5 leading-relaxed">
                     Tap <strong className="text-zinc-200">Share</strong> in Safari, then{' '}
                     <strong className="text-zinc-200">Add to Home Screen</strong>.
                   </p>
                 ) : (
-                  <p className="text-zinc-400 text-xs mt-0.5">Install for faster access — no App Store needed.</p>
+                  <p className="text-zinc-400 text-xs mt-0.5">
+                    {locationName ? 'One-tap access to your local hub — no internet needed.' : 'Install for faster access — no App Store needed.'}
+                  </p>
                 )}
                 {isAndroidInstallable && (
                   <button

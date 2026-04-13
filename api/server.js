@@ -23,6 +23,8 @@
  */
 
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -74,14 +76,50 @@ const uploadBg = multer({
 
 app.use(express.json());
 
-const corsOrigin = process.env.CORS_ORIGIN || '*';
+// ── Security headers (helmet) ─────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false,       // SPA manages its own CSP
+  crossOriginEmbedderPolicy: false,   // needed for MinIO media blobs
+}));
+
+// ── CORS — supports comma-separated origin list ───────────
+const allowedOrigins = (process.env.CORS_ORIGIN || '*')
+  .split(',').map(o => o.trim()).filter(Boolean);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes('*')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// ── Rate limiting ─────────────────────────────────────────
+// Strict limit on auth endpoints to prevent brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 10,                    // 10 attempts per window per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
+});
+
+// General API limit — generous, just prevents hammering
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,        // 1 minute
+  max: 300,                   // 300 req/min per IP — covers normal usage
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/api/public/'), // public file serving exempt
+  message: { error: 'Too many requests. Please slow down.' },
+});
+app.use('/api/', apiLimiter);
 
 // ── Database ──────────────────────────────────────────────
 
@@ -104,7 +142,8 @@ async function initDb() {
       CREATE TABLE IF NOT EXISTS hub_sessions (
         token      VARCHAR(64) PRIMARY KEY,
         user_id    UUID REFERENCES hub_users(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days'
       )
     `);
     await client.query(`
@@ -387,6 +426,24 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_to   TEXT`);
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
+    // Session expiry column (migration for existing installs)
+    await client.query(`ALTER TABLE hub_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days'`);
+    // Notes
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_notes (
+        id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        owner_id    UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        title       TEXT        NOT NULL DEFAULT '',
+        body_rich   JSONB,
+        body_plain  TEXT        NOT NULL DEFAULT '',
+        is_pinned   BOOLEAN     NOT NULL DEFAULT FALSE,
+        is_archived BOOLEAN     NOT NULL DEFAULT FALSE,
+        color       TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_notes_owner ON hub_notes(owner_id, is_archived)`);
   } finally {
     client.release();
   }
@@ -421,7 +478,7 @@ async function authenticate(req, res, next) {
       `SELECT u.id, u.username, u.is_admin, u.role
        FROM hub_sessions s
        JOIN hub_users u ON s.user_id = u.id
-       WHERE s.token = $1`,
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
       [token]
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Invalid or expired token' });
@@ -453,6 +510,8 @@ async function logMod(actorId, actionType, targetType, targetId, targetName, rea
 // ── Helpers ───────────────────────────────────────────────
 
 function getLanIp() {
+  // Prefer explicit env var — required when running in Docker (container only sees bridge IP)
+  if (process.env.LAN_IP) return process.env.LAN_IP;
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const iface of ifaces[name]) {
@@ -592,7 +651,7 @@ app.get('/api/status', async (_req, res) => {
 
 // ── Auth routes ───────────────────────────────────────────
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   const { username, password, email } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
@@ -600,8 +659,8 @@ app.post('/api/auth/register', async (req, res) => {
   if (username.trim().length < 2) {
     return res.status(400).json({ error: 'Username must be at least 2 characters' });
   }
-  if (password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   try {
@@ -619,7 +678,7 @@ app.post('/api/auth/register', async (req, res) => {
     const user = result.rows[0];
     const token = generateToken();
     await pool.query(
-      'INSERT INTO hub_sessions (token, user_id) VALUES ($1, $2)',
+      `INSERT INTO hub_sessions (token, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
       [token, user.id]
     );
 
@@ -644,7 +703,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
@@ -664,7 +723,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = generateToken();
     await pool.query(
-      'INSERT INTO hub_sessions (token, user_id) VALUES ($1, $2)',
+      `INSERT INTO hub_sessions (token, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
       [token, user.id]
     );
 
@@ -683,6 +742,18 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Logout — invalidates the session token server-side
+app.post('/api/auth/logout', authenticate, async (req, res) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer /i, '');
+  try {
+    await pool.query('DELETE FROM hub_sessions WHERE token = $1', [token]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ error: 'Logout failed' });
   }
 });
 
@@ -2256,6 +2327,104 @@ app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
   }
 });
 
+// ── Notes routes (private, owner-only) ────────────────────
+
+app.get('/api/notes', authenticate, async (req, res) => {
+  try {
+    const archived = req.query.archived === 'true';
+    const { rows } = await pool.query(
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at
+       FROM hub_notes
+       WHERE owner_id = $1 AND is_archived = $2
+       ORDER BY is_pinned DESC, updated_at DESC`,
+      [req.user.id, archived]
+    );
+    res.json({ notes: rows });
+  } catch (err) {
+    console.error('List notes error:', err);
+    res.status(500).json({ error: 'Failed to load notes' });
+  }
+});
+
+app.get('/api/notes/:id', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at
+       FROM hub_notes WHERE id = $1 AND owner_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Note not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Get note error:', err);
+    res.status(500).json({ error: 'Failed to get note' });
+  }
+});
+
+app.post('/api/notes', authenticate, async (req, res) => {
+  try {
+    const { title = '', body_rich = null, body_plain = '', color = null } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO hub_notes (owner_id, title, body_rich, body_plain, color)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at`,
+      [req.user.id, title, body_rich ? JSON.stringify(body_rich) : null, body_plain, color]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Create note error:', err);
+    res.status(500).json({ error: 'Failed to create note' });
+  }
+});
+
+app.patch('/api/notes/:id', authenticate, async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM hub_notes WHERE id = $1 AND owner_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: 'Note not found' });
+
+    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'color'];
+    const updates = [];
+    const values = [];
+    let i = 1;
+    for (const key of allowed) {
+      if (key in req.body) {
+        updates.push(`${key} = $${i++}`);
+        values.push(key === 'body_rich' && req.body[key] ? JSON.stringify(req.body[key]) : req.body[key]);
+      }
+    }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    updates.push(`updated_at = NOW()`);
+    values.push(req.params.id);
+
+    const { rows } = await pool.query(
+      `UPDATE hub_notes SET ${updates.join(', ')} WHERE id = $${i}
+       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at`,
+      values
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Update note error:', err);
+    res.status(500).json({ error: 'Failed to update note' });
+  }
+});
+
+app.delete('/api/notes/:id', authenticate, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM hub_notes WHERE id = $1 AND owner_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Note not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete note error:', err);
+    res.status(500).json({ error: 'Failed to delete note' });
+  }
+});
+
 // ── Atlas pin routes ───────────────────────────────────────
 
 const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi'];
@@ -3493,6 +3662,32 @@ app.patch('/api/posts/:postId/share-to-feed', authenticate, async (req, res) => 
 // React Router handles client-side navigation (e.g. /feed, /atlas).
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
+  // Dynamic manifest — injects hub name so the installed PWA icon is distinguishable from Vercel
+  app.get('/manifest.webmanifest', async (_req, res) => {
+    try {
+      const manifestPath = path.join(distPath, 'manifest.webmanifest');
+      if (!fs.existsSync(manifestPath)) return res.status(404).end();
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+      let hubName = process.env.HUB_NAME || 'CitiNet Hub';
+      try {
+        const result = await pool.query(`SELECT value FROM hub_config WHERE key = 'hub_name' LIMIT 1`);
+        if (result.rows[0]?.value) hubName = result.rows[0].value;
+      } catch { /* use env fallback */ }
+
+      const hubSlug = process.env.HUB_SLUG || hubName.toLowerCase().replace(/\s+/g, '-');
+
+      manifest.name = `${hubName} — CitiNet`;
+      manifest.short_name = hubName;
+      manifest.start_url = `/?hub=${encodeURIComponent(hubSlug)}`;
+
+      res.setHeader('Content-Type', 'application/manifest+json');
+      res.json(manifest);
+    } catch {
+      res.status(404).end();
+    }
+  });
+
   app.use(express.static(distPath));
   app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
@@ -3508,6 +3703,11 @@ async function start() {
   }
 
   await ensureBucket();
+
+  // Purge expired sessions every 6 hours
+  setInterval(() => {
+    pool.query('DELETE FROM hub_sessions WHERE expires_at < NOW()').catch(() => {});
+  }, 6 * 60 * 60 * 1000);
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Citinet API listening on port ${PORT}`);

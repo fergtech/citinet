@@ -40,6 +40,8 @@ export interface Hub {
   lat?: number;
   /** Geocoded longitude (stored when admin sets location via LocationPicker) */
   lng?: number;
+  /** Host machine's LAN IP for direct local network access (no internet required) */
+  lanIp?: string;
 }
 
 export type HubConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'unreachable';
@@ -332,6 +334,20 @@ export interface HubSpaceMember {
   role: 'owner' | 'admin' | 'moderator' | 'member';
   status: 'active' | 'pending' | 'invited';
   joined_at: string;
+}
+
+/** A private note owned by the current user */
+export interface HubNote {
+  id: string;
+  owner_id: string;
+  title: string;
+  body_rich?: object | null;
+  body_plain: string;
+  is_pinned: boolean;
+  is_archived: boolean;
+  color?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** A product or service listed on the hub marketplace */

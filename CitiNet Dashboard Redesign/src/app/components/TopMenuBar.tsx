@@ -16,7 +16,7 @@ export function TopMenuBar({ hubName, onlineCount, tunnelUrl }: TopMenuBarProps)
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 h-9 bg-[#0f172a] backdrop-blur-md z-50 px-4 flex items-center justify-between border-b border-white/5">
+    <div className="fixed top-0 left-0 right-0 h-9 bg-[#18181b] backdrop-blur-md z-50 px-4 flex items-center justify-between border-b border-white/5">
       {/* Left section */}
       <div className="flex items-center gap-3">
         <h1 className="text-sm font-semibold text-white tracking-tight">

@@ -3,9 +3,9 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers,
+  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen,
 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
@@ -35,6 +35,7 @@ const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradi
   { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
   { Icon: Vote,          label: 'Polls',       screen: 'polls',       gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600' },
   { Icon: ScrollText,    label: 'Mod Log',     screen: 'mod-log',     gradient: 'bg-gradient-to-br from-slate-600 to-slate-700' },
+  { Icon: NotebookPen,   label: 'Notes',       screen: 'notes',       gradient: 'bg-gradient-to-br from-amber-500 to-yellow-500' },
 ];
 
 const MOBILE_DOCK_APPS = [
@@ -43,6 +44,10 @@ const MOBILE_DOCK_APPS = [
   { Icon: Store, label: 'Exchange', screen: 'marketplace' },
   { Icon: MessageCircle, label: 'Messages', screen: 'messages' },
 ];
+
+const MOBILE_LAUNCHPAD_COLUMNS = 5;
+const MOBILE_LAUNCHPAD_ROWS = 2;
+const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
 
 interface DashboardProps {
   userName?: string;
@@ -236,7 +241,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
   const [selectedInitiative] = useState<null>(null);
 
-  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://citinet-info.vercel.app/').trim();
+  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://citinet.cloud/').trim();
   const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
     ? projectInfoUrlRaw
     : `https://${projectInfoUrlRaw}`;
@@ -317,6 +322,48 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...APP_TILES, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : APP_TILES;
+
+  const mobileLaunchpadItems: typeof APP_TILES = [
+    ...mobileLauncherTiles,
+    {
+      Icon: Plus,
+      label: 'Suggest',
+      screen: 'suggest',
+      gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600',
+    },
+  ];
+
+  const mobileLaunchpadPages: typeof mobileLaunchpadItems[] = [];
+  for (let i = 0; i < mobileLaunchpadItems.length; i += MOBILE_LAUNCHPAD_PAGE_SIZE) {
+    mobileLaunchpadPages.push(mobileLaunchpadItems.slice(i, i + MOBILE_LAUNCHPAD_PAGE_SIZE));
+  }
+
+  const mobileLaunchpadRef = useRef<HTMLDivElement | null>(null);
+  const [mobileLaunchpadPage, setMobileLaunchpadPage] = useState(0);
+
+  useEffect(() => {
+    setMobileLaunchpadPage(prev => Math.min(prev, Math.max(0, mobileLaunchpadPages.length - 1)));
+  }, [mobileLaunchpadPages.length]);
+
+  const handleMobileLaunchpadScroll = () => {
+    const el = mobileLaunchpadRef.current;
+    if (!el) return;
+
+    const first = el.firstElementChild as HTMLElement | null;
+    const second = el.children[1] as HTMLElement | null;
+    const pageSpan = second ? (second.offsetLeft - first!.offsetLeft) : el.clientWidth;
+    const nextPage = Math.round(el.scrollLeft / Math.max(pageSpan, 1));
+    const clamped = Math.max(0, Math.min(mobileLaunchpadPages.length - 1, nextPage));
+    if (clamped !== mobileLaunchpadPage) setMobileLaunchpadPage(clamped);
+  };
+
+  const scrollToMobileLaunchpadPage = (pageIndex: number) => {
+    const el = mobileLaunchpadRef.current;
+    if (!el) return;
+    const page = el.children[pageIndex] as HTMLElement | undefined;
+    if (!page) return;
+    el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
+  };
 
   const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-cyan-200 border border-cyan-300/35 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-cyan-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70';
 
@@ -971,42 +1018,74 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 Open Menu
               </button>
             </div>
-            <div className="grid grid-cols-5 gap-2 justify-items-center">
-              {mobileLauncherTiles.map(app => {
-                const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-                return (
-                  <button
-                    key={app.screen}
-                    onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-                    className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-slate-900/75 dark:bg-black/60 border border-slate-700 shadow-sm active:scale-95 transition-transform"
-                  >
-                    <div className="relative">
-                      <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm overflow-hidden text-white font-bold text-sm`}>
-                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
-                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          : <app.Icon className="w-5 h-5 text-white" />
-                        }
-                      </div>
-                      {badge > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-900/50">
-                          {badge > 9 ? '9+' : badge}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setShowRequestModal(true)}
-                className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-indigo-950/60 border border-indigo-500/30 shadow-sm active:scale-95 transition-transform"
-              >
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm">
-                  <Plus className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-[10px] font-medium text-indigo-300 text-center leading-tight">Suggest</span>
-              </button>
+            <div
+              ref={mobileLaunchpadRef}
+              onScroll={handleMobileLaunchpadScroll}
+              className="overflow-x-auto snap-x snap-mandatory no-scrollbar"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              <div className="flex gap-3">
+                {mobileLaunchpadPages.map((page, pageIdx) => (
+                  <div key={`launchpad-page-${pageIdx}`} className="snap-start shrink-0 w-full grid grid-cols-5 gap-2 justify-items-center content-start">
+                    {page.map(app => {
+                      const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+                      const isSuggest = app.screen === 'suggest';
+                      return (
+                        <button
+                          key={`${pageIdx}-${app.screen}`}
+                          onClick={() => isSuggest ? setShowRequestModal(true) : handleTileNavigate(app.screen, app.notifyFeature)}
+                          className={`w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 border shadow-sm active:scale-95 transition-transform ${
+                            isSuggest
+                              ? 'bg-indigo-950/60 border-indigo-500/30'
+                              : 'bg-slate-900/75 dark:bg-black/60 border-slate-700'
+                          }`}
+                        >
+                          <div className="relative">
+                            <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm overflow-hidden text-white font-bold text-sm`}>
+                              {(app.screen.startsWith('vendor/') && vendorLogoUrl)
+                                ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                : <app.Icon className="w-5 h-5 text-white" />
+                              }
+                            </div>
+                            {badge > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-900/50">
+                                {badge > 9 ? '9+' : badge}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-300' : 'text-slate-200'}`}>
+                            {app.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
+            {mobileLaunchpadPages.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 pt-1" aria-label="Launchpad page indicator">
+                {mobileLaunchpadPages.map((_, idx) => {
+                  const active = idx === mobileLaunchpadPage;
+                  return (
+                    <button
+                      key={`launchpad-dot-${idx}`}
+                      type="button"
+                      onClick={() => scrollToMobileLaunchpadPage(idx)}
+                      aria-label={`Go to launchpad page ${idx + 1}`}
+                      className={`h-1.5 w-1.5 rounded-full transition-all ${
+                        active
+                          ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-110'
+                          : 'bg-slate-500/70 dark:bg-zinc-500/70 hover:bg-slate-400 dark:hover:bg-zinc-400'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            )}
+            {mobileLaunchpadPages.length > 1 && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Swipe left for more apps</p>
+            )}
           </div>
 
           {/* Featured Content - Curated by Admins/Mods */}

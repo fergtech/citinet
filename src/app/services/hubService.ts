@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote } from '../types/hub';
 
 const STORAGE_KEYS = {
   HUBS: 'citinet-hubs',              // All known hub connections
@@ -123,6 +123,7 @@ class HubService {
       connectionStatus: probeInfo ? 'connected' : 'disconnected',
       joinedAt: new Date().toISOString(),
       lastConnectedAt: probeInfo ? new Date().toISOString() : undefined,
+      lanIp: probeInfo?.lan_ip || undefined,
       meta: {
         nodeType: probeInfo?.node_type,
         storageQuota: probeInfo?.storage_quota,
@@ -466,7 +467,7 @@ class HubService {
   }
 
   /** Update hub connection status */
-  updateHubStatus(slug: string, status: HubConnectionStatus, meta?: Partial<HubMeta>): void {
+  updateHubStatus(slug: string, status: HubConnectionStatus, meta?: Partial<HubMeta>, lanIp?: string): void {
     const connections = this.getAllHubConnections();
     const connection = connections[slug];
     if (!connection) return;
@@ -480,7 +481,10 @@ class HubService {
     } else if (meta) {
       connection.hub.meta = meta as HubMeta;
     }
-    
+    if (lanIp) {
+      connection.hub.lanIp = lanIp;
+    }
+
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
   }
 
@@ -499,12 +503,22 @@ class HubService {
     return connection.user;
   }
 
-  /** Remove a hub connection */
+  /** Remove a hub connection — also invalidates the server-side session */
   leaveHub(slug: string): void {
     const connections = this.getAllHubConnections();
+    const conn = connections[slug];
+
+    // Fire-and-forget server logout to invalidate the session token
+    if (conn?.hub?.tunnelUrl && conn?.user?.authToken) {
+      fetch(`${conn.hub.tunnelUrl}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      }).catch(() => {});
+    }
+
     delete connections[slug];
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
-    
+
     if (this.getActiveHubSlug() === slug) {
       const remaining = Object.keys(connections);
       if (remaining.length > 0) {
@@ -560,7 +574,7 @@ class HubService {
       storageUsed: result.status.storage_used,
       nodeType: result.info?.node_type,
       storageQuota: result.info?.storage_quota,
-    } : undefined);
+    } : undefined, result.info?.lan_ip || undefined);
 
     return status;
   }
@@ -1414,6 +1428,64 @@ class HubService {
       delete connections[hubSlug].user.authToken;
       localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     }
+  }
+
+  // ──────────────────────────────────────────────
+  // Notes (private, owner-only)
+  // ──────────────────────────────────────────────
+
+  async listNotes(hubSlug: string, archived = false): Promise<HubNote[]> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const url = `${conn.hub.tunnelUrl}/api/notes${archived ? '?archived=true' : ''}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${conn.user.authToken}` } });
+    if (!res.ok) throw new Error('Failed to load notes');
+    const data = await res.json();
+    return data.notes as HubNote[];
+  }
+
+  async getNote(hubSlug: string, noteId: string): Promise<HubNote> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {
+      headers: { Authorization: `Bearer ${conn.user.authToken}` },
+    });
+    if (!res.ok) throw new Error('Note not found');
+    return (await res.json()) as HubNote;
+  }
+
+  async createNote(hubSlug: string, data: { title?: string; body_plain?: string; body_rich?: object }): Promise<HubNote> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${conn.user.authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to create note');
+    return (await res.json()) as HubNote;
+  }
+
+  async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'color'>>): Promise<HubNote> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.user.authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error('Failed to update note');
+    return (await res.json()) as HubNote;
+  }
+
+  async deleteNote(hubSlug: string, noteId: string): Promise<void> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${conn.user.authToken}` },
+    });
+    if (!res.ok) throw new Error('Failed to delete note');
   }
 
   private saveHub(hub: Hub): void {
