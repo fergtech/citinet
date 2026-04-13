@@ -30,7 +30,7 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -75,6 +75,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState('');
+
+  // Key backup state
+  const [backupPassphrase, setBackupPassphrase] = useState('');
+  const [backupConfirm, setBackupConfirm] = useState('');
+  const [backupSaving, setBackupSaving] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [backupError, setBackupError] = useState('');
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
@@ -249,6 +256,35 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       setPwError(err instanceof Error ? err.message : 'Failed to change password');
     } finally {
       setPwSaving(false);
+    }
+  };
+
+  const handleBackupKeys = async () => {
+    if (!currentHub?.slug) return;
+    if (backupPassphrase.length < 8) {
+      setBackupError('Passphrase must be at least 8 characters');
+      return;
+    }
+    if (backupPassphrase !== backupConfirm) {
+      setBackupError('Passphrases do not match');
+      return;
+    }
+    setBackupSaving(true);
+    setBackupError('');
+    try {
+      const ok = await hubService.storeKeyBackup(currentHub.slug, backupPassphrase);
+      if (ok) {
+        setBackupStatus('saved');
+        setBackupPassphrase('');
+        setBackupConfirm('');
+        setTimeout(() => setBackupStatus('idle'), 4000);
+      } else {
+        setBackupError('Backup failed — make sure your keys are set up (try logging out and back in)');
+      }
+    } catch {
+      setBackupError('Backup failed');
+    } finally {
+      setBackupSaving(false);
     }
   };
 
@@ -612,6 +648,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   );
 
   const securitySection = (
+    <div className="space-y-5">
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-5">
         <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
@@ -645,6 +682,40 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         {pwSaved ? <Check className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
         {pwSaving ? 'Saving…' : pwSaved ? 'Password updated!' : 'Update Password'}
       </button>
+    </div>
+
+    {/* Key backup */}
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Encrypted Notes Backup</h3>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+        Your notes are encrypted on this device. Set a passphrase to back up your key — required to read encrypted notes on a new device.
+      </p>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Backup Passphrase</label>
+          <input type="password" value={backupPassphrase} onChange={e => setBackupPassphrase(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+            placeholder="At least 8 characters" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Confirm Passphrase</label>
+          <input type="password" value={backupConfirm} onChange={e => setBackupConfirm(e.target.value)}
+            className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow ${
+              backupConfirm && backupConfirm !== backupPassphrase ? 'border-red-400 dark:border-red-600' : 'border-slate-200 dark:border-zinc-700'
+            }`}
+            placeholder="Repeat passphrase" />
+        </div>
+      </div>
+      {backupError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{backupError}</p>}
+      <button onClick={handleBackupKeys} disabled={backupSaving || !backupPassphrase || !backupConfirm}
+        className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+        {backupStatus === 'saved' ? <Check className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
+        {backupSaving ? 'Saving backup…' : backupStatus === 'saved' ? 'Backup saved!' : 'Save Key Backup'}
+      </button>
+    </div>
     </div>
   );
 

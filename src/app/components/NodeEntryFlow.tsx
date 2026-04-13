@@ -86,6 +86,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug }: NodeEntryFl
         username: loginUsername.trim().toLowerCase(),
         password: loginPassword,
       });
+      // Generate/refresh encryption keys in the background — never blocks login
+      hubService.ensureUserKeys(hubSlug).catch(() => {});
       onComplete(userData);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
@@ -109,6 +111,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug }: NodeEntryFl
         tags: selectedTags,
         agreedToManifesto: true,
       };
+      // Generate encryption keys in the background — never blocks registration
+      hubService.ensureUserKeys(hubSlug).catch(() => {});
       onComplete(merged);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed');
