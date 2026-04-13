@@ -35,6 +35,10 @@ const Minio = require('minio');
 const app = express();
 const PORT = parseInt(process.env.PORT || '9090', 10);
 const START_TIME = Date.now();
+
+// In-memory cache for public file metadata (avoids DB hit on every Range request)
+const publicFileCache = new Map(); // fileName → { row, cachedAt }
+const PUBLIC_FILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'hub-files';
 
 // ── Storage client (MinIO) ────────────────────────────────
@@ -282,6 +286,23 @@ async function initDb() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_mod_log_created ON hub_mod_log(created_at DESC)`);
+    // Governance — feature requests (must come before hub_polls which references it)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_requests (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        author_id       UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        problem         TEXT NOT NULL,
+        who_it_helps    TEXT,
+        expected_outcome TEXT,
+        data_involved   TEXT NOT NULL DEFAULT 'none',
+        scope           TEXT NOT NULL DEFAULT 'hub_only',
+        priority        TEXT NOT NULL DEFAULT 'nice_to_have',
+        status          TEXT NOT NULL DEFAULT 'submitted',
+        admin_note      TEXT,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
     // Governance — polls
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_polls (
@@ -1366,7 +1387,7 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
     if (minioClient) {
       await minioClient.removeObject(STORAGE_BUCKET, result.rows[0].file_key).catch(() => {});
     }
-
+    publicFileCache.delete(fileName);
     res.sendStatus(204);
   } catch (err) {
     console.error('Delete error:', err);
@@ -1388,6 +1409,8 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
     );
 
     if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
+    // Invalidate public file cache so updated visibility takes effect immediately
+    publicFileCache.delete(fileName);
     res.json({ success: true });
   } catch (err) {
     console.error('Patch error:', err);
@@ -1443,12 +1466,19 @@ app.post('/api/notifications/mark-read', authenticate, async (req, res) => {
 app.get('/api/public/files/:filename', async (req, res) => {
   const fileName = decodeURIComponent(req.params.filename);
   try {
-    const result = await pool.query(
-      `SELECT * FROM hub_files WHERE file_name = $1 AND is_public = true LIMIT 1`,
-      [fileName]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
-    const file = result.rows[0];
+    let file;
+    const cached = publicFileCache.get(fileName);
+    if (cached && (Date.now() - cached.cachedAt) < PUBLIC_FILE_CACHE_TTL) {
+      file = cached.row;
+    } else {
+      const result = await pool.query(
+        `SELECT * FROM hub_files WHERE file_name = $1 AND is_public = true LIMIT 1`,
+        [fileName]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
+      file = result.rows[0];
+      publicFileCache.set(fileName, { row: file, cachedAt: Date.now() });
+    }
     if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
 
     const mimeType = file.mime_type || 'application/octet-stream';
@@ -1457,7 +1487,7 @@ app.get('/api/public/files/:filename', async (req, res) => {
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${file.file_name}"`);
     res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
 
     const rangeHeader = req.headers['range'];
     if (rangeHeader && totalSize) {
@@ -1606,7 +1636,7 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
       const fileResult = await pool.query(
         `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
          VALUES ($1, $2, $3, $4, $5, true)
-         ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW()
+         ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW(), is_public = true
          RETURNING id`,
         [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id]
       );
@@ -1904,24 +1934,6 @@ app.patch('/api/featured/reorder', authenticate, async (req, res) => {
 });
 
 // ── Feature requests routes ────────────────────────────────
-
-// Ensure hub_requests table exists
-pool.query(`
-  CREATE TABLE IF NOT EXISTS hub_requests (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    author_id       UUID REFERENCES hub_users(id) ON DELETE SET NULL,
-    problem         TEXT NOT NULL,
-    who_it_helps    TEXT,
-    expected_outcome TEXT,
-    data_involved   TEXT NOT NULL DEFAULT 'none',
-    scope           TEXT NOT NULL DEFAULT 'hub_only',
-    priority        TEXT NOT NULL DEFAULT 'nice_to_have',
-    status          TEXT NOT NULL DEFAULT 'submitted',
-    admin_note      TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )
-`).catch(err => console.error('hub_requests table creation error:', err));
 
 // Submit a feature request (any authenticated user)
 app.post('/api/requests', authenticate, async (req, res) => {
@@ -2423,6 +2435,20 @@ app.post('/api/vendors', authenticate, async (req, res) => {
       website || null,
       hours || null,
     ]);
+    if (logo_file_name) {
+      await pool.query(
+        `UPDATE hub_files SET is_public = true
+         WHERE owner_id = $1 AND file_name = $2`,
+        [req.user.id, logo_file_name]
+      );
+    }
+    if (banner_image_file_name) {
+      await pool.query(
+        `UPDATE hub_files SET is_public = true
+         WHERE owner_id = $1 AND file_name = $2`,
+        [req.user.id, banner_image_file_name]
+      );
+    }
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'You already have a vendor page' });
@@ -2487,6 +2513,20 @@ app.patch('/api/vendors/me', authenticate, async (req, res) => {
       req.user.id,
     ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Vendor page not found' });
+    if (logo_file_name) {
+      await pool.query(
+        `UPDATE hub_files SET is_public = true
+         WHERE owner_id = $1 AND file_name = $2`,
+        [req.user.id, logo_file_name]
+      );
+    }
+    if (banner_image_file_name) {
+      await pool.query(
+        `UPDATE hub_files SET is_public = true
+         WHERE owner_id = $1 AND file_name = $2`,
+        [req.user.id, banner_image_file_name]
+      );
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update vendor page' });

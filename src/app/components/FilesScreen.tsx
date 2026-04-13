@@ -686,6 +686,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                       src={previewUrl}
                       controls
                       autoPlay
+                      preload="auto"
                       className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
                     />
                   );

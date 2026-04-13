@@ -29,7 +29,7 @@ export function PostCard({ variant, category, title, author, timestamp, content,
       )}
       {variant === 'video' && mediaUrl && (
         <div className="relative w-full aspect-video bg-black">
-          <video src={mediaUrl} className="w-full h-full object-contain" />
+          <video src={mediaUrl} preload="metadata" className="w-full h-full object-contain" />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
               <Play className="w-7 h-7 text-white fill-white" />

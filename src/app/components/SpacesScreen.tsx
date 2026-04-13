@@ -355,7 +355,7 @@ function HighlightsPanel({ posts, tunnelUrl, spaceSlug }: { posts: HubPost[]; tu
               <img src={mediaUrl!} alt={post.title} className="w-full h-28 object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             )}
             {hasMedia && isVideo(post.media_file_name ? `video/${post.media_file_name.split('.').pop()}` : undefined) && (
-              <video src={mediaUrl!} className="w-full h-28 object-cover" muted />
+              <video src={mediaUrl!} className="w-full h-28 object-cover" muted preload="metadata" />
             )}
             <div className="p-3">
               <p className="text-xs font-semibold text-white leading-snug line-clamp-2">{post.title}</p>
@@ -732,7 +732,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
                     {mediaUrl && (
                       <div className="mt-3 rounded-xl overflow-hidden">
                         {post.media_file_name?.match(/\.(mp4|webm|mov)$/i)
-                          ? <video src={mediaUrl} controls className="w-full max-h-64 object-contain bg-black rounded-xl" />
+                          ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
                           : <img src={mediaUrl} alt={post.title} className="w-full max-h-64 object-cover rounded-xl" />}
                       </div>
                     )}

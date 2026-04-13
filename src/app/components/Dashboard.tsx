@@ -164,6 +164,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+  const resolvedCurrentUserAvatarUrl = currentHub?.slug && currentUser?.hubUserId
+    ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)
+    : (currentUser?.avatarUrl ?? null);
   const vendorLogoUrl = myVendor?.logo_file_name
     ? marketplaceService.getVendorLogoUrl(hubSlug, myVendor.logo_file_name)
     : null;
@@ -399,8 +402,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-slate-200 dark:border-zinc-800">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shrink-0">
-                    {currentUser?.avatarUrl
-                      ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    {resolvedCurrentUserAvatarUrl
+                      ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       : displayName.charAt(0).toUpperCase()
                     }
                   </div>
@@ -510,7 +513,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all overflow-hidden"
             >
               {vendorLogoUrl
-                ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 : myVendor.name.charAt(0).toUpperCase()
               }
             </button>
@@ -538,8 +541,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           title="My Account"
           className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm active:scale-95 ml-1 shrink-0 hover:ring-2 hover:ring-purple-400 transition-all"
         >
-          {currentUser?.avatarUrl
-            ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          {resolvedCurrentUserAvatarUrl
+            ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             : displayName.charAt(0).toUpperCase()
           }
         </button>
@@ -550,8 +553,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         {/* User Identity */}
         <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
           <div className="flex items-center gap-3 mb-2">
-            {currentUser?.avatarUrl
-              ? <img src={currentUser.avatarUrl} alt={displayName} className="w-12 h-12 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            {resolvedCurrentUserAvatarUrl
+              ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-12 h-12 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
               : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg shrink-0">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
@@ -738,7 +741,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 >
                   <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 overflow-hidden">
                     {vendorLogoUrl
-                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       : myVendor.name.charAt(0).toUpperCase()
                     }
                   </div>
@@ -833,8 +836,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm active:scale-95 transition-transform"
                 aria-label="Open profile menu"
               >
-                {currentUser?.avatarUrl
-                  ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                {resolvedCurrentUserAvatarUrl
+                  ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   : displayName.charAt(0).toUpperCase()
                 }
               </button>
@@ -936,7 +939,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 >
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg overflow-hidden">
                     {vendorLogoUrl
-                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" />
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                       : myVendor.name.charAt(0).toUpperCase()
                     }
                   </div>
@@ -978,8 +981,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                     className="w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 bg-slate-900/75 dark:bg-black/60 border border-slate-700 shadow-sm active:scale-95 transition-transform"
                   >
                     <div className="relative">
-                      <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm`}>
-                        <app.Icon className="w-5 h-5 text-white" />
+                      <div className={`w-10 h-10 rounded-xl ${app.gradient} flex items-center justify-center shadow-sm overflow-hidden text-white font-bold text-sm`}>
+                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
+                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          : <app.Icon className="w-5 h-5 text-white" />
+                        }
                       </div>
                       {badge > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-900/50">
@@ -1300,8 +1306,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold shrink-0">
-                      {currentUser?.avatarUrl
-                        ? <img src={currentUser.avatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      {resolvedCurrentUserAvatarUrl
+                        ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         : displayName.charAt(0).toUpperCase()
                       }
                     </div>
@@ -1398,7 +1404,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           post={featuredPost}
           hubSlug={hubSlug}
           currentUserId={currentUser?.hubUserId}
-          currentUserAvatarUrl={currentUser?.avatarUrl}
+          currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
           isAdmin={isAdmin}
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}

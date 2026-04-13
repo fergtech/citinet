@@ -54,6 +54,13 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [userPreferences, setUserPreferences] = useState<UserPreferences>({});
 
+  const resolveUserAvatar = useCallback((hub: Hub, user: HubUser | null): HubUser | null => {
+    if (!user?.hubUserId) return user;
+    const resolvedAvatar = hubService.getAvatarUrl(hub.slug, user.hubUserId);
+    if (!resolvedAvatar) return user;
+    return { ...user, avatarUrl: resolvedAvatar };
+  }, []);
+
   // Initialize: load hub data from the subdomain (hub mode) or skip (onboarding mode)
   useEffect(() => {
     hubService.migrateLegacyData();
@@ -84,7 +91,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       const connection = hubService.getHubConnection(slug);
       if (connection) {
         setCurrentHub(connection.hub);
-        setCurrentUser(connection.user);
+        setCurrentUser(resolveUserAvatar(connection.hub, connection.user));
         // Fetch user preferences in background (non-blocking)
         preferencesService.getPreferences(slug).then(setUserPreferences).catch(() => {});
       }
@@ -121,7 +128,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
         const activeConn = hubService.getActiveHubConnection();
         if (activeConn) {
           setCurrentHub(activeConn.hub);
-          setCurrentUser(activeConn.user);
+          setCurrentUser(resolveUserAvatar(activeConn.hub, activeConn.user));
         }
       } catch {
         // Silent fail — don't break the UI
@@ -149,9 +156,9 @@ export function HubProvider({ children }: { children: ReactNode }) {
     if (connection) {
       hubService.setActiveHub(slug);
       setCurrentHub(connection.hub);
-      setCurrentUser(connection.user);
+      setCurrentUser(resolveUserAvatar(connection.hub, connection.user));
     }
-  }, []);
+  }, [resolveUserAvatar]);
 
   const refreshStatus = useCallback(async () => {
     if (!currentHub?.slug) return;
@@ -170,29 +177,29 @@ export function HubProvider({ children }: { children: ReactNode }) {
     if (currentHub?.slug === slug) {
       const activeConnection = hubService.getActiveHubConnection();
       setCurrentHub(activeConnection?.hub || null);
-      setCurrentUser(activeConnection?.user || null);
+      setCurrentUser(activeConnection ? resolveUserAvatar(activeConnection.hub, activeConnection.user) : null);
     }
-  }, [currentHub?.slug]);
+  }, [currentHub?.slug, resolveUserAvatar]);
 
   const onOnboardingComplete = useCallback((hubSlug: string, userData: HubUser) => {
     // Update context immediately
     const connection = hubService.getHubConnection(hubSlug);
     if (connection) {
       setCurrentHub(connection.hub);
-      setCurrentUser(userData);
+      setCurrentUser(resolveUserAvatar(connection.hub, userData));
     }
     setJoinedHubs(hubService.getJoinedHubs());
-  }, []);
+  }, [resolveUserAvatar]);
 
   const onHubJoined = useCallback((hub: Hub) => {
     setCurrentHub(hub);
     // Also load user data from storage (registerUser/loginUser already saved it)
     const connection = hubService.getHubConnection(hub.slug);
     if (connection?.user?.username) {
-      setCurrentUser(connection.user);
+      setCurrentUser(resolveUserAvatar(connection.hub, connection.user));
     }
     setJoinedHubs(hubService.getJoinedHubs());
-  }, []);
+  }, [resolveUserAvatar]);
 
   const updateUserProfile = useCallback((
     updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName'>>

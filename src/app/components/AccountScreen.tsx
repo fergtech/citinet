@@ -36,6 +36,7 @@ import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
+import type { HubMember } from '../types/hub';
 
 const BANNER_SOLID_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#be123c', '#b45309', '#374151'];
 const BANNER_GRADIENTS = [
@@ -54,6 +55,7 @@ interface AccountScreenProps {
 
 export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const { currentHub, currentUser, updateUserProfile, userPreferences, updateUserPreferences } = useHub();
+  const [memberProfile, setMemberProfile] = useState<HubMember | null>(null);
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -107,6 +109,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       setBgBrightness(0.65);
     }
   }, [userPreferences.background_brightness]);
+
+  useEffect(() => {
+    if (!currentHub?.slug || !currentUser?.hubUserId) return;
+    hubService.getMember(currentHub.slug, currentUser.hubUserId)
+      .then(setMemberProfile)
+      .catch(() => {});
+  }, [currentHub?.slug, currentUser?.hubUserId]);
 
   const saveBannerFields = async (fields: Parameters<typeof hubService.updateProfile>[1]) => {
     if (!currentHub?.slug) return;
@@ -334,12 +343,12 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const bannerStyle: React.CSSProperties = bannerPreview
     ? { backgroundImage: `url(${bannerPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : currentUser?.bannerMode === 'image' && currentUser?.hubUserId
-    ? { backgroundImage: `url(${hubService.getProfileBannerUrl(currentHub?.slug ?? '', currentUser.hubUserId, currentUser.bannerImageFileName)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : currentUser?.bannerMode === 'solid' && currentUser?.bannerColor
-    ? { backgroundColor: currentUser.bannerColor }
-    : currentUser?.bannerMode === 'gradient' && currentUser?.bannerGradientFrom && currentUser?.bannerGradientTo
-    ? { backgroundImage: `linear-gradient(135deg, ${currentUser.bannerGradientFrom}, ${currentUser.bannerGradientTo})` }
+    : (currentUser?.bannerMode ?? memberProfile?.banner_mode) === 'image' && currentUser?.hubUserId
+    ? { backgroundImage: `url(${hubService.getProfileBannerUrl(currentHub?.slug ?? '', currentUser.hubUserId, currentUser.bannerImageFileName ?? memberProfile?.banner_image_file_name)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : (currentUser?.bannerMode ?? memberProfile?.banner_mode) === 'solid' && (currentUser?.bannerColor ?? memberProfile?.banner_color)
+    ? { backgroundColor: currentUser?.bannerColor ?? memberProfile?.banner_color ?? '' }
+    : (currentUser?.bannerMode ?? memberProfile?.banner_mode) === 'gradient' && (currentUser?.bannerGradientFrom ?? memberProfile?.banner_gradient_from) && (currentUser?.bannerGradientTo ?? memberProfile?.banner_gradient_to)
+    ? { backgroundImage: `linear-gradient(135deg, ${currentUser?.bannerGradientFrom ?? memberProfile?.banner_gradient_from}, ${currentUser?.bannerGradientTo ?? memberProfile?.banner_gradient_to})` }
     : { backgroundImage: 'linear-gradient(135deg, #2563eb, #7c3aed)' };
 
   const profileSection = (
@@ -639,25 +648,64 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     </div>
   );
 
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const currentHostname = window.location.hostname;
+  const accessedLocally = currentHostname === 'localhost' || currentHostname === '127.0.0.1' || /^10\.|^172\.(1[6-9]|2\d|3[01])\.|^192\.168\./.test(currentHostname);
+  const hubPortalOrigin = tunnelUrl && !isLocalHub ? (() => { try { return new URL(tunnelUrl).origin; } catch { return null; } })() : null;
+  const onHubPortal = accessedLocally || !hubPortalOrigin || window.location.origin === hubPortalOrigin;
+
+  const handleOpenHubPortal = () => {
+    if (!hubPortalOrigin || !currentHub?.slug) return;
+    const conn = hubService.getHubConnection(currentHub.slug);
+    const cc = btoa(encodeURIComponent(JSON.stringify(conn)));
+    window.open(`${hubPortalOrigin}/?hub=${currentHub.slug}&_cc=${cc}`, '_blank');
+  };
+
   const hubSection = (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Server className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Connected Hub</h3>
-      </div>
-      <div className="space-y-2 text-sm">
-        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-          <Users className="w-4 h-4 shrink-0" /><span>{currentHub?.name}</span>
+    <div className="space-y-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Server className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Connected Hub</h3>
         </div>
-        {currentHub?.location && (
+        <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-            <MapPin className="w-4 h-4 shrink-0" /><span>{currentHub.location}</span>
+            <Users className="w-4 h-4 shrink-0" /><span>{currentHub?.name}</span>
           </div>
-        )}
-        {currentHub?.joinedAt && (
-          <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">Joined {new Date(currentHub.joinedAt).toLocaleDateString()}</p>
-        )}
+          {currentHub?.location && (
+            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+              <MapPin className="w-4 h-4 shrink-0" /><span>{currentHub.location}</span>
+            </div>
+          )}
+          {currentHub?.joinedAt && (
+            <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">Joined {new Date(currentHub.joinedAt).toLocaleDateString()}</p>
+          )}
+        </div>
       </div>
+
+      {!onHubPortal && (
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 p-5">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+              <ExternalLink className="w-4 h-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 mb-0.5">Switch to Local Connection</h3>
+              <p className="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed mb-3">
+                On the same network as your hub? Open it directly — no internet required. Your session transfers automatically, no login needed. Add it to your home screen for permanent local access.
+              </p>
+              <button
+                onClick={handleOpenHubPortal}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Hub Portal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

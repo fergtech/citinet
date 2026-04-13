@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight, QrCode, Copy } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { featuredService } from '../services/featuredService';
@@ -528,6 +529,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <StatCard label="Uptime" value={currentHub?.meta?.uptime ?? '—'} />
               </div>
             </div>
+
+            {/* ── Join QR Code ── */}
+            <JoinQrCard hubSlug={currentHub?.slug ?? ''} tunnelUrl={currentHub?.tunnelUrl ?? ''} />
           </div>
         )}
 
@@ -1170,6 +1174,99 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function JoinQrCard({ hubSlug, tunnelUrl }: { hubSlug: string; tunnelUrl: string }) {
+  const frontendPort = window.location.port || '3001';
+  const storageKey = `citinet-lan-ip-${hubSlug}`;
+
+  // Priority: 1) saved in localStorage, 2) real IP from tunnelUrl, 3) page host if LAN, 4) blank
+  const deriveDefault = () => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) return saved;
+    try {
+      const apiHost = tunnelUrl ? new URL(tunnelUrl).hostname : '';
+      const isLocal = !apiHost || apiHost === 'localhost' || apiHost === '127.0.0.1';
+      if (!isLocal) return apiHost;
+    } catch { /* ignore */ }
+    const pageHost = window.location.hostname;
+    if (pageHost !== 'localhost' && pageHost !== '127.0.0.1') return pageHost;
+    return '';
+  };
+
+  const [lanIp, setLanIp] = useState(deriveDefault);
+
+  const handleIpChange = (val: string) => {
+    setLanIp(val);
+    if (val.trim()) {
+      localStorage.setItem(storageKey, val.trim());
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  };
+  const joinUrl = lanIp.trim() ? `http://${lanIp.trim()}:${frontendPort}?hub=${hubSlug}` : '';
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <QrCode className="w-4 h-4 text-purple-600" />
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Member Join QR Code</h3>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+        Anyone on the same Wi-Fi can scan this to join the hub instantly.
+      </p>
+
+      {/* IP input — always visible so admin can correct it */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          Hub machine's LAN IP
+        </label>
+        <input
+          type="text"
+          value={lanIp}
+          onChange={e => handleIpChange(e.target.value)}
+          placeholder="e.g. 10.0.0.139"
+          className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800
+            text-sm text-slate-900 dark:text-white font-mono focus:border-purple-500 focus:outline-none transition-colors"
+        />
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+          Run <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">ipconfig</code> and look for your Ethernet/Wi-Fi IPv4 address.
+        </p>
+      </div>
+
+      {joinUrl ? (
+        <div className="flex flex-col items-center gap-4">
+          <div className="p-3 bg-white rounded-xl shadow-sm border border-slate-100 dark:border-zinc-700">
+            <QRCodeSVG
+              value={joinUrl}
+              size={180}
+              bgColor="#ffffff"
+              fgColor="#18181b"
+              level="M"
+              includeMargin={false}
+            />
+          </div>
+          <div className="w-full">
+            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-2">Scan with any camera app or browser</p>
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-zinc-800 rounded-lg px-3 py-2">
+              <code className="text-xs text-slate-700 dark:text-slate-300 flex-1 truncate">{joinUrl}</code>
+              <button
+                onClick={() => navigator.clipboard.writeText(joinUrl)}
+                className="shrink-0 p-1 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                title="Copy link"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-4">
+          Enter the LAN IP above to generate the QR code.
+        </p>
+      )}
     </div>
   );
 }

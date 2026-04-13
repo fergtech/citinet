@@ -95,6 +95,7 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
                     muted
                     loop
                     playsInline
+                    preload="auto"
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 ) : item.mediaType === 'image' && mediaUrl ? (

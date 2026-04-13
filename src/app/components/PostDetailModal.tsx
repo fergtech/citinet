@@ -297,7 +297,7 @@ export function PostDetailModal({
                 )}
                 {variant === 'video' && mediaUrl && (
                   <div className="w-full bg-black">
-                    <video src={mediaUrl} controls className="w-full max-h-72 object-contain" />
+                    <video src={mediaUrl} controls preload="auto" className="w-full max-h-72 object-contain" />
                   </div>
                 )}
 
