@@ -8,6 +8,8 @@
  */
 
 import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote } from '../types/hub';
+import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
+import type { KeyBackupPayload } from '../utils/crypto';
 
 const STORAGE_KEYS = {
   HUBS: 'citinet-hubs',              // All known hub connections
@@ -518,6 +520,8 @@ class HubService {
 
     delete connections[slug];
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+    // Clear encryption keys from IndexedDB on logout
+    clearKeys(slug).catch(() => {});
 
     if (this.getActiveHubSlug() === slug) {
       const remaining = Object.keys(connections);
@@ -812,25 +816,39 @@ class HubService {
     const data = await response.json();
     const rawConvos: any[] = Array.isArray(data) ? data : (data.conversations || []);
 
-    return rawConvos.map((raw: any) => {
+    // Process all conversations, decrypting last message previews for DMs
+    return Promise.all(rawConvos.map(async (raw: any) => {
       // API wraps as { conversation: {...}, members: [...], last_message: ... }
       const conv = raw.conversation || raw;
-      const membersList = raw.members || conv.members || conv.participants || [];
+      const membersList: Array<{ user_id: string; username: string }> = (raw.members || conv.members || conv.participants || []).map((p: any) => ({
+        user_id: p.user_id || p.id || '',
+        username: p.username || p.name || 'Unknown',
+      }));
       const lastMsg = raw.last_message || conv.last_message;
+      const convoId: string = conv.conversation_id || conv.id || '';
+      const kind: 'dm' | 'group' = conv.kind === 'dm' ? 'dm' : 'group';
+
+      let lastMessageBody: string = lastMsg ? (lastMsg.body || lastMsg.content || lastMsg.text || '') : '';
+      if (lastMsg && kind === 'dm' && membersList.length === 2 && isMessageEncrypted(lastMessageBody)) {
+        const peerKey = await this.resolveDmPeerKey(hubSlug, membersList);
+        if (peerKey) {
+          lastMessageBody = await decryptMessage(hubSlug, peerKey, convoId, lastMessageBody);
+        } else {
+          lastMessageBody = '🔒 Encrypted message';
+        }
+      }
+
       return {
-        id: conv.conversation_id || conv.id || '',
-        kind: (conv.kind === 'dm' ? 'dm' : 'group') as 'dm' | 'group',
+        id: convoId,
+        kind,
         name: conv.name || undefined,
-        members: membersList.map((p: any) => ({
-          user_id: p.user_id || p.id || '',
-          username: p.username || p.name || 'Unknown',
-        })),
+        members: membersList,
         lastMessage: lastMsg ? {
           id: lastMsg.message_id || lastMsg.id || '',
-          conversation_id: lastMsg.conversation_id || conv.conversation_id || '',
+          conversation_id: lastMsg.conversation_id || convoId,
           sender_id: lastMsg.sender_id || '',
           sender_username: lastMsg.sender_username || undefined,
-          body: lastMsg.body || lastMsg.content || lastMsg.text || '',
+          body: lastMessageBody,
           attachments: this.normalizeAttachments(lastMsg.attachments),
           created_at: lastMsg.created_at || '',
         } : undefined,
@@ -838,7 +856,7 @@ class HubService {
         created_at: conv.created_at || '',
         updated_at: conv.updated_at || undefined,
       };
-    });
+    }));
   }
 
   /**
@@ -893,12 +911,14 @@ class HubService {
   /**
    * Get messages in a conversation (paginated).
    * GET /api/conversations/:id/messages?limit=50&before=cursor
+   * Pass `members` for DMs to enable transparent E2E decryption.
    */
   async getMessages(
     hubSlug: string,
     conversationId: string,
     limit = 50,
     before?: string,
+    members?: Array<{ user_id: string }>,
   ): Promise<HubMessage[]> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
 
@@ -918,34 +938,58 @@ class HubService {
     const data = await response.json();
     const rawMsgs: any[] = Array.isArray(data) ? data : (data.messages || []);
 
-    return rawMsgs.map((m: any) => ({
-      id: m.message_id || m.id || '',
-      conversation_id: m.conversation_id || conversationId,
-      sender_id: m.sender_id || m.user_id || '',
-      sender_username: m.sender_username || m.username || undefined,
-      body: m.body || m.content || m.text || '',
-      attachments: this.normalizeAttachments(m.attachments),
-      created_at: m.created_at || '',
+    // Resolve DM peer key once for the whole batch
+    let peerKey: string | null = null;
+    if (members && members.length === 2) {
+      peerKey = await this.resolveDmPeerKey(hubSlug, members);
+    }
+
+    return Promise.all(rawMsgs.map(async (m: any) => {
+      const rawBody: string = m.body || m.content || m.text || '';
+      let body = rawBody;
+      if (peerKey && isMessageEncrypted(rawBody)) {
+        body = await decryptMessage(hubSlug, peerKey, conversationId, rawBody);
+      }
+      return {
+        id: m.message_id || m.id || '',
+        conversation_id: m.conversation_id || conversationId,
+        sender_id: m.sender_id || m.user_id || '',
+        sender_username: m.sender_username || m.username || undefined,
+        body,
+        attachments: this.normalizeAttachments(m.attachments),
+        created_at: m.created_at || '',
+      };
     }));
   }
 
   /**
    * Send a message in a conversation.
    * POST /api/conversations/:id/messages
+   * Pass `members` for DMs to enable E2E encryption.
    */
   async sendMessage(
     hubSlug: string,
     conversationId: string,
     messageBody: string,
+    members?: Array<{ user_id: string }>,
   ): Promise<HubMessage> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+
+    // Encrypt body for DMs if we can resolve the peer's public key
+    let encryptedBody = messageBody;
+    if (members && members.length === 2) {
+      const peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      if (peerKey) {
+        encryptedBody = await encryptMessage(hubSlug, peerKey, conversationId, messageBody);
+      }
+    }
 
     const response = await fetch(
       `${tunnelUrl}/api/conversations/${conversationId}/messages`,
       {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: messageBody }),
+        body: JSON.stringify({ body: encryptedBody }),
       },
     );
 
@@ -960,7 +1004,7 @@ class HubService {
       conversation_id: m.conversation_id || conversationId,
       sender_id: m.sender_id || m.user_id || '',
       sender_username: m.sender_username || m.username || undefined,
-      body: m.body || m.content || messageBody,
+      body: messageBody, // return original plaintext for immediate local display
       attachments: this.normalizeAttachments(m.attachments),
       created_at: m.created_at || new Date().toISOString(),
     };
@@ -970,12 +1014,14 @@ class HubService {
    * Send a message with file attachments.
    * POST /api/conversations/:id/messages using multipart/form-data.
    * Falls back to uploading files separately then referencing them.
+   * Pass `members` for DMs to enable E2E encryption of the text body.
    */
   async sendMessageWithMedia(
     hubSlug: string,
     conversationId: string,
     messageBody: string,
     files: File[],
+    members?: Array<{ user_id: string }>,
   ): Promise<HubMessage> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
@@ -998,9 +1044,18 @@ class HubService {
       });
     }
 
+    // Encrypt text body for DMs if possible
+    let encryptedBody = messageBody || '';
+    if (members && members.length === 2) {
+      const peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      if (peerKey && encryptedBody) {
+        encryptedBody = await encryptMessage(hubSlug, peerKey, conversationId, encryptedBody);
+      }
+    }
+
     // Send the message with attachment IDs
     const payload: any = {
-      body: messageBody || '',
+      body: encryptedBody,
       attachment_ids: attachments.map(a => a.id),
     };
 
@@ -1024,7 +1079,7 @@ class HubService {
       conversation_id: m.conversation_id || conversationId,
       sender_id: m.sender_id || m.user_id || '',
       sender_username: m.sender_username || m.username || undefined,
-      body: m.body || m.content || messageBody || '',
+      body: messageBody || '', // return original plaintext for immediate local display
       attachments: this.normalizeAttachments(m.attachments) || attachments,
       created_at: m.created_at || new Date().toISOString(),
     };
@@ -1096,20 +1151,36 @@ class HubService {
   /**
    * Upload a file to the hub.
    * POST /api/files with multipart/form-data (file + is_public).
+   * Private files are transparently client-side encrypted before upload.
    */
   async uploadFile(hubSlug: string, file: File, isPublic: boolean): Promise<HubFile> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('is_public', String(isPublic));
-
     const headers: Record<string, string> = {};
     if (connection.user?.authToken) {
       headers['Authorization'] = `Bearer ${connection.user.authToken}`;
     }
+
+    let uploadFile = file;
+
+    // Encrypt private files client-side before uploading
+    if (!isPublic) {
+      try {
+        const buf = await file.arrayBuffer();
+        const encBuf = await encryptFileBuffer(hubSlug, buf);
+        if (encBuf) {
+          // Keep original filename and mime so server stores metadata correctly.
+          // Encrypted bytes are opaque — server just stores them as-is.
+          uploadFile = new File([encBuf], file.name, { type: file.type });
+        }
+      } catch { /* fall back to unencrypted upload */ }
+    }
+
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    formData.append('is_public', String(isPublic));
 
     const response = await fetch(`${connection.hub.tunnelUrl}/api/files`, {
       method: 'POST',
@@ -1124,6 +1195,7 @@ class HubService {
       id: String(data.file_id || data.id || ''),
       name: data.file_name || file.name,
       size: Number(data.size_bytes || file.size || 0),
+      mime_type: file.type || undefined,
       is_public: isPublic,
       owner_id: connection.user?.hubUserId || undefined,
       uploaded_at: new Date().toISOString(),
@@ -1205,10 +1277,15 @@ class HubService {
       })
         .then(res => {
           if (!res.ok) throw new Error(`Download failed (${res.status})`);
-          return res.blob();
+          return res.arrayBuffer();
         })
-        .then(blob => {
-          const blobUrl = URL.createObjectURL(blob);
+        .then(async buf => {
+          let finalBuf: ArrayBuffer = buf;
+          if (isFileEncrypted(buf)) {
+            const plain = await decryptFileBuffer(hubSlug, buf);
+            if (plain) finalBuf = plain;
+          }
+          const blobUrl = URL.createObjectURL(new Blob([finalBuf]));
           const a = document.createElement('a');
           a.href = blobUrl;
           a.download = fileName;
@@ -1226,9 +1303,10 @@ class HubService {
 
   /**
    * Fetch a file from the hub as a blob URL (for lightbox preview).
+   * Transparently decrypts client-side encrypted files.
    * Caller is responsible for revoking the URL when done.
    */
-  async fetchFileBlob(hubSlug: string, fileName: string): Promise<string> {
+  async fetchFileBlob(hubSlug: string, fileName: string, mimeType?: string): Promise<string> {
     const url = this.getFileDownloadUrl(hubSlug, fileName);
     if (!url) throw new Error('No download URL available');
 
@@ -1239,7 +1317,20 @@ class HubService {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
-    const blob = await res.blob();
+
+    const buf = await res.arrayBuffer();
+
+    // Attempt decryption if the file has the encryption magic header
+    if (isFileEncrypted(buf)) {
+      const plainBuf = await decryptFileBuffer(hubSlug, buf);
+      if (plainBuf) {
+        const mime = mimeType || 'application/octet-stream';
+        return URL.createObjectURL(new Blob([plainBuf], { type: mime }));
+      }
+      // Decryption failed (different device / no key) — return as-is, it will look garbled
+    }
+
+    const blob = new Blob([buf], { type: mimeType || res.headers.get('Content-Type') || 'application/octet-stream' });
     return URL.createObjectURL(blob);
   }
 
@@ -1431,8 +1522,151 @@ class HubService {
   }
 
   // ──────────────────────────────────────────────
+  // E2E Encryption — Key Management
+  // ──────────────────────────────────────────────
+
+  /**
+   * Ensure this device has encryption keys for the given hub.
+   * Called silently after login/register — generates keys if missing,
+   * then uploads the public key to the hub server.
+   * Fire-and-forget: errors are swallowed so they never block auth.
+   */
+  async ensureUserKeys(hubSlug: string): Promise<void> {
+    try {
+      const alreadyHasKeys = await hasKeys(hubSlug);
+      let publicKeyJwk: string;
+
+      if (alreadyHasKeys) {
+        // Keys exist on this device — re-upload the public key so server stays in sync
+        // (e.g. server was reset, or first upload failed).
+        const storedJwk = await getStoredPublicKeyJwk(hubSlug);
+        if (!storedJwk) return;
+        const conn = this.getHubConnection(hubSlug);
+        if (!conn?.user?.authToken) return;
+        await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
+          body: JSON.stringify({ publicKeyJwk: storedJwk }),
+        });
+        return;
+      }
+
+      // No keys on this device — generate a fresh set
+      const result = await generateUserKeys(hubSlug);
+      publicKeyJwk = result.publicKeyJwk;
+
+      const conn = this.getHubConnection(hubSlug);
+      if (!conn?.user?.authToken) return;
+      await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
+        body: JSON.stringify({ publicKeyJwk }),
+      });
+    } catch { /* never block auth */ }
+  }
+
+  /** Upload or refresh the user's public key on the hub server. */
+  async registerPublicKey(hubSlug: string, publicKeyJwk: string): Promise<void> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return;
+    await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
+      body: JSON.stringify({ publicKeyJwk }),
+    });
+  }
+
+  /** Get another user's public key from the hub (for encrypting content to them). */
+  async getUserPublicKey(hubSlug: string, userId: string): Promise<string | null> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return null;
+    try {
+      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/${encodeURIComponent(userId)}`, {
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      });
+      if (!res.ok) return null;
+      const { publicKeyJwk } = await res.json();
+      return publicKeyJwk;
+    } catch { return null; }
+  }
+
+  /**
+   * Resolve the peer's public key JWK for a DM conversation.
+   * `members` is the conversation's members array (must include both parties).
+   * Returns null for group chats or if the peer has no registered key.
+   */
+  private async resolveDmPeerKey(
+    hubSlug: string,
+    members: Array<{ user_id: string }>,
+  ): Promise<string | null> {
+    const myUserId = this.getHubConnection(hubSlug)?.user?.hubUserId;
+    if (!myUserId) return null;
+    const peer = members.find(m => m.user_id !== myUserId);
+    if (!peer) return null;
+    return this.getUserPublicKey(hubSlug, peer.user_id);
+  }
+
+  /** Store an encrypted key backup on the server for cross-device recovery. */
+  async storeKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
+    try {
+      const backup = await createKeyBackup(hubSlug, passphrase);
+      if (!backup) return false;
+      const conn = this.getHubConnection(hubSlug);
+      if (!conn?.user?.authToken) return false;
+      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
+        body: JSON.stringify(backup),
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  /** Retrieve encrypted key backup from server and restore using passphrase. */
+  async restoreFromKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
+    try {
+      const conn = this.getHubConnection(hubSlug);
+      if (!conn?.user?.authToken) return false;
+      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      });
+      if (!res.ok) return false;
+      const backup = await res.json() as KeyBackupPayload;
+      return restoreKeyBackup(hubSlug, backup, passphrase);
+    } catch { return false; }
+  }
+
+  /** Whether a key backup exists on the server for this user. */
+  async hasKeyBackup(hubSlug: string): Promise<boolean> {
+    try {
+      const conn = this.getHubConnection(hubSlug);
+      if (!conn?.user?.authToken) return false;
+      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      });
+      return res.ok;
+    } catch { return false; }
+  }
+
+  /** Remove keys from this device's IndexedDB (called on logout). */
+  async clearLocalKeys(hubSlug: string): Promise<void> {
+    await clearKeys(hubSlug).catch(() => {});
+  }
+
+  // ──────────────────────────────────────────────
   // Notes (private, owner-only)
   // ──────────────────────────────────────────────
+
+  /** Decrypt a note in-place if its body_plain is an encrypted sentinel. */
+  private async maybeDecryptNote(hubSlug: string, note: HubNote): Promise<HubNote> {
+    if (!isNoteEncrypted(note.body_plain)) return note;
+    const decrypted = await decryptNoteBody(hubSlug, note.body_plain);
+    if (!decrypted) {
+      // Key unavailable on this device — show placeholder so the note still renders
+      return { ...note, body_rich: null, body_plain: '[Encrypted — open on the device where you created this note, or restore your key backup]' };
+    }
+    return { ...note, body_rich: decrypted.body_rich, body_plain: decrypted.body_plain };
+  }
 
   async listNotes(hubSlug: string, archived = false): Promise<HubNote[]> {
     const conn = this.getHubConnection(hubSlug);
@@ -1441,7 +1675,8 @@ class HubService {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${conn.user.authToken}` } });
     if (!res.ok) throw new Error('Failed to load notes');
     const data = await res.json();
-    return data.notes as HubNote[];
+    const notes = data.notes as HubNote[];
+    return Promise.all(notes.map(n => this.maybeDecryptNote(hubSlug, n)));
   }
 
   async getNote(hubSlug: string, noteId: string): Promise<HubNote> {
@@ -1451,31 +1686,49 @@ class HubService {
       headers: { Authorization: `Bearer ${conn.user.authToken}` },
     });
     if (!res.ok) throw new Error('Note not found');
-    return (await res.json()) as HubNote;
+    return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
   }
 
   async createNote(hubSlug: string, data: { title?: string; body_plain?: string; body_rich?: object }): Promise<HubNote> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');
+    // Encrypt body if content key is available and there is content to encrypt
+    let payload = { ...data };
+    if ((data.body_plain || data.body_rich) && (data.body_plain || data.body_rich !== undefined)) {
+      const enc = await encryptNoteBody(hubSlug, data.body_rich ?? null, data.body_plain ?? '');
+      if (enc) payload = { ...payload, body_plain: enc.body_plain, body_rich: enc.body_rich ?? undefined };
+    }
     const res = await fetch(`${conn.hub.tunnelUrl}/api/notes`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${conn.user.authToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to create note');
-    return (await res.json()) as HubNote;
+    return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
   }
 
   async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'color'>>): Promise<HubNote> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');
+    // Encrypt body content fields if present in patch
+    let sendPatch = { ...patch };
+    if (patch.body_plain !== undefined || patch.body_rich !== undefined) {
+      const enc = await encryptNoteBody(
+        hubSlug,
+        patch.body_rich ?? null,
+        patch.body_plain ?? '',
+      );
+      if (enc) {
+        sendPatch = { ...sendPatch, body_plain: enc.body_plain, body_rich: enc.body_rich ?? undefined };
+      }
+    }
     const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${conn.user.authToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
+      body: JSON.stringify(sendPatch),
     });
     if (!res.ok) throw new Error('Failed to update note');
-    return (await res.json()) as HubNote;
+    return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
   }
 
   async deleteNote(hubSlug: string, noteId: string): Promise<void> {

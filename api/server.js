@@ -76,22 +76,36 @@ const uploadBg = multer({
 
 app.use(express.json());
 
+// Trust first proxy hop — required when running behind Tailscale/Funnel or any reverse proxy.
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request.
+app.set('trust proxy', 1);
+
 // ── Security headers (helmet) ─────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: false,       // SPA manages its own CSP
   crossOriginEmbedderPolicy: false,   // needed for MinIO media blobs
+  crossOriginResourcePolicy: false,   // allow cross-origin <img> loads (avatars/banners from hub to citinet.cloud)
 }));
 
 // ── CORS — supports comma-separated origin list ───────────
 const allowedOrigins = (process.env.CORS_ORIGIN || '*')
   .split(',').map(o => o.trim()).filter(Boolean);
 
+// Public probe endpoints must always be reachable from any citinet.cloud install.
+// These are unauthenticated read-only endpoints — wildcard CORS is safe.
+const PUBLIC_CORS_PATHS = new Set(['/health', '/api/info', '/api/status']);
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (allowedOrigins.includes('*')) {
+
+  if (PUBLIC_CORS_PATHS.has(req.path) || allowedOrigins.includes('*')) {
     res.setHeader('Access-Control-Allow-Origin', '*');
   } else if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  } else if (origin) {
+    // Origin present but not in allow-list — still set Vary so caches don't
+    // serve a credentialed response to a different origin
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
@@ -444,6 +458,25 @@ async function initDb() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_notes_owner ON hub_notes(owner_id, is_archived)`);
+    // E2E Encryption — key registry
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_user_keys (
+        user_id     UUID PRIMARY KEY REFERENCES hub_users(id) ON DELETE CASCADE,
+        public_key  TEXT NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_key_backups (
+        user_id           UUID PRIMARY KEY REFERENCES hub_users(id) ON DELETE CASCADE,
+        encrypted_payload TEXT NOT NULL,
+        salt              TEXT NOT NULL,
+        iv                TEXT NOT NULL,
+        created_at        TIMESTAMPTZ DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
   } finally {
     client.release();
   }
@@ -2324,6 +2357,74 @@ app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Close poll error:', err);
     res.status(500).json({ error: 'Failed to close poll' });
+  }
+});
+
+// ── Key registry routes ───────────────────────────────────
+// Server stores public keys only — private keys never leave the client.
+
+// Register / update own public key
+app.post('/api/keys', authenticate, async (req, res) => {
+  const { publicKeyJwk } = req.body || {};
+  if (!publicKeyJwk || typeof publicKeyJwk !== 'string') {
+    return res.status(400).json({ error: 'publicKeyJwk required' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO hub_user_keys (user_id, public_key, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET public_key = EXCLUDED.public_key, updated_at = NOW()`,
+      [req.user.id, publicKeyJwk],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NOTE: /api/keys/backup MUST come before /api/keys/:userId to avoid the wildcard swallowing it.
+
+// Store own encrypted key backup (server never sees plaintext keys)
+app.post('/api/keys/backup', authenticate, async (req, res) => {
+  const { encrypted_payload, salt, iv } = req.body || {};
+  if (!encrypted_payload || !salt || !iv) {
+    return res.status(400).json({ error: 'encrypted_payload, salt, and iv are required' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO hub_key_backups (user_id, encrypted_payload, salt, iv, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (user_id) DO UPDATE SET encrypted_payload = EXCLUDED.encrypted_payload, salt = EXCLUDED.salt, iv = EXCLUDED.iv, updated_at = NOW()`,
+      [req.user.id, encrypted_payload, salt, iv],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Retrieve own encrypted key backup (for cross-device recovery)
+app.get('/api/keys/backup', authenticate, async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT encrypted_payload, salt, iv FROM hub_key_backups WHERE user_id = $1',
+      [req.user.id],
+    );
+    if (!r.rows[0]) return res.status(404).json({ error: 'No backup found' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get any user's public key (for encrypting to them)
+app.get('/api/keys/:userId', authenticate, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT public_key FROM hub_user_keys WHERE user_id = $1', [req.params.userId]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'No key registered for this user' });
+    res.json({ publicKeyJwk: r.rows[0].public_key });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

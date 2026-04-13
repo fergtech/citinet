@@ -179,7 +179,7 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
 
   useEffect(() => {
     let revoke: string | null = null;
-    hubService.fetchFileBlob(slug, fileName)
+    hubService.fetchFileBlob(slug, fileName, mimeType)
       .then(url => { revoke = url; setBlobUrl(url); })
       .catch(() => setError(true));
     return () => { if (revoke) URL.revokeObjectURL(revoke); };
@@ -248,6 +248,8 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Keep a live ref so loadMessages (memoized on slug) can always see current conversations
+  const conversationsRef = useRef<HubConversation[]>([]);
 
   // Media attachment state
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
@@ -275,6 +277,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
     if (!silent) setLoading(true);
     try {
       const convos = await hubService.listConversations(slug);
+      conversationsRef.current = convos;
       setConversations(convos);
       setError(null);
     } catch (err: any) {
@@ -300,7 +303,8 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
     if (!slug || !convoId) return;
     if (!silent) setMsgsLoading(true);
     try {
-      const msgs = await hubService.getMessages(slug, convoId, 100);
+      const convo = conversationsRef.current.find(c => c.id === convoId);
+      const msgs = await hubService.getMessages(slug, convoId, 100, undefined, convo?.members);
       // Preserve locally-known attachments if the server response omits them
       setMessages(prev => msgs.map(m => {
         const existing = prev.find(p => p.id === m.id);
@@ -350,6 +354,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
 
     try {
       let msg: HubMessage;
+      const members = selectedConvo?.members;
       if (hasFiles) {
         setUploadProgress(`Uploading ${filesToSend.length} file${filesToSend.length > 1 ? 's' : ''}…`);
         msg = await hubService.sendMessageWithMedia(
@@ -357,10 +362,11 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
           selectedId,
           text,
           filesToSend.map(sf => sf.file),
+          members,
         );
         setUploadProgress(null);
       } else {
-        msg = await hubService.sendMessage(slug, selectedId, text);
+        msg = await hubService.sendMessage(slug, selectedId, text, members);
       }
       setMessages(prev => [...prev, msg]);
       loadConversations(true);
