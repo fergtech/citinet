@@ -87,27 +87,12 @@ app.use(helmet({
   crossOriginResourcePolicy: false,   // allow cross-origin <img> loads (avatars/banners from hub to citinet.cloud)
 }));
 
-// ── CORS — supports comma-separated origin list ───────────
-const allowedOrigins = (process.env.CORS_ORIGIN || '*')
-  .split(',').map(o => o.trim()).filter(Boolean);
-
-// Public probe endpoints must always be reachable from any citinet.cloud install.
-// These are unauthenticated read-only endpoints — wildcard CORS is safe.
-const PUBLIC_CORS_PATHS = new Set(['/health', '/api/info', '/api/status']);
-
+// ── CORS ──────────────────────────────────────────────────
+// The hub API uses Bearer tokens for auth — no cookies — so wildcard CORS is
+// safe for all routes. Any legitimate citinet client must be able to reach this
+// hub regardless of what headers Tailscale Funnel or other proxies strip.
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (PUBLIC_CORS_PATHS.has(req.path) || allowedOrigins.includes('*')) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  } else if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-  } else if (origin) {
-    // Origin present but not in allow-list — still set Vary so caches don't
-    // serve a credentialed response to a different origin
-    res.setHeader('Vary', 'Origin');
-  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);

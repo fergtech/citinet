@@ -7,7 +7,7 @@ interface WelcomeScreenProps {
   onCreateNetwork: () => void;
 }
 
-const INFO_SITE_URL = 'https://citinet.cloud';
+const INFO_SITE_URL = 'https://info.citinet.cloud';
 
 export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenProps) {
   const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
