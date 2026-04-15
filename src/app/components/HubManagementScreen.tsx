@@ -9,6 +9,7 @@ import type { HubMember, HubPost } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { DEFAULT_ENABLED_APPS } from './Dashboard';
+import { registryService } from '../services/registryService';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -21,6 +22,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
+
+  // Name editing
+  const [editingName, setEditingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState('');
 
   // Description editing
   const [editingDescription, setEditingDescription] = useState(false);
@@ -188,12 +195,43 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   const hubSlug = currentHub?.slug ?? '';
 
+  const reRegisterHub = (overrides?: { name?: string; location?: string; description?: string }) => {
+    if (!currentHub?.tunnelUrl) return;
+    registryService.registerHub({
+      id: currentHub.slug,
+      name: overrides?.name ?? currentHub.name,
+      slug: currentHub.slug,
+      location: overrides?.location ?? currentHub.location ?? '',
+      description: overrides?.description ?? currentHub.description ?? '',
+      tunnel_url: currentHub.tunnelUrl,
+      member_count: 0,
+      online: true,
+    }).catch(() => {});
+  };
+
+  const saveName = async () => {
+    const trimmed = nameValue.trim();
+    if (!trimmed || trimmed === currentHub?.name) { setEditingName(false); return; }
+    setNameSaving(true);
+    setNameError('');
+    try {
+      await hubService.updateHubInfo(currentHub!.slug, { name: trimmed });
+      setEditingName(false);
+      reRegisterHub({ name: trimmed });
+    } catch {
+      setNameError('Failed to save name.');
+    } finally {
+      setNameSaving(false);
+    }
+  };
+
   const saveDescription = async () => {
     setDescriptionSaving(true);
     setDescriptionError('');
     try {
       await updateDescription(descriptionValue.trim());
       setEditingDescription(false);
+      reRegisterHub({ description: descriptionValue.trim() });
     } catch {
       setDescriptionError('Failed to save — changes saved locally only.');
     } finally {
@@ -209,6 +247,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       await updateLocation(locationResult.displayName, locationResult.lat, locationResult.lng);
       setEditingLocation(false);
       setLocationResult(null);
+      reRegisterHub({ location: locationResult.displayName });
     } catch {
       setLocationError('Failed to save — changes saved locally only.');
     } finally {
@@ -435,7 +474,58 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {activeTab === 'info' && (
           <div className="space-y-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-5">
-              <InfoRow label="Hub Name" value={currentHub?.name} note="Synced from hub API" />
+              {/* Hub Name — editable */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Hub Name</p>
+                  {!editingName && (
+                    <button
+                      onClick={() => { setNameValue(currentHub?.name ?? ''); setEditingName(true); }}
+                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Rename
+                    </button>
+                  )}
+                </div>
+                {!editingName ? (
+                  <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub?.name}</p>
+                ) : (
+                  <div className="space-y-2 mt-1">
+                    <input
+                      type="text"
+                      value={nameValue}
+                      onChange={e => setNameValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { setEditingName(false); setNameError(''); } }}
+                      placeholder="Hub name…"
+                      className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
+                        text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
+                        focus:border-purple-500 focus:outline-none transition-colors"
+                    />
+                    <p className="text-xs text-slate-400 dark:text-slate-500">Slug stays unchanged — only the display name updates.</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveName}
+                        disabled={nameSaving || !nameValue.trim()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
+                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setEditingName(false); setNameError(''); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                          hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Cancel
+                      </button>
+                    </div>
+                    {nameError && <p className="text-xs text-amber-600 dark:text-amber-400">{nameError}</p>}
+                  </div>
+                )}
+              </div>
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
               <InfoRow label="Slug" value={currentHub?.slug} mono />
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />

@@ -30,6 +30,7 @@ import {
   downloadSetupScript,
   getRunCommand,
 } from '../utils/scriptGenerator';
+import { registryService } from '../services/registryService';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -269,6 +270,20 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
             if (!cancelled) {
               setLiveInfo(info);
               setStep('live');
+              // Auto-register in the public hub registry (fire-and-forget)
+              if (info.tunnelUrl) {
+                const slug = generateSlug(data.hubName);
+                registryService.registerHub({
+                  id: slug,
+                  name: data.hubName.trim(),
+                  slug,
+                  location: data.hubLocation || '',
+                  description: data.hubDescription || '',
+                  tunnel_url: info.tunnelUrl,
+                  member_count: 0,
+                  online: true,
+                }).catch(() => {});
+              }
             }
             return;
           }

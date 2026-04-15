@@ -93,12 +93,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'name, slug, and tunnel_url are required' });
     }
 
-    // Verify the hub is actually reachable before listing it
-    const info = await verifyHub(tunnel_url);
-    if (!info) {
-      return res.status(400).json({ error: 'Hub is not reachable at the provided tunnel URL' });
-    }
-
     try {
       const { content, sha } = await getRegistryFile();
       const now = new Date().toISOString();
@@ -106,12 +100,23 @@ export default async function handler(req, res) {
         h => h.slug === slug || (id && h.id === id),
       );
 
+      // For new registrations, verify the hub is reachable before listing it.
+      // For updates to existing entries, trust the caller — the hub may not be
+      // reachable from Vercel's servers (e.g. Tailscale-only networks).
+      let info = null;
+      if (existingIndex < 0) {
+        info = await verifyHub(tunnel_url);
+        if (!info) {
+          return res.status(400).json({ error: 'Hub is not reachable at the provided tunnel URL' });
+        }
+      }
+
       const hubEntry = {
         id:            id || slug,
         name,
         slug,
-        location:      location || info.location || info.hub_location || '',
-        description:   description || info.description || info.hub_description || '',
+        location:      location || (info?.location) || (info?.hub_location) || '',
+        description:   description || (info?.description) || (info?.hub_description) || '',
         tunnel_url,
         member_count:  member_count ?? 0,
         online:        true,

@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Read(//c/Users/zee/citinet-hub/**)",
+      "Bash(docker info *)",
+      "Bash(wsl *)"
     ]
   }
 }
