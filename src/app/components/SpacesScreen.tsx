@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Search, Users, Lock, Eye, Globe,
   Loader2, AlertCircle, Settings, LogOut, UserPlus,
@@ -331,7 +332,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
 
 // ── Highlights panel ──────────────────────────────────────
 
-function HighlightsPanel({ posts, tunnelUrl, spaceSlug }: { posts: HubPost[]; tunnelUrl: string; spaceSlug: string }) {
+function HighlightsPanel({ posts, tunnelUrl, spaceSlug, authToken }: { posts: HubPost[]; tunnelUrl: string; spaceSlug: string; authToken?: string }) {
   // Top posts by reply_count (engagement), then newest; pick up to 4
   const highlights = [...posts]
     .sort((a, b) => (Number(b.reply_count) - Number(a.reply_count)) || (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
@@ -347,7 +348,7 @@ function HighlightsPanel({ posts, tunnelUrl, spaceSlug }: { posts: HubPost[]; tu
   return (
     <div className="space-y-3 p-4">
       {highlights.map(post => {
-        const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}` : null;
+        const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null;
         const hasMedia = !!mediaUrl;
         return (
           <div key={post.id} className="bg-zinc-800/50 border border-zinc-700/60 rounded-xl overflow-hidden">
@@ -375,7 +376,7 @@ function HighlightsPanel({ posts, tunnelUrl, spaceSlug }: { posts: HubPost[]; tu
 
 // ── Files Tab ─────────────────────────────────────────────
 
-function FilesTab({ hubSlug, spaceSlug, tunnelUrl }: { hubSlug: string; spaceSlug: string; tunnelUrl: string; authToken?: string }) {
+function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: string; spaceSlug: string; tunnelUrl: string; authToken?: string }) {
   const [files, setFiles] = useState<HubSpaceFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ url: string; mime?: string; name: string } | null>(null);
@@ -386,7 +387,8 @@ function FilesTab({ hubSlug, spaceSlug, tunnelUrl }: { hubSlug: string; spaceSlu
   }, [hubSlug, spaceSlug]);
 
   function getFileUrl(fileName: string) {
-    return `${tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(fileName)}`;
+    const base = `${tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(fileName)}`;
+    return authToken ? `${base}?token=${encodeURIComponent(authToken)}` : base;
   }
 
   async function handlePreview(file: HubSpaceFile) {
@@ -719,7 +721,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
               {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
               {!postsLoading && posts.length === 0 && <div className="text-center py-12 text-zinc-500 text-sm">No posts yet. Be the first to share something.</div>}
               {posts.map(post => {
-                const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}` : null;
+                const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null;
                 return (
                   <div key={post.id} className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4">
                     <div className="flex items-center gap-2 mb-2">
@@ -762,7 +764,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
                 </div>
                 <p className="text-[11px] text-zinc-600 mt-0.5">Top content in this space</p>
               </div>
-              <HighlightsPanel posts={posts} tunnelUrl={tunnelUrl} spaceSlug={space.slug} />
+              <HighlightsPanel posts={posts} tunnelUrl={tunnelUrl} spaceSlug={space.slug} authToken={authToken} />
             </div>
           </div>
         )}
@@ -886,6 +888,8 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const myUserId = currentUser?.hubUserId;
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const authToken = currentUser?.authToken;
+  const navigate = useNavigate();
+  const { spaceSlug: urlSpaceSlug } = useParams<{ spaceSlug: string }>();
 
   const [mySpaces, setMySpaces] = useState<HubSpace[]>([]);
   const [allSpaces, setAllSpaces] = useState<HubSpace[]>([]);
@@ -896,15 +900,29 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const [showAll, setShowAll] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
+  function selectSpace(space: HubSpace | null) {
+    setSelected(space);
+    if (space) {
+      navigate(`/spaces/${encodeURIComponent(space.slug)}`, { replace: true });
+    } else {
+      navigate('/spaces', { replace: true });
+    }
+  }
+
   const load = useCallback(async () => {
     if (!hubSlug) return;
     setLoading(true); setError('');
     try {
       const [mine, all] = await Promise.all([spacesService.listMine(hubSlug), spacesService.listAll(hubSlug)]);
       setMySpaces(mine); setAllSpaces(all);
+      // Restore selected space from URL on initial load
+      if (urlSpaceSlug) {
+        const match = [...mine, ...all].find(s => s.slug === decodeURIComponent(urlSpaceSlug));
+        if (match) setSelected(match);
+      }
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
-  }, [hubSlug]);
+  }, [hubSlug]); // intentionally exclude urlSpaceSlug — only used on first load
 
   useEffect(() => { load(); }, [load]);
 
@@ -923,13 +941,13 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   function handleCreated(space: HubSpace) {
     setMySpaces(prev => [...prev, space].sort((a, b) => a.name.localeCompare(b.name)));
     setAllSpaces(prev => [space, ...prev]);
-    setSelected(space); setShowCreate(false);
+    selectSpace(space); setShowCreate(false);
   }
 
   function handleDeleted(spaceId: string) {
     setMySpaces(prev => prev.filter(s => s.id !== spaceId));
     setAllSpaces(prev => prev.filter(s => s.id !== spaceId));
-    setSelected(null);
+    selectSpace(null);
   }
 
   const displaySpaces = (showAll ? allSpaces : mySpaces).filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
@@ -959,7 +977,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
           <div className="px-4 py-2 bg-purple-900/20 border-b border-purple-900/40 flex-shrink-0">
             <p className="text-xs text-purple-400 font-medium mb-1">You have {pendingInvites.length} invite{pendingInvites.length > 1 ? 's' : ''}</p>
             {pendingInvites.map(s => (
-              <button key={s.id} onClick={() => setSelected(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm text-white hover:text-purple-300">
+              <button key={s.id} onClick={() => selectSpace(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm text-white hover:text-purple-300">
                 <ChevronRight className="w-3 h-3 text-purple-400" /> {s.name}
               </button>
             ))}
@@ -976,7 +994,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
             </div>
           )}
           {displaySpaces.map(space => (
-            <button key={space.id} onClick={() => setSelected(space)}
+            <button key={space.id} onClick={() => selectSpace(space)}
               className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-zinc-800/60 transition-colors text-left border-b border-zinc-800/50 ${selected?.id === space.id ? 'bg-zinc-800/70' : ''}`}>
               <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden" style={getBannerStyle(space, tunnelUrl)}>
                 <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold bg-black/10">{space.name[0]?.toUpperCase()}</div>
@@ -999,7 +1017,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
       <div className={`${selected ? 'flex' : 'hidden md:flex'} flex-col flex-1 overflow-hidden`}>
         {selected ? (
           <>
-            <button onClick={() => setSelected(null)} className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-zinc-800 text-zinc-400 text-sm flex-shrink-0">
+            <button onClick={() => selectSpace(null)} className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-zinc-800 text-zinc-400 text-sm flex-shrink-0">
               <ArrowLeft className="w-4 h-4" /> All Spaces
             </button>
             <SpaceDetail hubSlug={hubSlug} space={selected} myUserId={myUserId}

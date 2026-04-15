@@ -646,6 +646,7 @@ function HubModeRoutes() {
       <Route path="/polls" element={<HubGuard><HubPollsRoute /></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubModLogRoute /></HubGuard>} />
       <Route path="/spaces" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
+      <Route path="/spaces/:spaceSlug" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="/notes" element={<HubGuard><HubNotesRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

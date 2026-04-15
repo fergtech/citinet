@@ -1623,14 +1623,27 @@ app.get('/api/public/files/:filename', async (req, res) => {
 });
 
 // GET /api/spaces/:slug/files/:filename — serve a space-scoped file (auth + membership required)
-app.get('/api/spaces/:slug/files/:filename', authenticate, async (req, res) => {
+// Accepts token via Authorization header OR ?token= query param (needed for <img>/<video> src tags)
+app.get('/api/spaces/:slug/files/:filename', async (req, res) => {
+  const rawToken = (req.headers.authorization || '').replace(/^Bearer /i, '').trim()
+    || (req.query.token || '').trim();
+  if (!rawToken) return res.status(401).json({ error: 'Authorization required' });
+
+  const { rows: authRows } = await pool.query(
+    `SELECT u.id FROM hub_sessions s JOIN hub_users u ON s.user_id = u.id
+     WHERE s.token = $1 AND s.expires_at > NOW()`,
+    [rawToken]
+  );
+  if (!authRows[0]) return res.status(401).json({ error: 'Invalid or expired token' });
+  const userId = authRows[0].id;
+
   const fileName = decodeURIComponent(req.params.filename);
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
     const { rows: memRows } = await pool.query(
       `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
-      [spaceRows[0].id, req.user.id]
+      [spaceRows[0].id, userId]
     );
     if (!memRows[0] || memRows[0].status !== 'active') return res.status(403).json({ error: 'Members only' });
 
