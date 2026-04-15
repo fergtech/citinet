@@ -847,6 +847,23 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Write-Host "  To move to a new drive: stop the hub, copy that folder to the new location,"',
     'Write-Host "  then edit $HubDir\\.env (change DATA_DIR=) and start again."',
     'Write-Host ""',
+    '',
+    '# ── Install Citinet Hub Tray Agent ───────────────────────────────────────────',
+    'Step "Installing Citinet Hub Tray"',
+    '$TrayInstaller = "$env:TEMP\\CitinetHub-Setup.exe"',
+    '$TrayUrl = "https://github.com/fergtech/citinet-hub-tray/releases/latest/download/CitinetHub-Setup.exe"',
+    'try {',
+    '  Write-Host "  Downloading tray agent..."',
+    '  Invoke-WebRequest -Uri $TrayUrl -OutFile $TrayInstaller -UseBasicParsing -ErrorAction Stop',
+    '  Write-Host "  Installing (silent)..."',
+    '  Start-Process -FilePath $TrayInstaller -ArgumentList "/S" -Wait',
+    '  Remove-Item $TrayInstaller -Force -ErrorAction SilentlyContinue',
+    '  Ok "Citinet Hub Tray installed -- look for the icon in your system tray"',
+    '} catch {',
+    '  Warn "Could not download tray agent (internet required). You can install it later from:"',
+    '  Write-Host "  https://github.com/fergtech/citinet-hub-tray/releases" -ForegroundColor Blue',
+    '}',
+    'Write-Host ""',
   ];
 
   return lines.join('\n');

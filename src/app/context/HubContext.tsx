@@ -117,32 +117,39 @@ export function HubProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  // Periodic health check for active hub (every 60 seconds)
+  // Periodic health check — 5 s when hub is unreachable (boot/restart recovery),
+  // 60 s when connected (normal steady-state polling).
   useEffect(() => {
     if (!currentHub?.slug || !currentHub.tunnelUrl) return;
 
-    const checkHealth = async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const runCheck = async () => {
+      if (cancelled) return;
       try {
         await hubService.refreshHubStatus(currentHub.slug);
-        // Re-read from storage — slug may have been re-keyed
         const activeConn = hubService.getActiveHubConnection();
-        if (activeConn) {
+        if (activeConn && !cancelled) {
           setCurrentHub(activeConn.hub);
           setCurrentUser(resolveUserAvatar(activeConn.hub, activeConn.user));
+          // Fast retry while unreachable so UI recovers within 5 s of hub coming online
+          const delay = activeConn.hub.connectionStatus === 'connected' ? 60_000 : 5_000;
+          timer = setTimeout(runCheck, delay);
+        } else if (!cancelled) {
+          timer = setTimeout(runCheck, 60_000);
         }
       } catch {
-        // Silent fail — don't break the UI
+        if (!cancelled) timer = setTimeout(runCheck, 5_000);
       }
     };
 
-    // Initial check immediately (syncs enabledApps and other server state on load)
-    const initialTimeout = setTimeout(checkHealth, 0);
-    // Then every 60 seconds
-    const interval = setInterval(checkHealth, 60000);
+    // Run immediately on mount (syncs enabledApps and other server state)
+    timer = setTimeout(runCheck, 0);
 
     return () => {
-      clearTimeout(initialTimeout);
-      clearInterval(interval);
+      cancelled = true;
+      clearTimeout(timer);
     };
   }, [currentHub?.slug, currentHub?.tunnelUrl]);
 

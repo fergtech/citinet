@@ -437,7 +437,23 @@ class HubService {
   /** Get a specific hub connection by slug */
   getHubConnection(slug: string): HubConnection | null {
     const hubs = this.getAllHubConnections();
-    return hubs[slug] || null;
+    if (hubs[slug]) return hubs[slug];
+
+    // Self-healing: if there's no direct key match but exactly one hub exists,
+    // the connection was likely re-keyed under the wrong slug by an older bug.
+    // Re-key it to the requested slug so routing works again.
+    const keys = Object.keys(hubs);
+    if (keys.length === 1) {
+      const only = hubs[keys[0]];
+      const healed: typeof only = { ...only, hub: { ...only.hub, slug } };
+      hubs[slug] = healed;
+      delete hubs[keys[0]];
+      localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(hubs));
+      if (this.getActiveHubSlug() !== slug) this.setActiveHub(slug);
+      return healed;
+    }
+
+    return null;
   }
 
   /** Get the currently active hub slug */
@@ -546,31 +562,26 @@ class HubService {
     const result = await this.probeHub(connection.hub.tunnelUrl);
     const status: HubConnectionStatus = result.success ? 'connected' : 'unreachable';
 
-    // Sync hub name, slug, and enabledApps from the API
+    // Sync hub name and enabledApps from the API.
+    // NOTE: We intentionally do NOT re-key the connection by hub name. The routing
+    // slug (set at join/setup time) is stable — the display name is a separate
+    // concern. Re-keying would orphan the connection whenever an admin renames
+    // the hub, because the URL (?hub=<slug>) still references the original slug.
     const connections = this.getAllHubConnections();
     if (connections[slug]) {
       let dirty = false;
       if (result.info?.name && result.info.name !== connection.hub.name) {
-        const newSlug = this.slugify(result.info.name);
         connections[slug].hub.name = result.info.name;
-        if (newSlug !== slug && !connections[newSlug]) {
-          connections[slug].hub.slug = newSlug;
-          connections[newSlug] = connections[slug];
-          delete connections[slug];
-          if (this.getActiveHubSlug() === slug) this.setActiveHub(newSlug);
-        }
         dirty = true;
       }
       if (result.info?.enabled_apps !== undefined) {
-        connections[slug]?.hub && (connections[slug].hub.enabledApps = result.info.enabled_apps ?? null);
+        connections[slug].hub.enabledApps = result.info.enabled_apps ?? null;
         dirty = true;
       }
       if (dirty) localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     }
-    
-    // Use the (possibly new) slug for the status update
-    const currentSlug = this.slugify(result.info?.name || connection.hub.name);
-    this.updateHubStatus(currentSlug, status, result.status ? {
+
+    this.updateHubStatus(slug, status, result.status ? {
       activeMembers: result.status.user_count,
       onlineNow: result.status.online_now ?? 0,
       uptime: result.status.uptime,

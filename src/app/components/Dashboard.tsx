@@ -72,11 +72,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   const hubSlug = currentHub?.slug ?? '';
 
+  // Re-fetch whenever the hub slug changes OR the connection comes (back) online.
+  // This ensures the dashboard repopulates after a restart / boot recovery.
+  const isConnected = connectionStatus === 'connected';
   useEffect(() => {
     if (!hubSlug) return;
     featuredService.getFeatured(hubSlug).then(setFeaturedItems);
     marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
-  }, [hubSlug]);
+  }, [hubSlug, isConnected]);
 
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
   const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
