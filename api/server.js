@@ -605,6 +605,10 @@ app.get('/api/info', async (_req, res) => {
   const name        = cfg.hub_name        || process.env.HUB_NAME        || '';
   const location    = cfg.hub_location    || process.env.HUB_LOCATION    || '';
   const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+  let enabledApps   = null;
+  if (cfg.enabled_apps) {
+    try { enabledApps = JSON.parse(cfg.enabled_apps); } catch {}
+  }
 
   res.json({
     node_name:       name,
@@ -619,6 +623,7 @@ app.get('/api/info', async (_req, res) => {
     tunnel_url:      process.env.TUNNEL_URL      || '',
     lan_ip:          getLanIp(),
     api_port:        PORT,
+    enabled_apps:    enabledApps,
   });
 });
 
@@ -626,19 +631,27 @@ app.get('/api/info', async (_req, res) => {
 // Persists to hub_config table so changes survive container restarts.
 app.patch('/api/hub-info', authenticate, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
-  const { name, location, description } = req.body || {};
+  const { name, location, description, enabled_apps } = req.body || {};
   const updates = [];
-  if (name        !== undefined) updates.push(['hub_name',        String(name).trim()]);
-  if (location    !== undefined) updates.push(['hub_location',    String(location).trim()]);
-  if (description !== undefined) updates.push(['hub_description', String(description).trim()]);
+  if (name         !== undefined) updates.push(['hub_name',        String(name).trim()]);
+  if (location     !== undefined) updates.push(['hub_location',    String(location).trim()]);
+  if (description  !== undefined) updates.push(['hub_description', String(description).trim()]);
+  if (enabled_apps !== undefined) {
+    // null = clear (all apps enabled); array = store as JSON
+    updates.push(['enabled_apps', enabled_apps === null ? null : JSON.stringify(enabled_apps)]);
+  }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields provided' });
   try {
     for (const [key, value] of updates) {
-      await pool.query(
-        `INSERT INTO hub_config (key, value) VALUES ($1, $2)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-        [key, value]
-      );
+      if (value === null) {
+        await pool.query('DELETE FROM hub_config WHERE key = $1', [key]);
+      } else {
+        await pool.query(
+          `INSERT INTO hub_config (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+          [key, value]
+        );
+      }
     }
     res.json({ ok: true });
   } catch (err) {

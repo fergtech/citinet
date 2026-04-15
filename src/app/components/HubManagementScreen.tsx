@@ -8,13 +8,14 @@ import { requestsService, type HubRequest, type RequestStatus } from '../service
 import type { HubMember, HubPost } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
+import { DEFAULT_ENABLED_APPS } from './Dashboard';
 
 interface HubManagementScreenProps {
   onBack: () => void;
 }
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
-  const { currentHub, currentUser, updateLocation, updateDescription } = useHub();
+  const { currentHub, currentUser, updateLocation, updateDescription, refreshStatus } = useHub();
   const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -75,6 +76,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [appSaveError, setAppSaveError] = useState('');
   const [appSaveSuccess, setAppSaveSuccess] = useState('');
 
+  // ── Enabled-apps toggle state ────────────────────────────
+  const [enabledApps, setEnabledApps] = useState<string[]>(
+    currentHub?.enabledApps ?? DEFAULT_ENABLED_APPS
+  );
+  const [appToggleSaving, setAppToggleSaving] = useState(false);
+  const [appToggleSaved, setAppToggleSaved] = useState(false);
+
   const authHeader = (): Record<string, string> => currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {};
   const base = currentHub?.tunnelUrl ?? '';
 
@@ -111,6 +119,26 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       setAppSaveError(err instanceof Error ? err.message : 'Could not connect — check URL and key');
     }
     setAppSaving(false);
+  };
+
+  const saveEnabledApps = async () => {
+    if (!currentHub?.slug) return;
+    setAppToggleSaving(true);
+    try {
+      await hubService.updateHubInfo(currentHub.slug, { enabledApps });
+      // Push updated hub into React context immediately (no wait for health check)
+      await refreshStatus();
+      setAppToggleSaved(true);
+      setTimeout(() => setAppToggleSaved(false), 2500);
+    } catch {}
+    setAppToggleSaving(false);
+  };
+
+  const toggleApp = (screen: string) => {
+    setEnabledApps(prev =>
+      prev.includes(screen) ? prev.filter(s => s !== screen) : [...prev, screen]
+    );
+    setAppToggleSaved(false);
   };
 
   const removeAppConfig = async (capability: string) => {
@@ -905,7 +933,71 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {/* ─── Apps Tab ─── */}
         {activeTab === 'apps' && (
           <div className="space-y-4">
-            {/* Initiatives app */}
+            {/* Enabled apps toggle grid */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Active Apps</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Choose which apps appear on this hub's dashboard. Members only see what you enable.
+                  </p>
+                </div>
+                <button
+                  onClick={saveEnabledApps}
+                  disabled={appToggleSaving}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                >
+                  {appToggleSaving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : appToggleSaved ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  {appToggleSaving ? 'Saving…' : appToggleSaved ? 'Saved' : 'Save'}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { screen: 'feed',        label: 'Discussions',  emoji: '💬' },
+                  { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
+                  { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
+                  { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },
+                  { screen: 'notes',       label: 'Notes',        emoji: '📓' },
+                  { screen: 'polls',       label: 'Polls',        emoji: '🗳️' },
+                  { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
+                  { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
+                  { screen: 'files',       label: 'Files',        emoji: '📁' },
+                  { screen: 'discover',    label: 'Discover',     emoji: '🧭' },
+                  { screen: 'toolkit',     label: 'Resources',    emoji: '🔧' },
+                  { screen: 'initiatives', label: 'Initiatives',  emoji: '🎯' },
+                  { screen: 'network',     label: 'Network',      emoji: '📡' },
+                  { screen: 'mod-log',     label: 'Mod Log',      emoji: '📜' },
+                ].map(({ screen, label, emoji }) => {
+                  const on = enabledApps.includes(screen);
+                  return (
+                    <button
+                      key={screen}
+                      type="button"
+                      onClick={() => toggleApp(screen)}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                        on
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                          : 'border-slate-200 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-80'
+                      }`}
+                    >
+                      <span>{emoji}</span>
+                      <span className="truncate">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-400 dark:text-zinc-500">
+                {enabledApps.length} of 14 apps active
+              </p>
+            </div>
+
+            {/* Initiatives external app connector */}
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-5">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-100 to-pink-100 dark:from-rose-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0">

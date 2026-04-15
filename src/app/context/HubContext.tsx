@@ -135,8 +135,8 @@ export function HubProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Initial check after 5 seconds
-    const initialTimeout = setTimeout(checkHealth, 5000);
+    // Initial check immediately (syncs enabledApps and other server state on load)
+    const initialTimeout = setTimeout(checkHealth, 0);
     // Then every 60 seconds
     const interval = setInterval(checkHealth, 60000);
 

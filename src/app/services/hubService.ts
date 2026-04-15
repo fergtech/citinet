@@ -126,6 +126,7 @@ class HubService {
       joinedAt: new Date().toISOString(),
       lastConnectedAt: probeInfo ? new Date().toISOString() : undefined,
       lanIp: probeInfo?.lan_ip || undefined,
+      enabledApps: probeInfo?.enabled_apps ?? null,
       meta: {
         nodeType: probeInfo?.node_type,
         storageQuota: probeInfo?.storage_quota,
@@ -545,28 +546,26 @@ class HubService {
     const result = await this.probeHub(connection.hub.tunnelUrl);
     const status: HubConnectionStatus = result.success ? 'connected' : 'unreachable';
 
-    // Sync hub name and slug from the API so it always matches what the admin set
-    if (result.info?.name && result.info.name !== connection.hub.name) {
-      const newSlug = this.slugify(result.info.name);
-      const connections = this.getAllHubConnections();
-
-      if (connections[slug]) {
+    // Sync hub name, slug, and enabledApps from the API
+    const connections = this.getAllHubConnections();
+    if (connections[slug]) {
+      let dirty = false;
+      if (result.info?.name && result.info.name !== connection.hub.name) {
+        const newSlug = this.slugify(result.info.name);
         connections[slug].hub.name = result.info.name;
-
-        // Re-key if the slug changed
         if (newSlug !== slug && !connections[newSlug]) {
           connections[slug].hub.slug = newSlug;
           connections[newSlug] = connections[slug];
           delete connections[slug];
-
-          // Update active hub pointer
-          if (this.getActiveHubSlug() === slug) {
-            this.setActiveHub(newSlug);
-          }
+          if (this.getActiveHubSlug() === slug) this.setActiveHub(newSlug);
         }
-
-        localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+        dirty = true;
       }
+      if (result.info?.enabled_apps !== undefined) {
+        connections[slug]?.hub && (connections[slug].hub.enabledApps = result.info.enabled_apps ?? null);
+        dirty = true;
+      }
+      if (dirty) localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     }
     
     // Use the (possibly new) slug for the status update
@@ -1472,7 +1471,7 @@ class HubService {
    */
   async updateHubInfo(
     slug: string,
-    fields: { name?: string; location?: string; lat?: number; lng?: number; description?: string },
+    fields: { name?: string; location?: string; lat?: number; lng?: number; description?: string; enabledApps?: string[] | null },
   ): Promise<Hub> {
     const { headers, tunnelUrl } = this.getAuthHeaders(slug);
     const connections = this.getAllHubConnections();
@@ -1481,10 +1480,11 @@ class HubService {
 
     // Persist to server (best-effort — don't block on failure)
     if (tunnelUrl) {
-      const body: Record<string, string> = {};
-      if (fields.name        !== undefined) body.name        = fields.name;
-      if (fields.location    !== undefined) body.location    = fields.location;
-      if (fields.description !== undefined) body.description = fields.description;
+      const body: Record<string, unknown> = {};
+      if (fields.name         !== undefined) body.name         = fields.name;
+      if (fields.location     !== undefined) body.location     = fields.location;
+      if (fields.description  !== undefined) body.description  = fields.description;
+      if (fields.enabledApps  !== undefined) body.enabled_apps = fields.enabledApps;
       if (Object.keys(body).length > 0) {
         try {
           const res = await fetch(`${tunnelUrl}/api/hub-info`, {
@@ -1508,6 +1508,7 @@ class HubService {
     if (fields.lat         !== undefined) connection.hub.lat         = fields.lat;
     if (fields.lng         !== undefined) connection.hub.lng         = fields.lng;
     if (fields.description !== undefined) connection.hub.description = fields.description;
+    if (fields.enabledApps !== undefined) connection.hub.enabledApps = fields.enabledApps;
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     return connection.hub;
   }

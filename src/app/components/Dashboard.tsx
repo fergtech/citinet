@@ -45,6 +45,12 @@ const MOBILE_DOCK_APPS = [
   { Icon: MessageCircle, label: 'Messages', screen: 'messages' },
 ];
 
+// Apps enabled on a fresh hub with no admin configuration yet.
+// null enabledApps on the Hub object means "all apps" (backward compat).
+export const DEFAULT_ENABLED_APPS: string[] = [
+  'feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls',
+];
+
 const MOBILE_LAUNCHPAD_COLUMNS = 5;
 const MOBILE_LAUNCHPAD_ROWS = 2;
 const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
@@ -319,9 +325,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     setShowSupportMenu(false);
   };
 
-  const mobileLauncherTiles: typeof APP_TILES = myVendor
-    ? [...APP_TILES, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
+  // enabledApps: null = all enabled (existing hubs), array = restrict to those IDs
+  const enabledSet = currentHub?.enabledApps ?? null;
+  const visibleTiles = enabledSet
+    ? APP_TILES.filter(t => enabledSet.includes(t.screen))
     : APP_TILES;
+
+  const mobileLauncherTiles: typeof APP_TILES = myVendor
+    ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
+    : visibleTiles;
 
   const mobileLaunchpadItems: typeof APP_TILES = [
     ...mobileLauncherTiles,
@@ -541,7 +553,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           { Icon: Store,         label: 'Exchange',    screen: 'marketplace' },
           { Icon: Users,         label: 'Neighbors',   screen: 'neighbors' },
           { Icon: Wrench,        label: 'Resources',   screen: 'toolkit' },
-        ].map(app => (
+        ].filter(app => !enabledSet || enabledSet.includes(app.screen)).map(app => (
           <button
             key={app.screen}
             onClick={() => onNavigate(app.screen)}
@@ -957,7 +969,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
           <div className="max-w-5xl mx-auto px-8 py-5">
             <div className="grid grid-cols-5 lg:grid-cols-10 gap-1 justify-items-center">
-              {APP_TILES.map(app => {
+              {visibleTiles.map(app => {
                 const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
                 return (
                   <button

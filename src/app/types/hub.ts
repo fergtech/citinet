@@ -42,6 +42,12 @@ export interface Hub {
   lng?: number;
   /** Host machine's LAN IP for direct local network access (no internet required) */
   lanIp?: string;
+  /**
+   * Which app screens are enabled on this hub.
+   * null = all apps enabled (default for existing hubs / no config set).
+   * An array restricts the dashboard to only those app IDs.
+   */
+  enabledApps?: string[] | null;
 }
 
 export type HubConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'unreachable';
@@ -137,6 +143,8 @@ export interface HubInfoResponse {
   tunnel_url?: string;
   /** LAN IP reported by the hub */
   lan_ip?: string;
+  /** Which app IDs are enabled on this hub (null = all) */
+  enabled_apps?: string[] | null;
 }
 
 /**
