@@ -353,6 +353,7 @@ export interface HubNote {
   body_plain: string;
   is_pinned: boolean;
   is_archived: boolean;
+  is_public: boolean;
   color?: string | null;
   created_at: string;
   updated_at: string;

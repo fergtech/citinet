@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
@@ -9,6 +10,7 @@ import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
+  Globe, Lock, ArchiveRestore, Link as LinkIcon,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
@@ -16,6 +18,7 @@ import type { HubNote } from '../types/hub';
 
 interface NotesScreenProps {
   onBack: () => void;
+  initialNoteId?: string;
 }
 
 // ─── Save Status Indicator ────────────────────────────────────────────────────
@@ -56,11 +59,19 @@ function FormatToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
     </button>
   );
 
+  const handleLink = () => {
+    const url = prompt('Enter URL:');
+    if (url) {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
+  };
+
   return (
-    <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50">
+    <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 flex-shrink-0">
       {btn(editor.isActive('bold'),        () => editor.chain().focus().toggleBold().run(),        'Bold',          <Bold className="w-3.5 h-3.5" />)}
       {btn(editor.isActive('italic'),      () => editor.chain().focus().toggleItalic().run(),      'Italic',        <Italic className="w-3.5 h-3.5" />)}
       {btn(editor.isActive('underline'),   () => editor.chain().focus().toggleUnderline().run(),   'Underline',     <UnderlineIcon className="w-3.5 h-3.5" />)}
+      {btn(editor.isActive('link'),        handleLink,                                              'Add link',      <LinkIcon className="w-3.5 h-3.5" />)}
       <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
       {btn(editor.isActive('bulletList'),  () => editor.chain().focus().toggleBulletList().run(),  'Bullet list',   <List className="w-3.5 h-3.5" />)}
       {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Ordered list',  <ListOrdered className="w-3.5 h-3.5" />)}
@@ -76,11 +87,13 @@ function NoteListItem({
   isSelected,
   onSelect,
   onPin,
+  inArchive = false,
 }: {
   note: HubNote;
   isSelected: boolean;
   onSelect: () => void;
   onPin: (e: React.MouseEvent) => void;
+  inArchive?: boolean;
 }) {
   const preview = note.body_plain.trim().slice(0, 80) || 'No additional text';
   const title = note.title.trim() || 'Untitled';
@@ -110,18 +123,23 @@ function NoteListItem({
           {title}
         </span>
         <div className="flex items-center gap-1 shrink-0">
+          {note.is_public && !inArchive && (
+            <Globe className="w-3 h-3 text-indigo-400 dark:text-indigo-500 opacity-70" aria-label="Public note" />
+          )}
           <span className="text-[10px] text-slate-400 dark:text-zinc-500">{date}</span>
-          <button
-            onClick={onPin}
-            title={note.is_pinned ? 'Unpin' : 'Pin'}
-            className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
-              note.is_pinned
-                ? 'text-amber-500 opacity-100'
-                : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-amber-500'
-            }`}
-          >
-            <Pin className="w-3 h-3" />
-          </button>
+          {!inArchive && (
+            <button
+              onClick={onPin}
+              title={note.is_pinned ? 'Unpin' : 'Pin'}
+              className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+                note.is_pinned
+                  ? 'text-amber-500 opacity-100'
+                  : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-amber-500'
+              }`}
+            >
+              <Pin className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
       <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">{preview}</p>
@@ -129,18 +147,20 @@ function NoteListItem({
   );
 }
 
-// ─── Note Editor (mounts fresh per note via key) ──────────────────────────────
+// ─── Note Editor ──────────────────────────────────────────────────────────────
 
 function NoteEditor({
   note,
   hubSlug,
   autoFocusTitle,
+  readOnly,
   onSave,
   onSaveStatus,
 }: {
   note: HubNote;
   hubSlug: string;
   autoFocusTitle?: boolean;
+  readOnly?: boolean;
   onSave: (updated: HubNote) => void;
   onSaveStatus: (s: 'idle' | 'saving' | 'saved' | 'error') => void;
 }) {
@@ -152,9 +172,7 @@ function NoteEditor({
   latestNote.current = note;
 
   useEffect(() => {
-    if (autoFocusTitle) {
-      setTimeout(() => titleRef.current?.focus(), 30);
-    }
+    if (autoFocusTitle) setTimeout(() => titleRef.current?.focus(), 30);
   }, [autoFocusTitle]);
 
   const flushSave = useCallback(async () => {
@@ -178,7 +196,6 @@ function NoteEditor({
     saveTimer.current = setTimeout(flushSave, 700);
   }, [flushSave, onSaveStatus]);
 
-  // Flush on unmount (note switch)
   useEffect(() => () => {
     clearTimeout(saveTimer.current);
     const patch = pendingPatch.current;
@@ -196,7 +213,9 @@ function NoteEditor({
       Placeholder.configure({ placeholder: 'Start writing…' }),
     ],
     content: note.body_rich ?? '',
+    editable: !readOnly,
     onUpdate: ({ editor }) => {
+      if (readOnly) return;
       scheduleAutosave({
         body_rich: editor.getJSON() as object,
         body_plain: editor.getText(),
@@ -205,15 +224,9 @@ function NoteEditor({
   });
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly) return;
     setTitleValue(e.target.value);
     scheduleAutosave({ title: e.target.value });
-  };
-
-  const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      editor?.commands.focus('end');
-    }
   };
 
   const editedDate = (() => {
@@ -224,14 +237,14 @@ function NoteEditor({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <FormatToolbar editor={editor} />
+      {!readOnly && <FormatToolbar editor={editor} />}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 md:px-10 py-7">
           <input
             ref={titleRef}
             value={titleValue}
             onChange={handleTitleChange}
-            onKeyDown={handleTitleKeyDown}
+            readOnly={readOnly}
             placeholder="Title"
             className="w-full text-2xl md:text-3xl font-bold bg-transparent outline-none text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-zinc-700 mb-1.5 leading-tight"
           />
@@ -247,11 +260,14 @@ function NoteEditor({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export function NotesScreen({ onBack }: NotesScreenProps) {
-  const { currentHub } = useHub();
+export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
+  const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  const navigate = useNavigate();
 
   const [notes, setNotes] = useState<HubNote[]>([]);
+  const [archivedNotes, setArchivedNotes] = useState<HubNote[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   const [selected, setSelected] = useState<HubNote | null>(null);
   const [isNewNote, setIsNewNote] = useState(false);
   const [query, setQuery] = useState('');
@@ -261,24 +277,66 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
+  // Is the currently selected note owned by this user?
+  const isOwnNote = !selected || selected.owner_id === currentUser?.hubUserId;
+
+  // Load active notes on mount, then resolve any initialNoteId
   useEffect(() => {
     if (!hubSlug) return;
     hubService.listNotes(hubSlug)
-      .then(data => { setNotes(data); setLoading(false); })
+      .then(async data => {
+        setNotes(data);
+        setLoading(false);
+        if (initialNoteId) {
+          // First check if it's in the already-loaded list (own active note)
+          const inList = data.find(n => n.id === initialNoteId);
+          if (inList) {
+            setSelected(inList);
+            setMobileView('editor');
+          } else {
+            // Could be archived or someone else's public note — fetch directly
+            try {
+              const note = await hubService.getNote(hubSlug, initialNoteId);
+              setSelected(note);
+              setMobileView('editor');
+            } catch { /* note not found or not accessible */ }
+          }
+        }
+      })
       .catch(() => setLoading(false));
-  }, [hubSlug]);
+  }, [hubSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filtered + sectioned
+  // Load archived notes when archive view is opened
+  useEffect(() => {
+    if (!showArchive || !hubSlug) return;
+    hubService.listNotes(hubSlug, true)
+      .then(data => setArchivedNotes(data))
+      .catch(() => {});
+  }, [showArchive, hubSlug]);
+
+  // Switch view: clear selection when switching between archive and notes
+  const switchView = (toArchive: boolean) => {
+    setShowArchive(toArchive);
+    setSelected(null);
+    setMobileView('list');
+    setQuery('');
+    navigate('/notes', { replace: true });
+  };
+
+  // ── Filtered + sectioned ──────────────────────────────────────────────────
   const q = query.trim().toLowerCase();
-  const active = notes.filter(n => !n.is_archived);
+  const currentList = showArchive ? archivedNotes : notes.filter(n => !n.is_archived);
   const filtered = q
-    ? active.filter(n => n.title.toLowerCase().includes(q) || n.body_plain.toLowerCase().includes(q))
-    : active;
+    ? currentList.filter(n => n.title.toLowerCase().includes(q) || n.body_plain.toLowerCase().includes(q))
+    : currentList;
   const pinned  = filtered.filter(n =>  n.is_pinned);
   const regular = filtered.filter(n => !n.is_pinned);
 
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   const handleSave = useCallback((updated: HubNote) => {
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    setArchivedNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
     setSelected(prev => prev?.id === updated.id ? updated : prev);
   }, []);
 
@@ -288,6 +346,7 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
     setMobileView('editor');
     setActionsOpen(false);
     setDeleteConfirm(false);
+    navigate(`/notes/${note.id}`, { replace: true });
   };
 
   const createNote = async () => {
@@ -309,13 +368,40 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
     setActionsOpen(false);
   };
 
+  const togglePublic = async () => {
+    if (!selected) return;
+    try {
+      const updated = await hubService.updateNote(hubSlug, selected.id, { is_public: !selected.is_public });
+      setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+      setSelected(updated);
+    } catch {}
+    setActionsOpen(false);
+  };
+
+  const clearSelected = () => {
+    setSelected(null);
+    setMobileView('list');
+    navigate('/notes', { replace: true });
+  };
+
   const archiveNote = async () => {
     if (!selected) return;
     try {
       const updated = await hubService.updateNote(hubSlug, selected.id, { is_archived: true });
-      setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
-      setSelected(null);
-      setMobileView('list');
+      setNotes(prev => prev.filter(n => n.id !== updated.id));
+      setArchivedNotes(prev => [updated, ...prev.filter(n => n.id !== updated.id)]);
+      clearSelected();
+    } catch {}
+    setActionsOpen(false);
+  };
+
+  const unarchiveNote = async () => {
+    if (!selected) return;
+    try {
+      const updated = await hubService.updateNote(hubSlug, selected.id, { is_archived: false });
+      setArchivedNotes(prev => prev.filter(n => n.id !== updated.id));
+      setNotes(prev => [updated, ...prev]);
+      clearSelected();
     } catch {}
     setActionsOpen(false);
   };
@@ -325,57 +411,71 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
     try {
       await hubService.deleteNote(hubSlug, selected.id);
       setNotes(prev => prev.filter(n => n.id !== selected.id));
-      setSelected(null);
-      setMobileView('list');
+      setArchivedNotes(prev => prev.filter(n => n.id !== selected.id));
+      clearSelected();
     } catch {}
     setDeleteConfirm(false);
     setActionsOpen(false);
   };
 
-  const totalCount = notes.filter(n => !n.is_archived).length;
+  const activeCount   = notes.filter(n => !n.is_archived).length;
+  const archiveCount  = archivedNotes.length;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-white dark:bg-zinc-950 flex">
+    // h-screen + overflow-hidden = viewport-locked; each panel scrolls independently
+    <div className="h-screen overflow-hidden bg-white dark:bg-zinc-950 flex">
 
-      {/* ── List Panel ── */}
+      {/* ── List Panel (fixed-height sidebar) ─────────────────────────────── */}
       <div className={`
         ${mobileView === 'editor' ? 'hidden' : 'flex'}
         md:flex flex-col
         w-full md:w-72 lg:w-80 xl:w-96
+        h-full flex-shrink-0
         border-r border-slate-200 dark:border-zinc-800
         bg-white dark:bg-zinc-950
       `}>
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-slate-200 dark:border-zinc-800">
+
+        {/* Header — fixed */}
+        <div className="flex items-center gap-2 px-4 py-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
           <button
-            onClick={onBack}
+            onClick={showArchive ? () => switchView(false) : onBack}
             className="w-8 h-8 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-400 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">Notes</h1>
-            {!loading && <p className="text-[10px] text-slate-400 dark:text-zinc-600 mt-0.5">{totalCount} note{totalCount !== 1 ? 's' : ''}</p>}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold text-slate-900 dark:text-white leading-none">
+              {showArchive ? 'Archive' : 'Notes'}
+            </h1>
+            {!loading && (
+              <p className="text-[10px] text-slate-400 dark:text-zinc-600 mt-0.5">
+                {showArchive
+                  ? `${archiveCount} archived note${archiveCount !== 1 ? 's' : ''}`
+                  : `${activeCount} note${activeCount !== 1 ? 's' : ''}`}
+              </p>
+            )}
           </div>
-          <button
-            onClick={createNote}
-            className="w-8 h-8 rounded-xl bg-amber-500 hover:bg-amber-600 flex items-center justify-center text-white shadow-sm transition-colors"
-            title="New note"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          {!showArchive && (
+            <button
+              onClick={createNote}
+              className="w-8 h-8 rounded-xl bg-amber-500 hover:bg-amber-600 flex items-center justify-center text-white shadow-sm transition-colors"
+              title="New note"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        {/* Search */}
-        <div className="px-3 py-2.5 border-b border-slate-100 dark:border-zinc-800/60">
+        {/* Search — fixed */}
+        <div className="px-3 py-2.5 border-b border-slate-100 dark:border-zinc-800/60 flex-shrink-0">
           <div className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-xl px-3 py-2">
             <Search className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500 shrink-0" />
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search notes…"
+              placeholder={showArchive ? 'Search archive…' : 'Search notes…'}
               className="flex-1 bg-transparent text-sm text-slate-900 dark:text-zinc-100 placeholder-slate-400 dark:placeholder-zinc-600 outline-none"
             />
             {query && (
@@ -386,7 +486,7 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
           </div>
         </div>
 
-        {/* Note list */}
+        {/* Note list — scrollable */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-40">
@@ -398,6 +498,11 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
                 <>
                   <p className="text-sm font-medium text-slate-500 dark:text-zinc-400">No results</p>
                   <p className="text-xs text-slate-400 dark:text-zinc-600 mt-1">Try a different search term</p>
+                </>
+              ) : showArchive ? (
+                <>
+                  <Archive className="w-8 h-8 text-slate-300 dark:text-zinc-700 mb-2" />
+                  <p className="text-sm font-medium text-slate-500 dark:text-zinc-400">Archive is empty</p>
                 </>
               ) : (
                 <>
@@ -414,8 +519,7 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
             </div>
           ) : (
             <>
-              {/* Pinned section */}
-              {pinned.length > 0 && (
+              {pinned.length > 0 && !showArchive && (
                 <>
                   <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
                     <Pin className="w-3 h-3 text-slate-400 dark:text-zinc-600" />
@@ -432,11 +536,9 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
                   ))}
                 </>
               )}
-
-              {/* Regular notes */}
               {regular.length > 0 && (
                 <>
-                  {pinned.length > 0 && (
+                  {pinned.length > 0 && !showArchive && (
                     <div className="px-4 pt-3 pb-1">
                       <span className="text-[10px] font-semibold text-slate-400 dark:text-zinc-600 uppercase tracking-wider">Notes</span>
                     </div>
@@ -448,6 +550,7 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
                       isSelected={selected?.id === note.id}
                       onSelect={() => selectNote(note)}
                       onPin={e => togglePin(note, e)}
+                      inArchive={showArchive}
                     />
                   ))}
                 </>
@@ -455,100 +558,175 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
             </>
           )}
         </div>
+
+        {/* Archive toggle — fixed at bottom */}
+        <div className="flex-shrink-0 border-t border-slate-100 dark:border-zinc-800/60 px-3 py-2">
+          {showArchive ? (
+            <button
+              onClick={() => switchView(false)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Notes
+            </button>
+          ) : (
+            <button
+              onClick={() => switchView(true)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-500 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>Archive</span>
+              {archiveCount > 0 && (
+                <span className="ml-auto text-[10px] bg-slate-200 dark:bg-zinc-700 text-slate-500 dark:text-zinc-400 px-1.5 py-0.5 rounded-full">
+                  {archiveCount}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ── Editor Panel ── */}
+      {/* ── Editor Panel (independent scroll) ────────────────────────────── */}
       <div className={`
         ${mobileView === 'list' ? 'hidden' : 'flex'}
-        md:flex flex-col flex-1 min-w-0 min-h-screen
+        md:flex flex-col flex-1 min-w-0 h-full overflow-hidden
       `}>
         {selected ? (
           <>
-            {/* Editor top bar */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-              {/* Back (mobile) */}
+            {/* Editor top bar — fixed */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex-shrink-0">
               <button
-                onClick={() => setMobileView('list')}
+                onClick={() => { setMobileView('list'); }}
                 className="md:hidden w-8 h-8 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-400 transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
               <div className="flex-1" />
-              <SaveIndicator status={saveStatus} />
+              {isOwnNote && <SaveIndicator status={saveStatus} />}
 
-              {/* Pin toggle */}
-              <button
-                onClick={() => togglePin(selected)}
-                title={selected.is_pinned ? 'Unpin' : 'Pin to top'}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                  selected.is_pinned
-                    ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20'
-                    : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <Pin className="w-4 h-4" />
-              </button>
-
-              {/* More actions */}
-              <div className="relative">
+              {/* Public / Private toggle — own notes only */}
+              {isOwnNote && !showArchive && (
                 <button
-                  onClick={() => { setActionsOpen(v => !v); setDeleteConfirm(false); }}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  onClick={togglePublic}
+                  title={selected.is_public ? 'Public — click to make private' : 'Private — click to make public'}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                    selected.is_public
+                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                      : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
                 >
-                  <MoreVertical className="w-4 h-4" />
+                  {selected.is_public ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                 </button>
+              )}
 
-                {actionsOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => { setActionsOpen(false); setDeleteConfirm(false); }} />
-                    <div className="absolute right-0 top-9 z-20 w-44 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden">
-                      <button
-                        onClick={archiveNote}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
-                      >
-                        <Archive className="w-3.5 h-3.5 text-slate-400" />
-                        Archive note
-                      </button>
-                      {!deleteConfirm ? (
-                        <button
-                          onClick={() => setDeleteConfirm(true)}
-                          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Delete note
-                        </button>
-                      ) : (
-                        <div className="px-3.5 py-2.5 border-t border-slate-100 dark:border-zinc-800">
-                          <p className="text-xs text-slate-600 dark:text-zinc-400 mb-2">Delete permanently?</p>
-                          <div className="flex gap-2">
+              {/* Pin toggle — own notes only */}
+              {isOwnNote && !showArchive && (
+                <button
+                  onClick={() => togglePin(selected)}
+                  title={selected.is_pinned ? 'Unpin' : 'Pin to top'}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                    selected.is_pinned
+                      ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                      : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Pin className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* More actions — own notes only */}
+              {isOwnNote && (
+                <div className="relative">
+                  <button
+                    onClick={() => { setActionsOpen(v => !v); setDeleteConfirm(false); }}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {actionsOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => { setActionsOpen(false); setDeleteConfirm(false); }} />
+                      <div className="absolute right-0 top-9 z-20 w-48 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden">
+                        {showArchive ? (
+                          <button
+                            onClick={unarchiveNote}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                          >
+                            <ArchiveRestore className="w-3.5 h-3.5 text-emerald-500" />
+                            Restore note
+                          </button>
+                        ) : (
+                          <>
                             <button
-                              onClick={deleteNote}
-                              className="flex-1 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition-colors"
+                              onClick={togglePublic}
+                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                             >
-                              Delete
+                              {selected.is_public
+                                ? <><Lock className="w-3.5 h-3.5 text-slate-400" />Make private</>
+                                : <><Globe className="w-3.5 h-3.5 text-indigo-400" />Make public</>}
                             </button>
                             <button
-                              onClick={() => setDeleteConfirm(false)}
-                              className="flex-1 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-xs font-medium transition-colors"
+                              onClick={archiveNote}
+                              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                             >
-                              Cancel
+                              <Archive className="w-3.5 h-3.5 text-slate-400" />
+                              Archive note
                             </button>
+                          </>
+                        )}
+                        {!deleteConfirm ? (
+                          <button
+                            onClick={() => setDeleteConfirm(true)}
+                            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border-t border-slate-100 dark:border-zinc-800"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete permanently
+                          </button>
+                        ) : (
+                          <div className="px-3.5 py-2.5 border-t border-slate-100 dark:border-zinc-800">
+                            <p className="text-xs text-slate-600 dark:text-zinc-400 mb-2">Delete permanently?</p>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={deleteNote}
+                                className="flex-1 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition-colors"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(false)}
+                                className="flex-1 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-xs font-medium transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Public note banner — shown when viewing someone else's note */}
+            {!isOwnNote && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800 flex-shrink-0">
+                <Globe className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
+                <p className="text-xs text-indigo-700 dark:text-indigo-300">
+                  Public note — read only
+                </p>
+              </div>
+            )}
 
             {/* TipTap editor — key causes full remount when note changes */}
             <NoteEditor
               key={selected.id}
               note={selected}
               hubSlug={hubSlug}
-              autoFocusTitle={isNewNote}
+              autoFocusTitle={isNewNote && isOwnNote}
+              readOnly={showArchive || !isOwnNote}
               onSave={handleSave}
               onSaveStatus={setSaveStatus}
             />
@@ -557,19 +735,27 @@ export function NotesScreen({ onBack }: NotesScreenProps) {
           /* No note selected — desktop empty state */
           <div className="hidden md:flex flex-col flex-1 items-center justify-center text-center px-8">
             <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/20 flex items-center justify-center mb-4">
-              <NotebookPen className="w-8 h-8 text-amber-500 dark:text-amber-400" />
+              {showArchive
+                ? <Archive className="w-8 h-8 text-slate-400 dark:text-zinc-500" />
+                : <NotebookPen className="w-8 h-8 text-amber-500 dark:text-amber-400" />}
             </div>
-            <h2 className="text-lg font-semibold text-slate-700 dark:text-zinc-300 mb-1">Your private notes</h2>
+            <h2 className="text-lg font-semibold text-slate-700 dark:text-zinc-300 mb-1">
+              {showArchive ? 'Archived notes' : 'Your private notes'}
+            </h2>
             <p className="text-sm text-slate-400 dark:text-zinc-600 mb-5 max-w-xs">
-              Only you can see these. Select a note to edit it, or create a new one.
+              {showArchive
+                ? 'Select a note to view it. Restore or delete from the ⋮ menu.'
+                : 'Private by default. Make a note public to share it on your profile.'}
             </p>
-            <button
-              onClick={createNote}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              New Note
-            </button>
+            {!showArchive && (
+              <button
+                onClick={createNote}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-sm transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                New Note
+              </button>
+            )}
           </div>
         )}
       </div>

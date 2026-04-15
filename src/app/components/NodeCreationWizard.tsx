@@ -17,7 +17,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, ArrowRight, MapPin, Eye, User, Lock,
   Download, Terminal, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, LayoutGrid,
 } from 'lucide-react';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
@@ -36,7 +36,7 @@ import { registryService } from '../services/registryService';
 // Types
 // ─────────────────────────────────────────────────────────
 
-type WizardStep = 'identity' | 'access' | 'admin' | 'download' | 'waiting' | 'live';
+type WizardStep = 'identity' | 'access' | 'admin' | 'apps' | 'download' | 'waiting' | 'live';
 
 interface WizardData {
   // Step 1
@@ -54,6 +54,8 @@ interface WizardData {
   adminUsername: string;
   adminPassword: string;
   adminPasswordConfirm: string;
+  // Step 4 (apps)
+  enabledApps: string[];
 }
 
 interface HubLiveInfo {
@@ -126,13 +128,13 @@ function CopyButton({ text }: { text: string }) {
 // Progress bar (steps 1–4 only; waiting + live are post-wizard)
 // ─────────────────────────────────────────────────────────
 
-const PROGRESS_STEPS: WizardStep[] = ['identity', 'access', 'admin', 'download'];
+const PROGRESS_STEPS: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'download'];
 
 function ProgressBar({ currentStep }: { currentStep: WizardStep }) {
   const idx = PROGRESS_STEPS.indexOf(currentStep);
   if (idx === -1) return null;
   const pct = ((idx + 1) / PROGRESS_STEPS.length) * 100;
-  const labels = ['Hub Details', 'Access', 'Admin Account', 'Launch'];
+  const labels = ['Hub Details', 'Access', 'Admin Account', 'Choose Apps', 'Launch'];
 
   return (
     <div className="mb-8">
@@ -166,6 +168,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     hubName: '', hubLocation: '', hubZip: '', hubDescription: '', dataDir: '',
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
+    enabledApps: ['feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls'],
   });
 
   // Generated once when the user reaches the download step
@@ -192,6 +195,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       data.adminUsername.trim().length >= 2 &&
       data.adminPassword.length >= 8 &&
       data.adminPassword === data.adminPasswordConfirm,
+    apps: data.enabledApps.length >= 1,
     download: scriptDownloaded,
     waiting: false,
     live: true,
@@ -212,23 +216,24 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       secrets: secretsRef.current,
       generatedAt: new Date().toISOString(),
       dataDir: data.dataDir.trim() || undefined,
+      enabledApps: data.enabledApps.length > 0 ? data.enabledApps : null,
     };
   }
 
   // ── Advance step ───────────────────────────────────────
+  const STEP_ORDER: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'download', 'waiting', 'live'];
+
   const next = () => {
-    const order: WizardStep[] = ['identity', 'access', 'admin', 'download', 'waiting', 'live'];
-    const idx = order.indexOf(step);
-    if (idx < order.length - 1) setStep(order[idx + 1]);
+    const idx = STEP_ORDER.indexOf(step);
+    if (idx < STEP_ORDER.length - 1) setStep(STEP_ORDER[idx + 1]);
   };
 
   const back = () => {
     if (step === 'identity') { onBack(); return; }
-    const order: WizardStep[] = ['identity', 'access', 'admin', 'download', 'waiting', 'live'];
-    const idx = order.indexOf(step);
+    const idx = STEP_ORDER.indexOf(step);
     // Don't go back from waiting/live
     if (step === 'waiting' || step === 'live') return;
-    if (idx > 0) setStep(order[idx - 1]);
+    if (idx > 0) setStep(STEP_ORDER[idx - 1]);
   };
 
   // ── Download script ────────────────────────────────────
@@ -815,7 +820,111 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                   </div>
                 )}
 
-                {/* ── Step 4: Download & run ────────────── */}
+                {/* ── Step 4: Choose Apps ──────────────── */}
+                {step === 'apps' && (() => {
+                  const ALL_HUB_APPS = [
+                    { id: 'feed',        label: 'Discussions',  emoji: '💬', desc: 'Community posts and conversations' },
+                    { id: 'messages',    label: 'Messages',     emoji: '✉️', desc: 'Private and group messaging' },
+                    { id: 'atlas',       label: 'Atlas',        emoji: '🗺️', desc: 'Interactive community map' },
+                    { id: 'neighbors',   label: 'Neighbors',    emoji: '👥', desc: 'Browse and connect with members' },
+                    { id: 'notes',       label: 'Notes',        emoji: '📓', desc: 'Private notes and journal' },
+                    { id: 'polls',       label: 'Polls',        emoji: '🗳️', desc: 'Community voting and surveys' },
+                    { id: 'spaces',      label: 'Spaces',       emoji: '🌐', desc: 'Topic-based community groups' },
+                    { id: 'marketplace', label: 'Exchange',     emoji: '🏪', desc: 'Buy, sell, and trade locally' },
+                    { id: 'files',       label: 'Files',        emoji: '📁', desc: 'Shared file storage' },
+                    { id: 'discover',    label: 'Discover',     emoji: '🧭', desc: 'Community resources and links' },
+                    { id: 'toolkit',     label: 'Resources',    emoji: '🔧', desc: 'Tools and local resources' },
+                    { id: 'initiatives', label: 'Initiatives',  emoji: '🎯', desc: 'Community projects and goals' },
+                    { id: 'network',     label: 'Network',      emoji: '📡', desc: 'Hub network map and stats' },
+                    { id: 'mod-log',     label: 'Mod Log',      emoji: '📜', desc: 'Moderation and governance log' },
+                  ];
+                  const ESSENTIALS = ['feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls'];
+                  const toggle = (id: string) => {
+                    set({
+                      enabledApps: data.enabledApps.includes(id)
+                        ? data.enabledApps.filter(a => a !== id)
+                        : [...data.enabledApps, id],
+                    });
+                  };
+                  const allSelected = ALL_HUB_APPS.every(a => data.enabledApps.includes(a.id));
+                  return (
+                    <div className="space-y-5">
+                      <div className="flex items-center gap-4 mb-2">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600
+                          flex items-center justify-center flex-shrink-0">
+                          <LayoutGrid className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                            Choose your apps
+                          </h2>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            Pick the features you want — you can change this any time in Hub Management
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Preset buttons */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => set({ enabledApps: ESSENTIALS })}
+                          className="flex-1 py-2 px-3 rounded-xl border-2 text-sm font-medium transition-all
+                            border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300
+                            hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400"
+                        >
+                          ⚡ Essentials
+                        </button>
+                        <button
+                          onClick={() => set({ enabledApps: ALL_HUB_APPS.map(a => a.id) })}
+                          className={`flex-1 py-2 px-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                            allSelected
+                              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
+                              : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400'
+                          }`}
+                        >
+                          🚀 Full Community
+                        </button>
+                      </div>
+
+                      {/* App grid */}
+                      <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-0.5">
+                        {ALL_HUB_APPS.map(app => {
+                          const on = data.enabledApps.includes(app.id);
+                          return (
+                            <button
+                              key={app.id}
+                              onClick={() => toggle(app.id)}
+                              className={`p-3 rounded-xl border-2 text-left transition-all ${
+                                on
+                                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                  : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-lg leading-none">{app.emoji}</span>
+                                <span className={`text-sm font-semibold ${on ? 'text-purple-700 dark:text-purple-300' : 'text-slate-800 dark:text-white'}`}>
+                                  {app.label}
+                                </span>
+                                {on && (
+                                  <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 ml-auto flex-shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug">
+                                {app.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <p className="text-xs text-slate-400 dark:text-slate-500 text-center">
+                        {data.enabledApps.length} of {ALL_HUB_APPS.length} apps selected
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Step 5: Download & run ────────────── */}
                 {step === 'download' && (
                   <div className="space-y-5">
                     <div className="flex items-center gap-4 mb-6">

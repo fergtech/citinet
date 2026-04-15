@@ -239,7 +239,8 @@ function HubSpacesRoute() {
 
 function HubNotesRoute() {
   const navigate = useNavigate();
-  return <NotesScreen onBack={() => navigate(-1)} />;
+  const { noteId } = useParams<{ noteId?: string }>();
+  return <NotesScreen onBack={() => navigate(-1)} initialNoteId={noteId} />;
 }
 
 function HubMarketplaceRoute() {
@@ -648,6 +649,7 @@ function HubModeRoutes() {
       <Route path="/spaces" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="/spaces/:spaceSlug" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="/notes" element={<HubGuard><HubNotesRoute /></HubGuard>} />
+      <Route path="/notes/:noteId" element={<HubGuard><HubNotesRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>

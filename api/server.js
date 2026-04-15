@@ -443,6 +443,7 @@ async function initDb() {
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_notes_owner ON hub_notes(owner_id, is_archived)`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // E2E Encryption — key registry
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_user_keys (
@@ -608,6 +609,10 @@ app.get('/api/info', async (_req, res) => {
   let enabledApps   = null;
   if (cfg.enabled_apps) {
     try { enabledApps = JSON.parse(cfg.enabled_apps); } catch {}
+  } else if (process.env.ENABLED_APPS) {
+    // Fallback: parse comma-separated list written by setup script into .env
+    enabledApps = process.env.ENABLED_APPS.split(',').map(s => s.trim()).filter(Boolean);
+    if (enabledApps.length === 0) enabledApps = null;
   }
 
   res.json({
@@ -2445,7 +2450,7 @@ app.get('/api/notes', authenticate, async (req, res) => {
   try {
     const archived = req.query.archived === 'true';
     const { rows } = await pool.query(
-      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at
        FROM hub_notes
        WHERE owner_id = $1 AND is_archived = $2
        ORDER BY is_pinned DESC, updated_at DESC`,
@@ -2461,12 +2466,17 @@ app.get('/api/notes', authenticate, async (req, res) => {
 app.get('/api/notes/:id', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at
-       FROM hub_notes WHERE id = $1 AND owner_id = $2`,
-      [req.params.id, req.user.id]
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at
+       FROM hub_notes WHERE id = $1`,
+      [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Note not found' });
-    res.json(rows[0]);
+    // Owner can always read; others can only read public, non-archived notes
+    const note = rows[0];
+    if (note.owner_id !== req.user.id && (!note.is_public || note.is_archived)) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    res.json(note);
   } catch (err) {
     console.error('Get note error:', err);
     res.status(500).json({ error: 'Failed to get note' });
@@ -2479,7 +2489,7 @@ app.post('/api/notes', authenticate, async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO hub_notes (owner_id, title, body_rich, body_plain, color)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at`,
+       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at`,
       [req.user.id, title, body_rich ? JSON.stringify(body_rich) : null, body_plain, color]
     );
     res.status(201).json(rows[0]);
@@ -2497,7 +2507,7 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
     );
     if (!existing[0]) return res.status(404).json({ error: 'Note not found' });
 
-    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'color'];
+    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'color'];
     const updates = [];
     const values = [];
     let i = 1;
@@ -2513,13 +2523,30 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
 
     const { rows } = await pool.query(
       `UPDATE hub_notes SET ${updates.join(', ')} WHERE id = $${i}
-       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, color, created_at, updated_at`,
+       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at`,
       values
     );
     res.json(rows[0]);
   } catch (err) {
     console.error('Update note error:', err);
     res.status(500).json({ error: 'Failed to update note' });
+  }
+});
+
+// Public notes for a user's profile — returns non-archived public notes (auth required, any member)
+app.get('/api/members/:userId/public-notes', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, owner_id, title, body_plain, body_rich, is_pinned, is_archived, is_public, color, created_at, updated_at
+       FROM hub_notes
+       WHERE owner_id = $1 AND is_public = TRUE AND is_archived = FALSE
+       ORDER BY is_pinned DESC, updated_at DESC`,
+      [req.params.userId]
+    );
+    res.json({ notes: rows });
+  } catch (err) {
+    console.error('Public notes error:', err);
+    res.status(500).json({ error: 'Failed to load public notes' });
   }
 });
 

@@ -1719,7 +1719,7 @@ class HubService {
     return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
   }
 
-  async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'color'>>): Promise<HubNote> {
+  async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'is_public' | 'color'>>): Promise<HubNote> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');
     // Encrypt body content fields if present in patch
@@ -1751,6 +1751,20 @@ class HubService {
       headers: { Authorization: `Bearer ${conn.user.authToken}` },
     });
     if (!res.ok) throw new Error('Failed to delete note');
+  }
+
+  async getPublicNotes(hubSlug: string, userId: string): Promise<HubNote[]> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/members/${userId}/public-notes`, {
+      headers: { Authorization: `Bearer ${conn.user.authToken}` },
+    });
+    if (!res.ok) throw new Error('Failed to fetch public notes');
+    const data = await res.json() as { notes: HubNote[] };
+    const decryptedNotes = await Promise.all(
+      data.notes.map(note => this.maybeDecryptNote(hubSlug, note))
+    );
+    return decryptedNotes.filter(note => note.id);
   }
 
   private saveHub(hub: Hub): void {

@@ -4,13 +4,16 @@ import {
   Loader2, AlertCircle, Tag, Globe,
   ImagePlus, Palette, Pencil, ArrowLeft,
   FileText, Pin, Hash, Building2,
+  BookOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
-import type { HubMember, HubPost } from '../types/hub';
+import { NoteDetailModal } from './NoteDetailModal';
+import { navigateToHub } from '../utils/subdomain';
+import type { HubMember, HubPost, HubNote } from '../types/hub';
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -31,12 +34,15 @@ function formatJoinDate(iso: string): string {
 }
 function formatTimestamp(iso: string): string {
   try {
-    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    const diff = Math.floor((Date.now() - d.getTime()) / 1000);
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return new Date(iso).toLocaleDateString();
+    return d.toLocaleDateString();
   } catch { return ''; }
 }
 
@@ -54,7 +60,7 @@ const BANNER_GRADIENTS = [
   { from: '#c2410c', to: '#be123c' }, { from: '#374151', to: '#111827' },
 ];
 
-type Tab = 'overview' | 'posts';
+type Tab = 'overview' | 'posts' | 'notes';
 
 // ── Component ──────────────────────────────────────────────
 
@@ -71,11 +77,13 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
+  const [notes, setNotes]             = useState<HubNote[]>([]);
   const [pinCount, setPinCount]       = useState(0);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [activeTab, setActiveTab]     = useState<Tab>('overview');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
+  const [selectedNote, setSelectedNote] = useState<HubNote | null>(null);
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -92,13 +100,16 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
       hubService.getMember(slug, userId),
       hubService.listPosts(slug),
       atlasService.getPins(slug),
-    ]).then(([memberRes, postsRes, pinsRes]) => {
+      hubService.getPublicNotes(slug, userId),
+    ]).then(([memberRes, postsRes, pinsRes, notesRes]) => {
       if (memberRes.status === 'fulfilled') {
         setMember(memberRes.value);
         if (postsRes.status === 'fulfilled')
           setPosts(postsRes.value.filter(p => p.author_id === userId));
         if (pinsRes.status === 'fulfilled')
           setPinCount(pinsRes.value.filter(p => p.authorUsername === memberRes.value?.username).length);
+        if (notesRes.status === 'fulfilled')
+          setNotes(notesRes.value);
       } else {
         setError('Could not load profile.');
       }
@@ -278,11 +289,14 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
             {/* Identity metadata — civic, local, network */}
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-              <div className="flex items-center gap-2 text-xs">
+              <button
+                onClick={() => navigateToHub(slug)}
+                className="flex items-center gap-2 text-xs hover:opacity-80 transition-opacity text-left"
+              >
                 <Building2 className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <span className="text-white/50">Member of</span>
-                <span className="font-semibold text-purple-200 truncate">{hubName}</span>
-              </div>
+                <span className="text-white/50">Member of Hub</span>
+                <span className="font-semibold text-purple-200 truncate hover:underline">{hubName}</span>
+              </button>
               {member.location && (
                 <div className="flex items-center gap-2 text-xs text-white/55">
                   <MapPin className="w-3.5 h-3.5 shrink-0 text-white/40" />
@@ -403,7 +417,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         >
           {/* Tab bar */}
           <div className="flex border-b border-slate-100 dark:border-zinc-800">
-            {(['overview', 'posts'] as Tab[]).map(tab => (
+            {(['overview', 'posts', 'notes'] as Tab[]).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -413,7 +427,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                {tab === 'overview' ? 'Overview' : `Posts${posts.length > 0 ? ` (${posts.length})` : ''}`}
+                {tab === 'overview' ? 'Overview' : tab === 'posts' ? `Posts${posts.length > 0 ? ` (${posts.length})` : ''}` : `Notes${notes.length > 0 ? ` (${notes.length})` : ''}`}
                 {activeTab === tab && (
                   <motion.div layoutId="profile-tab-indicator" className="absolute bottom-0 inset-x-0 h-0.5 bg-purple-500 dark:bg-purple-400" />
                 )}
@@ -535,6 +549,62 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 )}
               </motion.div>
             )}
+
+            {/* ── Notes tab ── */}
+            {activeTab === 'notes' && (
+              <motion.div
+                key="notes"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+              >
+                {notes.length > 0 ? (
+                  <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                    {notes.map((note, i) => (
+                      <motion.div
+                        key={note.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: i * 0.04 }}
+                        onClick={() => setSelectedNote(note)}
+                        className="px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group cursor-pointer"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {note.is_pinned && (
+                                <Pin className="w-3.5 h-3.5 text-amber-500" />
+                              )}
+                              <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(note.updated_at)}</span>
+                            </div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
+                              {note.title || 'Untitled'}
+                            </p>
+                            {note.body_plain && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{note.body_plain}</p>
+                            )}
+                          </div>
+                          {note.color && (
+                            <div
+                              className="w-3 h-3 rounded-full shrink-0 mt-0.5"
+                              style={{ backgroundColor: note.color }}
+                            />
+                          )}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-10 text-center">
+                    <BookOpen className="w-8 h-8 text-slate-200 dark:text-zinc-700 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400 dark:text-slate-500">
+                      {isOwnProfile ? 'No public notes yet.' : 'No shared notes.'}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
         </motion.div>
 
@@ -552,6 +622,16 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(slug, name) ?? ''}
           onDeleted={() => setSelectedPost(null)}
+        />
+      )}
+
+      {selectedNote && (
+        <NoteDetailModal
+          isOpen
+          onClose={() => setSelectedNote(null)}
+          note={selectedNote}
+          isOwnNote={isOwnProfile}
+          onEdit={isOwnProfile ? () => { onNavigate('notes'); setSelectedNote(null); } : undefined}
         />
       )}
     </div>

@@ -33,6 +33,11 @@ export interface HubScriptConfig {
   /** Custom directory for Docker bind mounts (Postgres, MinIO, Redis data).
    *  If omitted, Docker-managed named volumes are used instead. */
   dataDir?: string;
+  /**
+   * Which app screens are enabled on this hub.
+   * Omit or null = all apps enabled. Array = only listed apps are shown.
+   */
+  enabledApps?: string[] | null;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -132,6 +137,10 @@ function generateEnvContent(config: HubScriptConfig): string {
     '#   Local example:   FILES_DIR=/mnt/external/citinet-files',
     '#   Network example: FILES_DIR=/mnt/nas/hub-files  (mount the share first)',
     'FILES_DIR=' + (config.dataDir ?? './data') + '/storage',
+    '',
+    '# Enabled Apps — comma-separated list of app IDs shown to members.',
+    '# Leave empty to enable all apps. Set during hub creation wizard.',
+    'ENABLED_APPS=' + (config.enabledApps ? config.enabledApps.join(',') : ''),
   ].join('\n');
 }
 
