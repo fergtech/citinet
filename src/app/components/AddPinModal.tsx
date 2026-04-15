@@ -1,17 +1,58 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { X, MapPin } from 'lucide-react';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
 import { ATLAS_CATEGORIES, type AtlasPinCategory } from '../types/atlas';
 
 interface AddPinModalProps {
   position: [number, number];
+  suggestedTitle?: string | null;
   onSave: (data: { title: string; description?: string; category: AtlasPinCategory }) => void;
   onClose: () => void;
 }
 
-export function AddPinModal({ position, onSave, onClose }: AddPinModalProps) {
-  const [title, setTitle] = useState('');
+// ── Smart category suggestion ──────────────────────────────────────────────
+
+const CATEGORY_KEYWORDS: Record<AtlasPinCategory, string[]> = {
+  meetup:         ['meet', 'meetup', 'hangout', 'gathering', 'bench', 'plaza', 'square', 'spot'],
+  safety:         ['warning', 'alert', 'caution', 'flood', 'hazard', 'unsafe', 'broken', 'incident', 'crime', 'accident'],
+  avoid:          ['avoid', 'danger', 'closed', 'blocked', 'abandoned', 'sketchy', 'stay away'],
+  infrastructure: ['community center', 'hall', 'library', 'school', 'church', 'garden', 'facility', 'clinic', 'station'],
+  poi:            ['coffee', 'cafe', 'café', 'restaurant', 'food', 'shop', 'store', 'market', 'bar',
+                   'trail', 'fountain', 'museum', 'gallery', 'park', 'starbucks', 'landmark', 'monument'],
+};
+
+function suggestCategory(title: string): AtlasPinCategory | null {
+  if (!title.trim()) return null;
+  const lower = title.toLowerCase();
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [AtlasPinCategory, string[]][]) {
+    if (keywords.some(kw => lower.includes(kw))) return cat;
+  }
+  return null;
+}
+
+// ── Mini-map marker icon ───────────────────────────────────────────────────
+
+const MODAL_PIN_ICON = L.divIcon({
+  className: '',
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:#7c3aed;border:2.5px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+// ── Component ──────────────────────────────────────────────────────────────
+
+export function AddPinModal({ position, suggestedTitle, onSave, onClose }: AddPinModalProps) {
+  const [title, setTitle] = useState(suggestedTitle ?? '');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<AtlasPinCategory>('poi');
+  const [isDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+  const categorySuggestion = useMemo(() => suggestCategory(title), [title]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,17 +78,45 @@ export function AddPinModal({ position, onSave, onClose }: AddPinModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Location indicator */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-zinc-800 rounded-lg text-xs text-slate-500 dark:text-slate-400">
-            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>{position[0].toFixed(5)}, {position[1].toFixed(5)}</span>
+          {/* Mini-map */}
+          <div className="relative h-28 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-700">
+            <MapContainer
+              center={position}
+              zoom={15}
+              style={{ width: '100%', height: '100%' }}
+              dragging={false}
+              zoomControl={false}
+              scrollWheelZoom={false}
+              attributionControl={false}
+              doubleClickZoom={false}
+              keyboard={false}
+            >
+              <TileLayer url={tileUrl} />
+              <Marker position={position} icon={MODAL_PIN_ICON} />
+            </MapContainer>
+            {/* Coords overlay */}
+            <div className="absolute bottom-1.5 left-2 z-[400] pointer-events-none">
+              <span className="text-[10px] font-mono text-white/90 bg-black/30 backdrop-blur-sm px-1.5 py-0.5 rounded">
+                {position[0].toFixed(4)}, {position[1].toFixed(4)}
+              </span>
+            </div>
           </div>
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Category
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Category</label>
+              {categorySuggestion && categorySuggestion !== category && (
+                <button
+                  type="button"
+                  onClick={() => setCategory(categorySuggestion)}
+                  className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+                >
+                  <span>{ATLAS_CATEGORIES[categorySuggestion].emoji}</span>
+                  <span>Suggested: {ATLAS_CATEGORIES[categorySuggestion].label}</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
                 <button

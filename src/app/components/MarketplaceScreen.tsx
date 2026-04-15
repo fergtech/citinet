@@ -42,6 +42,25 @@ function formatRelative(iso: string): string {
   } catch { return ''; }
 }
 
+function getTags(listing: HubListing): { label: string; color: string }[] {
+  const tags: { label: string; color: string }[] = [];
+
+  // Negotiable tag
+  if (listing.price_type === 'negotiable') {
+    tags.push({ label: 'Negotiable', color: 'bg-amber-500/90 text-white' });
+  }
+
+  // Recently listed tag (within 2 days)
+  try {
+    const diff = Math.floor((Date.now() - new Date(listing.created_at).getTime()) / 1000);
+    if (diff < 172800) { // 2 days
+      tags.push({ label: 'New', color: 'bg-green-500/90 text-white' });
+    }
+  } catch { /* silent */ }
+
+  return tags;
+}
+
 export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug ?? '';
@@ -531,34 +550,61 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
 
         {/* Empty state */}
         {!loading && !error && listings.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-44 h-44 rounded-2xl overflow-hidden mb-5 shadow-md ring-1 ring-black/5">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 60, damping: 20 }}
+            className="flex flex-col items-center justify-center py-12 text-center"
+          >
+            <div className="w-44 h-44 rounded-2xl overflow-hidden mb-6 shadow-md ring-1 ring-black/5">
               <img
                 src="/mohamed_hassan-store-4315394_1920.jpg"
                 alt="Local Exchange"
                 className="w-full h-full object-cover object-center"
               />
             </div>
-            <h3 className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">Nothing listed yet</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mb-6">
-              Be the first to list something for your community — goods, services, food, events.
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Nothing listed yet</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 max-w-xs mb-6">
+              Be the first to list something! Here's what neighbors are looking for:
             </p>
+
+            {/* Category suggestions */}
+            <div className="flex flex-wrap gap-2 justify-center mb-8">
+              {CATEGORIES.slice(1, 5).map(cat => (
+                <motion.button
+                  key={cat}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 150, damping: 12 }}
+                  whileHover={{ scale: 1.08 }}
+                  onClick={() => setActiveCategory(cat)}
+                  className="px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/40 dark:to-blue-900/40 text-purple-700 dark:text-purple-300 text-sm font-semibold border border-purple-200 dark:border-purple-700/50 hover:shadow-md transition-shadow"
+                >
+                  {cat}
+                </motion.button>
+              ))}
+            </div>
+
             {myVendor ? (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowAddListing(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:shadow-lg transition-shadow"
               >
                 <Plus className="w-4 h-4" /> Add Your First Listing
-              </button>
+              </motion.button>
             ) : (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => setShowCreateVendor(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:shadow-lg transition-shadow"
               >
                 <Store className="w-4 h-4" /> Create a Vendor Page
-              </button>
+              </motion.button>
             )}
-          </div>
+          </motion.div>
         )}
 
         {/* No results (filtered) */}
@@ -581,38 +627,87 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                   const imageUrl = listing.image_file_name
                     ? marketplaceService.getListingImageUrl(slug, listing.image_file_name)
                     : null;
+                  const vendorLogoUrl = listing.vendor_logo_file_name
+                    ? marketplaceService.getVendorLogoUrl(slug, listing.vendor_logo_file_name)
+                    : null;
+                  const tags = getTags(listing);
                   return (
                     <motion.div
                       key={listing.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.02 }}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.02, type: 'spring', stiffness: 100, damping: 12 }}
                       onClick={() => setSelectedListing(listing)}
                       className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-700 transition-all cursor-pointer group"
                     >
-                      <div className="relative aspect-square bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20">
+                      <div className="relative aspect-square bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 overflow-hidden">
                         {imageUrl ? (
-                          <img src={imageUrl} alt={listing.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <motion.img
+                            src={imageUrl}
+                            alt={listing.title}
+                            className="w-full h-full object-cover"
+                            whileHover={{ scale: 1.08 }}
+                            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <Package className="w-10 h-10 text-purple-300 dark:text-purple-700" />
                           </div>
                         )}
-                        <div className="absolute bottom-2 right-2">
-                          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-purple-600/90 backdrop-blur-sm text-white">
+
+                        {/* Tags overlay (top-left) */}
+                        {tags.length > 0 && (
+                          <div className="absolute top-2 left-2 flex flex-col gap-1">
+                            {tags.map((tag, idx) => (
+                              <motion.span
+                                key={idx}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.02 + 0.1 }}
+                                className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase backdrop-blur-sm ${tag.color}`}
+                              >
+                                {tag.label}
+                              </motion.span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Vendor avatar overlay (bottom-right) */}
+                        <motion.div
+                          className="absolute bottom-2 right-2 flex items-center gap-2"
+                          whileHover={{ scale: 1.1 }}
+                          transition={{ type: 'spring', stiffness: 300, damping: 10 }}
+                        >
+                          {vendorLogoUrl ? (
+                            <img
+                              src={vendorLogoUrl}
+                              alt={listing.vendor_name}
+                              className="w-7 h-7 rounded-full object-cover border border-white dark:border-zinc-800 shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold border border-white dark:border-zinc-800 shadow-sm">
+                              {(listing.vendor_name ?? '?').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-purple-600/90 backdrop-blur-sm text-white">
                             {listing.category}
                           </span>
-                        </div>
+                        </motion.div>
                       </div>
                       <div className="p-3">
                         <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 mb-1 leading-tight">{listing.title}</p>
-                        <p className="text-purple-600 dark:text-purple-400 font-bold text-sm">{formatPrice(listing)}</p>
-                        <button
-                          onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
-                          className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors mt-0.5 truncate max-w-full block"
-                        >
-                          {listing.vendor_name}
-                        </button>
+                        <p className="text-purple-600 dark:text-purple-400 font-bold text-sm mb-1.5">{formatPrice(listing)}</p>
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
+                            className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors truncate max-w-[60%]"
+                          >
+                            {listing.vendor_name}
+                          </button>
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 whitespace-nowrap ml-1">
+                            {formatRelative(listing.created_at)}
+                          </span>
+                        </div>
                       </div>
                     </motion.div>
                   );
@@ -624,41 +719,69 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
                   const imageUrl = listing.image_file_name
                     ? marketplaceService.getListingImageUrl(slug, listing.image_file_name)
                     : null;
+                  const tags = getTags(listing);
                   return (
                     <motion.div
                       key={listing.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.02 }}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.02, type: 'spring', stiffness: 80, damping: 12 }}
                       onClick={() => setSelectedListing(listing)}
-                      className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all cursor-pointer flex gap-4 p-4"
+                      className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all cursor-pointer flex gap-4 p-4 group"
                     >
-                      <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 flex-shrink-0 overflow-hidden">
+                      <motion.div
+                        className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 flex-shrink-0 overflow-hidden relative"
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 10 }}
+                      >
                         {imageUrl
                           ? <img src={imageUrl} alt={listing.title} className="w-full h-full object-cover" />
                           : <div className="w-full h-full flex items-center justify-center"><Package className="w-8 h-8 text-purple-300 dark:text-purple-700" /></div>
                         }
-                      </div>
+                        {/* Tags overlay on list image */}
+                        {tags.length > 0 && (
+                          <div className="absolute top-1 left-1 flex flex-wrap gap-1 max-w-[88px]">
+                            {tags.slice(0, 1).map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase backdrop-blur-sm ${tag.color}`}
+                              >
+                                {tag.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{listing.title}</p>
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 whitespace-nowrap">{listing.category}</span>
                         </div>
-                        <p className="text-purple-600 dark:text-purple-400 font-bold text-base mb-1">{formatPrice(listing)}</p>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                          <button onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }} className="flex items-center gap-1.5 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                        <p className="text-purple-600 dark:text-purple-400 font-bold text-base mb-2">{formatPrice(listing)}</p>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                          <motion.button
+                            onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
+                            className="flex items-center gap-1.5 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                            whileHover={{ scale: 1.05 }}
+                          >
                             {listing.vendor_logo_file_name
                               ? <img src={marketplaceService.getVendorLogoUrl(slug, listing.vendor_logo_file_name) ?? undefined} alt="" className="w-4 h-4 rounded-full object-cover" />
                               : <span className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
                             }
-                            {listing.vendor_name}
-                          </button>
+                            <span className="font-medium">{listing.vendor_name}</span>
+                          </motion.button>
                           <span>·</span>
-                          <span>{formatRelative(listing.created_at)}</span>
+                          <motion.span
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: i * 0.02 + 0.05 }}
+                          >
+                            {formatRelative(listing.created_at)}
+                          </motion.span>
                           {listing.condition && <><span>·</span><span className="capitalize">{listing.condition.replace('-', ' ')}</span></>}
                         </div>
                         {listing.description && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 line-clamp-2">{listing.description}</p>
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 line-clamp-2">{listing.description}</p>
                         )}
                       </div>
                     </motion.div>
@@ -708,6 +831,8 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
         vendorLogoUrl={selectedVendorLogoUrl ?? undefined}
         onClose={() => setSelectedListing(null)}
         onVendorClick={onVendorClick}
+        allListings={listings}
+        hubSlug={slug}
       />
     </div>
   );
