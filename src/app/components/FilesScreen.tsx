@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   File, FileText, FileImage, FileVideo, FileAudio,
   Download, Search, Loader2, FolderOpen, AlertCircle, RefreshCw,
-  HardDrive, Upload, Trash2, Globe, Lock, Plus, X, Eye,
+  HardDrive, Upload, Trash2, Globe, Lock, Plus, X, Eye, Link2, Users, Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -77,6 +77,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
   // Upload state
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
   const [showUploadMenu, setShowUploadMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,8 +86,10 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Toggle visibility state
+  // Visibility state
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [visPopoverId, setVisPopoverId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Lightbox preview state
   const [previewFile, setPreviewFile] = useState<HubFile | null>(null);
@@ -154,15 +157,17 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     if (!file || !slug) return;
 
     setUploading(true);
+    setUploadProgress(0);
     setUploadError('');
     try {
-      const uploaded = await hubService.uploadFile(slug, file, uploadIsPublicRef.current);
+      const uploaded = await hubService.uploadFile(slug, file, uploadIsPublicRef.current, setUploadProgress);
       setAllFiles(prev => [uploaded, ...prev]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setUploadError(msg);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -181,19 +186,33 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     }
   };
 
-  // ── toggle visibility ──────────────────────
-  const handleToggleVisibility = async (file: HubFile) => {
+  // ── set visibility to a specific tier ─────────────────────
+  const handleSetVisibility = async (file: HubFile, target: 'private' | 'hub' | 'web') => {
     if (!slug) return;
-    const newPublic = !file.is_public;
+    setVisPopoverId(null);
     setTogglingId(file.id);
     try {
-      await hubService.toggleFileVisibility(slug, file.name, newPublic);
-      setAllFiles(prev => prev.map(f => f.id === file.id ? { ...f, is_public: newPublic } : f));
+      await hubService.setFileVisibility(slug, file.name, target);
+      setAllFiles(prev => prev.map(f =>
+        f.id === file.id
+          ? { ...f, is_public: target !== 'private', web_public: target === 'web' }
+          : f
+      ));
     } catch (err) {
-      console.error('Toggle visibility failed:', err);
+      console.error('Set visibility failed:', err);
     } finally {
       setTogglingId(null);
     }
+  };
+
+  // ── copy shareable link ────────────────────
+  const handleCopyLink = (file: HubFile) => {
+    const link = hubService.getPublicShareLink(slug, file.name);
+    if (!link) return;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedId(file.id);
+      setTimeout(() => setCopiedId(prev => prev === file.id ? null : prev), 2000);
+    });
   };
 
   // ── download ───────────────────────────────
@@ -238,12 +257,21 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       }
     }
 
-    // Private files: fall back to authenticated blob download.
+    // Private files: use streaming token URL for large files (avoids loading GBs into memory),
+    // blob approach for small files (needed to support client-side decryption).
     setPreviewLoading(true);
+    const BLOB_PREVIEW_LIMIT = 100 * 1024 * 1024; // 100 MB
     try {
-      const blobUrl = await hubService.fetchFileBlob(slug, file.name);
-      previewUrlIsBlobRef.current = true;
-      setPreviewUrl(blobUrl);
+      if (file.size > BLOB_PREVIEW_LIMIT) {
+        // Large file — get a token-based streaming URL; browser handles buffering natively.
+        const streamUrl = await hubService.getFileStreamUrl(slug, file.name);
+        previewUrlIsBlobRef.current = false;
+        setPreviewUrl(streamUrl);
+      } else {
+        const blobUrl = await hubService.fetchFileBlob(slug, file.name);
+        previewUrlIsBlobRef.current = true;
+        setPreviewUrl(blobUrl);
+      }
     } catch (err) {
       setPreviewError(err instanceof Error ? err.message : 'Failed to load preview');
     } finally {
@@ -298,7 +326,24 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           </div>
 
           {/* Upload button */}
-          <div className="relative">
+          <div className="relative flex items-center gap-2">
+            {/* Progress indicator — shown while uploading */}
+            {uploading && (
+              <div className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-lg px-3 py-1.5">
+                <Loader2 className="w-3.5 h-3.5 text-purple-500 animate-spin shrink-0" />
+                <div className="flex items-center gap-1.5">
+                  <div className="w-20 h-1.5 bg-slate-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums w-7">
+                    {uploadProgress}%
+                  </span>
+                </div>
+              </div>
+            )}
             <button
               onClick={() => setShowUploadMenu(!showUploadMenu)}
               disabled={uploading}
@@ -326,8 +371,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                   >
                     <Lock className="w-4 h-4 text-blue-500" />
                     <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">To My Drive</p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Private, only you can see</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">Private</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Only you can see this</p>
                     </div>
                   </button>
                   <div className="border-t border-slate-100 dark:border-zinc-700" />
@@ -335,10 +380,10 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     onClick={() => triggerUpload(true)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-zinc-700/50 transition-colors text-left"
                   >
-                    <Globe className="w-4 h-4 text-emerald-500" />
+                    <Users className="w-4 h-4 text-amber-500" />
                     <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">To Shared</p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Visible to all neighbors</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">Hub members</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">Visible to hub members only</p>
                     </div>
                   </button>
                 </motion.div>
@@ -404,9 +449,12 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
         </div>
       </div>
 
-      {/* Click-away overlay for upload menu */}
+      {/* Click-away overlays */}
       {showUploadMenu && (
         <div className="fixed inset-0 z-20" onClick={() => setShowUploadMenu(false)} />
+      )}
+      {visPopoverId && (
+        <div className="fixed inset-0 z-40" onClick={() => setVisPopoverId(null)} />
       )}
 
       <div className="max-w-4xl mx-auto px-4 py-6">
@@ -554,24 +602,112 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                           <Eye className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         </button>
                       )}
-                      {/* Toggle visibility – owner only */}
-                      {isOwner && (
-                        <button
-                          onClick={() => handleToggleVisibility(file)}
-                          disabled={togglingId === file.id}
-                          className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
-                          aria-label={file.is_public ? 'Make private' : 'Make public'}
-                          title={file.is_public ? 'Make private' : 'Make public'}
-                        >
-                          {togglingId === file.id ? (
-                            <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
-                          ) : file.is_public ? (
-                            <Globe className="w-4 h-4 text-emerald-500" />
-                          ) : (
-                            <Lock className="w-4 h-4 text-blue-500" />
-                          )}
-                        </button>
-                      )}
+                      {/* Visibility popover — owner only */}
+                      {isOwner && (() => {
+                        const vis = file.web_public ? 'web' : file.is_public ? 'hub' : 'private';
+                        const isOpen = visPopoverId === file.id;
+                        const OPTS = [
+                          {
+                            key: 'private' as const,
+                            icon: <Lock className="w-4 h-4 text-blue-500" />,
+                            label: 'Private',
+                            sub: 'Only you can see this',
+                          },
+                          {
+                            key: 'hub' as const,
+                            icon: <Users className="w-4 h-4 text-amber-500" />,
+                            label: 'Hub members',
+                            sub: 'Requires a hub account',
+                          },
+                          {
+                            key: 'web' as const,
+                            icon: <Globe className="w-4 h-4 text-emerald-500" />,
+                            label: 'Anyone with the link',
+                            sub: 'No account needed',
+                          },
+                        ] as const;
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setVisPopoverId(isOpen ? null : file.id)}
+                              disabled={togglingId === file.id}
+                              className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-50"
+                              aria-label="Change visibility"
+                              title="Change visibility"
+                            >
+                              {togglingId === file.id ? (
+                                <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                              ) : vis === 'web' ? (
+                                <Globe className="w-4 h-4 text-emerald-500" />
+                              ) : vis === 'hub' ? (
+                                <Users className="w-4 h-4 text-amber-500" />
+                              ) : (
+                                <Lock className="w-4 h-4 text-blue-500" />
+                              )}
+                            </button>
+
+                            <AnimatePresence>
+                              {isOpen && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                  transition={{ duration: 0.12 }}
+                                  className="absolute right-0 top-10 w-56 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden"
+                                >
+                                  <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                    Who can access
+                                  </p>
+                                  {OPTS.map((opt, i) => (
+                                    <React.Fragment key={opt.key}>
+                                      {i > 0 && <div className="border-t border-slate-100 dark:border-zinc-700" />}
+                                      <button
+                                        onClick={() => handleSetVisibility(file, opt.key)}
+                                        className={`w-full flex items-center gap-3 px-3 py-2.5 transition-colors text-left ${
+                                          vis === opt.key
+                                            ? 'bg-slate-50 dark:bg-zinc-700/50'
+                                            : 'hover:bg-slate-50 dark:hover:bg-zinc-700/30'
+                                        }`}
+                                      >
+                                        <span className="shrink-0">{opt.icon}</span>
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium text-slate-900 dark:text-white leading-tight">
+                                            {opt.label}
+                                          </p>
+                                          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
+                                            {opt.sub}
+                                          </p>
+                                        </div>
+                                        {vis === opt.key && (
+                                          <Check className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                                        )}
+                                      </button>
+                                    </React.Fragment>
+                                  ))}
+                                  {/* Copy link row — only when web public */}
+                                  {vis === 'web' && (
+                                    <>
+                                      <div className="border-t border-slate-200 dark:border-zinc-600 mx-3 my-1" />
+                                      <button
+                                        onClick={() => { handleCopyLink(file); setVisPopoverId(null); }}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors text-left mb-1"
+                                      >
+                                        {copiedId === file.id
+                                          ? <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                                          : <Link2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                                        }
+                                        <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                                          {copiedId === file.id ? 'Copied!' : 'Copy link'}
+                                        </p>
+                                      </button>
+                                    </>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })()}
 
                       {/* Download */}
                       <button

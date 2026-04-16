@@ -188,6 +188,16 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   }, [pins]);
 
   useEffect(() => {
+    if (pins.length === 0) return;
+    const focusPin = sessionStorage.getItem('citinet-focus-pin');
+    if (!focusPin) return;
+    sessionStorage.removeItem('citinet-focus-pin');
+    const target = pins.find(p => p.id === focusPin);
+    if (target) handlePinSelect(target);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins]);
+
+  useEffect(() => {
     const observer = new MutationObserver(() =>
       setIsDark(document.documentElement.classList.contains('dark'))
     );

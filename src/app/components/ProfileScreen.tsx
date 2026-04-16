@@ -4,7 +4,7 @@ import {
   Loader2, AlertCircle, Tag, Globe,
   ImagePlus, Palette, Pencil, ArrowLeft,
   FileText, Pin, Hash, Building2,
-  BookOpen,
+  BookOpen, Map,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -12,8 +12,8 @@ import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
 import { NoteDetailModal } from './NoteDetailModal';
-import { navigateToHub } from '../utils/subdomain';
 import type { HubMember, HubPost, HubNote } from '../types/hub';
+import type { AtlasPin } from '../types/atlas';
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ const BANNER_GRADIENTS = [
   { from: '#c2410c', to: '#be123c' }, { from: '#374151', to: '#111827' },
 ];
 
-type Tab = 'overview' | 'posts' | 'notes';
+type Tab = 'overview' | 'posts' | 'notes' | 'pins';
 
 // ── Component ──────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
   const [notes, setNotes]             = useState<HubNote[]>([]);
-  const [pinCount, setPinCount]       = useState(0);
+  const [pins, setPins]               = useState<AtlasPin[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [activeTab, setActiveTab]     = useState<Tab>('overview');
@@ -107,7 +107,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         if (postsRes.status === 'fulfilled')
           setPosts(postsRes.value.filter(p => p.author_id === userId));
         if (pinsRes.status === 'fulfilled')
-          setPinCount(pinsRes.value.filter(p => p.authorUsername === memberRes.value?.username).length);
+          setPins(pinsRes.value.filter(p => p.authorUsername === memberRes.value?.username));
         if (notesRes.status === 'fulfilled')
           setNotes(notesRes.value);
       } else {
@@ -250,98 +250,58 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
           {/* Identity body — frosted glass layer over the banner */}
           <div className="relative px-5 pb-5 backdrop-blur-xl bg-black/30 border-t border-white/10">
-            <div className="flex gap-4 -mt-10 items-end">
-              {/* Avatar */}
-              <div className="shrink-0 relative z-10">
-                {member.avatar_url && avatarUrl
-                  ? <img src={avatarUrl} alt={displayName}
-                      className="w-20 h-20 rounded-full object-cover ring-2 ring-white/20 shadow-lg"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  : <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-2 ring-white/20 shadow-lg`}>
-                      {(displayName || member.username).charAt(0).toUpperCase()}
-                    </div>
-                }
+            <div className="flex gap-4 justify-between items-end -mt-10">
+              {/* Left: Avatar + Name */}
+              <div className="flex gap-4 items-end flex-1 min-w-0">
+                {/* Avatar */}
+                <div className="shrink-0 relative z-10">
+                  {member.avatar_url && avatarUrl
+                    ? <img src={avatarUrl} alt={displayName}
+                        className="w-20 h-20 rounded-full object-cover ring-2 ring-white/20 shadow-lg"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    : <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-2 ring-white/20 shadow-lg`}>
+                        {(displayName || member.username).charAt(0).toUpperCase()}
+                      </div>
+                  }
+                </div>
+
+                {/* Name block */}
+                <div className="flex-1 min-w-0 pb-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-xl font-bold text-white leading-tight truncate drop-shadow">
+                      {displayName || member.username}
+                    </h1>
+                    {member.is_admin && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/30 shrink-0">
+                        <Shield className="w-3 h-3" /> Admin
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs font-mono text-white/45">@{member.username}</p>
+                </div>
               </div>
 
-              {/* Name block */}
-              <div className="flex-1 min-w-0 pb-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold text-white leading-tight truncate drop-shadow">
-                    {displayName || member.username}
-                  </h1>
-                  {member.is_admin && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/30 shrink-0">
-                      <Shield className="w-3 h-3" /> Admin
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs font-mono text-white/45">@{member.username}</p>
-              </div>
-            </div>
-
-            {/* Headline */}
-            {member.profile_headline && (
-              <p className="mt-3 text-sm font-medium text-white/80 leading-snug">
-                {member.profile_headline}
-              </p>
-            )}
-
-            {/* Identity metadata — civic, local, network */}
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-              <button
-                onClick={() => navigateToHub(slug)}
-                className="flex items-center gap-2 text-xs hover:opacity-80 transition-opacity text-left"
-              >
-                <Building2 className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <span className="text-white/50">Member of Hub</span>
-                <span className="font-semibold text-purple-200 truncate hover:underline">{hubName}</span>
-              </button>
-              {member.location && (
-                <div className="flex items-center gap-2 text-xs text-white/55">
-                  <MapPin className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                  <span className="truncate">{member.location}</span>
-                </div>
-              )}
-              {member.created_at && (
-                <div className="flex items-center gap-2 text-xs text-white/55">
-                  <Calendar className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                  <span>Since {formatJoinDate(member.created_at)}</span>
-                </div>
-              )}
-              {member.website && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Globe className="w-3.5 h-3.5 shrink-0 text-white/40" />
-                  <a
-                    href={member.website.startsWith('http') ? member.website : `https://${member.website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-purple-300 hover:text-purple-200 hover:underline truncate"
+              {/* Right: Action buttons */}
+              <div className="flex items-center gap-2 shrink-0">
+                {isOwnProfile ? (
+                  <button
+                    onClick={() => onNavigate('account')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/20 bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-colors"
                   >
-                    {member.website.replace(/^https?:\/\//, '')}
-                  </a>
-                </div>
-              )}
+                    <Pencil className="w-3 h-3" /> Edit Profile
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleMessage}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-xs font-semibold shadow-sm transition-all"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" /> Message
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="mt-4 flex items-center gap-2">
-              {isOwnProfile ? (
-                <button
-                  onClick={() => onNavigate('account')}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 text-sm font-semibold text-white transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5" /> Edit Profile
-                </button>
-              ) : (
-                <button
-                  onClick={handleMessage}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-semibold shadow-sm transition-all"
-                >
-                  <MessageCircle className="w-4 h-4" /> Message
-                </button>
-              )}
-            </div>
 
             {/* Banner editor */}
             {isOwnProfile && showBannerEditor && (
@@ -391,11 +351,11 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
-          className="grid grid-cols-3 gap-3"
+          className="hidden"
         >
           {[
             { icon: FileText, label: 'Posts',     value: posts.length,           color: 'text-blue-500',   bg: 'bg-blue-50 dark:bg-blue-500/10' },
-            { icon: Pin,       label: 'Pins',      value: pinCount,               color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
+            { icon: Pin,       label: 'Pins',      value: pins.length,               color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
             { icon: Hash,      label: 'Interests', value: member.tags?.length ?? 0, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-500/10' },
           ].map(({ icon: Icon, label, value, color, bg }) => (
             <div key={label} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 py-2.5 flex items-center justify-center gap-2">
@@ -433,6 +393,22 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 )}
               </button>
             ))}
+            {pins.length > 0 && (
+              <button
+                key="pins"
+                onClick={() => setActiveTab('pins')}
+                className={`flex-1 py-3 text-sm font-semibold transition-colors relative ${
+                  activeTab === 'pins'
+                    ? 'text-purple-600 dark:text-purple-400'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                {`Pins (${pins.length})`}
+                {activeTab === 'pins' && (
+                  <motion.div layoutId="profile-tab-indicator" className="absolute bottom-0 inset-x-0 h-0.5 bg-purple-500 dark:bg-purple-400" />
+                )}
+              </button>
+            )}
           </div>
 
           {/* Tab content */}
@@ -448,6 +424,46 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 transition={{ duration: 0.15 }}
                 className="p-5 space-y-5"
               >
+                {/* Identity metadata — civic, local, network */}
+                <div className="space-y-3 pb-3 border-b border-slate-100 dark:border-zinc-800">
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/?hub=${slug}`;
+                      window.open(url, '_blank');
+                    }}
+                    className="flex items-center gap-2 text-sm hover:opacity-80 transition-opacity"
+                  >
+                    <Building2 className="w-4 h-4 text-purple-500 shrink-0" />
+                    <span className="text-slate-500 dark:text-slate-400">Member of Hub</span>
+                    <span className="font-semibold text-slate-900 dark:text-white truncate hover:text-purple-700 dark:hover:text-purple-300 transition-colors">{hubName}</span>
+                  </button>
+                  {member.location && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                      <MapPin className="w-4 h-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                      <span className="truncate">{member.location}</span>
+                    </div>
+                  )}
+                  {member.created_at && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                      <Calendar className="w-4 h-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                      <span>Joined {formatJoinDate(member.created_at)}</span>
+                    </div>
+                  )}
+                  {member.website && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Globe className="w-4 h-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                      <a
+                        href={member.website.startsWith('http') ? member.website : `https://${member.website}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline truncate"
+                      >
+                        {member.website.replace(/^https?:\/\//, '')}
+                      </a>
+                    </div>
+                  )}
+                </div>
+
                 {/* Bio */}
                 {member.bio ? (
                   <div>
@@ -603,6 +619,53 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                     </p>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── Pins tab ── */}
+            {activeTab === 'pins' && pins.length > 0 && (
+              <motion.div
+                key="pins"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+              >
+                <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                  {pins.map((pin, i) => (
+                    <motion.button
+                      key={pin.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.04 }}
+                      onClick={() => {
+                        sessionStorage.setItem('citinet-focus-pin', pin.id);
+                        onNavigate('atlas');
+                      }}
+                      className="w-full text-left px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                              {pin.category}
+                            </span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(pin.createdAt)}</span>
+                          </div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
+                            {pin.title}
+                          </p>
+                          {pin.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{pin.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 shrink-0 text-slate-600 dark:text-slate-300">
+                          <Map className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

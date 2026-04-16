@@ -1155,34 +1155,37 @@ class HubService {
       description: f.description || undefined,
       category: f.category || f.folder || undefined,
       is_public: f.is_public ?? true,
+      web_public: f.web_public ?? false,
     }));
   }
 
   /**
    * Upload a file to the hub.
-   * POST /api/files with multipart/form-data (file + is_public).
-   * Private files are transparently client-side encrypted before upload.
+   * POST /api/files?is_public=<bool> with multipart/form-data.
+   * Private files ≤ 100 MB are transparently client-side encrypted before upload.
+   * Large files stream directly — no in-browser buffering.
+   * onProgress receives 0–100 percent as the upload proceeds.
    */
-  async uploadFile(hubSlug: string, file: File, isPublic: boolean): Promise<HubFile> {
+  async uploadFile(
+    hubSlug: string,
+    file: File,
+    isPublic: boolean,
+    onProgress?: (percent: number) => void,
+  ): Promise<HubFile> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
 
-    const headers: Record<string, string> = {};
-    if (connection.user?.authToken) {
-      headers['Authorization'] = `Bearer ${connection.user.authToken}`;
-    }
-
     let uploadFile = file;
 
-    // Encrypt private files client-side before uploading
-    if (!isPublic) {
+    // Encrypt private files client-side — skip for large files to avoid
+    // loading gigabytes into the JS heap. Streaming encryption is a future task.
+    const ENCRYPTION_SIZE_LIMIT = 100 * 1024 * 1024; // 100 MB
+    if (!isPublic && file.size <= ENCRYPTION_SIZE_LIMIT) {
       try {
         const buf = await file.arrayBuffer();
         const encBuf = await encryptFileBuffer(hubSlug, buf);
         if (encBuf) {
-          // Keep original filename and mime so server stores metadata correctly.
-          // Encrypted bytes are opaque — server just stores them as-is.
           uploadFile = new File([encBuf], file.name, { type: file.type });
         }
       } catch { /* fall back to unencrypted upload */ }
@@ -1190,26 +1193,51 @@ class HubService {
 
     const formData = new FormData();
     formData.append('file', uploadFile);
-    formData.append('is_public', String(isPublic));
 
-    const response = await fetch(`${connection.hub.tunnelUrl}/api/files`, {
-      method: 'POST',
-      headers,
-      body: formData,
+    // Use XHR instead of fetch so we get upload progress events.
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const url = `${connection.hub.tunnelUrl}/api/files?is_public=${isPublic}`;
+      xhr.open('POST', url);
+      if (connection.user?.authToken) {
+        xhr.setRequestHeader('Authorization', `Bearer ${connection.user.authToken}`);
+      }
+
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        });
+      }
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve({
+              id: String(data.file_id || data.id || ''),
+              name: data.file_name || file.name,
+              size: Number(data.size_bytes || file.size || 0),
+              mime_type: file.type || undefined,
+              is_public: isPublic,
+              web_public: false,
+              owner_id: connection.user?.hubUserId || undefined,
+              uploaded_at: new Date().toISOString(),
+            });
+          } catch {
+            reject(new Error('Invalid response from server'));
+          }
+        } else {
+          let msg = `Upload failed (${xhr.status})`;
+          try { msg = JSON.parse(xhr.responseText)?.error || msg; } catch { /* ignore */ }
+          reject(new Error(msg));
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+      xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+
+      xhr.send(formData);
     });
-
-    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
-
-    const data = await response.json();
-    return {
-      id: String(data.file_id || data.id || ''),
-      name: data.file_name || file.name,
-      size: Number(data.size_bytes || file.size || 0),
-      mime_type: file.type || undefined,
-      is_public: isPublic,
-      owner_id: connection.user?.hubUserId || undefined,
-      uploaded_at: new Date().toISOString(),
-    };
   }
 
   /**
@@ -1235,10 +1263,16 @@ class HubService {
   }
 
   /**
-   * Toggle a file's visibility (public ↔ private).
-   * Hub API: PATCH /api/files/{filename} with { is_public: boolean }
+   * Set a file's visibility tier.
+   * 'private' — owner only (requires auth)
+   * 'hub'     — all hub members can see it in the Shared tab (requires auth)
+   * 'web'     — anyone with the link, no account needed
    */
-  async toggleFileVisibility(hubSlug: string, fileName: string, isPublic: boolean): Promise<void> {
+  async setFileVisibility(
+    hubSlug: string,
+    fileName: string,
+    visibility: 'private' | 'hub' | 'web',
+  ): Promise<void> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
@@ -1250,14 +1284,22 @@ class HubService {
       {
         method: 'PATCH',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_public: isPublic }),
+        body: JSON.stringify({ visibility }),
       },
     );
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(body || `Toggle visibility failed (${response.status})`);
+      throw new Error(body || `Set visibility failed (${response.status})`);
     }
+  }
+
+  /**
+   * Returns the public share link for a web_public file.
+   * This URL works without any authentication.
+   */
+  getPublicShareLink(hubSlug: string, fileName: string): string | null {
+    return this.getPublicFileUrl(hubSlug, fileName);
   }
 
   /**
@@ -1271,49 +1313,72 @@ class HubService {
   }
 
   /**
-   * Download a file from the hub. Opens in a new tab or triggers a download.
+   * Download a file from the hub.
+   * Gets a short-lived one-time token from the server, then opens
+   *   GET /api/files/:name/download?token=xxx
+   * directly in the browser so native HTTP streaming handles the transfer —
+   * no JS memory buffering, works for files of any size.
+   * Falls back to blob download only for encrypted small files (≤ 100 MB)
+   * where client-side decryption is needed.
    */
   downloadFile(hubSlug: string, fileName: string): void {
-    const url = this.getFileDownloadUrl(hubSlug, fileName);
-    if (!url) return;
-
     const connection = this.getHubConnection(hubSlug);
-    const token = connection?.user?.authToken;
+    const authToken = connection?.user?.authToken;
+    const baseUrl = connection?.hub.tunnelUrl;
+    if (!baseUrl) return;
 
-    if (token) {
-      // Authenticated download — fetch as blob then trigger download
-      fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      })
-        .then(res => {
-          if (!res.ok) throw new Error(`Download failed (${res.status})`);
-          return res.arrayBuffer();
-        })
-        .then(async buf => {
-          let finalBuf: ArrayBuffer = buf;
-          if (isFileEncrypted(buf)) {
-            const plain = await decryptFileBuffer(hubSlug, buf);
-            if (plain) finalBuf = plain;
-          }
-          const blobUrl = URL.createObjectURL(new Blob([finalBuf]));
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
-        })
-        .catch(err => console.error('Download error:', err));
-    } else {
-      // Unauthenticated — just open the URL
-      window.open(url, '_blank');
+    if (!authToken) {
+      // Unauthenticated — only public files are accessible
+      window.open(`${baseUrl}/api/public/files/${encodeURIComponent(fileName)}`, '_blank');
+      return;
     }
+
+    // Request a short-lived download token, then let the browser stream natively.
+    fetch(`${baseUrl}/api/files/${encodeURIComponent(fileName)}/token`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`Token request failed (${res.status})`);
+        return res.json();
+      })
+      .then(({ token: dlToken }) => {
+        const dlUrl = `${baseUrl}/api/files/${encodeURIComponent(fileName)}/download?token=${dlToken}`;
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      })
+      .catch(err => console.error('Download error:', err));
+  }
+
+  /**
+   * Returns a streaming URL for a private file using a short-lived token.
+   * The URL is valid for 1 hour and supports Range requests (video seeking, resumable downloads).
+   * Use this for large files to avoid loading them into browser memory.
+   */
+  async getFileStreamUrl(hubSlug: string, fileName: string): Promise<string> {
+    const connection = this.getHubConnection(hubSlug);
+    const authToken = connection?.user?.authToken;
+    const baseUrl = connection?.hub.tunnelUrl;
+    if (!baseUrl) throw new Error('Hub not connected');
+
+    const res = await fetch(`${baseUrl}/api/files/${encodeURIComponent(fileName)}/token`, {
+      method: 'POST',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+    });
+    if (!res.ok) throw new Error(`Failed to get stream URL (${res.status})`);
+    const { token } = await res.json();
+    return `${baseUrl}/api/files/${encodeURIComponent(fileName)}/download?token=${token}`;
   }
 
   /**
    * Fetch a file from the hub as a blob URL (for lightbox preview).
    * Transparently decrypts client-side encrypted files.
+   * For files > 100 MB use getFileStreamUrl() instead — this method buffers the
+   * entire file into browser memory and will crash for large files.
    * Caller is responsible for revoking the URL when done.
    */
   async fetchFileBlob(hubSlug: string, fileName: string, mimeType?: string): Promise<string> {

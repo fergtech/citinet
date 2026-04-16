@@ -272,7 +272,10 @@ export interface HubFile {
   uploaded_at?: string;
   description?: string;
   category?: string;
+  /** true = visible to hub members in Shared tab */
   is_public: boolean;
+  /** true = accessible to anyone with the link, no auth required */
+  web_public?: boolean;
 }
 
 /** A vendor/organization page on the hub */

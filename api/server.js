@@ -32,6 +32,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const multer = require('multer');
+const busboy = require('busboy');
 const Minio = require('minio');
 
 const app = express();
@@ -42,6 +43,15 @@ const START_TIME = Date.now();
 const publicFileCache = new Map(); // fileName → { row, cachedAt }
 const PUBLIC_FILE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET || 'hub-files';
+
+// Short-lived download tokens — lets authenticated users get a plain URL they
+// can open in a new tab for native browser streaming (no JS arrayBuffer needed).
+// token → { userId, fileName, fileKey, expiresAt }
+const downloadTokens = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, d] of downloadTokens) { if (d.expiresAt < now) downloadTokens.delete(t); }
+}, 10 * 60 * 1000);
 
 // ── Storage client (MinIO) ────────────────────────────────
 
@@ -444,6 +454,8 @@ async function initDb() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_notes_owner ON hub_notes(owner_id, is_archived)`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    // File visibility — web_public allows anyone-with-link access (no auth required)
+    await client.query(`ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // E2E Encryption — key registry
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_user_keys (
@@ -1370,7 +1382,7 @@ app.get('/api/files', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS file_id, file_name, file_key, mime_type, size_bytes,
-              owner_id, is_public, uploaded_at
+              owner_id, is_public, web_public, uploaded_at
        FROM hub_files
        WHERE (owner_id = $1 OR is_public = true)
          AND file_name NOT LIKE 'bg-%'
@@ -1385,42 +1397,64 @@ app.get('/api/files', authenticate, async (req, res) => {
   }
 });
 
-// Upload file
-app.post('/api/files', authenticate, upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+// Upload file — streams directly to MinIO, no memory buffer, no size cap.
+// is_public is passed as a query param (?is_public=true) so it is available
+// before the file stream starts (FormData field ordering is not guaranteed).
+app.post('/api/files', authenticate, (req, res) => {
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
 
-  const isPublic = req.body.is_public === 'true';
-  // Prefix with owner ID to avoid collisions between users with same filename
-  const fileKey = `${req.user.id}/${req.file.originalname}`;
+  const isPublic = req.query.is_public === 'true';
 
-  try {
-    if (minioClient) {
-      await minioClient.putObject(
-        STORAGE_BUCKET,
-        fileKey,
-        req.file.buffer,
-        req.file.size,
-        { 'Content-Type': req.file.mimetype }
-      );
+  // Disable socket/response timeouts for large uploads
+  req.socket.setTimeout(0);
+  res.setTimeout(0);
+
+  const bb = busboy({ headers: req.headers });
+  let fileHandled = false;
+
+  bb.on('file', (fieldName, fileStream, info) => {
+    fileHandled = true;
+    const filename = info.filename || 'upload';
+    const mimeType = info.mimeType || 'application/octet-stream';
+    const fileKey = `${req.user.id}/${filename}`;
+
+    // Stream directly from the HTTP request body into MinIO — no RAM buffering.
+    // Passing undefined as size lets MinIO use chunked/streaming upload mode.
+    minioClient.putObject(STORAGE_BUCKET, fileKey, fileStream, undefined, { 'Content-Type': mimeType })
+      .then(() => minioClient.statObject(STORAGE_BUCKET, fileKey))
+      .then(async (stat) => {
+        const result = await pool.query(
+          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (file_key) DO UPDATE
+             SET size_bytes  = EXCLUDED.size_bytes,
+                 mime_type   = EXCLUDED.mime_type,
+                 is_public   = EXCLUDED.is_public,
+                 web_public  = EXCLUDED.web_public,
+                 uploaded_at = NOW()
+           RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, uploaded_at`,
+          [filename, fileKey, mimeType, stat.size, req.user.id, isPublic, false]
+        );
+        if (!res.headersSent) res.json(result.rows[0]);
+      })
+      .catch((err) => {
+        console.error('Upload error:', err);
+        if (!res.headersSent) res.status(500).json({ error: 'Upload failed' });
+      });
+  });
+
+  bb.on('finish', () => {
+    if (!fileHandled && !res.headersSent) {
+      res.status(400).json({ error: 'No file provided' });
     }
+  });
 
-    const result = await pool.query(
-      `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (file_key) DO UPDATE
-         SET size_bytes  = EXCLUDED.size_bytes,
-             mime_type   = EXCLUDED.mime_type,
-             is_public   = EXCLUDED.is_public,
-             uploaded_at = NOW()
-       RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, uploaded_at`,
-      [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id, isPublic]
-    );
+  bb.on('error', (err) => {
+    console.error('Busboy error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Upload failed' });
+  });
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Upload error:', err);
-    res.status(500).json({ error: 'Upload failed' });
-  }
+  req.pipe(bb);
 });
 
 // Download file
@@ -1479,6 +1513,98 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
   }
 });
 
+// Issue a short-lived download token for a file the caller has access to.
+// The token can be embedded in a plain URL so the browser can download natively
+// (no JS arrayBuffer, no memory limit, browser shows its own download progress).
+app.post('/api/files/:filename/token', authenticate, async (req, res) => {
+  const fileName = decodeURIComponent(req.params.filename);
+  try {
+    const result = await pool.query(
+      `SELECT file_key FROM hub_files
+       WHERE file_name = $1 AND (owner_id = $2 OR is_public = true) LIMIT 1`,
+      [fileName, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    downloadTokens.set(token, {
+      userId: req.user.id,
+      fileName,
+      fileKey: result.rows[0].file_key,
+      expiresAt: Date.now() + 60 * 60 * 1000, // 1 hour — multi-use within window so Range/seeking works
+    });
+    res.json({ token, expires_in: 3600 });
+  } catch (err) {
+    console.error('Token issue error:', err);
+    res.status(500).json({ error: 'Failed to generate download token' });
+  }
+});
+
+// Stream a file using a short-lived token — no Authorization header required.
+// Used by the frontend to trigger native browser downloads for any file size.
+app.get('/api/files/:filename/download', async (req, res) => {
+  const fileName = decodeURIComponent(req.params.filename);
+  const rawToken = req.query.token;
+
+  if (!rawToken) return res.status(401).json({ error: 'Token required' });
+
+  const tokenData = downloadTokens.get(rawToken);
+  if (!tokenData || tokenData.fileName !== fileName || tokenData.expiresAt < Date.now()) {
+    downloadTokens.delete(rawToken);
+    return res.status(401).json({ error: 'Invalid or expired download token' });
+  }
+  // Token stays valid until TTL — allows multiple Range requests (video seeking, resumable downloads)
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM hub_files WHERE file_name = $1 AND (owner_id = $2 OR is_public = true) LIMIT 1`,
+      [fileName, tokenData.userId]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
+    const file = result.rows[0];
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+
+    const mimeType = file.mime_type || 'application/octet-stream';
+    const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
+
+    res.setHeader('Content-Type', mimeType);
+    // "attachment" forces the browser to download rather than display
+    res.setHeader('Content-Disposition', `attachment; filename="${file.file_name}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.socket.setTimeout(0);
+
+    const rangeHeader = req.headers['range'];
+    if (rangeHeader && totalSize) {
+      const [unit, rangeStr] = rangeHeader.split('=');
+      if (unit !== 'bytes' || !rangeStr) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const [startStr, endStr] = rangeStr.split('-');
+      const start = parseInt(startStr, 10);
+      const end = endStr ? parseInt(endStr, 10) : totalSize - 1;
+      if (isNaN(start) || isNaN(end) || start > end || end >= totalSize) {
+        res.setHeader('Content-Range', `bytes */${totalSize}`);
+        return res.status(416).end();
+      }
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader('Content-Length', chunkSize);
+      const stream = await minioClient.getPartialObject(STORAGE_BUCKET, file.file_key, start, chunkSize);
+      stream.pipe(res);
+    } else {
+      if (totalSize) res.setHeader('Content-Length', totalSize);
+      const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+      stream.pipe(res);
+    }
+  } catch (err) {
+    console.error('Token download error:', err);
+    if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
+  }
+});
+
 // Delete file
 app.delete('/api/files/:filename', authenticate, async (req, res) => {
   const fileName = decodeURIComponent(req.params.filename);
@@ -1502,21 +1628,30 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
   }
 });
 
-// Toggle file visibility
+// Set file visibility — three tiers: private | hub | web
+// private: is_public=false, web_public=false  (owner only)
+// hub:     is_public=true,  web_public=false  (hub members, auth required)
+// web:     is_public=true,  web_public=true   (anyone with the link, no auth)
 app.patch('/api/files/:filename', authenticate, async (req, res) => {
   const fileName = decodeURIComponent(req.params.filename);
-  const { is_public } = req.body;
+  const { visibility } = req.body;
+
+  if (!['private', 'hub', 'web'].includes(visibility)) {
+    return res.status(400).json({ error: 'visibility must be private, hub, or web' });
+  }
+
+  const is_public  = visibility !== 'private';
+  const web_public = visibility === 'web';
 
   try {
     const result = await pool.query(
-      `UPDATE hub_files SET is_public = $1
-       WHERE file_name = $2 AND owner_id = $3
+      `UPDATE hub_files SET is_public = $1, web_public = $2
+       WHERE file_name = $3 AND owner_id = $4
        RETURNING id`,
-      [is_public, fileName, req.user.id]
+      [is_public, web_public, fileName, req.user.id]
     );
 
     if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
-    // Invalidate public file cache so updated visibility takes effect immediately
     publicFileCache.delete(fileName);
     res.json({ success: true });
   } catch (err) {
@@ -1579,7 +1714,7 @@ app.get('/api/public/files/:filename', async (req, res) => {
       file = cached.row;
     } else {
       const result = await pool.query(
-        `SELECT * FROM hub_files WHERE file_name = $1 AND is_public = true LIMIT 1`,
+        `SELECT * FROM hub_files WHERE file_name = $1 AND (is_public = true OR web_public = true) LIMIT 1`,
         [fileName]
       );
       if (!result.rows[0]) return res.status(404).json({ error: 'File not found' });
