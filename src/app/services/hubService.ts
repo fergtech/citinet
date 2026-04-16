@@ -1295,11 +1295,22 @@ class HubService {
   }
 
   /**
-   * Returns the public share link for a web_public file.
-   * This URL works without any authentication.
+   * Returns a shareable link for a web_public file.
+   * Always a root-domain citinet.cloud URL (no hub subdomain) so it opens the
+   * ShareFilePage without requiring any hub account. The page then resolves the
+   * hub's tunnel URL and offers a direct download.
+   *
+   * Example: https://citinet.cloud/share/myhub/video.mp4
+   *          http://localhost:3001/share/myhub/video.mp4  (local dev)
    */
-  getPublicShareLink(hubSlug: string, fileName: string): string | null {
-    return this.getPublicFileUrl(hubSlug, fileName);
+  getPublicShareLink(hubSlug: string, fileName: string): string {
+    const hostname = window.location.hostname;
+    const parts = hostname.split('.');
+    // Strip hub subdomain on production (e.g. myhub.citinet.cloud → citinet.cloud)
+    const shareOrigin = (parts.length > 2 && !hostname.includes('localhost'))
+      ? `${window.location.protocol}//${parts.slice(-2).join('.')}`
+      : window.location.origin;
+    return `${shareOrigin}/share/${hubSlug}/${encodeURIComponent(fileName)}`;
   }
 
   /**

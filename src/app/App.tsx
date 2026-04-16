@@ -28,6 +28,7 @@ import { PollsScreen } from './components/PollsScreen';
 import { ModLogScreen } from './components/ModLogScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
+import { ShareFilePage } from './components/ShareFilePage';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -611,6 +612,8 @@ function OnboardingModeRoutes() {
       <Route path="/" element={<WelcomeRoute />} />
       <Route path="/join" element={<JoinHubRoute />} />
       <Route path="/create" element={<CreateHubRoute />} />
+      {/* Public file share — no account required. Must be before the * catch-all. */}
+      <Route path="/share/:hubSlug/:fileName" element={<ShareFilePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

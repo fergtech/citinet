@@ -208,7 +208,6 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   // ── copy shareable link ────────────────────
   const handleCopyLink = (file: HubFile) => {
     const link = hubService.getPublicShareLink(slug, file.name);
-    if (!link) return;
     navigator.clipboard.writeText(link).then(() => {
       setCopiedId(file.id);
       setTimeout(() => setCopiedId(prev => prev === file.id ? null : prev), 2000);
