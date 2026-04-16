@@ -1304,13 +1304,10 @@ class HubService {
    *          http://localhost:3001/share/myhub/video.mp4  (local dev)
    */
   getPublicShareLink(hubSlug: string, fileName: string): string {
-    const hostname = window.location.hostname;
-    const parts = hostname.split('.');
-    // Strip hub subdomain on production (e.g. myhub.citinet.cloud → citinet.cloud)
-    const shareOrigin = (parts.length > 2 && !hostname.includes('localhost'))
-      ? `${window.location.protocol}//${parts.slice(-2).join('.')}`
-      : window.location.origin;
-    return `${shareOrigin}/share/${hubSlug}/${encodeURIComponent(fileName)}`;
+    // Always use the deployed app URL — localhost links aren't reachable by friends.
+    // VITE_APP_URL can override in .env.local for custom deployments.
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+    return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}`;
   }
 
   /**
