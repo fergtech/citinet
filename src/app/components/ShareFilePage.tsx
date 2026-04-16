@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Download, File, FileVideo, FileImage, FileAudio, FileText,
   Loader2, AlertCircle,
@@ -9,6 +9,7 @@ import { registryService } from '../services/registryService';
 
 export function ShareFilePage() {
   const { hubSlug, fileName: rawFileName } = useParams<{ hubSlug: string; fileName: string }>();
+  const [searchParams] = useSearchParams();
   const fileName = rawFileName ? decodeURIComponent(rawFileName) : '';
 
   const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
@@ -19,7 +20,19 @@ export function ShareFilePage() {
   useEffect(() => {
     if (!hubSlug) { setError('Invalid share link'); setLoading(false); return; }
 
-    // Try the locally stored connection first (same device / already joined)
+    // 1. ?src= param embedded by the share-link generator — most reliable, skips
+    //    registry slug-matching entirely. Validated: must be https:// (no localhost).
+    const srcParam = searchParams.get('src');
+    if (srcParam && /^https:\/\/.+/.test(srcParam) && !srcParam.includes('localhost')) {
+      setTunnelUrl(srcParam);
+      // Try to enrich hub name from local storage if available
+      const local = hubService.getHubConnection(hubSlug);
+      setHubName(local?.hub.name || hubSlug);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Locally stored connection (same device / already joined)
     const local = hubService.getHubConnection(hubSlug);
     if (local?.hub.tunnelUrl && !isShellUrl(local.hub.tunnelUrl)) {
       setTunnelUrl(local.hub.tunnelUrl);
@@ -28,7 +41,7 @@ export function ShareFilePage() {
       return;
     }
 
-    // Fall back to the public registry (works for external visitors)
+    // 3. Fall back to the public registry (external visitors, no ?src= param)
     registryService.getHubBySlug(hubSlug)
       .then(hub => {
         if (hub?.tunnel_url && !isShellUrl(hub.tunnel_url)) {

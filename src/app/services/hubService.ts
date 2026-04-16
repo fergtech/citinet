@@ -740,6 +740,10 @@ class HubService {
     return clean;
   }
 
+  private isShellUrl(url: string): boolean {
+    return !url || url === 'http://' || url === 'https://' || url.trim() === '';
+  }
+
   /** Extract a fallback name from a URL hostname */
   private extractNameFromUrl(url: string): string {
     try {
@@ -1307,7 +1311,14 @@ class HubService {
     // Always use the deployed app URL — localhost links aren't reachable by friends.
     // VITE_APP_URL can override in .env.local for custom deployments.
     const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
-    return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}`;
+    const conn = this.getHubConnection(hubSlug);
+    const tunnelUrl = conn?.hub?.tunnelUrl;
+    // Embed the Tailscale/public URL as ?src= so ShareFilePage can resolve the
+    // file host without depending on a registry slug match. The tunnel URL is
+    // already semi-public (listed in the registry) and the file is web-public
+    // by the user's explicit choice, so this is not a security concern.
+    const src = tunnelUrl && !this.isShellUrl(tunnelUrl) ? `?src=${encodeURIComponent(tunnelUrl)}` : '';
+    return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}${src}`;
   }
 
   /**

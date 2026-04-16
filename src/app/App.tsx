@@ -668,12 +668,13 @@ function HubModeRoutes() {
 // ──────────────────────────────────────────────
 
 function AppInner() {
-  const subdomain = getSubdomain();
+  const isSharePath = window.location.pathname.startsWith('/share/');
+  const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
-  const [probing, setProbing] = useState(!subdomain);
+  const [probing, setProbing] = useState(!subdomain && !isSharePath);
 
   useEffect(() => {
-    if (subdomain) return;
+    if (subdomain || isSharePath) return;
     fetch('/api/info', { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : null)
       .then(async info => {
