@@ -29,6 +29,8 @@ import { ModLogScreen } from './components/ModLogScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
 import { ShareFilePage } from './components/ShareFilePage';
+import { ShareNotePage } from './components/ShareNotePage';
+import { ShareSpacePage } from './components/ShareSpacePage';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -374,19 +376,26 @@ function HubPlaceholderRoute({ screen }: { screen: string }) {
 // ──────────────────────────────────────────────
 
 function HubGuard({ children }: { children: React.ReactNode }) {
-  const { currentHub, loading } = useHub();
+  const { currentHub, currentUser, loading } = useHub();
   const hubSlug = getSubdomain();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (loading) return;
-    if (currentHub) return;
+    if (currentHub) {
+      // Hub is known — check if the session is still valid (auth token present).
+      // currentUser is cleared by HubContext on session-expired events (401 responses).
+      if (currentUser === null && hubSlug && hubService.getHubConnection(hubSlug)) {
+        navigate('/onboard', { replace: true });
+      }
+      return;
+    }
     if (hubSlug && !hubService.getHubConnection(hubSlug)) {
       // No connection for this hub slug — clear the stale cache and return to welcome screen.
-      // Using hard redirect (not React Router navigate) so the app re-mounts without ?hub= in URL.
       clearSubdomainCache();
       window.location.href = window.location.origin + '/';
     }
-  }, [currentHub, loading, hubSlug]);
+  }, [currentHub, currentUser, loading, hubSlug, navigate]);
 
   return <>{children}</>;
 }
@@ -614,6 +623,8 @@ function OnboardingModeRoutes() {
       <Route path="/create" element={<CreateHubRoute />} />
       {/* Public file share — no account required. Must be before the * catch-all. */}
       <Route path="/share/:hubSlug/:fileName" element={<ShareFilePage />} />
+      <Route path="/share-note/:hubSlug/:noteId" element={<ShareNotePage />} />
+      <Route path="/share-space/:hubSlug/:spaceSlug" element={<ShareSpacePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -668,7 +679,7 @@ function HubModeRoutes() {
 // ──────────────────────────────────────────────
 
 function AppInner() {
-  const isSharePath = window.location.pathname.startsWith('/share/');
+  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/');
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
   const [probing, setProbing] = useState(!subdomain && !isSharePath);

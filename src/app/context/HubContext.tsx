@@ -117,6 +117,19 @@ export function HubProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
+  // Listen for session-expired events fired by hubService on 401 responses.
+  // Clear currentUser so HubDashboardRoute's onboard redirect fires immediately.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { hubSlug } = (e as CustomEvent<{ hubSlug: string }>).detail;
+      if (hubSlug === getSubdomain()) {
+        setCurrentUser(null);
+      }
+    };
+    window.addEventListener('citinet:session-expired', handler);
+    return () => window.removeEventListener('citinet:session-expired', handler);
+  }, []);
+
   // Periodic health check — 5 s when hub is unreachable (boot/restart recovery),
   // 60 s when connected (normal steady-state polling).
   useEffect(() => {

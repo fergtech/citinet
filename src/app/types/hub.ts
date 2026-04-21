@@ -48,6 +48,13 @@ export interface Hub {
    * An array restricts the dashboard to only those app IDs.
    */
   enabledApps?: string[] | null;
+  /**
+   * The hub's publicly reachable HTTPS URL (Tailscale funnel URL from /api/info).
+   * This is always the internet-facing URL regardless of how the user connected
+   * (even if they joined via localhost). Used exclusively for share links.
+   * Undefined if the hub has no public tunnel configured.
+   */
+  publicTunnelUrl?: string;
 }
 
 export type HubConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'unreachable';
@@ -320,6 +327,8 @@ export interface HubSpace {
   my_role?: 'owner' | 'admin' | 'moderator' | 'member' | null;
   /** Caller's membership status */
   my_status?: 'active' | 'pending' | 'invited' | null;
+  /** Whether this space is publicly readable on the open web (no account required) */
+  web_public?: boolean;
 }
 
 /** A file attached to a space post */
@@ -357,6 +366,8 @@ export interface HubNote {
   is_pinned: boolean;
   is_archived: boolean;
   is_public: boolean;
+  /** Anyone with the share link can read this note (no account needed) */
+  is_web_public?: boolean;
   color?: string | null;
   created_at: string;
   updated_at: string;

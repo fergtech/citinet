@@ -45,7 +45,7 @@ class SpacesService {
     return res.json();
   }
 
-  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string; banner_mode: string; banner_color: string; banner_gradient_from: string; banner_gradient_to: string }>): Promise<HubSpace> {
+  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string; web_public: boolean; banner_mode: string; banner_color: string; banner_gradient_from: string; banner_gradient_to: string }>): Promise<HubSpace> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}`, {
       method: 'PATCH',
@@ -193,6 +193,22 @@ class SpacesService {
 
   getSpaceBannerUrl(tunnelUrl: string, spaceSlug: string): string {
     return `${tunnelUrl}/api/spaces/${spaceSlug}/banner`;
+  }
+
+  getPublicSpaceLink(hubSlug: string, spaceSlug: string): string {
+    const conn = hubService.getHubConnection(hubSlug);
+    const publicUrl = conn?.hub?.publicTunnelUrl;
+    if (publicUrl) {
+      const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+      return `${base}/share-space/${hubSlug}/${spaceSlug}?src=${encodeURIComponent(publicUrl)}`;
+    }
+    const lanIp = conn?.hub?.lanIp;
+    const swapLocal = (url: string) =>
+      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
+    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
+    const base = swapLocal(window.location.origin);
+    const src = srcUrl ? `?src=${encodeURIComponent(srcUrl)}` : '';
+    return `${base}/share-space/${hubSlug}/${spaceSlug}${src}`;
   }
 
   async deleteSpace(hubSlug: string, spaceSlug: string): Promise<void> {

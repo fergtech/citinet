@@ -8,22 +8,44 @@
  */
 
 const HUB_SLUG_KEY = 'citinet-active-hub';
+const HUBS_KEY = 'citinet-hubs';
 
-/** Returns the hub slug from environment variable or URL/storage cache. */
+/** Returns the hub slug from environment variable or URL/storage cache.
+ *  Falls back to the most recently connected hub from citinet-hubs if the
+ *  active-hub key is missing — handles dev-server restarts and fresh tabs
+ *  where Vite opens http://localhost:3001 without a ?hub= param. */
 export function getSubdomain(): string | null {
   const forced = (import.meta.env.VITE_FORCE_HUB_SLUG as string | undefined) ?? '';
   if (forced) return forced;
 
   // ?hub= in URL is the authoritative source — write it to localStorage so it
-  // survives client-side React Router navigations that drop query params
-  // (iOS Safari PWA treats sessionStorage as ephemeral within SPA navigations).
+  // survives client-side React Router navigations that drop query params.
   const hub = new URLSearchParams(window.location.search).get('hub');
   if (hub) {
     localStorage.setItem(HUB_SLUG_KEY, hub);
     return hub;
   }
 
-  return localStorage.getItem(HUB_SLUG_KEY);
+  const cached = localStorage.getItem(HUB_SLUG_KEY);
+  if (cached) return cached;
+
+  // citinet-active-hub key is missing (fresh tab, cleared key, etc.) but the
+  // user may still have hub connections. Auto-restore the most recently used one
+  // so a dev-server restart or a new tab doesn't drop you to the WelcomeScreen.
+  try {
+    const stored = localStorage.getItem(HUBS_KEY);
+    if (!stored) return null;
+    const hubs = JSON.parse(stored) as Record<string, { hub: { lastConnectedAt?: string } }>;
+    const slugs = Object.keys(hubs);
+    if (!slugs.length) return null;
+    const best = slugs.reduce((a, b) =>
+      (hubs[a]?.hub?.lastConnectedAt ?? '') >= (hubs[b]?.hub?.lastConnectedAt ?? '') ? a : b
+    );
+    localStorage.setItem(HUB_SLUG_KEY, best);
+    return best;
+  } catch {
+    return null;
+  }
 }
 
 /** Call when the user explicitly leaves a hub so the cache is cleared. */

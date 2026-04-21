@@ -250,7 +250,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
   const [selectedInitiative] = useState<null>(null);
 
-  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://citinet.cloud/').trim();
+  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
   const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
     ? projectInfoUrlRaw
     : `https://${projectInfoUrlRaw}`;

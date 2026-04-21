@@ -10,7 +10,7 @@ import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
-  Globe, Lock, ArchiveRestore, Link as LinkIcon,
+  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
@@ -123,8 +123,11 @@ function NoteListItem({
           {title}
         </span>
         <div className="flex items-center gap-1 shrink-0">
-          {note.is_public && !inArchive && (
-            <Globe className="w-3 h-3 text-indigo-400 dark:text-indigo-500 opacity-70" aria-label="Public note" />
+          {note.is_web_public && !inArchive && (
+            <Globe className="w-3 h-3 text-emerald-500 opacity-80" aria-label="Web public note" />
+          )}
+          {note.is_public && !note.is_web_public && !inArchive && (
+            <Users className="w-3 h-3 text-indigo-400 dark:text-indigo-500 opacity-70" aria-label="Hub members note" />
           )}
           <span className="text-[10px] text-slate-400 dark:text-zinc-500">{date}</span>
           {!inArchive && (
@@ -276,6 +279,8 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [actionsOpen, setActionsOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [visPopoverOpen, setVisPopoverOpen] = useState(false);
+  const [noteLinkCopied, setNoteLinkCopied] = useState(false);
 
   // Is the currently selected note owned by this user?
   const isOwnNote = !selected || selected.owner_id === currentUser?.hubUserId;
@@ -368,14 +373,44 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
     setActionsOpen(false);
   };
 
-  const togglePublic = async () => {
+  const handleSetNoteVisibility = async (target: 'private' | 'hub' | 'web') => {
     if (!selected) return;
+    setVisPopoverOpen(false);
+    setActionsOpen(false);
     try {
-      const updated = await hubService.updateNote(hubSlug, selected.id, { is_public: !selected.is_public });
+      let updated: HubNote;
+      if (target === 'web') {
+        // Enable web-public: also send the decrypted body so the public
+        // endpoint can serve plaintext even if the stored body is encrypted.
+        updated = await hubService.setNoteWebPublic(hubSlug, selected.id, true, {
+          body_plain: selected.body_plain,
+          body_rich: selected.body_rich,
+        });
+        // Also make it hub-public so it shows on the profile page
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true });
+        updated = { ...updated, is_web_public: true };
+      } else if (target === 'hub') {
+        updated = await hubService.setNoteWebPublic(hubSlug, selected.id, false);
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true });
+        updated = { ...updated, is_web_public: false };
+      } else {
+        updated = await hubService.setNoteWebPublic(hubSlug, selected.id, false);
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: false });
+        updated = { ...updated, is_web_public: false };
+      }
       setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
       setSelected(updated);
     } catch {}
-    setActionsOpen(false);
+  };
+
+  const handleCopyNoteLink = () => {
+    if (!selected) return;
+    const link = hubService.getPublicNoteLink(hubSlug, selected.id);
+    navigator.clipboard.writeText(link).then(() => {
+      setNoteLinkCopied(true);
+      setTimeout(() => setNoteLinkCopied(false), 2000);
+    });
+    setVisPopoverOpen(false);
   };
 
   const clearSelected = () => {
@@ -605,20 +640,66 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
               <div className="flex-1" />
               {isOwnNote && <SaveIndicator status={saveStatus} />}
 
-              {/* Public / Private toggle — own notes only */}
-              {isOwnNote && !showArchive && (
-                <button
-                  onClick={togglePublic}
-                  title={selected.is_public ? 'Public — click to make private' : 'Private — click to make public'}
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                    selected.is_public
-                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
-                      : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  {selected.is_public ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                </button>
-              )}
+              {/* Visibility popover — own notes only */}
+              {isOwnNote && !showArchive && (() => {
+                const vis = selected.is_web_public ? 'web' : selected.is_public ? 'hub' : 'private';
+                return (
+                  <div className="relative">
+                    {visPopoverOpen && <div className="fixed inset-0 z-40" onClick={() => setVisPopoverOpen(false)} />}
+                    <button
+                      onClick={() => setVisPopoverOpen(v => !v)}
+                      title="Set visibility"
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
+                        vis === 'web'
+                          ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                          : vis === 'hub'
+                          ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
+                          : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {vis === 'web' ? <Globe className="w-4 h-4" /> : vis === 'hub' ? <Users className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                    </button>
+                    {visPopoverOpen && (
+                      <div className="absolute right-0 top-9 z-50 w-56 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden">
+                        <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Who can read</p>
+                        {([
+                          { key: 'private', label: 'Only me', sub: 'Private', Icon: Lock },
+                          { key: 'hub',     label: 'Hub members', sub: 'Requires account', Icon: Users },
+                          { key: 'web',     label: 'Anyone with link', sub: 'No account needed', Icon: Globe },
+                        ] as const).map(({ key, label, sub, Icon }) => (
+                          <button
+                            key={key}
+                            onClick={() => handleSetNoteVisibility(key)}
+                            className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                          >
+                            <Icon className={`w-4 h-4 shrink-0 ${key === 'web' ? 'text-emerald-500' : key === 'hub' ? 'text-indigo-400' : 'text-slate-400'}`} />
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-sm font-medium text-slate-800 dark:text-zinc-100">{label}</span>
+                              <span className="block text-xs text-slate-400 dark:text-zinc-500">{sub}</span>
+                            </span>
+                            {vis === key && <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+                          </button>
+                        ))}
+                        {vis === 'web' && (
+                          <div className="border-t border-slate-100 dark:border-zinc-800">
+                            <button
+                              onClick={handleCopyNoteLink}
+                              className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                              {noteLinkCopied
+                                ? <Check className="w-4 h-4 text-emerald-500" />
+                                : <Link2 className="w-4 h-4 text-slate-400" />}
+                              <span className="text-sm text-slate-700 dark:text-zinc-300">
+                                {noteLinkCopied ? 'Copied!' : 'Copy share link'}
+                              </span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Pin toggle — own notes only */}
               {isOwnNote && !showArchive && (
@@ -660,12 +741,11 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
                         ) : (
                           <>
                             <button
-                              onClick={togglePublic}
+                              onClick={() => { setActionsOpen(false); setVisPopoverOpen(true); }}
                               className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                             >
-                              {selected.is_public
-                                ? <><Lock className="w-3.5 h-3.5 text-slate-400" />Make private</>
-                                : <><Globe className="w-3.5 h-3.5 text-indigo-400" />Make public</>}
+                              <Globe className="w-3.5 h-3.5 text-indigo-400" />
+                              Set visibility
                             </button>
                             <button
                               onClick={archiveNote}
@@ -745,7 +825,7 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
             <p className="text-sm text-slate-400 dark:text-zinc-600 mb-5 max-w-xs">
               {showArchive
                 ? 'Select a note to view it. Restore or delete from the ⋮ menu.'
-                : 'Private by default. Make a note public to share it on your profile.'}
+                : 'Private by default. Use the visibility button to share with hub members or anyone with a link.'}
             </p>
             {!showArchive && (
               <button

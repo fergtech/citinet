@@ -114,11 +114,22 @@ class HubService {
       ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
       : cleanUrl;
 
+    // Always capture the API-reported public tunnel URL separately, even when
+    // connecting locally. This ensures share links always embed the internet-
+    // facing HTTPS URL rather than the localhost/LAN address used for API calls.
+    const reportedTunnelUrl = probeInfo?.tunnel_url
+      ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
+      : undefined;
+    const publicTunnelUrl = reportedTunnelUrl && !this.isShellUrl(reportedTunnelUrl)
+      ? reportedTunnelUrl
+      : undefined;
+
     const hub: Hub = {
       id: probeInfo?.node_id || `local-${slug}-${Date.now()}`,
       slug,
       name: hubName,
       tunnelUrl: storedUrl,
+      publicTunnelUrl,
       location: probeInfo?.location || '',
       description: probeInfo?.description,
       memberCount: probeStatus?.user_count,
@@ -577,6 +588,15 @@ class HubService {
       if (result.info?.enabled_apps !== undefined) {
         connections[slug].hub.enabledApps = result.info.enabled_apps ?? null;
         dirty = true;
+      }
+      // Backfill publicTunnelUrl from the API's tunnel_url — handles existing
+      // localStorage entries that predate this field, and keeps it current.
+      if (result.info?.tunnel_url) {
+        const pub = this.normalizeTunnelUrl(result.info.tunnel_url);
+        if (!this.isShellUrl(pub) && pub !== connections[slug].hub.publicTunnelUrl) {
+          connections[slug].hub.publicTunnelUrl = pub;
+          dirty = true;
+        }
       }
       if (dirty) localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     }
@@ -1308,16 +1328,24 @@ class HubService {
    *          http://localhost:3001/share/myhub/video.mp4  (local dev)
    */
   getPublicShareLink(hubSlug: string, fileName: string): string {
-    // Always use the deployed app URL — localhost links aren't reachable by friends.
-    // VITE_APP_URL can override in .env.local for custom deployments.
-    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
     const conn = this.getHubConnection(hubSlug);
-    const tunnelUrl = conn?.hub?.tunnelUrl;
-    // Embed the Tailscale/public URL as ?src= so ShareFilePage can resolve the
-    // file host without depending on a registry slug match. The tunnel URL is
-    // already semi-public (listed in the registry) and the file is web-public
-    // by the user's explicit choice, so this is not a security concern.
-    const src = tunnelUrl && !this.isShellUrl(tunnelUrl) ? `?src=${encodeURIComponent(tunnelUrl)}` : '';
+    const publicUrl = conn?.hub?.publicTunnelUrl;
+
+    if (publicUrl) {
+      // Tailscale HTTPS tunnel → works for anyone on the internet
+      const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+      return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}?src=${encodeURIComponent(publicUrl)}`;
+    }
+
+    // No Tailscale — build a LAN-accessible link by replacing localhost/127.0.0.1
+    // with the hub's actual LAN IP so other devices on the same network can reach it.
+    const lanIp = conn?.hub?.lanIp;
+    const swapLocal = (url: string) =>
+      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
+
+    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
+    const base = swapLocal(window.location.origin);
+    const src = srcUrl && !this.isShellUrl(srcUrl) ? `?src=${encodeURIComponent(srcUrl)}` : '';
     return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}${src}`;
   }
 
@@ -1541,6 +1569,8 @@ class HubService {
   private async parseErrorResponse(response: Response, hubSlug?: string): Promise<never> {
     if (response.status === 401 && hubSlug) {
       this.clearAuthToken(hubSlug);
+      // Notify the app so HubContext can clear currentUser and redirect to login.
+      window.dispatchEvent(new CustomEvent('citinet:session-expired', { detail: { hubSlug } }));
       throw new Error('Session expired — please log in again.');
     }
     const ct = response.headers.get('content-type') || '';
@@ -1835,6 +1865,60 @@ class HubService {
       headers: { Authorization: `Bearer ${conn.user.authToken}` },
     });
     if (!res.ok) throw new Error('Failed to delete note');
+  }
+
+  /**
+   * Set or revoke web-public access for a note.
+   * When enabling, pass the *decrypted* note content so the server can store
+   * a cleartext copy for the public endpoint (encrypted notes are never exposed
+   * in cipher form — the server only gets plaintext for the web-public snapshot).
+   */
+  async setNoteWebPublic(
+    hubSlug: string,
+    noteId: string,
+    isWebPublic: boolean,
+    clearContent?: { body_plain: string; body_rich?: object | null },
+  ): Promise<HubNote> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const patch: Record<string, unknown> = { is_web_public: isWebPublic };
+    if (isWebPublic && clearContent) {
+      patch.web_body_plain = clearContent.body_plain;
+      patch.web_body_rich = clearContent.body_rich ?? null;
+    } else if (!isWebPublic) {
+      patch.web_body_plain = null;
+      patch.web_body_rich = null;
+    }
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.user.authToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error('Failed to update note visibility');
+    return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
+  }
+
+  /** Returns a share link that embeds the hub's public tunnel URL as ?src=.
+   *  Tailscale configured → citinet.cloud HTTPS link, works for anyone on the internet.
+   *  No Tailscale → LAN-accessible link using the hub's lanIp instead of localhost,
+   *  so other devices on the same network can open it without manual URL editing. */
+  getPublicNoteLink(hubSlug: string, noteId: string): string {
+    const conn = this.getHubConnection(hubSlug);
+    const publicUrl = conn?.hub?.publicTunnelUrl;
+
+    if (publicUrl) {
+      const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+      return `${base}/share-note/${hubSlug}/${noteId}?src=${encodeURIComponent(publicUrl)}`;
+    }
+
+    const lanIp = conn?.hub?.lanIp;
+    const swapLocal = (url: string) =>
+      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
+
+    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
+    const base = swapLocal(window.location.origin);
+    const src = srcUrl && !this.isShellUrl(srcUrl) ? `?src=${encodeURIComponent(srcUrl)}` : '';
+    return `${base}/share-note/${hubSlug}/${noteId}${src}`;
   }
 
   async getPublicNotes(hubSlug: string, userId: string): Promise<HubNote[]> {

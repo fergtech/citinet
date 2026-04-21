@@ -435,6 +435,7 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_gradient_to   TEXT`);
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
+    await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // Session expiry column (migration for existing installs)
     await client.query(`ALTER TABLE hub_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days'`);
     // Notes
@@ -454,6 +455,10 @@ async function initDb() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_notes_owner ON hub_notes(owner_id, is_archived)`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    // Note web-public sharing — anyone with link, no auth required
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_web_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_plain TEXT`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_rich JSONB`);
     // File visibility — web_public allows anyone-with-link access (no auth required)
     await client.query(`ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // E2E Encryption — key registry
@@ -2642,14 +2647,14 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
     );
     if (!existing[0]) return res.status(404).json({ error: 'Note not found' });
 
-    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'color'];
+    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'is_web_public', 'web_body_plain', 'web_body_rich', 'color'];
     const updates = [];
     const values = [];
     let i = 1;
     for (const key of allowed) {
       if (key in req.body) {
         updates.push(`${key} = $${i++}`);
-        values.push(key === 'body_rich' && req.body[key] ? JSON.stringify(req.body[key]) : req.body[key]);
+        values.push((key === 'body_rich' || key === 'web_body_rich') && req.body[key] ? JSON.stringify(req.body[key]) : req.body[key]);
       }
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
@@ -2696,6 +2701,51 @@ app.delete('/api/notes/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Delete note error:', err);
     res.status(500).json({ error: 'Failed to delete note' });
+  }
+});
+
+// Public note share — no auth required, only if is_web_public = true
+app.get('/api/public/notes/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, owner_id, title, web_body_plain, web_body_rich, color, created_at, updated_at
+       FROM hub_notes WHERE id = $1 AND is_web_public = TRUE AND is_archived = FALSE`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Note not found or not public' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Public note error:', err);
+    res.status(500).json({ error: 'Failed to load note' });
+  }
+});
+
+// Public space share — no auth required, only if web_public = true
+app.get('/api/public/spaces/:slug', async (req, res) => {
+  try {
+    const { rows: spaceRows } = await pool.query(
+      `SELECT id, slug, name, description, visibility, banner_mode, banner_color,
+              banner_gradient_from, banner_gradient_to, banner_image_file_name,
+              web_public, created_at, updated_at,
+              (SELECT COUNT(*) FROM hub_space_members WHERE space_id = hub_spaces.id AND status = 'active') AS member_count
+       FROM hub_spaces WHERE slug = $1 AND web_public = TRUE`,
+      [req.params.slug]
+    );
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found or not public' });
+    const space = spaceRows[0];
+    const { rows: posts } = await pool.query(
+      `SELECT p.id, p.title, p.body, p.category, p.created_at, p.media_file_name,
+              u.username AS author_username
+       FROM hub_posts p
+       JOIN hub_users u ON u.id = p.author_id
+       WHERE p.space_id = $1
+       ORDER BY p.created_at DESC LIMIT 50`,
+      [space.id]
+    );
+    res.json({ space, posts });
+  } catch (err) {
+    console.error('Public space error:', err);
+    res.status(500).json({ error: 'Failed to load space' });
   }
 });
 
@@ -3510,6 +3560,7 @@ app.get('/api/spaces', authenticate, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
+             s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         sm2.role  AS my_role,
         sm2.status AS my_status
@@ -3531,6 +3582,7 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
+             s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         me.role   AS my_role,
         me.status AS my_status
@@ -3552,6 +3604,7 @@ app.get('/api/spaces/:slug', authenticate, async (req, res) => {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
+             s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         me.role   AS my_role,
         me.status AS my_status
@@ -3581,7 +3634,7 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
     if (!memRows[0] || !canManageSpace(memRows[0].role))
       return res.status(403).json({ error: 'Only space admins can edit settings' });
 
-    const { name, description, visibility, banner_mode, banner_color, banner_gradient_from, banner_gradient_to } = req.body;
+    const { name, description, visibility, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, web_public } = req.body;
     if (visibility && !['public', 'private', 'invite-only'].includes(visibility))
       return res.status(400).json({ error: 'invalid visibility' });
 
@@ -3594,11 +3647,12 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
         banner_color         = COALESCE($5, banner_color),
         banner_gradient_from = COALESCE($6, banner_gradient_from),
         banner_gradient_to   = COALESCE($7, banner_gradient_to),
+        web_public           = COALESCE($9, web_public),
         updated_at           = NOW()
       WHERE id = $8 RETURNING *
     `, [name || null, description !== undefined ? description : null, visibility || null,
         banner_mode || null, banner_color || null, banner_gradient_from || null, banner_gradient_to || null,
-        space.id]);
+        space.id, web_public !== undefined ? web_public : null]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

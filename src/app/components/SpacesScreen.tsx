@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, Settings, LogOut, UserPlus,
   Check, X, ChevronRight, MessageCircle, Share2,
   LayoutGrid, Send, Image as ImageIcon, Video, FileText,
-  Download, Sparkles, Palette, ImagePlus,
+  Download, Sparkles, Palette, ImagePlus, Link2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub } from '../context/HubContext';
@@ -474,6 +474,8 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
   const [settingsName, setSettingsName] = useState(space.name);
   const [settingsDesc, setSettingsDesc] = useState(space.description || '');
   const [settingsVis, setSettingsVis] = useState(space.visibility);
+  const [settingsWebPublic, setSettingsWebPublic] = useState(!!space.web_public);
+  const [spaceLinkCopied, setSpaceLinkCopied] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState('');
   const [settingsSaved, setSettingsSaved] = useState(false);
@@ -492,6 +494,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
   useEffect(() => {
     setTab('feed'); setPosts([]); setMembers([]);
     setSettingsName(space.name); setSettingsDesc(space.description || ''); setSettingsVis(space.visibility);
+    setSettingsWebPublic(!!space.web_public);
     setSettingsSaved(false); setShowBannerEditor(false);
   }, [space.id]);
 
@@ -561,7 +564,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
     e.preventDefault();
     setSettingsSaving(true); setSettingsError(''); setSettingsSaved(false);
     try {
-      const updated = await spacesService.update(hubSlug, space.slug, { name: settingsName, description: settingsDesc, visibility: settingsVis });
+      const updated = await spacesService.update(hubSlug, space.slug, { name: settingsName, description: settingsDesc, visibility: settingsVis, web_public: settingsWebPublic });
       onSpaceUpdated(updated); setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 2500);
     } catch (err: any) { setSettingsError(err.message); }
@@ -608,6 +611,11 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
               <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm ${space.visibility === 'public' ? 'bg-emerald-900/70 text-emerald-300' : space.visibility === 'private' ? 'bg-amber-900/70 text-amber-300' : 'bg-zinc-800/70 text-zinc-400'}`}>
                 {visibilityIcon(space.visibility)} {visibilityLabel(space.visibility)}
               </span>
+              {space.web_public && (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm bg-sky-900/70 text-sky-300">
+                  <Globe className="w-3 h-3" /> Web
+                </span>
+              )}
               {space.my_role && <span className="text-xs text-white/60 capitalize">{space.my_role}</span>}
             </div>
             <h1 className="text-xl font-bold text-white drop-shadow leading-tight">{space.name}</h1>
@@ -842,6 +850,34 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
                   </button>
                 ))}
               </div>
+            </div>
+            {/* Web sharing */}
+            <div className="pt-1">
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Web Sharing</label>
+              <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm text-zinc-300">Share to open web</span>
+                </div>
+                <button type="button" onClick={() => setSettingsWebPublic(v => !v)}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${settingsWebPublic ? 'bg-emerald-600' : 'bg-zinc-600'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settingsWebPublic ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              {settingsWebPublic && (
+                <div className="mt-2 flex items-center gap-2">
+                  <button type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(spacesService.getPublicSpaceLink(hubSlug, space.slug));
+                      setSpaceLinkCopied(true);
+                      setTimeout(() => setSpaceLinkCopied(false), 2000);
+                    }}
+                    className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                    {spaceLinkCopied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Link2 className="w-3.5 h-3.5" /> Copy share link</>}
+                  </button>
+                  <span className="text-xs text-zinc-600">Anyone with the link can read this space.</span>
+                </div>
+              )}
             </div>
             {settingsError && <p className="text-xs text-red-400">{settingsError}</p>}
             <button type="submit" disabled={settingsSaving}
