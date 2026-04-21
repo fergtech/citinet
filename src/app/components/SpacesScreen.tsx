@@ -963,15 +963,24 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   useEffect(() => { load(); }, [load]);
 
   function handleSpaceUpdated(updated: HubSpace) {
-    setSelected(updated);
-    setMySpaces(prev => {
-      const isActive = updated.my_status === 'active';
-      const inList = prev.find(s => s.id === updated.id);
-      if (isActive && !inList) return [...prev, updated].sort((a, b) => a.name.localeCompare(b.name));
-      if (!isActive && inList) return prev.filter(s => s.id !== updated.id);
-      return prev.map(s => s.id === updated.id ? updated : s);
+    // PATCH returns only hub_spaces columns — my_role/my_status come from a JOIN and won't be present.
+    // Merge them from the existing state so the membership logic below stays correct.
+    const merge = (existing: HubSpace): HubSpace => ({
+      ...updated,
+      my_role: updated.my_role ?? existing.my_role,
+      my_status: updated.my_status ?? existing.my_status,
     });
-    setAllSpaces(prev => prev.map(s => s.id === updated.id ? updated : s));
+
+    setSelected(prev => prev ? merge(prev) : null);
+    setMySpaces(prev => {
+      const existing = prev.find(s => s.id === updated.id);
+      const merged = existing ? merge(existing) : updated;
+      const isActive = merged.my_status === 'active';
+      if (isActive && !existing) return [...prev, merged].sort((a, b) => a.name.localeCompare(b.name));
+      if (!isActive && existing) return prev.filter(s => s.id !== updated.id);
+      return prev.map(s => s.id === updated.id ? merged : s);
+    });
+    setAllSpaces(prev => prev.map(s => s.id === updated.id ? merge(s) : s));
   }
 
   function handleCreated(space: HubSpace) {
