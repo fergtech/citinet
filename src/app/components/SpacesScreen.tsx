@@ -864,7 +864,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
                   <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settingsWebPublic ? 'translate-x-5' : ''}`} />
                 </button>
               </div>
-              {settingsWebPublic && (
+              {settingsWebPublic && !space.web_public && (
+                <p className="mt-2 text-xs text-amber-400">Save settings to activate the share link.</p>
+              )}
+              {space.web_public && (
                 <div className="mt-2 flex items-center gap-2">
                   <button type="button"
                     onClick={() => {
