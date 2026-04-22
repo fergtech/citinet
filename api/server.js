@@ -2763,6 +2763,30 @@ app.get('/api/public/spaces/:slug', async (req, res) => {
   }
 });
 
+// Public space file — no auth, only if space is web_public
+app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
+  try {
+    const fileName = decodeURIComponent(req.params.filename);
+    const { rows: spaceRows } = await pool.query(
+      `SELECT id FROM hub_spaces WHERE slug = $1 AND web_public = TRUE`, [req.params.slug]
+    );
+    if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found or not public' });
+    const { rows } = await pool.query(
+      `SELECT file_key, mime_type, size_bytes FROM hub_files WHERE file_name = $1 AND space_id = $2 LIMIT 1`,
+      [fileName, spaceRows[0].id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'File not found' });
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+    res.setHeader('Content-Type', rows[0].mime_type || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    if (rows[0].size_bytes) res.setHeader('Content-Length', rows[0].size_bytes);
+    const stream = await minioClient.getObject(STORAGE_BUCKET, rows[0].file_key);
+    stream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Atlas pin routes ───────────────────────────────────────
 
 const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi'];

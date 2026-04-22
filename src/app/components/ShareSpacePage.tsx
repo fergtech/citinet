@@ -13,6 +13,8 @@ interface PublicSpace {
   banner_color?: string | null;
   banner_gradient_from?: string | null;
   banner_gradient_to?: string | null;
+  banner_image_file_name?: string | null;
+  banner_image_url?: string | null;
   member_count?: number;
   created_at: string;
 }
@@ -32,14 +34,17 @@ function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function getBannerStyle(space: PublicSpace): React.CSSProperties {
+function getBannerStyle(space: PublicSpace, src: string): React.CSSProperties {
+  if (space.banner_mode === 'image') {
+    const url = space.banner_image_url ?? (space.banner_image_file_name ? `${src}/api/spaces/${space.slug}/banner` : null);
+    if (url) return { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  }
   if (space.banner_mode === 'solid' && space.banner_color) {
     return { backgroundColor: space.banner_color };
   }
   if (space.banner_mode === 'gradient' && space.banner_gradient_from && space.banner_gradient_to) {
     return { backgroundImage: `linear-gradient(135deg, ${space.banner_gradient_from}, ${space.banner_gradient_to})` };
   }
-  // Default gradient based on space name
   const grads = [
     ['#2563eb', '#7c3aed'], ['#0f766e', '#2563eb'], ['#7c3aed', '#ec4899'],
     ['#1d4ed8', '#0f766e'], ['#be123c', '#7c2d12'], ['#374151', '#111827'],
@@ -57,11 +62,11 @@ export function ShareSpacePage() {
   const [data, setData] = useState<PublicSpaceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const src = searchParams.get('src') ?? '';
 
   useEffect(() => {
     if (!hubSlug || !spaceSlug) { setError('Invalid share link'); setLoading(false); return; }
 
-    const src = searchParams.get('src');
     if (!src || !/^https?:\/\/.+/.test(src)) {
       setError('This share link is missing the hub source. Ask the owner to re-copy the link.');
       setLoading(false);
@@ -102,7 +107,7 @@ export function ShareSpacePage() {
           <div className="w-full space-y-4">
             {/* Space header card */}
             <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
-              <div className="h-24" style={getBannerStyle(data.space)} />
+              <div className="h-24" style={getBannerStyle(data.space, src)} />
               <div className="bg-zinc-900 px-6 py-4">
                 <h1 className="text-xl font-bold text-white mb-1">{data.space.name}</h1>
                 {data.space.description && (
@@ -125,21 +130,33 @@ export function ShareSpacePage() {
               {data.posts.length === 0 && (
                 <div className="text-center py-10 text-zinc-600 text-sm">No posts in this space yet.</div>
               )}
-              {data.posts.map(post => (
-                <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-medium text-zinc-400">@{post.author_username}</span>
-                    <span className="text-xs text-zinc-600 ml-auto">{timeAgo(post.created_at)}</span>
+              {data.posts.map(post => {
+                const mediaUrl = (post as any).media_url as string | undefined
+                  ?? (post.media_file_name ? `${src}/api/public/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}` : null);
+                const isVideo = mediaUrl && /\.(mp4|webm|mov)$/i.test(mediaUrl);
+                return (
+                  <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                    {mediaUrl && (
+                      isVideo
+                        ? <video src={mediaUrl} className="w-full max-h-72 object-cover" muted autoPlay loop playsInline />
+                        : <img src={mediaUrl} alt="" className="w-full max-h-72 object-cover" />
+                    )}
+                    <div className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-medium text-zinc-400">@{post.author_username}</span>
+                        <span className="text-xs text-zinc-600 ml-auto">{timeAgo(post.created_at)}</span>
+                      </div>
+                      <h3 className="text-sm font-semibold text-white mb-1">{post.title}</h3>
+                      {post.body && <p className="text-sm text-zinc-400 leading-relaxed">{post.body}</p>}
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800">
+                        <span className="text-xs text-zinc-600 flex items-center gap-1">
+                          <MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-sm font-semibold text-white mb-1">{post.title}</h3>
-                  {post.body && <p className="text-sm text-zinc-400 leading-relaxed">{post.body}</p>}
-                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800">
-                    <span className="text-xs text-zinc-600 flex items-center gap-1">
-                      <MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}
