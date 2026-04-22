@@ -119,7 +119,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed');
-      setAppSaveSuccess(`Connected to ${data.appName ?? appUrl.trim()}`);
+      const caps = Array.isArray(data.capabilities) ? data.capabilities.join(', ') : 'unknown';
+      setAppSaveSuccess(`Connected to ${data.appName ?? appUrl.trim()} — capabilities: ${caps}`);
       setAppKey('');
       loadApps();
     } catch (err: unknown) {

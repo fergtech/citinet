@@ -3256,6 +3256,32 @@ async function getAppConfig(capability) {
   return null;
 }
 
+// GET /api/admin/apps/debug — dump raw DB rows + probe each app (temporary diagnostic)
+app.get('/api/admin/apps/debug', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  try {
+    await ensureAppConfigTable();
+    const r = await pool.query(`SELECT capability, app_url, app_name, updated_at FROM hub_app_configs ORDER BY capability`);
+    const probes = [];
+    for (const row of r.rows) {
+      try {
+        const infoRes = await fetch(`${row.app_url}/api/hub-app/info`, {
+          headers: { 'x-hub-api-key': row.app_key },
+          signal: AbortSignal.timeout(5000),
+        });
+        const info = infoRes.ok ? await infoRes.json() : { error: infoRes.status };
+        probes.push({ appUrl: row.app_url, infoResponse: info });
+      } catch (err) {
+        probes.push({ appUrl: row.app_url, infoResponse: { error: err.message } });
+      }
+      break; // only probe first distinct URL
+    }
+    res.json({ dbRows: r.rows, probes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/apps — list installed app configs (admin only)
 app.get('/api/admin/apps', authenticate, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
