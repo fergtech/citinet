@@ -279,10 +279,15 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
-    setLoading(true); setError('');
+    if (!body.trim() && !mediaFile) { setError('Add a caption or media'); return; }
+    setError('');
+    setLoading(true);
     try {
-      const post = await spacesService.createPost(hubSlug, spaceSlug, { title, body, mediaFile: mediaFile ?? undefined });
+      const post = await spacesService.createPost(hubSlug, spaceSlug, {
+        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
+        body: body.trim(),
+        mediaFile: mediaFile ?? undefined
+      });
       onPosted(post);
       setTitle(''); setBody(''); removeMedia(); setOpen(false);
     } catch (err: any) { setError(err.message); }
@@ -303,9 +308,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
 
   return (
     <form onSubmit={submit} className="w-full max-w-2xl mx-auto bg-zinc-800/60 border border-zinc-700 rounded-2xl p-4 space-y-3">
-      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What's on your mind?" required autoFocus
-        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
-      <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Add more detail… (optional)" rows={3}
+      <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with this space…" rows={3}
         className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
       {mediaPreview && (
         <div className="relative rounded-xl overflow-hidden">
@@ -322,7 +325,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
         <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
         <div className="flex-1" />
         <button type="button" onClick={() => { removeMedia(); setOpen(false); }} className="px-3 py-2 rounded-xl bg-zinc-700 text-sm text-zinc-300 hover:bg-zinc-600">Cancel</button>
-        <button type="submit" disabled={loading || !title.trim()}
+        <button type="submit" disabled={loading || (!body.trim() && !mediaFile)}
           className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}<Send className="w-4 h-4" /> Post
         </button>
@@ -692,9 +695,16 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 {visibilityIcon(space.visibility)} {visibilityLabel(space.visibility)}
               </span>
               {space.web_public && (
-                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm bg-sky-900/70 text-sky-300">
-                  <Globe className="w-3 h-3" /> Web
-                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(spacesService.getPublicSpaceLink(hubSlug, space.slug));
+                    setSpaceLinkCopied(true);
+                    setTimeout(() => setSpaceLinkCopied(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm bg-sky-900/70 text-sky-300 hover:bg-sky-800/80 transition-colors cursor-pointer">
+                  {spaceLinkCopied ? <><Check className="w-3 h-3" /> Copied!</> : <><Globe className="w-3 h-3" /> Web · Copy link</>}
+                </button>
               )}
               {space.my_role && <span className="text-xs text-white/60 capitalize">{space.my_role}</span>}
             </div>
