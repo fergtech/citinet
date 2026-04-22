@@ -2590,7 +2590,7 @@ app.get('/api/notes', authenticate, async (req, res) => {
   try {
     const archived = req.query.archived === 'true';
     const { rows } = await pool.query(
-      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, is_web_public, color, created_at, updated_at
        FROM hub_notes
        WHERE owner_id = $1 AND is_archived = $2
        ORDER BY is_pinned DESC, updated_at DESC`,
@@ -2606,7 +2606,7 @@ app.get('/api/notes', authenticate, async (req, res) => {
 app.get('/api/notes/:id', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at
+      `SELECT id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, is_web_public, color, created_at, updated_at
        FROM hub_notes WHERE id = $1`,
       [req.params.id]
     );
