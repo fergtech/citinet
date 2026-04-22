@@ -319,6 +319,8 @@ export interface HubSpace {
   banner_gradient_from?: string | null;
   banner_gradient_to?: string | null;
   banner_image_file_name?: string | null;
+  /** Direct external URL for the banner image (used when proxying from Society Plus) */
+  banner_image_url?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at?: string;

@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, Settings, LogOut, UserPlus,
   Check, X, ChevronRight, MessageCircle, Share2,
   LayoutGrid, Send, Image as ImageIcon, Video, FileText,
-  Download, Sparkles, Palette, ImagePlus, Link2,
+  Download, Palette, ImagePlus, Link2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub } from '../context/HubContext';
@@ -85,9 +85,9 @@ function isVideo(mime?: string) { return !!mime?.startsWith('video/'); }
 // ── Banner style ─────────────────────────────────────────
 
 function getBannerStyle(space: HubSpace, tunnelUrl: string): React.CSSProperties {
-  if (space.banner_mode === 'image' && space.banner_image_file_name) {
-    const url = spacesService.getSpaceBannerUrl(tunnelUrl, space.slug);
-    return { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  if (space.banner_mode === 'image') {
+    const url = space.banner_image_url ?? (space.banner_image_file_name ? spacesService.getSpaceBannerUrl(tunnelUrl, space.slug) : null);
+    if (url) return { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
   }
   if (space.banner_mode === 'solid' && space.banner_color) {
     return { backgroundColor: space.banner_color };
@@ -332,48 +332,6 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
 
 // ── Highlights panel ──────────────────────────────────────
 
-function HighlightsPanel({ posts, tunnelUrl, spaceSlug, authToken }: { posts: HubPost[]; tunnelUrl: string; spaceSlug: string; authToken?: string }) {
-  // Top posts by reply_count (engagement), then newest; pick up to 4
-  const highlights = [...posts]
-    .sort((a, b) => (Number(b.reply_count) - Number(a.reply_count)) || (new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
-    .slice(0, 4);
-
-  if (highlights.length === 0) return (
-    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-      <Sparkles className="w-8 h-8 text-zinc-700 mb-3" />
-      <p className="text-xs text-zinc-600">Highlights will appear here as the space becomes active.</p>
-    </div>
-  );
-
-  return (
-    <div className="space-y-3 p-4">
-      {highlights.map(post => {
-        const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null;
-        const hasMedia = !!mediaUrl;
-        return (
-          <div key={post.id} className="bg-zinc-800/50 border border-zinc-700/60 rounded-xl overflow-hidden">
-            {hasMedia && isImage(post.media_file_name ? `image/${post.media_file_name.split('.').pop()}` : undefined) && (
-              <img src={mediaUrl!} alt={post.title} className="w-full h-28 object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            )}
-            {hasMedia && isVideo(post.media_file_name ? `video/${post.media_file_name.split('.').pop()}` : undefined) && (
-              <video src={mediaUrl!} className="w-full h-28 object-cover" muted preload="metadata" />
-            )}
-            <div className="p-3">
-              <p className="text-xs font-semibold text-white leading-snug line-clamp-2">{post.title}</p>
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className="text-[11px] text-zinc-500">{post.author_username}</span>
-                <span className="text-[11px] text-zinc-600 flex items-center gap-0.5 ml-auto">
-                  <MessageCircle className="w-3 h-3" /> {post.reply_count}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Files Tab ─────────────────────────────────────────────
 
 function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: string; spaceSlug: string; tunnelUrl: string; authToken?: string }) {
@@ -450,6 +408,91 @@ function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: strin
   );
 }
 
+// ── Space Info Sidebar ────────────────────────────────────
+
+function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
+  space: HubSpace;
+  members: HubSpaceMember[];
+  membersLoading: boolean;
+  posts: HubPost[];
+}) {
+  const activeMembers = members.filter(m => m.status === 'active');
+  const topPosters = [...posts]
+    .reduce((acc, p) => { acc.set(p.author_username, (acc.get(p.author_username) ?? 0) + 1); return acc; }, new Map<string, number>());
+
+  return (
+    <div className="p-4 space-y-5">
+      {/* About */}
+      {space.description && (
+        <div>
+          <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">About</p>
+          <p className="text-sm text-zinc-300 leading-relaxed">{space.description}</p>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div>
+        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Stats</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-3 text-center">
+            <p className="text-lg font-bold text-white">{Number(space.member_count) || 0}</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">Members</p>
+          </div>
+          <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-3 text-center">
+            <p className="text-lg font-bold text-white">{posts.length}</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">Posts</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Members */}
+      <div>
+        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Members</p>
+        {membersLoading && (
+          <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-zinc-600" /></div>
+        )}
+        {!membersLoading && activeMembers.length === 0 && (
+          <p className="text-xs text-zinc-600">No members yet.</p>
+        )}
+        <div className="space-y-1">
+          {activeMembers.slice(0, 8).map(m => (
+            <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800 cursor-default transition-colors">
+              <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
+                {getInitials(m.display_name || m.username)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-zinc-200 truncate">{m.display_name || m.username}</p>
+                <p className="text-[10px] text-zinc-600 capitalize">{m.role}</p>
+              </div>
+            </div>
+          ))}
+          {activeMembers.length > 8 && (
+            <p className="text-[11px] text-zinc-600 px-2 pt-1">+{activeMembers.length - 8} more members</p>
+          )}
+        </div>
+      </div>
+
+      {/* Top contributors */}
+      {topPosters.size > 0 && (
+        <div>
+          <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Top Contributors</p>
+          <div className="space-y-1">
+            {[...topPosters.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([username, count]) => (
+              <div key={username} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+                <div className={`w-6 h-6 rounded-full bg-gradient-to-br ${getAvatarColor(username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
+                  {getInitials(username)}
+                </div>
+                <span className="text-xs text-zinc-300 flex-1 truncate">{username}</span>
+                <span className="text-[11px] text-zinc-600">{count} post{count !== 1 ? 's' : ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Space Detail ──────────────────────────────────────────
 
 type SpaceTab = 'feed' | 'members' | 'files' | 'settings';
@@ -502,6 +545,11 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
     if (tab === 'feed' && isActive) {
       setPostsLoading(true);
       spacesService.getPosts(hubSlug, space.slug).then(setPosts).catch(() => {}).finally(() => setPostsLoading(false));
+      // Also load members for the sidebar
+      if (members.length === 0) {
+        setMembersLoading(true);
+        spacesService.getMembers(hubSlug, space.slug).then(setMembers).catch(() => {}).finally(() => setMembersLoading(false));
+      }
     }
     if (tab === 'members') {
       setMembersLoading(true);
@@ -683,16 +731,9 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
         )}
       </AnimatePresence>
 
-      {/* Description */}
-      {space.description && (
-        <div className="px-6 py-3 border-b border-zinc-800 flex-shrink-0">
-          <p className="text-sm text-zinc-400 leading-relaxed">{space.description}</p>
-        </div>
-      )}
-
       {/* Tabs */}
       {isActive && (
-        <div className="flex border-b border-zinc-800 px-6 flex-shrink-0 overflow-x-auto">
+        <div className="flex border-b border-zinc-800 px-6 flex-shrink-0 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-purple-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
@@ -763,16 +804,9 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
               })}
             </div>
 
-            {/* Highlights column — desktop only */}
+            {/* Info sidebar — desktop only */}
             <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l border-zinc-800 overflow-y-auto">
-              <div className="px-4 pt-4 pb-2 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">Highlights</span>
-                </div>
-                <p className="text-[11px] text-zinc-600 mt-0.5">Top content in this space</p>
-              </div>
-              <HighlightsPanel posts={posts} tunnelUrl={tunnelUrl} spaceSlug={space.slug} authToken={authToken} />
+              <SpaceInfoSidebar space={space} members={members} membersLoading={membersLoading} posts={posts} />
             </div>
           </div>
         )}

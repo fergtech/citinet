@@ -3407,6 +3407,11 @@ async function getSpacesProvider() {
   return getProvider('societies');
 }
 
+// Society Plus society IDs are cuid format: 'c' + 20+ lowercase alphanumeric chars
+function isSPSlug(slug) {
+  return /^c[a-z0-9]{20,}$/.test(slug);
+}
+
 async function proxyToApp(provider, path, method = 'GET', body, actingUsername) {
   const url = `${provider.url}/api/hub-app${path}`;
   const headers = { 'x-hub-api-key': provider.key, 'Content-Type': 'application/json' };
@@ -3605,15 +3610,8 @@ app.post('/api/spaces', authenticate, async (req, res) => {
 
 // GET /api/spaces — browse all spaces on this hub
 app.get('/api/spaces', authenticate, async (req, res) => {
-  const sp = await getSpacesProvider();
-  if (sp) {
-    try {
-      const { status, data } = await proxyToApp(sp, '/societies', 'GET', undefined, req.user.username);
-      return res.status(status).json(data);
-    } catch (err) { return res.status(502).json({ error: err.message }); }
-  }
   try {
-    const { rows } = await pool.query(`
+    const localQuery = pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
@@ -3626,7 +3624,15 @@ app.get('/api/spaces', authenticate, async (req, res) => {
       GROUP BY s.id, sm2.role, sm2.status
       ORDER BY s.created_at DESC
     `, [req.user.id]);
-    res.json(rows);
+
+    const sp = await getSpacesProvider();
+    const spQuery = sp
+      ? proxyToApp(sp, '/societies', 'GET', undefined, req.user.username).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] });
+
+    const [localResult, spResult] = await Promise.all([localQuery, spQuery]);
+    const spRows = Array.isArray(spResult.data) ? spResult.data : [];
+    res.json([...spRows, ...localResult.rows]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3634,15 +3640,8 @@ app.get('/api/spaces', authenticate, async (req, res) => {
 
 // GET /api/spaces/mine — spaces the caller is an active member of
 app.get('/api/spaces/mine', authenticate, async (req, res) => {
-  const sp = await getSpacesProvider();
-  if (sp) {
-    try {
-      const { status, data } = await proxyToApp(sp, '/societies/mine', 'GET', undefined, req.user.username);
-      return res.status(status).json(data);
-    } catch (err) { return res.status(502).json({ error: err.message }); }
-  }
   try {
-    const { rows } = await pool.query(`
+    const localQuery = pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
@@ -3655,7 +3654,15 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
       GROUP BY s.id, me.role, me.status
       ORDER BY s.name
     `, [req.user.id]);
-    res.json(rows);
+
+    const sp = await getSpacesProvider();
+    const spQuery = sp
+      ? proxyToApp(sp, '/societies/mine', 'GET', undefined, req.user.username).catch(() => ({ data: [] }))
+      : Promise.resolve({ data: [] });
+
+    const [localResult, spResult] = await Promise.all([localQuery, spQuery]);
+    const spRows = Array.isArray(spResult.data) ? spResult.data : [];
+    res.json([...spRows, ...localResult.rows]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3664,7 +3671,7 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
 // GET /api/spaces/:slug — space detail
 app.get('/api/spaces/:slug', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'GET', undefined, req.user.username);
       return res.status(status).json(data);
@@ -3694,7 +3701,7 @@ app.get('/api/spaces/:slug', authenticate, async (req, res) => {
 // PATCH /api/spaces/:slug — update space settings (owner/admin)
 app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'PATCH', req.body, req.user.username);
       return res.status(status).json(data);
@@ -3739,7 +3746,7 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
 // DELETE /api/spaces/:slug — delete space (owner only)
 app.delete('/api/spaces/:slug', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'DELETE', undefined, req.user.username);
       return res.status(status).json(data);
@@ -3767,7 +3774,7 @@ app.delete('/api/spaces/:slug', authenticate, async (req, res) => {
 // POST /api/spaces/:slug/join — join (public: auto-active; private: pending)
 app.post('/api/spaces/:slug/join', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/join`, 'POST', {}, req.user.username);
       return res.status(status).json(data);
@@ -3795,7 +3802,7 @@ app.post('/api/spaces/:slug/join', authenticate, async (req, res) => {
 // POST /api/spaces/:slug/leave — leave a space
 app.post('/api/spaces/:slug/leave', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/leave`, 'POST', {}, req.user.username);
       return res.status(status).json(data);
@@ -3820,7 +3827,7 @@ app.post('/api/spaces/:slug/leave', authenticate, async (req, res) => {
 // GET /api/spaces/:slug/members — list members (active + pending)
 app.get('/api/spaces/:slug/members', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members`, 'GET', undefined, req.user.username);
       return res.status(status).json(data);
@@ -3846,7 +3853,7 @@ app.get('/api/spaces/:slug/members', authenticate, async (req, res) => {
 // PATCH /api/spaces/:slug/members/:userId — approve pending / change role
 app.patch('/api/spaces/:slug/members/:userId', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members/${req.params.userId}`, 'PATCH', req.body, req.user.username);
       return res.status(status).json(data);
@@ -3883,7 +3890,7 @@ app.patch('/api/spaces/:slug/members/:userId', authenticate, async (req, res) =>
 // DELETE /api/spaces/:slug/members/:userId — remove member (admin) or self-kick
 app.delete('/api/spaces/:slug/members/:userId', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members/${req.params.userId}`, 'DELETE', undefined, req.user.username);
       return res.status(status).json(data);
@@ -3959,7 +3966,7 @@ app.post('/api/spaces/:slug/invite/accept', authenticate, async (req, res) => {
 // GET /api/spaces/:slug/posts — posts scoped to this space
 app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/posts`, 'GET', undefined, req.user.username);
       return res.status(status).json(data);
@@ -3995,7 +4002,7 @@ app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
 // POST /api/spaces/:slug/posts — create a post in this space (supports media upload)
 app.post('/api/spaces/:slug/posts', authenticate, upload.single('media'), async (req, res) => {
   const sp = await getSpacesProvider();
-  if (sp) {
+  if (sp && isSPSlug(req.params.slug)) {
     try {
       const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/posts`, 'POST', req.body, req.user.username);
       return res.status(status).json(data);

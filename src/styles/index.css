@@ -75,3 +75,13 @@
 .pb-safe { padding-bottom: env(safe-area-inset-bottom) !important; }
 .pt-safe { padding-top:    env(safe-area-inset-top)    !important; }
 .mb-safe { margin-bottom:  env(safe-area-inset-bottom) !important; }
+
+/* Hide scrollbars while preserving scroll behavior. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
