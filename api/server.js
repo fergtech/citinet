@@ -2720,9 +2720,20 @@ app.get('/api/public/notes/:id', async (req, res) => {
   }
 });
 
-// Public space share — no auth required, only if web_public = true
+// Public space share — no auth required, only if web_public = true (or SP society)
 app.get('/api/public/spaces/:slug', async (req, res) => {
   try {
+    // SP proxy spaces: societies are inherently public — no web_public flag needed
+    const sp = await getSpacesProvider();
+    if (sp && isSPSlug(req.params.slug)) {
+      const [spaceResult, postsResult] = await Promise.all([
+        proxyToApp(sp, `/societies/${req.params.slug}`, 'GET', undefined, null).catch(() => ({ status: 502, data: null })),
+        proxyToApp(sp, `/societies/${req.params.slug}/posts`, 'GET', undefined, null).catch(() => ({ status: 200, data: [] })),
+      ]);
+      if (spaceResult.status !== 200) return res.status(404).json({ error: 'Space not found' });
+      return res.json({ space: spaceResult.data, posts: postsResult.status === 200 ? postsResult.data : [] });
+    }
+
     const { rows: spaceRows } = await pool.query(
       `SELECT id, slug, name, description, visibility, banner_mode, banner_color,
               banner_gradient_from, banner_gradient_to, banner_image_file_name,
