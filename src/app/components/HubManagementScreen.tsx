@@ -100,8 +100,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       const res = await fetch(`${base}/api/admin/apps`, { headers: authHeader() });
       const data = await res.json();
       setAppsStatus(data.apps ?? []);
-      const initiatives = data.apps?.find((a: AppStatus) => a.capability === 'initiatives');
-      if (initiatives?.appUrl) setAppUrl(initiatives.appUrl);
+      const firstConnected = (data.apps ?? []).find((a: AppStatus) => a.appUrl);
+      if (firstConnected?.appUrl) setAppUrl(firstConnected.appUrl);
     } catch {}
     setAppsLoading(false);
   };
@@ -1022,173 +1022,273 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
         {/* ─── Apps Tab ─── */}
         {activeTab === 'apps' && (
-          <div className="space-y-4">
-            {/* Enabled apps toggle grid */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-slate-900 dark:text-white">Active Apps</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Choose which apps appear on this hub's dashboard. Members only see what you enable.
-                  </p>
+          <div className="space-y-6">
+
+            {/* ── Section 1: Dashboard Features ── */}
+            <div>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Dashboard Features</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Choose which built-in features are visible on this hub's dashboard.
+                </p>
+              </div>
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { screen: 'feed',        label: 'Discussions',  emoji: '💬' },
+                    { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
+                    { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
+                    { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },
+                    { screen: 'notes',       label: 'Notes',        emoji: '📓' },
+                    { screen: 'polls',       label: 'Polls',        emoji: '🗳️' },
+                    { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
+                    { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
+                    { screen: 'files',       label: 'Files',        emoji: '📁' },
+                    { screen: 'discover',    label: 'Discover',     emoji: '🧭' },
+                    { screen: 'toolkit',     label: 'Resources',    emoji: '🔧' },
+                    { screen: 'initiatives', label: 'Initiatives',  emoji: '🎯' },
+                    { screen: 'network',     label: 'Network',      emoji: '📡' },
+                    { screen: 'mod-log',     label: 'Mod Log',      emoji: '📜' },
+                  ].map(({ screen, label, emoji }) => {
+                    const on = enabledApps.includes(screen);
+                    return (
+                      <button
+                        key={screen}
+                        type="button"
+                        onClick={() => toggleApp(screen)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                          on
+                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-80'
+                        }`}
+                      >
+                        <span>{emoji}</span>
+                        <span className="truncate">{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <button
-                  onClick={saveEnabledApps}
-                  disabled={appToggleSaving}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
-                >
-                  {appToggleSaving ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : appToggleSaved ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5" />
-                  )}
-                  {appToggleSaving ? 'Saving…' : appToggleSaved ? 'Saved' : 'Save'}
-                </button>
+                <div className="flex items-center justify-between pt-1">
+                  <p className="text-xs text-slate-400 dark:text-zinc-500">
+                    {enabledApps.length} of 14 features enabled
+                  </p>
+                  <button
+                    onClick={saveEnabledApps}
+                    disabled={appToggleSaving}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                  >
+                    {appToggleSaving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    {appToggleSaving ? 'Saving…' : appToggleSaved ? 'Saved' : 'Save'}
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {[
-                  { screen: 'feed',        label: 'Discussions',  emoji: '💬' },
-                  { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
-                  { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
-                  { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },
-                  { screen: 'notes',       label: 'Notes',        emoji: '📓' },
-                  { screen: 'polls',       label: 'Polls',        emoji: '🗳️' },
-                  { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
-                  { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
-                  { screen: 'files',       label: 'Files',        emoji: '📁' },
-                  { screen: 'discover',    label: 'Discover',     emoji: '🧭' },
-                  { screen: 'toolkit',     label: 'Resources',    emoji: '🔧' },
-                  { screen: 'initiatives', label: 'Initiatives',  emoji: '🎯' },
-                  { screen: 'network',     label: 'Network',      emoji: '📡' },
-                  { screen: 'mod-log',     label: 'Mod Log',      emoji: '📜' },
-                ].map(({ screen, label, emoji }) => {
-                  const on = enabledApps.includes(screen);
-                  return (
-                    <button
-                      key={screen}
-                      type="button"
-                      onClick={() => toggleApp(screen)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
-                        on
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
-                          : 'border-slate-200 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-80'
-                      }`}
-                    >
-                      <span>{emoji}</span>
-                      <span className="truncate">{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-slate-400 dark:text-zinc-500">
-                {enabledApps.length} of 14 apps active
-              </p>
             </div>
 
-            {/* Initiatives external app connector */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-5">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-100 to-pink-100 dark:from-rose-900/30 dark:to-pink-900/30 flex items-center justify-center shrink-0">
-                  <LayoutGrid className="w-5 h-5 text-rose-600 dark:text-rose-400" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-slate-900 dark:text-white">Initiatives App</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Connect any app that implements the hub-app contract to power Community Initiatives on your hub.
-                  </p>
-                </div>
+            {/* ── Section 2: External Integrations ── */}
+            <div>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">External Integrations</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Connect third-party services to extend your hub with additional capabilities.
+                </p>
               </div>
 
-              {appsLoading ? (
-                <div className="flex items-center gap-2 text-sm text-slate-400">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-                </div>
-              ) : (
-                <>
-                  {/* Current status */}
-                  {(() => {
-                    const ini = appsStatus.find(a => a.capability === 'initiatives');
-                    if (ini?.appUrl) return (
-                      <div className="flex items-center justify-between gap-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl px-4 py-3">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 truncate">
-                              {ini.appName ?? ini.appUrl}
-                            </p>
-                            <p className="text-xs text-emerald-600 dark:text-emerald-500 truncate">{ini.appUrl}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => removeAppConfig('initiatives')}
-                          className="shrink-0 text-xs text-red-500 hover:text-red-400 font-medium"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    );
-                    return (
-                      <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        No app connected — initiatives will not appear on this hub.
-                      </div>
-                    );
-                  })()}
-
-                  {/* Connect form */}
-                  <div className="space-y-3 pt-1">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      {appsStatus.find(a => a.capability === 'initiatives')?.appUrl ? 'Update connection' : 'Connect an app'}
-                    </p>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
-                      <input
-                        type="url"
-                        value={appUrl}
-                        onChange={e => setAppUrl(e.target.value)}
-                        placeholder="https://your-society-plus.app"
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
-                      <input
-                        type="password"
-                        value={appKey}
-                        onChange={e => setAppKey(e.target.value)}
-                        placeholder="Shared secret from the app"
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-
-                    {appSaveError && (
-                      <p className="text-xs text-red-500 flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />{appSaveError}
-                      </p>
-                    )}
-                    {appSaveSuccess && (
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />{appSaveSuccess}
-                      </p>
-                    )}
-
-                    <button
-                      onClick={() => saveAppConfig('initiatives')}
-                      disabled={appSaving || !appUrl.trim() || !appKey.trim()}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
-                    >
-                      {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                      {appSaving ? 'Connecting…' : 'Connect & verify'}
-                    </button>
-                    <p className="text-xs text-slate-400 dark:text-zinc-500">
-                      Citinet will verify the connection before saving. For Society+, the API key is <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">HUB_APP_KEY</code> from its <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">.env</code>.
+              {/* Hub app connector card */}
+              {(() => {
+                const connectedApp = appsStatus.find(a => a.appUrl);
+                const appDisplayName = connectedApp?.appName ?? 'Hub App';
+                return (
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                {/* Card header */}
+                <div className="flex items-start gap-3 px-5 pt-5 pb-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40 flex items-center justify-center shrink-0">
+                    <LayoutGrid className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-slate-900 dark:text-white">
+                      {connectedApp ? appDisplayName : 'Hub App Integration'}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {connectedApp
+                        ? `Connected — powering ${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length} feature${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length === 1 ? '' : 's'} on this hub.`
+                        : 'Connect any compatible app to extend this hub with Initiatives, Spaces, and more.'}
                     </p>
                   </div>
-                </>
-              )}
+                </div>
+
+                <div className="px-5 pb-5 space-y-4">
+                  {appsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                    </div>
+                  ) : (() => {
+                    const ini = appsStatus.find(a => a.appUrl);
+                    if (ini) return (
+                      <>
+                        {/* Connected status */}
+                        <div className="flex items-center justify-between gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/40 rounded-xl px-4 py-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 truncate">
+                                {ini.appName ?? ini.appUrl}
+                              </p>
+                              <p className="text-xs text-emerald-600 dark:text-emerald-500 truncate">{ini.appUrl}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => removeAppConfig('initiatives')}
+                            className="shrink-0 text-xs text-red-500 hover:text-red-400 font-medium whitespace-nowrap"
+                          >
+                            Disconnect
+                          </button>
+                        </div>
+
+                        {/* Powered capabilities — derived from what the app actually advertises */}
+                        {(() => {
+                          const CAPABILITY_LABELS: Record<string, string> = {
+                            initiatives: 'Initiatives',
+                            societies:   'Spaces',
+                          };
+                          const poweredCaps = appsStatus.filter(a => a.appUrl === ini.appUrl);
+                          const knownCaps = new Set(poweredCaps.map(c => c.capability));
+                          const missingSpaces = !knownCaps.has('societies');
+                          return (
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider">Powered by this connection</p>
+                              <div className="flex flex-wrap gap-2">
+                                {poweredCaps.map(cap => (
+                                  <span key={cap.capability} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/40 text-xs font-medium text-violet-700 dark:text-violet-300">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    {CAPABILITY_LABELS[cap.capability] ?? cap.capability}
+                                  </span>
+                                ))}
+                              </div>
+                              {missingSpaces && (
+                                <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                  Spaces not detected — expand "Update connection" below, re-enter your key, and click Update & verify to re-scan capabilities.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Update connection form (collapsed header) */}
+                        <details className="group">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 list-none flex items-center gap-1 select-none">
+                            <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+                            Update connection
+                          </summary>
+                          <div className="mt-3 space-y-3 pl-4 border-l-2 border-slate-100 dark:border-zinc-800">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
+                              <input
+                                type="url"
+                                value={appUrl}
+                                onChange={e => setAppUrl(e.target.value)}
+                                placeholder="https://your-app.example.com"
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
+                              <input
+                                type="password"
+                                value={appKey}
+                                onChange={e => setAppKey(e.target.value)}
+                                placeholder="Shared secret from the app"
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                            </div>
+                            {appSaveError && (
+                              <p className="text-xs text-red-500 flex items-center gap-1.5">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />{appSaveError}
+                              </p>
+                            )}
+                            {appSaveSuccess && (
+                              <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />{appSaveSuccess}
+                              </p>
+                            )}
+                            <button
+                              onClick={() => saveAppConfig('initiatives')}
+                              disabled={appSaving || !appUrl.trim() || !appKey.trim()}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                            >
+                              {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                              {appSaving ? 'Connecting…' : 'Update & verify'}
+                            </button>
+                          </div>
+                        </details>
+                      </>
+                    );
+
+                    // Not connected
+                    return (
+                      <>
+                        <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-1">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          Not connected — Initiatives and Spaces will use local hub data only.
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
+                            <input
+                              type="url"
+                              value={appUrl}
+                              onChange={e => setAppUrl(e.target.value)}
+                              placeholder="https://your-app.example.com"
+                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
+                            <input
+                              type="password"
+                              value={appKey}
+                              onChange={e => setAppKey(e.target.value)}
+                              placeholder="Shared secret from the app"
+                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                          </div>
+
+                          {appSaveError && (
+                            <p className="text-xs text-red-500 flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />{appSaveError}
+                            </p>
+                          )}
+                          {appSaveSuccess && (
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />{appSaveSuccess}
+                            </p>
+                          )}
+
+                          <button
+                            onClick={() => saveAppConfig('initiatives')}
+                            disabled={appSaving || !appUrl.trim() || !appKey.trim()}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                          >
+                            {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            {appSaving ? 'Connecting…' : 'Connect & verify'}
+                          </button>
+                          <p className="text-xs text-slate-400 dark:text-zinc-500">
+                            Citinet will verify the connection before saving. The app must implement the hub-app contract at <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">/api/hub-app/info</code>.
+                          </p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+              ); })()}
             </div>
+
           </div>
         )}
 

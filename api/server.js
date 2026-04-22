@@ -3262,16 +3262,14 @@ app.get('/api/admin/apps', authenticate, async (req, res) => {
   try {
     await ensureAppConfigTable();
     const r = await pool.query(`SELECT capability, app_url, app_name, updated_at FROM hub_app_configs ORDER BY capability`);
-    // Also surface env-var-only configs
-    const rows = r.rows;
-    const capabilities = ['initiatives'];
-    const result = capabilities.map(cap => {
-      const row = rows.find(r => r.capability === cap);
-      if (row) return { capability: cap, appUrl: row.app_url, appName: row.app_name, source: 'db', updatedAt: row.updated_at };
-      const envUrl = process.env[`${cap.toUpperCase()}_APP_URL`];
-      if (envUrl) return { capability: cap, appUrl: envUrl, appName: null, source: 'env' };
-      return { capability: cap, appUrl: null, appName: null, source: null };
-    });
+    const result = r.rows.map(row => ({
+      capability: row.capability, appUrl: row.app_url, appName: row.app_name, source: 'db', updatedAt: row.updated_at,
+    }));
+    // Surface env-var-only initiatives config if not in DB
+    if (!result.find(a => a.capability === 'initiatives')) {
+      const envUrl = process.env.INITIATIVES_APP_URL;
+      result.push({ capability: 'initiatives', appUrl: envUrl ?? null, appName: null, source: envUrl ? 'env' : null });
+    }
     res.json({ apps: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3298,6 +3296,20 @@ app.put('/api/admin/apps/:capability', authenticate, async (req, res) => {
       if (testRes.ok) {
         const info = await testRes.json();
         appName = info.name ?? null;
+        // Store every capability the app advertises — one row per capability, same URL+key
+        const appCapabilities = Array.isArray(info.capabilities) ? info.capabilities : [];
+        const capsToStore = Array.from(new Set([capability, ...appCapabilities]));
+        for (const cap of capsToStore) {
+          await pool.query(
+            `INSERT INTO hub_app_configs (capability, app_url, app_key, app_name, updated_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (capability) DO UPDATE
+             SET app_url = EXCLUDED.app_url, app_key = EXCLUDED.app_key, app_name = EXCLUDED.app_name, updated_at = NOW()`,
+            [cap, appUrl, appKey, appName]
+          );
+          APP_PROVIDERS[cap] = { url: appUrl, key: appKey };
+        }
+        return res.json({ capability, appUrl, appName, capabilities: capsToStore, installed: true });
       } else if (testRes.status === 401) {
         return res.status(502).json({ error: 'Invalid API key — check HUB_APP_KEY matches' });
       } else if (testRes.status === 404) {
@@ -3310,31 +3322,27 @@ app.put('/api/admin/apps/:capability', authenticate, async (req, res) => {
       return res.status(502).json({ error: msg });
     }
 
-    await pool.query(
-      `INSERT INTO hub_app_configs (capability, app_url, app_key, app_name, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       ON CONFLICT (capability) DO UPDATE
-       SET app_url = EXCLUDED.app_url, app_key = EXCLUDED.app_key, app_name = EXCLUDED.app_name, updated_at = NOW()`,
-      [capability, appUrl, appKey, appName]
-    );
-
-    // Hot-reload the provider so it takes effect immediately without restart
-    APP_PROVIDERS[capability] = { url: appUrl, key: appKey };
-
-    res.json({ capability, appUrl, appName, installed: true });
+    // (capability rows and APP_PROVIDERS already handled inside the info-probe block above)
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // DELETE /api/admin/apps/:capability — uninstall an app (admin only)
+// Removes all capabilities sharing the same app URL (one disconnect = full disconnect)
 app.delete('/api/admin/apps/:capability', authenticate, async (req, res) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
   const { capability } = req.params;
   try {
     await ensureAppConfigTable();
-    await pool.query(`DELETE FROM hub_app_configs WHERE capability = $1`, [capability]);
-    APP_PROVIDERS[capability] = { url: null, key: null };
+    const existing = await pool.query(`SELECT app_url FROM hub_app_configs WHERE capability = $1`, [capability]);
+    if (existing.rows.length) {
+      const sameUrl = existing.rows[0].app_url;
+      const deleted = await pool.query(`DELETE FROM hub_app_configs WHERE app_url = $1 RETURNING capability`, [sameUrl]);
+      for (const row of deleted.rows) APP_PROVIDERS[row.capability] = { url: null, key: null };
+    } else {
+      APP_PROVIDERS[capability] = { url: null, key: null };
+    }
     res.json({ uninstalled: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3350,6 +3358,10 @@ const APP_PROVIDERS = {
     url: process.env.INITIATIVES_APP_URL,
     key: process.env.INITIATIVES_APP_KEY,
   },
+  spaces: {
+    url: process.env.SPACES_APP_URL,
+    key: process.env.SPACES_APP_KEY,
+  },
 };
 
 async function getProvider(capability) {
@@ -3363,6 +3375,10 @@ async function getProvider(capability) {
     return APP_PROVIDERS[capability];
   }
   return null;
+}
+
+async function getSpacesProvider() {
+  return getProvider('societies');
 }
 
 async function proxyToApp(provider, path, method = 'GET', body, actingUsername) {
@@ -3517,6 +3533,13 @@ function canManageSpace(role) {
 
 // POST /api/spaces — create a space (any hub member)
 app.post('/api/spaces', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, '/societies', 'POST', req.body, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   const { name, slug, description, visibility = 'public' } = req.body;
   if (!name || !slug) return res.status(400).json({ error: 'name and slug required' });
   if (!['public', 'private', 'invite-only'].includes(visibility))
@@ -3556,6 +3579,13 @@ app.post('/api/spaces', authenticate, async (req, res) => {
 
 // GET /api/spaces — browse all spaces on this hub
 app.get('/api/spaces', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, '/societies', 'GET', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
@@ -3578,6 +3608,13 @@ app.get('/api/spaces', authenticate, async (req, res) => {
 
 // GET /api/spaces/mine — spaces the caller is an active member of
 app.get('/api/spaces/mine', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, '/societies/mine', 'GET', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
@@ -3600,6 +3637,13 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
 
 // GET /api/spaces/:slug — space detail
 app.get('/api/spaces/:slug', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'GET', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows } = await pool.query(`
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
@@ -3623,6 +3667,13 @@ app.get('/api/spaces/:slug', authenticate, async (req, res) => {
 
 // PATCH /api/spaces/:slug — update space settings (owner/admin)
 app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'PATCH', req.body, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT * FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3661,6 +3712,13 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
 
 // DELETE /api/spaces/:slug — delete space (owner only)
 app.delete('/api/spaces/:slug', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}`, 'DELETE', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3682,6 +3740,13 @@ app.delete('/api/spaces/:slug', authenticate, async (req, res) => {
 
 // POST /api/spaces/:slug/join — join (public: auto-active; private: pending)
 app.post('/api/spaces/:slug/join', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/join`, 'POST', {}, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT * FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3703,6 +3768,13 @@ app.post('/api/spaces/:slug/join', authenticate, async (req, res) => {
 
 // POST /api/spaces/:slug/leave — leave a space
 app.post('/api/spaces/:slug/leave', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/leave`, 'POST', {}, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3721,6 +3793,13 @@ app.post('/api/spaces/:slug/leave', authenticate, async (req, res) => {
 
 // GET /api/spaces/:slug/members — list members (active + pending)
 app.get('/api/spaces/:slug/members', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members`, 'GET', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3740,6 +3819,13 @@ app.get('/api/spaces/:slug/members', authenticate, async (req, res) => {
 
 // PATCH /api/spaces/:slug/members/:userId — approve pending / change role
 app.patch('/api/spaces/:slug/members/:userId', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members/${req.params.userId}`, 'PATCH', req.body, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3770,6 +3856,13 @@ app.patch('/api/spaces/:slug/members/:userId', authenticate, async (req, res) =>
 
 // DELETE /api/spaces/:slug/members/:userId — remove member (admin) or self-kick
 app.delete('/api/spaces/:slug/members/:userId', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/members/${req.params.userId}`, 'DELETE', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3839,6 +3932,13 @@ app.post('/api/spaces/:slug/invite/accept', authenticate, async (req, res) => {
 
 // GET /api/spaces/:slug/posts — posts scoped to this space
 app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/posts`, 'GET', undefined, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   try {
     const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [req.params.slug]);
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
@@ -3868,6 +3968,13 @@ app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
 
 // POST /api/spaces/:slug/posts — create a post in this space (supports media upload)
 app.post('/api/spaces/:slug/posts', authenticate, upload.single('media'), async (req, res) => {
+  const sp = await getSpacesProvider();
+  if (sp) {
+    try {
+      const { status, data } = await proxyToApp(sp, `/societies/${req.params.slug}/posts`, 'POST', req.body, req.user.username);
+      return res.status(status).json(data);
+    } catch (err) { return res.status(502).json({ error: err.message }); }
+  }
   const { title, body, category = 'DISCUSSION' } = req.body || {};
   if (!title?.trim()) return res.status(400).json({ error: 'title required' });
   try {
@@ -4020,6 +4127,47 @@ if (fs.existsSync(distPath)) {
   app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
 }
 
+// ── Capability backfill ───────────────────────────────────
+// Runs non-blocking on startup. For each distinct app URL already in
+// hub_app_configs, probe /api/hub-app/info and insert any capability rows
+// the app advertises that aren't yet stored. Handles hubs that connected an
+// app before multi-capability storage was introduced.
+async function backfillAppCapabilities() {
+  try {
+    await ensureAppConfigTable();
+    const distinct = await pool.query(
+      `SELECT DISTINCT ON (app_url) app_url, app_key, app_name FROM hub_app_configs WHERE app_url IS NOT NULL`
+    );
+    for (const row of distinct.rows) {
+      try {
+        const infoRes = await fetch(`${row.app_url}/api/hub-app/info`, {
+          headers: { 'x-hub-api-key': row.app_key },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!infoRes.ok) continue;
+        const info = await infoRes.json();
+        const caps = Array.isArray(info.capabilities) ? info.capabilities : [];
+        for (const cap of caps) {
+          await pool.query(
+            `INSERT INTO hub_app_configs (capability, app_url, app_key, app_name, updated_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (capability) DO NOTHING`,
+            [cap, row.app_url, row.app_key, row.app_name]
+          );
+          if (!APP_PROVIDERS[cap]?.url) {
+            APP_PROVIDERS[cap] = { url: row.app_url, key: row.app_key };
+          }
+        }
+        console.log(`[hub-app] capabilities for ${row.app_url}: ${caps.join(', ')}`);
+      } catch (err) {
+        console.warn(`[hub-app] probe failed for ${row.app_url}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.warn('[hub-app] capability backfill failed:', err.message);
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────
 
 async function start() {
@@ -4031,6 +4179,9 @@ async function start() {
   }
 
   await ensureBucket();
+
+  // Non-blocking — discovers missing capabilities from already-connected apps
+  backfillAppCapabilities().catch(() => {});
 
   // Purge expired sessions every 6 hours
   setInterval(() => {

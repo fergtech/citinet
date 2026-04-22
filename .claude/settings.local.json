@@ -4,7 +4,9 @@
       "Bash(ls:*)",
       "Read(//c/Users/zee/citinet-hub/**)",
       "Bash(docker info *)",
-      "Bash(wsl *)"
+      "Bash(wsl *)",
+      "Read(//h/Apps/studio-aug-sept/src//**)",
+      "Read(//h/Apps/studio-aug-sept//**)"
     ]
   }
 }
