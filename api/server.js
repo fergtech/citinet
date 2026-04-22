@@ -2745,10 +2745,13 @@ app.get('/api/public/spaces/:slug', async (req, res) => {
     if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found or not public' });
     const space = spaceRows[0];
     const { rows: posts } = await pool.query(
-      `SELECT p.id, p.title, p.body, p.category, p.created_at, p.media_file_name,
-              u.username AS author_username
+      `SELECT p.id, p.title, p.body, p.category, p.created_at,
+              hf.file_name AS media_file_name,
+              u.username AS author_username,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id) AS reply_count
        FROM hub_posts p
        JOIN hub_users u ON u.id = p.author_id
+       LEFT JOIN hub_files hf ON hf.id = p.media_file_id
        WHERE p.space_id = $1
        ORDER BY p.created_at DESC LIMIT 50`,
       [space.id]
