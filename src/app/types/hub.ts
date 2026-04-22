@@ -250,6 +250,8 @@ export interface HubPost {
   author_id: string;
   author_username: string;
   media_file_name?: string;   // filename in MinIO, served via /api/public/files/:name
+  /** Direct external media URL (used for proxy posts from Society Plus) */
+  media_url?: string | null;
   reply_count: number;
   created_at: string;
   updated_at: string;

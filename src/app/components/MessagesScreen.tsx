@@ -954,7 +954,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                               : 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700 rounded-bl-sm'
                           }`}
                         >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.body}</p>
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
                           {/* Attachments */}
                           {msg.attachments && msg.attachments.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-2">

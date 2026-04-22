@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useHub } from '../context/HubContext';
 import { spacesService } from '../services/spacesService';
 import { hubService } from '../services/hubService';
+import { PostDetailModal } from './PostDetailModal';
 import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile } from '../types/hub';
 
 interface SpacesScreenProps {
@@ -497,9 +498,10 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
 
 type SpaceTab = 'feed' | 'members' | 'files' | 'settings';
 
-function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUpdated, onSpaceDeleted }: {
+function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUser, onSpaceUpdated, onSpaceDeleted }: {
   hubSlug: string; space: HubSpace; myUserId?: string;
   tunnelUrl: string; authToken?: string;
+  currentUser?: { isAdmin?: boolean; avatarUrl?: string };
   onSpaceUpdated: (s: HubSpace) => void;
   onSpaceDeleted: (spaceId: string) => void;
 }) {
@@ -513,6 +515,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
   const [showInvite, setShowInvite] = useState(false);
   const [sharingPost, setSharingPost] = useState<string | null>(null);
   const [sharedPosts, setSharedPosts] = useState<Set<string>>(new Set());
+  const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   // Settings
   const [settingsName, setSettingsName] = useState(space.name);
   const [settingsDesc, setSettingsDesc] = useState(space.description || '');
@@ -528,6 +531,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [bannerSaving, setBannerSaving] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+  // Mobile header collapse
+  const [scrollY, setScrollY] = useState(0);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const isActive = space.my_status === 'active';
   const isPending = space.my_status === 'pending';
@@ -539,7 +546,25 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
     setSettingsName(space.name); setSettingsDesc(space.description || ''); setSettingsVis(space.visibility);
     setSettingsWebPublic(!!space.web_public);
     setSettingsSaved(false); setShowBannerEditor(false);
+    setScrollY(0);
   }, [space.id]);
+
+  // Handle scroll for collapsing banner on mobile
+  useEffect(() => {
+    const handleScroll = () => {
+      if (contentRef.current) setScrollY(contentRef.current.scrollTop);
+    };
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    const el = contentRef.current;
+    el?.addEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      el?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (tab === 'feed' && isActive) {
@@ -641,10 +666,17 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
   const bannerStyle = getBannerStyle(space, tunnelUrl);
   const tabs: SpaceTab[] = ['feed', 'members', 'files', ...(isAdmin ? ['settings' as SpaceTab] : [])];
 
+  // Calculate collapsed banner height on mobile (min 64px, max 176px), desktop stays 208px
+  const maxBannerHeight = 176; // h-44 in pixels
+  const minBannerHeight = 64;
+  const desktopHeight = 208; // md:h-52 in pixels
+  const collapsedBannerHeight = isMobile ? Math.max(minBannerHeight, maxBannerHeight - scrollY) : desktopHeight;
+  const bannerHeightStyle = { height: `${collapsedBannerHeight}px` };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Banner — taller, with edit button for admins */}
-      <div className="relative flex-shrink-0 h-44 md:h-52" style={bannerStyle}>
+      <div className="relative flex-shrink-0 transition-all duration-300" style={{...bannerStyle, ...bannerHeightStyle}}>
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-zinc-950/20 to-transparent" />
         {isAdmin && (
           <button onClick={() => setShowBannerEditor(v => !v)}
@@ -744,7 +776,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={contentRef}>
         {/* Not a member */}
         {!isActive && !isPending && !isInvited && (
           <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
@@ -770,19 +802,22 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
               {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
               {!postsLoading && posts.length === 0 && <div className="text-center py-12 text-zinc-500 text-sm">No posts yet. Be the first to share something.</div>}
               {posts.map(post => {
-                const mediaUrl = post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null;
+                // SP proxy posts carry a direct R2 URL in media_url; local posts use the auth-token space-files endpoint
+                const mediaUrl = (post as any).media_url
+                  ?? (post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null);
+                const isVidMedia = post.media_file_name?.match(/\.(mp4|webm|mov)$/i) || (post as any).media_url?.match(/\.(mp4|webm|mov)$/i);
                 return (
-                  <div key={post.id} className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
+                  <div key={post.id} onClick={() => setSelectedPost(post)}
+                    className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:bg-zinc-800/70 transition-colors">
+                    <div className="flex items-center gap-2 mb-3">
                       <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
                       <span className="text-sm font-medium text-white">{post.author_username}</span>
                       <span className="text-xs text-zinc-500 ml-auto">{timeAgo(post.created_at)}</span>
                     </div>
-                    <h3 className="text-sm font-semibold text-white mb-1">{post.title}</h3>
                     {post.body && <p className="text-sm text-zinc-400 leading-relaxed">{post.body}</p>}
                     {mediaUrl && (
                       <div className="mt-3 rounded-xl overflow-hidden">
-                        {post.media_file_name?.match(/\.(mp4|webm|mov)$/i)
+                        {isVidMedia
                           ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
                           : <img src={mediaUrl} alt={post.title} className="w-full max-h-64 object-cover rounded-xl" />}
                       </div>
@@ -790,7 +825,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t border-zinc-700">
                       <span className="text-xs text-zinc-500 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
                       {post.author_id === myUserId && !sharedPosts.has(post.id) && !(post as any).shared_to_feed && (
-                        <button onClick={() => handleShareToFeed(post.id)} disabled={sharingPost === post.id}
+                        <button onClick={e => { e.stopPropagation(); handleShareToFeed(post.id); }} disabled={sharingPost === post.id}
                           className="ml-auto flex items-center gap-1.5 text-xs text-zinc-400 hover:text-purple-400 transition-colors">
                           {sharingPost === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />} Share to hub feed
                         </button>
@@ -948,6 +983,29 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, onSpaceUp
 
       <AnimatePresence>
         {showInvite && <InviteMemberModal hubSlug={hubSlug} spaceSlug={space.slug} onClose={() => setShowInvite(false)} />}
+        {selectedPost && (() => {
+          const spMedia = (selectedPost as any).media_url as string | undefined;
+          // For SP posts inject the direct R2 URL as media_file_name so PostDetailModal can render it
+          const modalPost = spMedia ? { ...selectedPost, media_file_name: spMedia } : selectedPost;
+          return (
+            <PostDetailModal
+              isOpen={!!selectedPost}
+              onClose={() => setSelectedPost(null)}
+              post={modalPost}
+              hubSlug={hubSlug}
+              currentUserId={myUserId}
+              currentUserAvatarUrl={currentUser?.avatarUrl}
+              isAdmin={currentUser?.isAdmin}
+              categoryColors={{}}
+              publicFileUrl={(name: string) => {
+                // Full URL (SP proxy) → return as-is; filename (local) → build auth space-files URL
+                if (name.startsWith('http')) return name;
+                return `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`;
+              }}
+              onDeleted={(postId: string) => { setPosts(prev => prev.filter(p => p.id !== postId)); setSelectedPost(null); }}
+            />
+          );
+        })()}
       </AnimatePresence>
     </div>
   );
@@ -1103,7 +1161,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
               <ArrowLeft className="w-4 h-4" /> All Spaces
             </button>
             <SpaceDetail hubSlug={hubSlug} space={selected} myUserId={myUserId}
-              tunnelUrl={tunnelUrl} authToken={authToken}
+              tunnelUrl={tunnelUrl} authToken={authToken} currentUser={currentUser ?? undefined}
               onSpaceUpdated={handleSpaceUpdated} onSpaceDeleted={handleDeleted} />
           </>
         ) : (

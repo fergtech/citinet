@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { Clock, Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -11,7 +11,7 @@ interface FeedProps {
   onBack: () => void;
 }
 
-const POST_CATEGORIES = ['All', 'Discussion', 'Announcement', 'Project', 'Request'];
+// const POST_CATEGORIES = ['All', 'Discussion', 'Announcement', 'Project', 'Request'];
 
 const CATEGORY_COLORS: Record<string, string> = {
   DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
@@ -52,9 +52,9 @@ interface ComposeModalProps {
   initialBody?: string;
 }
 
-function ComposeModal({ hubSlug, onClose, onCreated, initialTitle = '', initialBody = '' }: ComposeModalProps) {
+function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
   const [category, setCategory] = useState('DISCUSSION');
-  const [title, setTitle] = useState(initialTitle);
+  // const [title, setTitle] = useState(initialTitle);
   const [body, setBody] = useState(initialBody);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -87,13 +87,13 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialTitle = '', initialB
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) { setError('Title is required'); return; }
+    if (!body.trim() && !mediaFile) { setError('Add a caption or media'); return; }
     setError('');
     setSubmitting(true);
     try {
       const post = await hubService.createPost(hubSlug, {
         category,
-        title: title.trim(),
+        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
       });
@@ -156,19 +156,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialTitle = '', initialB
               ))}
             </div>
 
-            {/* Title */}
-            <div>
-              <input
-                type="text"
-                placeholder="Title *"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                maxLength={300}
-                className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-base font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
-            </div>
-
-            {/* Body */}
+            {/* Body / Caption */}
             <div>
               <textarea
                 placeholder="What's on your mind? (optional)"
@@ -225,7 +213,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialTitle = '', initialB
             </button>
             <button
               onClick={handleSubmit}
-              disabled={submitting || !title.trim()}
+              disabled={submitting || (!body.trim() && !mediaFile)}
               className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -247,7 +235,7 @@ export function Feed({ onBack }: FeedProps) {
   const [posts, setPosts] = useState<HubPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
@@ -328,56 +316,47 @@ export function Feed({ onBack }: FeedProps) {
       {/* Header */}
       <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
         <div className="max-w-4xl mx-auto p-4">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex-1">
+          {/* Title + Search + Buttons */}
+          <div className="flex items-start gap-4 mb-4">
+            <div className="flex-shrink-0">
               <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight">Discussions</h2>
-              <div className="flex items-center gap-2 mt-0.5">
-                <Clock className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">Chronological · No algorithms</p>
-              </div>
+              
             </div>
-            <button
-              onClick={() => setComposing(true)}
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md hover:opacity-90 transition-opacity"
-              title="New post"
-            >
-              <Plus className="w-5 h-5 text-white" />
-            </button>
-            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
-          </div>
 
-          {/* Category filters */}
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 mb-2">
-            {POST_CATEGORIES.map(type => (
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search discussions..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-9 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 flex-shrink-0">
               <button
-                key={type}
-                onClick={() => setActiveCategory(type)}
-                className={`px-4 py-1.5 rounded-full whitespace-nowrap transition-all text-sm font-medium ${
-                  activeCategory === type
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                }`}
+                onClick={() => setComposing(true)}
+                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md hover:opacity-90 transition-opacity flex-shrink-0"
+                title="New post"
               >
-                {type}
+                <Plus className="w-5 h-5 text-white" />
               </button>
-            ))}
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search discussions…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-9 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <X className="w-3.5 h-3.5" />
+              <button
+                onClick={onBack}
+                className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors flex-shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4 text-white" />
               </button>
-            )}
+            </div>
           </div>
         </div>
       </div>

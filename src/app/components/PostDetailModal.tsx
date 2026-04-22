@@ -246,10 +246,7 @@ export function PostDetailModal({
               className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden pointer-events-auto flex flex-col"
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wide ${badgeClass}`}>
-                  {post.category}
-                </span>
+              <div className="flex items-center justify-end px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   {canDelete && (
                     <DropdownMenu>
@@ -307,26 +304,14 @@ export function PostDetailModal({
                     <div className="space-y-4">
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 block">
-                          Title
-                        </label>
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={e => setEditTitle(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                          placeholder="Post title"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 block">
-                          Body
+                          Caption
                         </label>
                         <textarea
                           value={editBody}
                           onChange={e => setEditBody(e.target.value)}
                           rows={5}
                           className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                          placeholder="Post body (optional)"
+                          placeholder="Post caption (optional)"
                         />
                       </div>
                       <div className="flex items-center gap-2 justify-end">
@@ -339,7 +324,7 @@ export function PostDetailModal({
                         </button>
                         <button
                           onClick={handleSaveEdit}
-                          disabled={saving || !editTitle.trim()}
+                          disabled={saving}
                           className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex items-center gap-2"
                         >
                           {saving ? (
@@ -358,9 +343,6 @@ export function PostDetailModal({
                     </div>
                   ) : (
                     <>
-                      <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 tracking-tight">
-                        {post.title}
-                      </h2>
                       <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
                         <AvatarCircle
                           authorId={post.author_id}
