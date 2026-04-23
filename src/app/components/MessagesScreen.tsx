@@ -882,8 +882,16 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
           onTouchCancel={handleThreadTouchCancel}
           style={{ touchAction: 'pan-y' }}
         >
-          {/* Chat Header */}
-          <div className="p-4 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 flex items-center justify-between">
+          {/* Chat Header — Sticky */}
+          <div
+            className="sticky top-0 z-30 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 flex items-center justify-between"
+            style={{
+              paddingTop: 'max(1rem, env(safe-area-inset-top))',
+              paddingBottom: '1rem',
+              paddingLeft: '1rem',
+              paddingRight: '1rem',
+            }}
+          >
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSelectedId(null)}
