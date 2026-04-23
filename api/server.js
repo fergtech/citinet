@@ -1273,16 +1273,27 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
     );
     if (!member.rows[0]) return res.status(403).json({ error: 'Not a member of this conversation' });
 
+    const ATTACH_AGG = `
+      COALESCE(
+        JSON_AGG(JSON_BUILD_OBJECT(
+          'file_id', hf.id, 'file_name', hf.file_name,
+          'mime_type', hf.mime_type, 'size', hf.size_bytes
+        )) FILTER (WHERE hf.id IS NOT NULL),
+        '[]'
+      ) AS attachments`;
+
     let rows;
     if (before) {
-      // Cursor: messages older than the given message ID
       const { rows: r } = await pool.query(
         `SELECT m.id AS message_id, m.conversation_id, m.sender_id,
-                u.username AS sender_username, m.body, m.created_at
+                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}
          FROM hub_messages m
          LEFT JOIN hub_users u ON m.sender_id = u.id
+         LEFT JOIN hub_message_attachments hma ON hma.message_id = m.id
+         LEFT JOIN hub_files hf ON hf.id = hma.file_id
          WHERE m.conversation_id = $1
            AND m.created_at < (SELECT created_at FROM hub_messages WHERE id = $2)
+         GROUP BY m.id, u.username
          ORDER BY m.created_at DESC
          LIMIT $3`,
         [id, before, limit]
@@ -1291,10 +1302,13 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
     } else {
       const { rows: r } = await pool.query(
         `SELECT m.id AS message_id, m.conversation_id, m.sender_id,
-                u.username AS sender_username, m.body, m.created_at
+                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}
          FROM hub_messages m
          LEFT JOIN hub_users u ON m.sender_id = u.id
+         LEFT JOIN hub_message_attachments hma ON hma.message_id = m.id
+         LEFT JOIN hub_files hf ON hf.id = hma.file_id
          WHERE m.conversation_id = $1
+         GROUP BY m.id, u.username
          ORDER BY m.created_at DESC
          LIMIT $2`,
         [id, limit]

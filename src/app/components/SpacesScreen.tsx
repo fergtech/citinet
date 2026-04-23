@@ -669,17 +669,18 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const bannerStyle = getBannerStyle(space, tunnelUrl);
   const tabs: SpaceTab[] = ['feed', 'members', 'files', ...(isAdmin ? ['settings' as SpaceTab] : [])];
 
-  // Calculate collapsed banner height on mobile (min 64px, max 176px), desktop stays 208px
-  const maxBannerHeight = 176; // h-44 in pixels
-  const minBannerHeight = 64;
-  const desktopHeight = 208; // md:h-52 in pixels
-  const collapsedBannerHeight = isMobile ? Math.max(minBannerHeight, maxBannerHeight - scrollY) : desktopHeight;
-  const bannerHeightStyle = { height: `${collapsedBannerHeight}px` };
+  // Collapsing banner: on mobile shrinks from 160px → 56px as user scrolls 80px
+  const BANNER_FULL = 160;
+  const BANNER_MIN = 56;
+  const SCROLL_RANGE = 80; // px of scroll to complete the collapse
+  const collapseRatio = isMobile ? Math.min(1, scrollY / SCROLL_RANGE) : 0;
+  const bannerHeight = isMobile ? Math.round(BANNER_FULL - collapseRatio * (BANNER_FULL - BANNER_MIN)) : 208;
+  const bannerContentOpacity = 1 - collapseRatio * 1.6; // fades out before fully collapsed
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Banner — taller, with edit button for admins */}
-      <div className="relative flex-shrink-0 transition-all duration-300" style={{...bannerStyle, ...bannerHeightStyle}}>
+      {/* Banner — collapses on mobile as user scrolls */}
+      <div className="relative flex-shrink-0" style={{ ...bannerStyle, height: `${bannerHeight}px`, transition: 'height 0.15s ease-out' }}>
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-zinc-950/20 to-transparent" />
         {isAdmin && (
           <button onClick={() => setShowBannerEditor(v => !v)}
@@ -688,7 +689,8 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
           </button>
         )}
         <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerUpload} />
-        <div className="absolute bottom-0 left-0 right-0 px-6 pb-4 flex items-end justify-between">
+        <div className="absolute bottom-0 left-0 right-0 px-6 pb-4 flex items-end justify-between"
+          style={{ opacity: Math.max(0, bannerContentOpacity) }}>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm ${space.visibility === 'public' ? 'bg-emerald-900/70 text-emerald-300' : space.visibility === 'private' ? 'bg-amber-900/70 text-amber-300' : 'bg-zinc-800/70 text-zinc-400'}`}>
@@ -805,9 +807,9 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
 
         {/* Feed tab — two columns on desktop */}
         {isActive && tab === 'feed' && (
-          <div className="flex gap-0 h-full">
+          <div className="flex gap-0">
             {/* Main feed column */}
-            <div className="flex-1 min-w-0 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 min-w-0 p-5 space-y-4">
               <ComposePost hubSlug={hubSlug} spaceSlug={space.slug} onPosted={p => setPosts(prev => [p, ...prev])} />
               {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
               {!postsLoading && posts.length === 0 && <div className="text-center py-12 text-zinc-500 text-sm">No posts yet. Be the first to share something.</div>}
@@ -849,8 +851,8 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               })}
             </div>
 
-            {/* Info sidebar — desktop only */}
-            <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l border-zinc-800 overflow-y-auto">
+            {/* Info sidebar — desktop only, sticky within outer scroll container */}
+            <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l border-zinc-800 sticky top-0 self-start max-h-screen overflow-y-auto">
               <SpaceInfoSidebar space={space} members={members} membersLoading={membersLoading} posts={posts} />
             </div>
           </div>
