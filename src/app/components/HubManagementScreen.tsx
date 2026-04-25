@@ -216,6 +216,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   const hubSlug = currentHub?.slug ?? '';
 
+  const [registrySyncing, setRegistrySyncing] = useState(false);
+  const [registryResult, setRegistryResult] = useState<'ok' | 'error' | null>(null);
+
   const reRegisterHub = (overrides?: { name?: string; location?: string; description?: string }) => {
     if (!currentHub?.tunnelUrl) return;
     registryService.registerHub({
@@ -228,6 +231,25 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       member_count: 0,
       online: true,
     }).catch(() => {});
+  };
+
+  const handleSyncRegistry = async () => {
+    if (!currentHub?.tunnelUrl) return;
+    setRegistrySyncing(true);
+    setRegistryResult(null);
+    const result = await registryService.registerHub({
+      id: currentHub.slug,
+      name: currentHub.name,
+      slug: currentHub.slug,
+      location: currentHub.location ?? '',
+      description: currentHub.description ?? '',
+      tunnel_url: currentHub.tunnelUrl,
+      member_count: 0,
+      online: true,
+    });
+    setRegistryResult(result.ok ? 'ok' : 'error');
+    setRegistrySyncing(false);
+    setTimeout(() => setRegistryResult(null), 4000);
   };
 
   const saveName = async () => {
@@ -704,6 +726,46 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <StatCard label="Members" value={currentHub?.meta?.activeMembers ?? '—'} />
                 <StatCard label="Uptime" value={currentHub?.meta?.uptime ?? '—'} />
               </div>
+            </div>
+
+            {/* ── Registry ── */}
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Public Registry</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Keeps your hub discoverable and makes public vendor/space URLs work.
+                  </p>
+                </div>
+                <button
+                  onClick={handleSyncRegistry}
+                  disabled={registrySyncing || !currentHub?.tunnelUrl}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                    registryResult === 'ok'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                      : registryResult === 'error'
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  }`}
+                >
+                  {registrySyncing
+                    ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Syncing…</>
+                    : registryResult === 'ok'
+                    ? <><Check className="w-3.5 h-3.5" /> Synced!</>
+                    : registryResult === 'error'
+                    ? <><AlertCircle className="w-3.5 h-3.5" /> Failed</>
+                    : <><RefreshCw className="w-3.5 h-3.5" /> Sync to registry</>
+                  }
+                </button>
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-zinc-800 rounded-lg px-3 py-2">
+                citinet.cloud/v/<span className="text-slate-800 dark:text-slate-200">{currentHub?.slug}</span>/…
+              </div>
+              {!currentHub?.tunnelUrl && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  A public tunnel URL is required before syncing.
+                </p>
+              )}
             </div>
 
             {/* ── Join QR Code ── */}
