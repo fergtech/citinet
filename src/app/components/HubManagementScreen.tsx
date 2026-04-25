@@ -63,7 +63,23 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   // Edit existing featured item
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ title: '', caption: '', categoryLabel: '', imageUrl: '' });
+  const [editImageMode, setEditImageMode] = useState<'upload' | 'url'>('upload');
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+
+  function handleEditImageFileSelect(file: File) {
+    if (!file.type.startsWith('image/')) return;
+    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+    setEditImageFile(file);
+    setEditImagePreview(URL.createObjectURL(file));
+  }
+
+  function clearEditImage() {
+    setEditImageFile(null);
+    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+    setEditImagePreview('');
+  }
 
   function handleImageFileSelect(file: File) {
     if (!file.type.startsWith('image/')) return;
@@ -362,6 +378,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   };
 
   const handleStartEdit = (item: FeaturedItem) => {
+    clearEditImage();
+    setEditImageMode('upload');
     setEditingId(item.id);
     setEditDraft({
       title: item.title,
@@ -375,13 +393,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     if (!currentHub?.slug || !editingId) return;
     setSavingEdit(true);
     try {
+      let resolvedImageUrl = editDraft.imageUrl.trim() || undefined;
+      if (editImageFile) {
+        const uploaded = await hubService.uploadFile(currentHub.slug, editImageFile, true);
+        resolvedImageUrl = hubService.getPublicFileUrl(currentHub.slug, uploaded.name) ?? undefined;
+      }
       const updated = await featuredService.update(currentHub.slug, editingId, {
         title: editDraft.title.trim() || undefined,
         caption: editDraft.caption.trim() || undefined,
         categoryLabel: editDraft.categoryLabel.trim() || undefined,
-        imageUrl: editDraft.imageUrl.trim() || undefined,
+        imageUrl: resolvedImageUrl,
       });
       setFeaturedItems(prev => prev.map(f => f.id === editingId ? { ...f, ...updated } : f));
+      clearEditImage();
       setEditingId(null);
     } catch {
       setFeaturedError('Failed to save changes');
@@ -813,13 +837,50 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
                         />
                         {item.type === 'custom' && (
-                          <input
-                            type="text"
-                            value={editDraft.imageUrl}
-                            onChange={e => setEditDraft(d => ({ ...d, imageUrl: e.target.value }))}
-                            placeholder="Image URL (optional)"
-                            className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
-                          />
+                          <div className="space-y-2">
+                            <div className="flex gap-1 p-0.5 bg-slate-100 dark:bg-zinc-800 rounded-lg">
+                              <button type="button" onClick={() => setEditImageMode('upload')}
+                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                                Upload image
+                              </button>
+                              <button type="button" onClick={() => setEditImageMode('url')}
+                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                                Image URL
+                              </button>
+                            </div>
+                            {editImageMode === 'upload' ? (
+                              editImagePreview ? (
+                                <div className="relative rounded-lg overflow-hidden h-28 bg-slate-100 dark:bg-zinc-800">
+                                  <img src={editImagePreview} alt="" className="w-full h-full object-cover" />
+                                  <button type="button" onClick={clearEditImage}
+                                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label
+                                  className="flex flex-col items-center justify-center gap-2 h-24 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-purple-400 hover:bg-purple-50/30 dark:hover:bg-purple-900/10 transition-colors cursor-pointer"
+                                  onDragOver={e => e.preventDefault()}
+                                  onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleEditImageFileSelect(f); }}
+                                >
+                                  <ImagePlus className="w-5 h-5 text-slate-400" />
+                                  <span className="text-xs text-slate-500 dark:text-slate-400 text-center px-4">
+                                    Drag an image here, or click to browse
+                                    {item.imageUrl && <><br /><span className="text-slate-400 dark:text-zinc-500">Current image kept if left blank</span></>}
+                                  </span>
+                                  <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleEditImageFileSelect(f); }} />
+                                </label>
+                              )
+                            ) : (
+                              <input
+                                type="url"
+                                value={editDraft.imageUrl}
+                                onChange={e => setEditDraft(d => ({ ...d, imageUrl: e.target.value }))}
+                                placeholder="https://… (leave blank to keep current)"
+                                className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                              />
+                            )}
+                          </div>
                         )}
                         <div className="flex gap-2 pt-1">
                           <button
@@ -831,7 +892,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             Save
                           </button>
                           <button
-                            onClick={() => setEditingId(null)}
+                            onClick={() => { clearEditImage(); setEditingId(null); }}
                             className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
                           >
                             Cancel
