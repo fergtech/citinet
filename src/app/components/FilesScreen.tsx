@@ -83,6 +83,11 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadIsPublicRef = useRef(false);
 
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  const dragCounterRef = useRef(0);
+
   // Delete state
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -169,6 +174,44 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       setUploading(false);
       setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // ── drag and drop ──────────────────────────
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) setIsDragging(true);
+  };
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) { dragCounterRef.current = 0; setIsDragging(false); }
+  };
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && slug) setDroppedFile(file);
+  };
+
+  const uploadDroppedFile = async (isPublic: boolean) => {
+    if (!droppedFile || !slug) return;
+    const file = droppedFile;
+    setDroppedFile(null);
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError('');
+    try {
+      const uploaded = await hubService.uploadFile(slug, file, isPublic, setUploadProgress);
+      setAllFiles(prev => [uploaded, ...prev]);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -292,7 +335,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
+    <div
+      className="min-h-screen bg-slate-50 dark:bg-zinc-950"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Dot grid background */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
@@ -752,6 +801,78 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           </div>
         )}
       </div>
+
+      {/* ── Drag-over overlay ── */}
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm pointer-events-none"
+          >
+            <div className="flex flex-col items-center justify-center gap-4 w-72 h-56 rounded-2xl border-2 border-dashed border-purple-400 bg-purple-950/30">
+              <Upload className="w-10 h-10 text-purple-300" />
+              <p className="text-base font-semibold text-purple-200">Drop to upload</p>
+              <p className="text-xs text-purple-400">You'll choose who can see it</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Post-drop visibility prompt ── */}
+      <AnimatePresence>
+        {droppedFile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setDroppedFile(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-2xl shadow-2xl p-6 w-80 mx-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1 truncate">{droppedFile.name}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
+                {formatFileSize(droppedFile.size)} · Who can see this?
+              </p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => uploadDroppedFile(false)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-zinc-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-left"
+                >
+                  <Lock className="w-5 h-5 text-blue-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Private</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Only you can see this</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => uploadDroppedFile(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-zinc-700 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors text-left"
+                >
+                  <Users className="w-5 h-5 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Hub members</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Visible to hub members only</p>
+                  </div>
+                </button>
+              </div>
+              <button
+                onClick={() => setDroppedFile(null)}
+                className="mt-4 w-full text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Lightbox preview modal ── */}
       <AnimatePresence>
