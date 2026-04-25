@@ -2207,6 +2207,35 @@ app.patch('/api/featured/reorder', authenticate, async (req, res) => {
   }
 });
 
+// Edit a featured item's text/label/image (admin or moderator)
+app.patch('/api/featured/:id', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Admin or moderator access required' });
+  const { title, caption, category_label, image_url } = req.body || {};
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_featured
+       SET title          = COALESCE(NULLIF($1, ''), title),
+           caption        = $2,
+           category_label = $3,
+           image_url      = $4
+       WHERE id = $5
+       RETURNING id, type, ref_id, title, caption, category_label, image_url, display_order, created_at`,
+      [
+        title?.trim() || null,
+        caption?.trim() || null,
+        category_label?.trim() || null,
+        image_url?.trim() || null,
+        req.params.id,
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Featured item not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Update featured error:', err);
+    res.status(500).json({ error: 'Failed to update featured item' });
+  }
+});
+
 // ── Feature requests routes ────────────────────────────────
 
 // Submit a feature request (any authenticated user)

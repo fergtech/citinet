@@ -60,6 +60,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [customImageMode, setCustomImageMode] = useState<'upload' | 'url'>('upload');
   const [customSaving, setCustomSaving] = useState(false);
   const [customError, setCustomError] = useState('');
+  // Edit existing featured item
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ title: '', caption: '', categoryLabel: '', imageUrl: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
 
   function handleImageFileSelect(file: File) {
     if (!file.type.startsWith('image/')) return;
@@ -354,6 +358,35 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       setFeaturedItems(prev => prev.filter(f => f.id !== id));
     } catch {
       setFeaturedError('Failed to remove item');
+    }
+  };
+
+  const handleStartEdit = (item: FeaturedItem) => {
+    setEditingId(item.id);
+    setEditDraft({
+      title: item.title,
+      caption: item.caption ?? '',
+      categoryLabel: item.categoryLabel ?? '',
+      imageUrl: item.imageUrl ?? '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!currentHub?.slug || !editingId) return;
+    setSavingEdit(true);
+    try {
+      const updated = await featuredService.update(currentHub.slug, editingId, {
+        title: editDraft.title.trim() || undefined,
+        caption: editDraft.caption.trim() || undefined,
+        categoryLabel: editDraft.categoryLabel.trim() || undefined,
+        imageUrl: editDraft.imageUrl.trim() || undefined,
+      });
+      setFeaturedItems(prev => prev.map(f => f.id === editingId ? { ...f, ...updated } : f));
+      setEditingId(null);
+    } catch {
+      setFeaturedError('Failed to save changes');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -685,62 +718,127 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
               <div className="divide-y divide-slate-100 dark:divide-zinc-800">
                 {featuredItems.map((item, index) => (
-                  <div key={item.id} className="flex items-center gap-2 px-4 py-3">
-                    {/* Thumbnail */}
-                    <div className={`w-10 h-10 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${
-                      item.mediaType === 'gradient' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' :
-                      item.mediaType === 'video' ? 'bg-zinc-800' : 'bg-slate-100 dark:bg-zinc-800'
-                    }`}>
-                      {(item.imageUrl || item.mediaFileName) && item.mediaType === 'image' ? (
-                        <img
-                          src={item.imageUrl ?? hubService.getPublicFileUrl(currentHub?.slug ?? '', item.mediaFileName!) ?? ''}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  <div key={item.id}>
+                    <div className="flex items-center gap-2 px-4 py-3">
+                      {/* Thumbnail */}
+                      <div className={`w-10 h-10 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${
+                        item.mediaType === 'gradient' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' :
+                        item.mediaType === 'video' ? 'bg-zinc-800' : 'bg-slate-100 dark:bg-zinc-800'
+                      }`}>
+                        {(item.imageUrl || item.mediaFileName) && item.mediaType === 'image' ? (
+                          <img
+                            src={item.imageUrl ?? hubService.getPublicFileUrl(currentHub?.slug ?? '', item.mediaFileName!) ?? ''}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <Star className="w-4 h-4 text-white" />
+                        )}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                          {item.type === 'post' ? 'pinned post' : 'custom card'}
+                          {item.categoryLabel && ` · ${item.categoryLabel}`}
+                          {item.mediaType !== 'gradient' && ` · ${item.mediaType}`}
+                        </p>
+                      </div>
+
+                      {/* Up / Down */}
+                      <div className="flex flex-col gap-0.5 shrink-0">
+                        <button
+                          onClick={() => handleReorder(index, 'up')}
+                          disabled={index === 0}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          aria-label="Move up"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleReorder(index, 'down')}
+                          disabled={index === featuredItems.length - 1}
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          aria-label="Move down"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Edit */}
+                      <button
+                        onClick={() => editingId === item.id ? setEditingId(null) : handleStartEdit(item)}
+                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${editingId === item.id ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        aria-label="Edit"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => handleRemoveFeatured(item.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 transition-colors shrink-0"
+                        aria-label="Remove"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Inline edit form */}
+                    {editingId === item.id && (
+                      <div className="px-4 pb-4 pt-1 bg-slate-50 dark:bg-zinc-800/50 border-t border-slate-100 dark:border-zinc-800 space-y-2">
+                        {item.type === 'custom' && (
+                          <input
+                            type="text"
+                            value={editDraft.title}
+                            onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
+                            placeholder="Title *"
+                            className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                          />
+                        )}
+                        <input
+                          type="text"
+                          value={editDraft.caption}
+                          onChange={e => setEditDraft(d => ({ ...d, caption: e.target.value }))}
+                          placeholder="Caption"
+                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
                         />
-                      ) : (
-                        <Star className="w-4 h-4 text-white" />
-                      )}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500">
-                        {item.type === 'post' ? 'pinned post' : 'custom card'}
-                        {item.categoryLabel && ` · ${item.categoryLabel}`}
-                        {item.mediaType !== 'gradient' && ` · ${item.mediaType}`}
-                      </p>
-                    </div>
-
-                    {/* Up / Down */}
-                    <div className="flex flex-col gap-0.5 shrink-0">
-                      <button
-                        onClick={() => handleReorder(index, 'up')}
-                        disabled={index === 0}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Move up"
-                      >
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleReorder(index, 'down')}
-                        disabled={index === featuredItems.length - 1}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Move down"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Remove */}
-                    <button
-                      onClick={() => handleRemoveFeatured(item.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 transition-colors shrink-0"
-                      aria-label="Remove"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                        <input
+                          type="text"
+                          value={editDraft.categoryLabel}
+                          onChange={e => setEditDraft(d => ({ ...d, categoryLabel: e.target.value }))}
+                          placeholder="Category label (e.g. EVENT)"
+                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                        />
+                        {item.type === 'custom' && (
+                          <input
+                            type="text"
+                            value={editDraft.imageUrl}
+                            onChange={e => setEditDraft(d => ({ ...d, imageUrl: e.target.value }))}
+                            placeholder="Image URL (optional)"
+                            className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                          />
+                        )}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={handleSaveEdit}
+                            disabled={savingEdit || (item.type === 'custom' && !editDraft.title.trim())}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                          >
+                            {savingEdit ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

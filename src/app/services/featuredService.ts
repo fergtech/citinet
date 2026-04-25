@@ -117,6 +117,36 @@ class FeaturedService {
     }
   }
 
+  async update(
+    hubSlug: string,
+    id: string,
+    data: { title?: string; caption?: string; categoryLabel?: string; imageUrl?: string },
+  ): Promise<Partial<FeaturedItem>> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) throw new Error('Not connected to hub');
+    const res = await fetch(`${conn.baseUrl}/api/featured/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:          data.title,
+        caption:        data.caption,
+        category_label: data.categoryLabel,
+        image_url:      data.imageUrl,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to update' }));
+      throw new Error((err as { error?: string }).error ?? 'Failed to update');
+    }
+    const row = await res.json();
+    return {
+      title:         row.title,
+      caption:       row.caption ?? undefined,
+      categoryLabel: row.category_label ?? undefined,
+      imageUrl:      row.image_url ?? undefined,
+    };
+  }
+
   async remove(hubSlug: string, id: string): Promise<void> {
     const conn = this.getConn(hubSlug);
     if (!conn) return;
