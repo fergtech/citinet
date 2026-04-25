@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import { Clock, Phone, Globe, Mail, Package, Plus, Pencil, X, ImagePlus, Loader2, MessageCircle, Share2, Heart, Star } from 'lucide-react';
+import { Clock, Phone, Globe, Mail, Package, Plus, Pencil, X, ImagePlus, Loader2, MessageCircle, Link, Heart, Star, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { HubVendor, HubListing } from '../types/hub';
 import { marketplaceService } from '../services/marketplaceService';
@@ -98,6 +98,8 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
     const saved = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('saved_vendors') || '[]') : [];
     return saved.includes(initialVendor.id);
   });
+  const [togglingPublic, setTogglingPublic] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -251,6 +253,24 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
     setIsSaved(!isSaved);
   };
 
+  const handleTogglePublic = async () => {
+    if (!vendor.slug) return;
+    setTogglingPublic(true);
+    try {
+      const updated = await marketplaceService.updateVendor(hubSlug, { web_public: !vendor.web_public });
+      setVendor(updated);
+    } finally {
+      setTogglingPublic(false);
+    }
+  };
+
+  const handleCopyPublicLink = () => {
+    if (!vendor.slug) return;
+    navigator.clipboard.writeText(marketplaceService.getVendorPublicUrl(hubSlug, vendor.slug));
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
       {/* Hero Banner — Full Width */}
@@ -347,12 +367,49 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
             >
               <Heart className={`w-5 h-5 ${isSaved ? 'fill-current' : ''}`} />
             </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              className="p-2 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400"
-            >
-              <Share2 className="w-5 h-5" />
-            </motion.button>
+            {isOwner && vendor.slug ? (
+              vendor.web_public ? (
+                <div className="flex items-center gap-1.5">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    onClick={handleCopyPublicLink}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-xs font-medium transition-colors"
+                    title="Copy public link"
+                  >
+                    {linkCopied ? <Check className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
+                    {linkCopied ? 'Copied!' : 'Copy link'}
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    onClick={handleTogglePublic}
+                    disabled={togglingPublic}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors disabled:opacity-50"
+                    title="Make private"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    Public
+                  </motion.button>
+                </div>
+              ) : (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={handleTogglePublic}
+                  disabled={togglingPublic}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-700 dark:hover:text-emerald-400 text-xs font-medium transition-colors disabled:opacity-50"
+                  title="Make profile public"
+                >
+                  {togglingPublic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+                  Make public
+                </motion.button>
+              )
+            ) : (
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                className="p-2 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400"
+              >
+                <Globe className="w-5 h-5" />
+              </motion.button>
+            )}
           </div>
         </div>
       </motion.div>

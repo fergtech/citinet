@@ -291,6 +291,7 @@ export interface HubFile {
 export interface HubVendor {
   id: string;
   owner_user_id: string;
+  slug?: string;
   name: string;
   description?: string;
   category: string;
@@ -304,6 +305,7 @@ export interface HubVendor {
   contact_phone?: string;
   website?: string;
   hours?: string;
+  web_public?: boolean;
   created_at: string;
   updated_at?: string;
   listing_count?: number;

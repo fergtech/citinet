@@ -31,6 +31,7 @@ import { NotesScreen } from './components/NotesScreen';
 import { ShareFilePage } from './components/ShareFilePage';
 import { ShareNotePage } from './components/ShareNotePage';
 import { ShareSpacePage } from './components/ShareSpacePage';
+import { ShareVendorPage } from './components/ShareVendorPage';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -621,10 +622,11 @@ function OnboardingModeRoutes() {
       <Route path="/" element={<WelcomeRoute />} />
       <Route path="/join" element={<JoinHubRoute />} />
       <Route path="/create" element={<CreateHubRoute />} />
-      {/* Public file share — no account required. Must be before the * catch-all. */}
+      {/* Public pages — no account required. Must be before the * catch-all. */}
       <Route path="/share/:hubSlug/:fileName" element={<ShareFilePage />} />
       <Route path="/share-note/:hubSlug/:noteId" element={<ShareNotePage />} />
       <Route path="/share-space/:hubSlug/:spaceSlug" element={<ShareSpacePage />} />
+      <Route path="/v/:hubSlug/:vendorSlug" element={<ShareVendorPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -679,7 +681,7 @@ function HubModeRoutes() {
 // ──────────────────────────────────────────────
 
 function AppInner() {
-  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/');
+  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/v/');
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
   const [probing, setProbing] = useState(!subdomain && !isSharePath);

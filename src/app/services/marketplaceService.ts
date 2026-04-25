@@ -109,6 +109,10 @@ class MarketplaceService {
     }
   }
 
+  getVendorPublicUrl(hubSlug: string, vendorSlug: string): string {
+    return `https://citinet.cloud/v/${hubSlug}/${vendorSlug}`;
+  }
+
   async updateBannerConfig(hubSlug: string, config: Partial<MarketplaceBannerConfig>): Promise<void> {
     await this.request(hubSlug, '/api/marketplace-config', {
       method: 'PATCH',

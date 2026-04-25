@@ -384,6 +384,23 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_color TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_from TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_gradient_to TEXT`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS slug TEXT`);
+    // Backfill slugs for existing vendors (idempotent)
+    {
+      const { rows: noSlug } = await client.query(`SELECT id, name FROM hub_vendors WHERE slug IS NULL`);
+      for (const v of noSlug) {
+        const base = (v.name || 'vendor').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'vendor';
+        let slug = base, n = 1;
+        for (;;) {
+          const { rows } = await client.query(`SELECT 1 FROM hub_vendors WHERE slug = $1 AND id != $2`, [slug, v.id]);
+          if (!rows.length) break;
+          slug = `${base}-${n++}`;
+        }
+        await client.query(`UPDATE hub_vendors SET slug = $1 WHERE id = $2`, [slug, v.id]);
+      }
+    }
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS hub_vendors_slug_idx ON hub_vendors(slug)`);
     await client.query(`ALTER TABLE hub_post_replies ADD COLUMN IF NOT EXISTS reply_to_reply_id UUID REFERENCES hub_post_replies(id) ON DELETE SET NULL`);
     await client.query(`ALTER TABLE hub_post_replies ADD COLUMN IF NOT EXISTS reply_to_user_id  UUID REFERENCES hub_users(id)       ON DELETE SET NULL`);
     // Notifications table
@@ -2747,6 +2764,30 @@ app.delete('/api/notes/:id', authenticate, async (req, res) => {
   }
 });
 
+// Public vendor profile — no auth required, only if web_public = true
+app.get('/api/public/vendors/:slug', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM hub_vendors WHERE slug = $1 AND web_public = TRUE`,
+      [req.params.slug]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Vendor not found or not public' });
+    const vendor = rows[0];
+    const { rows: listings } = await pool.query(
+      `SELECT l.*, hf.file_name AS image_file_name
+       FROM hub_listings l
+       LEFT JOIN hub_files hf ON hf.id = l.image_file_id
+       WHERE l.vendor_id = $1 AND l.is_active = TRUE
+       ORDER BY l.created_at DESC`,
+      [vendor.id]
+    );
+    res.json({ vendor, listings });
+  } catch (err) {
+    console.error('Public vendor error:', err);
+    res.status(500).json({ error: 'Failed to load vendor' });
+  }
+});
+
 // Public note share — no auth required, only if is_web_public = true
 app.get('/api/public/notes/:id', async (req, res) => {
   try {
@@ -2985,13 +3026,14 @@ app.post('/api/vendors', authenticate, async (req, res) => {
   const normalizedBannerMode = ['image', 'solid', 'gradient'].includes(banner_mode) ? banner_mode : null;
 
   try {
+    const slug = await generateVendorSlug(name.trim());
     const result = await pool.query(`
       INSERT INTO hub_vendors (
         owner_user_id, name, description, category,
         logo_file_name, banner_mode, banner_image_file_name, banner_color, banner_gradient_from, banner_gradient_to,
-        contact_email, contact_phone, website, hours
+        contact_email, contact_phone, website, hours, slug
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `, [
       req.user.id,
@@ -3008,6 +3050,7 @@ app.post('/api/vendors', authenticate, async (req, res) => {
       contact_phone || null,
       website || null,
       hours || null,
+      slug,
     ]);
     if (logo_file_name) {
       await pool.query(
@@ -3031,6 +3074,20 @@ app.post('/api/vendors', authenticate, async (req, res) => {
   }
 });
 
+// ── Vendor slug generator ──────────────────────────────────
+async function generateVendorSlug(name, excludeId = null) {
+  const base = (name || 'vendor').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'vendor';
+  let slug = base, n = 1;
+  for (;;) {
+    const q = excludeId
+      ? `SELECT 1 FROM hub_vendors WHERE slug = $1 AND id != $2`
+      : `SELECT 1 FROM hub_vendors WHERE slug = $1`;
+    const { rows } = await pool.query(q, excludeId ? [slug, excludeId] : [slug]);
+    if (!rows.length) return slug;
+    slug = `${base}-${n++}`;
+  }
+}
+
 // Update my vendor page
 app.patch('/api/vendors/me', authenticate, async (req, res) => {
   const {
@@ -3047,6 +3104,7 @@ app.patch('/api/vendors/me', authenticate, async (req, res) => {
     contact_phone,
     website,
     hours,
+    web_public,
   } = req.body;
 
   const normalizedBannerMode = ['image', 'solid', 'gradient'].includes(banner_mode) ? banner_mode : null;
@@ -3067,6 +3125,7 @@ app.patch('/api/vendors/me', authenticate, async (req, res) => {
           contact_phone = COALESCE($11, contact_phone),
           website       = COALESCE($12, website),
           hours         = COALESCE($13, hours),
+          web_public    = COALESCE($15, web_public),
           updated_at    = NOW()
       WHERE owner_user_id = $14
       RETURNING *
@@ -3085,6 +3144,7 @@ app.patch('/api/vendors/me', authenticate, async (req, res) => {
       website || null,
       hours || null,
       req.user.id,
+      web_public != null ? !!web_public : null,
     ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Vendor page not found' });
     if (logo_file_name) {
