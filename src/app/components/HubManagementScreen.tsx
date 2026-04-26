@@ -219,11 +219,30 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [registrySyncing, setRegistrySyncing] = useState(false);
   const [registryResult, setRegistryResult] = useState<'ok' | 'error' | null>(null);
   const [registryError, setRegistryError] = useState('');
+  const [registryListed, setRegistryListed] = useState<boolean | null>(null);
+  const [hubNodeId, setHubNodeId] = useState<string | null>(null);
+
+  // Fetch stable node_id from hub and check registry listing status
+  useEffect(() => {
+    if (activeTab !== 'info' || !currentHub?.tunnelUrl) return;
+    const base = currentHub.tunnelUrl;
+    const authH: Record<string, string> = currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {};
+    fetch(`${base}/api/info`, { headers: authH })
+      .then(r => r.json())
+      .then(async (info: any) => {
+        const nodeId: string = info.node_id || currentHub.slug;
+        setHubNodeId(nodeId);
+        const hubs = await registryService.getHubs();
+        setRegistryListed(hubs.some(h => h.id === nodeId || h.slug === currentHub.slug));
+      })
+      .catch(() => setRegistryListed(null));
+  }, [activeTab, currentHub?.tunnelUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reRegisterHub = (overrides?: { name?: string; location?: string; description?: string }) => {
     if (!currentHub?.tunnelUrl) return;
+    const stableId = hubNodeId ?? currentHub.slug;
     registryService.registerHub({
-      id: currentHub.slug,
+      id: stableId,
       name: overrides?.name ?? currentHub.name,
       slug: currentHub.slug,
       location: overrides?.location ?? currentHub.location ?? '',
@@ -239,8 +258,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     setRegistrySyncing(true);
     setRegistryResult(null);
     setRegistryError('');
+    const stableId = hubNodeId ?? currentHub.slug;
     const result = await registryService.registerHub({
-      id: currentHub.slug,
+      id: stableId,
       name: currentHub.name,
       slug: currentHub.slug,
       location: currentHub.location ?? '',
@@ -251,6 +271,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     });
     setRegistryResult(result.ok ? 'ok' : 'error');
     if (!result.ok) setRegistryError(result.error ?? 'Unknown error');
+    else setRegistryListed(true);
     setRegistrySyncing(false);
     if (result.ok) setTimeout(() => setRegistryResult(null), 4000);
   };
@@ -735,7 +756,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Public Registry</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Public Registry</h3>
+                    {registryListed === true && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                        Listed
+                      </span>
+                    )}
+                    {registryListed === false && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                        Not listed
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     Keeps your hub discoverable and makes public vendor/space URLs work.
                   </p>
@@ -757,7 +790,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     ? <><Check className="w-3.5 h-3.5" /> Synced!</>
                     : registryResult === 'error'
                     ? <><AlertCircle className="w-3.5 h-3.5" /> Failed</>
-                    : <><RefreshCw className="w-3.5 h-3.5" /> Sync to registry</>
+                    : registryListed
+                    ? <><RefreshCw className="w-3.5 h-3.5" /> Update listing</>
+                    : <><RefreshCw className="w-3.5 h-3.5" /> List on registry</>
                   }
                 </button>
               </div>

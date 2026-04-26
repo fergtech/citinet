@@ -124,6 +124,11 @@ export default async function handler(req, res) {
       } else {
         content.hubs.push(hubEntry);
       }
+
+      // Remove stale duplicates — same tunnel_url but different id (e.g. after a hub rename)
+      content.hubs = content.hubs.filter(
+        h => h.tunnel_url !== tunnel_url || h.id === hubEntry.id
+      );
       content.updated_at = now;
 
       await writeRegistryFile(content, sha);

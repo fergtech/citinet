@@ -497,6 +497,12 @@ async function initDb() {
         updated_at        TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Stable hub identity — generated once, never changes even if hub is renamed
+    await client.query(`
+      INSERT INTO hub_config (key, value)
+      SELECT 'hub_node_id', gen_random_uuid()::text
+      WHERE NOT EXISTS (SELECT 1 FROM hub_config WHERE key = 'hub_node_id')
+    `);
   } finally {
     client.release();
   }
@@ -650,6 +656,7 @@ app.get('/api/info', async (_req, res) => {
   }
 
   res.json({
+    node_id:         cfg.hub_node_id             || process.env.HUB_SLUG || '',
     node_name:       name,
     name:            name,
     hub_name:        name,
