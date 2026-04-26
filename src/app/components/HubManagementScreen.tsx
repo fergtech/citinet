@@ -218,6 +218,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   const [registrySyncing, setRegistrySyncing] = useState(false);
   const [registryResult, setRegistryResult] = useState<'ok' | 'error' | null>(null);
+  const [registryError, setRegistryError] = useState('');
 
   const reRegisterHub = (overrides?: { name?: string; location?: string; description?: string }) => {
     if (!currentHub?.tunnelUrl) return;
@@ -237,6 +238,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     if (!currentHub?.tunnelUrl) return;
     setRegistrySyncing(true);
     setRegistryResult(null);
+    setRegistryError('');
     const result = await registryService.registerHub({
       id: currentHub.slug,
       name: currentHub.name,
@@ -248,8 +250,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       online: true,
     });
     setRegistryResult(result.ok ? 'ok' : 'error');
+    if (!result.ok) setRegistryError(result.error ?? 'Unknown error');
     setRegistrySyncing(false);
-    setTimeout(() => setRegistryResult(null), 4000);
+    if (result.ok) setTimeout(() => setRegistryResult(null), 4000);
   };
 
   const saveName = async () => {
@@ -765,6 +768,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
                   A public tunnel URL is required before syncing.
                 </p>
+              )}
+              {registryError && (
+                <p className="text-xs text-red-500 dark:text-red-400 mt-2 break-words">{registryError}</p>
               )}
             </div>
 
