@@ -179,15 +179,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     }
   };
 
-  // When hub goes unreachable, auto-load registry so search is instant
+  // Load registry whenever the panel opens or hub goes unreachable
   useEffect(() => {
-    if (connectionStatus !== 'unreachable') return;
+    if (!showTunnelInput && connectionStatus !== 'unreachable') return;
+    if (registryHubs.length > 0) return;
     setRegistryLoading(true);
     registryService.getHubs()
       .then(hubs => setRegistryHubs(hubs))
       .catch(() => {})
       .finally(() => setRegistryLoading(false));
-  }, [connectionStatus]);
+  }, [showTunnelInput, connectionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredRegistryHubs = registrySearchQuery.trim()
     ? registryHubs.filter(h =>
@@ -199,14 +200,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const handleRegistryReconnect = async (tunnelUrl: string) => {
     setTunnelUpdating(true);
     setTunnelError('');
-    const result = await updateTunnelUrl(tunnelUrl, true);
+    // probe=false (default) — actually verify the hub is reachable before claiming success
+    const result = await updateTunnelUrl(tunnelUrl);
     setTunnelUpdating(false);
     if (result.ok) {
       setTunnelSuccess(true);
       setRegistrySearchQuery('');
+      setShowTunnelInput(false);
       setTimeout(() => setTunnelSuccess(false), 2000);
     } else {
-      setTunnelError('Could not reach that hub. Try another.');
+      setTunnelError('Hub not reachable at that address. It may be offline.');
     }
   };
 
