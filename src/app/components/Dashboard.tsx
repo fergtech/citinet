@@ -2,7 +2,7 @@ import {
   Users, MessageCircle, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
+  X, ChevronLeft, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
   LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -401,8 +401,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const desktopLaunchpadRef = useRef<HTMLDivElement | null>(null);
   const [desktopLaunchpadPage, setDesktopLaunchpadPage] = useState(0);
   const [isXlDesktop, setIsXlDesktop] = useState(false);
-  const desktopLaunchpadDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false });
-  const suppressDesktopLaunchpadClickRef = useRef(false);
 
   const desktopLaunchpadItems: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
@@ -475,49 +473,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const scrollToDesktopLaunchpadPage = (pageIndex: number) => {
     const el = desktopLaunchpadRef.current;
     if (!el) return;
-    const page = el.children[pageIndex] as HTMLElement | undefined;
-    if (!page) return;
-    el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
+    // Each page is w-full so its scroll position is exactly pageIndex * clientWidth
+    el.scrollTo({ left: pageIndex * el.clientWidth, behavior: 'smooth' });
   };
 
-  const handleDesktopLaunchpadPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const el = desktopLaunchpadRef.current;
-    if (!el) return;
-    desktopLaunchpadDragRef.current.active = true;
-    desktopLaunchpadDragRef.current.startX = e.clientX;
-    desktopLaunchpadDragRef.current.startScrollLeft = el.scrollLeft;
-    desktopLaunchpadDragRef.current.moved = false;
-    el.setPointerCapture(e.pointerId);
-  };
-
-  const handleDesktopLaunchpadPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!desktopLaunchpadDragRef.current.active) return;
-    const el = desktopLaunchpadRef.current;
-    if (!el) return;
-    const deltaX = e.clientX - desktopLaunchpadDragRef.current.startX;
-    if (Math.abs(deltaX) > 6) desktopLaunchpadDragRef.current.moved = true;
-    el.scrollLeft = desktopLaunchpadDragRef.current.startScrollLeft - deltaX;
-  };
-
-  const handleDesktopLaunchpadPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    const el = desktopLaunchpadRef.current;
-    if (el?.hasPointerCapture(e.pointerId)) {
-      el.releasePointerCapture(e.pointerId);
-    }
-    if (!desktopLaunchpadDragRef.current.active) return;
-    desktopLaunchpadDragRef.current.active = false;
-    if (desktopLaunchpadDragRef.current.moved) {
-      suppressDesktopLaunchpadClickRef.current = true;
-    }
-  };
-
-  const handleDesktopLaunchpadTileClickCapture = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (!suppressDesktopLaunchpadClickRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    suppressDesktopLaunchpadClickRef.current = false;
-  };
 
   const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-cyan-200 border border-cyan-300/35 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-cyan-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70';
 
@@ -1179,11 +1138,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             <div
               ref={desktopLaunchpadRef}
               onScroll={handleDesktopLaunchpadScroll}
-              onPointerDown={handleDesktopLaunchpadPointerDown}
-              onPointerMove={handleDesktopLaunchpadPointerMove}
-              onPointerUp={handleDesktopLaunchpadPointerEnd}
-              onPointerCancel={handleDesktopLaunchpadPointerEnd}
-              className="overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+              className="overflow-x-auto snap-x snap-mandatory no-scrollbar"
               style={{ scrollbarWidth: 'none' }}
             >
               <div className="flex gap-3">
@@ -1199,9 +1154,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       return (
                         <button
                           key={`${pageIdx}-${app.screen}`}
-                          onClickCapture={handleDesktopLaunchpadTileClickCapture}
                           onClick={() => isSuggest ? setShowRequestModal(true) : handleTileNavigate(app.screen, app.notifyFeature)}
-                          className={`w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl transition-all group active:scale-95 ${
+                          className={`w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl transition-all group active:scale-95 cursor-pointer ${
                             isSuggest
                               ? 'hover:bg-indigo-500/15'
                               : 'hover:bg-purple-500/15 dark:hover:bg-purple-400/15'
@@ -1231,23 +1185,50 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               </div>
             </div>
             {desktopLaunchpadPages.length > 1 && (
-              <div className="flex items-center justify-center gap-1.5 pt-3" aria-label="Desktop launchpad page indicator">
-                {desktopLaunchpadPages.map((_, idx) => {
-                  const active = idx === desktopLaunchpadPage;
-                  return (
-                    <button
-                      key={`desktop-launchpad-dot-${idx}`}
-                      type="button"
-                      onClick={() => scrollToDesktopLaunchpadPage(idx)}
-                      aria-label={`Go to desktop launchpad page ${idx + 1}`}
-                      className={`h-1.5 w-1.5 rounded-full transition-all ${
-                        active
-                          ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-110'
-                          : 'bg-slate-500/70 dark:bg-zinc-500/70 hover:bg-slate-400 dark:hover:bg-zinc-400'
-                      }`}
-                    />
-                  );
-                })}
+              <div className="flex items-center justify-center gap-3 pt-3">
+                {/* Left arrow */}
+                <button
+                  type="button"
+                  onClick={() => scrollToDesktopLaunchpadPage(desktopLaunchpadPage - 1)}
+                  disabled={desktopLaunchpadPage === 0}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 disabled:opacity-0 disabled:pointer-events-none transition-all"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Dots */}
+                <div className="flex items-center gap-1.5">
+                  {desktopLaunchpadPages.map((_, idx) => {
+                    const active = idx === desktopLaunchpadPage;
+                    return (
+                      <button
+                        key={`desktop-launchpad-dot-${idx}`}
+                        type="button"
+                        onClick={() => scrollToDesktopLaunchpadPage(idx)}
+                        aria-label={`Go to page ${idx + 1}`}
+                        className="p-2 flex items-center justify-center"
+                      >
+                        <span className={`block h-1.5 w-1.5 rounded-full transition-all ${
+                          active
+                            ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-125'
+                            : 'bg-slate-500/70 hover:bg-slate-400'
+                        }`} />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right arrow */}
+                <button
+                  type="button"
+                  onClick={() => scrollToDesktopLaunchpadPage(desktopLaunchpadPage + 1)}
+                  disabled={desktopLaunchpadPage === desktopLaunchpadPages.length - 1}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 disabled:opacity-0 disabled:pointer-events-none transition-all"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>

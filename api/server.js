@@ -2136,7 +2136,17 @@ app.get('/api/featured', authenticate, async (_req, res) => {
        LEFT JOIN hub_users u ON p.author_id = u.id
        ORDER BY fi.display_order ASC, fi.created_at ASC`
     );
-    res.json({ items: rows });
+    // Rewrite localhost image URLs to the hub's public tunnel URL so featured
+    // card images work on devices other than the hub machine itself.
+    const tunnelUrl = (process.env.TUNNEL_URL || '').replace(/\/$/, '');
+    const localhostRe = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/;
+    const items = rows.map(row => {
+      if (tunnelUrl && row.image_url && localhostRe.test(row.image_url)) {
+        return { ...row, image_url: row.image_url.replace(localhostRe, tunnelUrl) };
+      }
+      return row;
+    });
+    res.json({ items });
   } catch (err) {
     console.error('List featured error:', err);
     res.status(500).json({ error: 'Failed to list featured items' });
