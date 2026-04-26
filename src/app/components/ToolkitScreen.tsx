@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { DotGrid } from './DotGrid';
 import { Search, Plus, ExternalLink, Filter, X, Shield, Check } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { Tool, ToolTag } from '../types/toolkit';
@@ -164,17 +165,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
 
   return (
     <div className="h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col overflow-hidden">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="toolkit-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#toolkit-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
       {/* Header */}
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 shrink-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">

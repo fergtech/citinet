@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { DotGrid } from './DotGrid';
 import { QRCodeSVG } from 'qrcode.react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight, QrCode, Copy } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight, QrCode, Copy, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
 import { featuredService } from '../services/featuredService';
 import { requestsService, type HubRequest, type RequestStatus } from '../services/requestsService';
 import type { HubMember, HubPost } from '../types/hub';
@@ -17,7 +19,7 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription, refreshStatus } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -213,6 +215,103 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   useEffect(() => {
     if (activeTab === 'requests') loadRequests();
   }, [activeTab]);
+
+  // ── AI tab state ─────────────────────────────────────────
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [aiStatusLoading, setAiStatusLoading] = useState(false);
+  const [installedModels, setInstalledModels] = useState<string[]>([]);
+  const [aiConfigSaving, setAiConfigSaving] = useState(false);
+  const [aiConfigError, setAiConfigError] = useState('');
+  const [pullModel, setPullModel] = useState('llama3.2:1b');
+  const [pullProgress, setPullProgress] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
+  const [reindexing, setReindexing] = useState(false);
+  const [reindexMsg, setReindexMsg] = useState('');
+
+  const loadAiStatus = async () => {
+    if (!hubSlug) return;
+    setAiStatusLoading(true);
+    try {
+      const [status, models, idxStatus] = await Promise.all([
+        aiService.getStatus(hubSlug),
+        aiService.listModels(hubSlug).catch(() => [] as string[]),
+        aiService.getIndexStatus(hubSlug).catch(() => null),
+      ]);
+      setAiStatus(status);
+      setInstalledModels(models);
+      setIndexStatus(idxStatus);
+    } catch {}
+    setAiStatusLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'ai') loadAiStatus();
+  }, [activeTab]);
+
+  const handleAiToggle = async () => {
+    if (!aiStatus) return;
+    setAiConfigSaving(true);
+    setAiConfigError('');
+    try {
+      await aiService.updateConfig(hubSlug, { enabled: !aiStatus.enabled });
+      setAiStatus(s => s ? { ...s, enabled: !s.enabled } : s);
+    } catch (err: unknown) {
+      setAiConfigError(err instanceof Error ? err.message : 'Failed to update');
+    }
+    setAiConfigSaving(false);
+  };
+
+  const handleSetModel = async (model: string) => {
+    setAiConfigSaving(true);
+    setAiConfigError('');
+    try {
+      await aiService.updateConfig(hubSlug, { model });
+      setAiStatus(s => s ? { ...s, model } : s);
+    } catch (err: unknown) {
+      setAiConfigError(err instanceof Error ? err.message : 'Failed to update');
+    }
+    setAiConfigSaving(false);
+  };
+
+  const handleReindex = async () => {
+    setReindexing(true);
+    setReindexMsg('');
+    try {
+      await aiService.triggerReindex(hubSlug);
+      setReindexMsg('Indexing started — this runs in the background');
+      setTimeout(() => loadAiStatus(), 8000);
+    } catch (err: unknown) {
+      setReindexMsg(err instanceof Error ? err.message : 'Failed to start indexing');
+    }
+    setReindexing(false);
+  };
+
+  const handlePullModel = () => {
+    if (!pullModel.trim() || pulling) return;
+    setPulling(true);
+    setPullProgress('Starting download…');
+    aiService.pullModel(
+      hubSlug,
+      pullModel.trim(),
+      (line) => {
+        try {
+          const obj = JSON.parse(line);
+          const status = obj.status ?? '';
+          const pct = obj.completed && obj.total
+            ? ` (${Math.round((obj.completed / obj.total) * 100)}%)`
+            : '';
+          setPullProgress(status + pct);
+        } catch { setPullProgress(line.slice(0, 80)); }
+      },
+      () => {
+        setPulling(false);
+        setPullProgress('Download complete');
+        loadAiStatus();
+      },
+      (err) => { setPulling(false); setPullProgress(`Error: ${err}`); },
+    );
+  };
 
   const hubSlug = currentHub?.slug ?? '';
 
@@ -525,17 +624,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="hubmgmt-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#hubmgmt-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4">
@@ -555,6 +644,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               { id: 'members',  icon: <Users className="w-4 h-4" />,         label: 'Members' },
               { id: 'apps',     icon: <LayoutGrid className="w-4 h-4" />,    label: 'Apps' },
               { id: 'requests', icon: <ClipboardList className="w-4 h-4" />, label: 'Requests' },
+              { id: 'ai',       icon: <Bot className="w-4 h-4" />,           label: 'AI' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -1714,6 +1804,235 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── AI Tab ─── */}
+        {activeTab === 'ai' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Hub Assistant</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Local AI that knows your community. No cloud. No data leaves the hub.</p>
+              </div>
+              <button onClick={loadAiStatus} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
+                <RefreshCw className={`w-4 h-4 text-slate-400 ${aiStatusLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {aiStatusLoading && !aiStatus ? (
+              <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span className="text-sm">Checking AI status…</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Ollama status */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 flex items-center gap-3">
+                  {aiStatus?.ollamaReady ? (
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+                      <Wifi className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                      <WifiOff className="w-4 h-4 text-slate-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                      {aiStatus?.ollamaReady ? 'Ollama is running' : 'Ollama not detected'}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {aiStatus?.ollamaReady
+                        ? `Active model: ${aiStatus.model}`
+                        : 'The citinet-ollama container may still be starting up'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Enable / disable toggle */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                    <Bot className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Hub Assistant</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {aiStatus?.enabled ? 'Visible to all hub members' : 'Hidden from members'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleAiToggle}
+                    disabled={aiConfigSaving || !aiStatus}
+                    className="shrink-0 disabled:opacity-50"
+                    title={aiStatus?.enabled ? 'Disable' : 'Enable'}
+                  >
+                    {aiStatus?.enabled
+                      ? <ToggleRight className="w-8 h-8 text-violet-600 dark:text-violet-400" />
+                      : <ToggleLeft className="w-8 h-8 text-slate-400" />
+                    }
+                  </button>
+                </div>
+
+                {/* Active model picker */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">Active Model</p>
+                  <div className="space-y-2">
+                    {installedModels.length > 0 ? (
+                      installedModels.map(m => (
+                        <button
+                          key={m}
+                          onClick={() => handleSetModel(m)}
+                          disabled={aiConfigSaving}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all disabled:opacity-50 ${
+                            aiStatus?.model === m
+                              ? 'border-violet-400 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/20'
+                              : 'border-slate-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">{m}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Installed</p>
+                          </div>
+                          {aiStatus?.model === m && <Check className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-xs text-slate-400 dark:text-slate-500 italic">No models pulled yet — download one below</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Smart context (RAG) status */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Smart Context (RAG)</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Retrieves posts relevant to each question instead of always injecting the most recent ones</p>
+                  </div>
+
+                  {/* Embedding model status */}
+                  <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${
+                    indexStatus?.embedReady
+                      ? 'border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/10'
+                      : 'border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${indexStatus?.embedReady ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-600'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-slate-900 dark:text-white">{indexStatus?.embedModel ?? 'nomic-embed-text'}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{indexStatus?.embedReady ? 'Installed · Smart context active' : 'Not installed · Using recency fallback'}</p>
+                    </div>
+                  </div>
+
+                  {/* Index coverage */}
+                  {indexStatus && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500 dark:text-slate-400">Posts indexed</span>
+                        <span className="font-medium text-slate-900 dark:text-white">{indexStatus.indexed} / {indexStatus.total}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-violet-500 transition-all"
+                          style={{ width: indexStatus.total > 0 ? `${Math.round((indexStatus.indexed / indexStatus.total) * 100)}%` : '0%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!indexStatus?.embedReady ? (
+                      <button
+                        onClick={() => {
+                          setPullModel('nomic-embed-text');
+                          handlePullModel();
+                        }}
+                        disabled={pulling}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                      >
+                        {pulling && pullModel === 'nomic-embed-text'
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Download className="w-3 h-3" />
+                        }
+                        Pull nomic-embed-text
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleReindex}
+                        disabled={reindexing}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                      >
+                        {reindexing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        Re-index all posts
+                      </button>
+                    )}
+                    {reindexMsg && <p className="text-xs text-slate-500 dark:text-slate-400">{reindexMsg}</p>}
+                  </div>
+                  {pulling && pullModel === 'nomic-embed-text' && pullProgress && (
+                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                      {pullProgress}
+                    </div>
+                  )}
+                </div>
+
+                {/* Download a model */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">Download Model</p>
+                  <div className="space-y-1.5">
+                    {SUGGESTED_MODELS.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setPullModel(m.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border text-left transition-all ${
+                          pullModel === m.id
+                            ? 'border-violet-400 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/20'
+                            : 'border-slate-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">{m.label}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{m.note}</p>
+                        </div>
+                        {pullModel === m.id && <Check className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={pullModel}
+                      onChange={e => setPullModel(e.target.value)}
+                      placeholder="or type a model name…"
+                      className="flex-1 px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                    />
+                    <button
+                      onClick={handlePullModel}
+                      disabled={!pullModel.trim() || pulling || !aiStatus?.ollamaReady}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white text-sm font-medium transition-colors"
+                    >
+                      {pulling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      {pulling ? 'Pulling…' : 'Pull'}
+                    </button>
+                  </div>
+
+                  {pullProgress && (
+                    <div className={`text-xs px-3 py-2 rounded-lg ${
+                      pullProgress.startsWith('Error')
+                        ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400'
+                        : pullProgress === 'Download complete'
+                          ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {pullProgress}
+                    </div>
+                  )}
+                </div>
+
+                {aiConfigError && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{aiConfigError}</p>
+                )}
               </div>
             )}
           </div>

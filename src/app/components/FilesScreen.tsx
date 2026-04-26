@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { DotGrid } from './DotGrid';
 import {
   File, FileText, FileImage, FileVideo, FileAudio,
   Download, Search, Loader2, FolderOpen, AlertCircle, RefreshCw,
@@ -342,17 +343,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="files-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#files-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
       {/* Hidden file input */}
       <input
         ref={fileInputRef}

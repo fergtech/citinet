@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { DotGrid } from './DotGrid';
 import {
   Search, Send, Users, Loader2, AlertCircle,
   RefreshCw, Plus, MessageCircle, X, Check,
@@ -598,17 +599,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
 
   return (
     <div className="h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative overflow-hidden">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="messages-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#messages-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
 
       {/* ── Lightbox Overlay ── */}
       <AnimatePresence>

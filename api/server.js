@@ -38,6 +38,7 @@ const Minio = require('minio');
 const app = express();
 const PORT = parseInt(process.env.PORT || '9090', 10);
 const START_TIME = Date.now();
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://citinet-ollama:11434';
 
 // In-memory cache for public file metadata (avoids DB hit on every Range request)
 const publicFileCache = new Map(); // fileName → { row, cachedAt }
@@ -130,6 +131,14 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'AI rate limit reached. Please wait a moment.' },
+});
+
 // ── Database ──────────────────────────────────────────────
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -220,6 +229,13 @@ async function initDb() {
         author_id UUID REFERENCES hub_users(id) ON DELETE SET NULL,
         body      TEXT NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_post_embeddings (
+        post_id     UUID PRIMARY KEY REFERENCES hub_posts(id) ON DELETE CASCADE,
+        embedding   JSONB NOT NULL,
+        embedded_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
     await client.query(`
@@ -1956,6 +1972,8 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
       media_file_name: req.file?.originalname || null,
       reply_count:     0,
     });
+    // Non-blocking: embed new post for RAG
+    embedPost(post.id, post.title, post.body, post.category).catch(() => {});
   } catch (err) {
     console.error('Create post error:', err);
     res.status(500).json({ error: 'Failed to create post' });
@@ -1993,6 +2011,8 @@ app.patch('/api/posts/:id', authenticate, async (req, res) => {
       media_file_name:  fileResult.rows[0]?.file_name || null,
       reply_count:      0,
     });
+    // Non-blocking: re-embed updated post for RAG
+    embedPost(postData.id, postData.title, postData.body, postData.category).catch(() => {});
   } catch (err) {
     console.error('Update post error:', err);
     res.status(500).json({ error: 'Failed to update post' });
@@ -4277,6 +4297,366 @@ app.patch('/api/posts/:postId/share-to-feed', authenticate, async (req, res) => 
   }
 });
 
+// ── AI / Assistant ────────────────────────────────────────
+
+async function isOllamaReady() {
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ── RAG helpers ───────────────────────────────────────────
+
+const EMBED_MODEL = 'nomic-embed-text';
+
+async function isEmbedModelAvailable() {
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) return false;
+    const { models } = await r.json();
+    return (models || []).some(m => m.name === EMBED_MODEL || m.name.startsWith(EMBED_MODEL));
+  } catch { return false; }
+}
+
+async function getEmbedding(text) {
+  const r = await fetch(`${OLLAMA_URL}/api/embeddings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: EMBED_MODEL, prompt: text.slice(0, 2048) }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!r.ok) throw new Error('Embedding request failed');
+  const { embedding } = await r.json();
+  return embedding;
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot  += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+async function embedPost(postId, title, body, category) {
+  const text = `[${category || 'general'}] ${title || ''}: ${(body || '').slice(0, 1500)}`;
+  const embedding = await getEmbedding(text);
+  await pool.query(
+    `INSERT INTO hub_post_embeddings (post_id, embedding)
+     VALUES ($1, $2::jsonb)
+     ON CONFLICT (post_id) DO UPDATE SET embedding = $2::jsonb, embedded_at = NOW()`,
+    [postId, JSON.stringify(embedding)]
+  );
+}
+
+async function retrieveRelevantPosts(query, topK = 6) {
+  const qEmb = await getEmbedding(query);
+  const { rows } = await pool.query(`
+    SELECT p.id, p.title, p.body, p.category, p.created_at, e.embedding
+    FROM hub_posts p
+    JOIN hub_post_embeddings e ON e.post_id = p.id
+  `);
+  if (rows.length === 0) return [];
+  return rows
+    .map(row => ({ ...row, score: cosineSimilarity(qEmb, JSON.parse(row.embedding)) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .filter(p => p.score > 0.25);
+}
+
+// Index any posts that don't yet have embeddings (non-blocking, runs in background)
+async function indexUnembeddedPosts() {
+  try {
+    if (!(await isEmbedModelAvailable())) return;
+    const { rows } = await pool.query(`
+      SELECT p.id, p.title, p.body, p.category
+      FROM hub_posts p
+      LEFT JOIN hub_post_embeddings e ON e.post_id = p.id
+      WHERE e.post_id IS NULL
+      LIMIT 100
+    `);
+    for (const row of rows) {
+      try { await embedPost(row.id, row.title, row.body, row.category); }
+      catch { /* skip individual failures silently */ }
+    }
+    if (rows.length > 0) console.log(`[rag] indexed ${rows.length} post(s)`);
+  } catch (err) {
+    console.warn('[rag] background index failed:', err.message);
+  }
+}
+
+async function getAiConfig() {
+  try {
+    const r = await pool.query(
+      `SELECT key, value FROM hub_config WHERE key IN ('ai_enabled', 'ai_model')`
+    );
+    const cfg = Object.fromEntries(r.rows.map(row => [row.key, row.value]));
+    let model = cfg.ai_model || '';
+    // If no model configured, auto-pick the first available from Ollama
+    if (!model) {
+      try {
+        const tr = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
+        if (tr.ok) {
+          const td = await tr.json();
+          model = td.models?.[0]?.name || 'llama3.2:1b';
+        }
+      } catch { model = 'llama3.2:1b'; }
+    }
+    return { enabled: cfg.ai_enabled === 'true', model };
+  } catch {
+    return { enabled: false, model: 'llama3.2:1b' };
+  }
+}
+
+async function buildHubContext(query = '') {
+  try {
+    const [cfgResult, membersResult] = await Promise.all([
+      pool.query(`SELECT key, value FROM hub_config WHERE key IN ('hub_name','hub_location','hub_description')`),
+      pool.query(`SELECT COUNT(*) AS cnt FROM hub_users`),
+    ]);
+    const cfg = Object.fromEntries(cfgResult.rows.map(r => [r.key, r.value]));
+    const name = cfg.hub_name || process.env.HUB_NAME || 'this hub';
+    const location = cfg.hub_location || process.env.HUB_LOCATION || '';
+    const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+    const memberCount = parseInt(membersResult.rows[0]?.cnt || '0', 10);
+
+    let postLines = '';
+    let usingRag = false;
+
+    // Try RAG first when a query is available and embedding model is ready
+    if (query && await isEmbedModelAvailable()) {
+      try {
+        const relevant = await retrieveRelevantPosts(query);
+        if (relevant.length > 0) {
+          usingRag = true;
+          postLines = relevant.map(p => {
+            const preview = (p.body || '').slice(0, 200).replace(/\n+/g, ' ');
+            const ts = new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return `  [${ts}] [${p.category || 'general'}] ${p.title || '(untitled)'}: ${preview}`;
+          }).join('\n');
+        }
+      } catch { /* fall through to recency */ }
+    }
+
+    // Fallback: most recent posts
+    if (!postLines) {
+      const { rows } = await pool.query(
+        `SELECT title, body, category, created_at FROM hub_posts ORDER BY created_at DESC LIMIT 15`
+      );
+      postLines = rows.map(p => {
+        const preview = (p.body || '').slice(0, 120).replace(/\n+/g, ' ');
+        const ts = new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `  [${ts}] [${p.category || 'general'}] ${p.title || '(untitled)'}: ${preview}`;
+      }).join('\n');
+    }
+
+    return [
+      `You are the community AI assistant for "${name}"${location ? `, a local hub in ${location}` : ''}.`,
+      description ? `About this hub: ${description}` : '',
+      `Members: ${memberCount}`,
+      postLines
+        ? `\n${usingRag ? 'Relevant' : 'Recent'} community posts:\n${postLines}`
+        : '',
+      '\nBe helpful and concise. When referencing hub posts, cite them naturally. If asked about something specific to this community you have no context for, say so.',
+    ].filter(Boolean).join('\n');
+  } catch {
+    return 'You are a helpful community AI assistant.';
+  }
+}
+
+// GET /api/ai/status
+app.get('/api/ai/status', authenticate, async (_req, res) => {
+  try {
+    const [cfg, ready] = await Promise.all([getAiConfig(), isOllamaReady()]);
+    res.json({ enabled: cfg.enabled, model: cfg.model, ollamaReady: ready });
+  } catch {
+    res.status(500).json({ error: 'Failed to get AI status' });
+  }
+});
+
+// POST /api/ai/chat — streaming, hub-context-aware
+app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'messages array required' });
+  }
+
+  const cfg = await getAiConfig();
+  if (!cfg.enabled) {
+    return res.status(403).json({ error: 'AI assistant is not enabled on this hub' });
+  }
+  const ready = await isOllamaReady();
+  if (!ready) {
+    return res.status(503).json({ error: 'AI model is not available yet. The hub may still be loading.' });
+  }
+
+  const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
+  const systemContext = await buildHubContext(lastUserMsg);
+  const ollamaMessages = [
+    { role: 'system', content: systemContext },
+    ...messages.map(m => ({ role: m.role, content: String(m.content) })),
+  ];
+
+  try {
+    const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: cfg.model, messages: ollamaMessages, stream: true }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!ollamaRes.ok) {
+      const err = await ollamaRes.text();
+      return res.status(502).json({ error: `Model error: ${err.slice(0, 200)}` });
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const reader = ollamaRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const chunk = JSON.parse(line);
+          if (chunk.message?.content) res.write(chunk.message.content);
+          if (chunk.done) { res.end(); return; }
+        } catch { /* malformed line */ }
+      }
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: 'AI request failed' });
+    else res.end();
+  }
+});
+
+// GET /api/ai/models — list installed Ollama models (admin)
+app.get('/api/ai/models', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const ready = await isOllamaReady();
+  if (!ready) return res.json({ models: [] });
+  try {
+    const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    const data = await r.json();
+    res.json({ models: (data.models || []).map(m => m.name) });
+  } catch {
+    res.json({ models: [] });
+  }
+});
+
+// POST /api/ai/model/pull — pull a model from Ollama library (admin, streams progress)
+app.post('/api/ai/model/pull', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { model } = req.body;
+  if (!model || typeof model !== 'string') return res.status(400).json({ error: 'model name required' });
+  const ready = await isOllamaReady();
+  if (!ready) return res.status(503).json({ error: 'Ollama not available' });
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  try {
+    const pullRes = await fetch(`${OLLAMA_URL}/api/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: model, stream: true }),
+      signal: AbortSignal.timeout(600000),
+    });
+    const reader = pullRes.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value, { stream: true }));
+    }
+    res.end();
+  } catch {
+    if (!res.headersSent) res.status(500).json({ error: 'Pull failed' });
+    else res.end();
+  }
+});
+
+// GET /api/ai/index/status — embedding coverage stats (admin)
+app.get('/api/ai/index/status', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const [total, indexed, embedReady] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS cnt FROM hub_posts`),
+      pool.query(`SELECT COUNT(*) AS cnt FROM hub_post_embeddings`),
+      isEmbedModelAvailable(),
+    ]);
+    res.json({
+      total:      parseInt(total.rows[0]?.cnt || '0', 10),
+      indexed:    parseInt(indexed.rows[0]?.cnt || '0', 10),
+      embedModel: EMBED_MODEL,
+      embedReady,
+    });
+  } catch {
+    res.status(500).json({ error: 'Failed to get index status' });
+  }
+});
+
+// POST /api/ai/index — trigger background re-index of all posts (admin)
+app.post('/api/ai/index', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  if (!(await isEmbedModelAvailable())) {
+    return res.status(503).json({ error: `Embedding model (${EMBED_MODEL}) not installed` });
+  }
+  res.json({ ok: true, message: 'Indexing started in background' });
+  // Re-index everything (overwrite existing embeddings too)
+  pool.query(`SELECT id, title, body, category FROM hub_posts`)
+    .then(({ rows }) => {
+      (async () => {
+        let count = 0;
+        for (const row of rows) {
+          try { await embedPost(row.id, row.title, row.body, row.category); count++; }
+          catch { /* skip */ }
+        }
+        console.log(`[rag] full re-index complete: ${count}/${rows.length} posts`);
+      })();
+    })
+    .catch(() => {});
+});
+
+// PATCH /api/ai/config — enable/disable AI, set active model (admin)
+app.patch('/api/ai/config', authenticate, async (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  const { enabled, model } = req.body;
+  const updates = {};
+  if (typeof enabled === 'boolean') updates.ai_enabled = String(enabled);
+  if (model && typeof model === 'string') updates.ai_model = model;
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'enabled or model required' });
+  try {
+    for (const [key, value] of Object.entries(updates)) {
+      await pool.query(
+        `INSERT INTO hub_config (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, value]
+      );
+    }
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to update AI config' });
+  }
+});
+
 // ── Serve portal (bundled into image at build time) ───────
 // When the dist/ folder exists, the hub serves its own UI at /.
 // API routes defined above always take precedence.
@@ -4369,6 +4749,9 @@ async function start() {
 
   // Non-blocking — discovers missing capabilities from already-connected apps
   backfillAppCapabilities().catch(() => {});
+
+  // Non-blocking — embed any posts that don't yet have RAG vectors
+  setTimeout(() => indexUnembeddedPosts().catch(() => {}), 5000);
 
   // Purge expired sessions every 6 hours
   setInterval(() => {

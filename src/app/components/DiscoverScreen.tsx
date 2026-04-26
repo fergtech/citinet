@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { DotGrid } from './DotGrid';
 import {
   Search, X, Tag, Users, MessageCircle, FolderOpen,
   Compass, Shield, FileText, Loader2,
@@ -286,17 +287,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="discover-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#discover-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
         <div className="max-w-2xl mx-auto px-4 pt-3 pb-2">

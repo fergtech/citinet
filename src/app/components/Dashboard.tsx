@@ -3,7 +3,7 @@ import {
   Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronLeft, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen,
+  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Bot,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -18,6 +18,7 @@ import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import { registryService } from '../services/registryService';
+import { aiService } from '../services/aiService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
 
@@ -75,6 +76,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   const hubSlug = currentHub?.slug ?? '';
 
+  const [aiEnabled, setAiEnabled] = useState(false);
+
   // Re-fetch whenever the hub slug changes OR the connection comes (back) online.
   // This ensures the dashboard repopulates after a restart / boot recovery.
   const isConnected = connectionStatus === 'connected';
@@ -82,6 +85,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     if (!hubSlug) return;
     featuredService.getFeatured(hubSlug).then(setFeaturedItems);
     marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
+    aiService.getStatus(hubSlug).then(s => setAiEnabled(s.enabled)).catch(() => {});
   }, [hubSlug, isConnected]);
 
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
@@ -373,9 +377,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   // enabledApps: null = all enabled (existing hubs), array = restrict to those IDs
   const enabledSet = currentHub?.enabledApps ?? null;
-  const visibleTiles = enabledSet
-    ? APP_TILES.filter(t => enabledSet.includes(t.screen))
-    : APP_TILES;
+  const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' };
+  const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
+  const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
 
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]

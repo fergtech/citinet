@@ -252,6 +252,18 @@ export interface HubPost {
   media_file_name?: string;   // filename in MinIO, served via /api/public/files/:name
   /** Direct external media URL (used for proxy posts from Society Plus) */
   media_url?: string | null;
+  /** External source metadata (optional, for proxied app posts) */
+  source?: string | null;
+  platform?: string | null;
+  origin?: string | null;
+  source_app?: string | null;
+  source_name?: string | null;
+  app_name?: string | null;
+  platform_name?: string | null;
+  source_logo_url?: string | null;
+  logo_url?: string | null;
+  source_favicon_url?: string | null;
+  favicon_url?: string | null;
   reply_count: number;
   created_at: string;
   updated_at: string;

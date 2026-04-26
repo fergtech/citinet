@@ -28,6 +28,7 @@ import { PollsScreen } from './components/PollsScreen';
 import { ModLogScreen } from './components/ModLogScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
+import { AssistantScreen } from './components/AssistantScreen';
 import { ShareFilePage } from './components/ShareFilePage';
 import { ShareNotePage } from './components/ShareNotePage';
 import { ShareSpacePage } from './components/ShareSpacePage';
@@ -350,6 +351,11 @@ function HubManagementRoute() {
   return <HubManagementScreen onBack={() => navigate(-1)} />;
 }
 
+function HubAssistantRoute() {
+  const navigate = useNavigate();
+  return <AssistantScreen onBack={() => navigate(-1)} />;
+}
+
 function HubDiscoverRoute() {
   const navigate = useNavigate();
   return (
@@ -666,6 +672,7 @@ function HubModeRoutes() {
       <Route path="/spaces/:spaceSlug" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
       <Route path="/notes" element={<HubGuard><HubNotesRoute /></HubGuard>} />
       <Route path="/notes/:noteId" element={<HubGuard><HubNotesRoute /></HubGuard>} />
+      <Route path="/assistant" element={<HubGuard><HubAssistantRoute /></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>

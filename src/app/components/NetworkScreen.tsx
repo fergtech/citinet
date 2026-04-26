@@ -1,4 +1,5 @@
 import { Radio, Users, QrCode, Server, AlertTriangle, Zap, Activity, X } from 'lucide-react';
+import { DotGrid } from './DotGrid';
 import { useState, useEffect } from 'react';
 import { NetworkMap } from './NetworkMap';
 import { MemberListModal } from './MemberListModal';
@@ -46,17 +47,7 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="network-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#network-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
         {/* Header */}
       <div className="sticky top-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
         <div className="max-w-5xl mx-auto px-4 md:px-8 py-4">

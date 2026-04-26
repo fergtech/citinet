@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { DotGrid } from './DotGrid';
 import { Search, Grid3x3, List, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Package, Pencil, MoveVertical, ImagePlus, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { marketplaceService } from '../services/marketplaceService';
@@ -256,17 +257,7 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
-      {/* Dot grid background */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="marketplace-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#marketplace-dots)" opacity="0.07"/>
-        </svg>
-      </div>
+      <DotGrid />
       {/* Header */}
       <div className="sticky top-0 bg-white dark:bg-zinc-900 z-20 border-b border-slate-200 dark:border-zinc-800">
         <div className="px-4 py-3">

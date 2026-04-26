@@ -543,6 +543,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const isPending = space.my_status === 'pending';
   const isInvited = space.my_status === 'invited';
   const isAdmin = canManage(space.my_role);
+  const isProxySocietySpace = /^c[a-z0-9]{20,}$/.test(space.slug);
 
   useEffect(() => {
     setTab('feed'); setPosts([]); setMembers([]);
@@ -818,12 +819,45 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 const mediaUrl = (post as any).media_url
                   ?? (post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null);
                 const isVidMedia = post.media_file_name?.match(/\.(mp4|webm|mov)$/i) || (post as any).media_url?.match(/\.(mp4|webm|mov)$/i);
+                const authorUsername = (post.author_username || '').trim();
+                const authorUsernameLower = authorUsername.toLowerCase();
+                const externalSourceMeta = (post as any).source || (post as any).platform || (post as any).origin || (post as any).source_app;
+                const isExternalProxyAuthor = isProxySocietySpace && (
+                  !!externalSourceMeta
+                  || authorUsernameLower === 'email'
+                  || authorUsernameLower.includes('@')
+                  || !post.author_id
+                );
+                const sourceBrandName = (post as any).source_name
+                  || (post as any).app_name
+                  || (post as any).platform_name
+                  || (post as any).source
+                  || (post as any).platform
+                  || 'Society+';
+                const sourceBrandLogo = (post as any).source_logo_url
+                  || (post as any).logo_url
+                  || (post as any).source_favicon_url
+                  || (post as any).favicon_url
+                  || null;
                 return (
                   <div key={post.id} onClick={() => setSelectedPost(post)}
                     className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:bg-zinc-800/70 transition-colors">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
-                      <span className="text-sm font-medium text-white">{post.author_username}</span>
+                      {isExternalProxyAuthor ? (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/70 border border-zinc-700/80">
+                          {sourceBrandLogo
+                            ? <img src={sourceBrandLogo} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            : <LayoutGrid className="w-3 h-3 text-zinc-400" />
+                          }
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Shared from</span>
+                          <span className="text-xs font-semibold text-zinc-200 leading-none">{sourceBrandName}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
+                          <span className="text-sm font-medium text-white">{post.author_username}</span>
+                        </>
+                      )}
                       <span className="text-xs text-zinc-500 ml-auto">{timeAgo(post.created_at)}</span>
                     </div>
                     {post.body && <p className="text-sm text-zinc-400 leading-relaxed">{post.body}</p>}

@@ -87,6 +87,29 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+function isExternalSourcePost(post: HubPost): boolean {
+  const authorUsername = (post.author_username || '').trim().toLowerCase();
+  return Boolean(
+    post.source
+    || post.platform
+    || post.origin
+    || post.source_app
+    || post.source_name
+    || post.app_name
+    || post.platform_name
+    || authorUsername === 'email'
+    || authorUsername.includes('@')
+    || !post.author_id
+  );
+}
+
+function getSourceBranding(post: HubPost): { name: string; logoUrl: string | null } {
+  return {
+    name: post.source_name || post.app_name || post.platform_name || post.source || post.platform || 'Society+',
+    logoUrl: post.source_logo_url || post.logo_url || post.source_favicon_url || post.favicon_url || null,
+  };
+}
+
 export function PostDetailModal({
   isOpen, onClose, post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin,
   categoryColors, publicFileUrl, onDeleted,
@@ -224,6 +247,8 @@ export function PostDetailModal({
   const variant = post.media_file_name
     ? (['mp4','webm','mov'].includes(post.media_file_name.split('.').pop()?.toLowerCase() ?? '') ? 'video' : 'image')
     : 'text';
+  const externalSourcePost = isExternalSourcePost(post);
+  const sourceBrand = getSourceBranding(post);
 
   return (
     <AnimatePresence>
@@ -344,20 +369,32 @@ export function PostDetailModal({
                   ) : (
                     <>
                       <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
-                        <AvatarCircle
-                          authorId={post.author_id}
-                          authorUsername={post.author_username}
-                          authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
-                          currentUserId={currentUserId}
-                          currentUserAvatarUrl={currentUserAvatarUrl}
-                          size="sm"
-                        />
-                        <div className="flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5" />
-                          <span>{post.author_username}</span>
-                        </div>
-                        <span>·</span>
-                        <div className="flex items-center gap-1.5">
+                        {externalSourcePost ? (
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                            {sourceBrand.logoUrl
+                              ? <img src={sourceBrand.logoUrl} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              : <div className="w-3.5 h-3.5 rounded-sm bg-slate-300 dark:bg-zinc-700 text-[8px] font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-center">SP</div>
+                            }
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Shared from</span>
+                            <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <AvatarCircle
+                              authorId={post.author_id}
+                              authorUsername={post.author_username}
+                              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                              currentUserId={currentUserId}
+                              currentUserAvatarUrl={currentUserAvatarUrl}
+                              size="sm"
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5" />
+                              <span>{post.author_username}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex items-center gap-1.5 ml-auto">
                           <Clock className="w-3.5 h-3.5" />
                           <span>{formatTimestamp(post.created_at)}</span>
                         </div>
