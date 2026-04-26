@@ -11,6 +11,9 @@ interface VendorProfileScreenProps {
   vendor: HubVendor;
   listings: HubListing[];
   hubSlug: string;
+  /** When set, media URLs are built from this base instead of the stored hub connection.
+   *  Used when rendering from the public web (no auth session). */
+  hubBaseUrl?: string;
   onBack: () => void;
   onItemClick: (listingId: string) => void;
 }
@@ -76,9 +79,18 @@ function formatStory(desc: string): string[] {
   return desc.split('\n\n').filter(p => p.trim().length > 0);
 }
 
-export function VendorProfileScreen({ vendor: initialVendor, listings: initialListings, hubSlug, onBack, onItemClick }: VendorProfileScreenProps) {
+export function VendorProfileScreen({ vendor: initialVendor, listings: initialListings, hubSlug, hubBaseUrl, onBack, onItemClick }: VendorProfileScreenProps) {
   const conn = hubService.getHubConnection(hubSlug);
   const currentUserId = conn?.user?.hubUserId;
+
+  // Resolves a MinIO file name to a publicly-accessible URL.
+  // In public/web mode (hubBaseUrl provided) we use the registry tunnel URL directly
+  // since there is no stored hub connection to derive it from.
+  const fileUrl = (fileName: string | null | undefined): string | null => {
+    if (!fileName) return null;
+    if (hubBaseUrl) return `${hubBaseUrl}/api/public/files/${encodeURIComponent(fileName)}`;
+    return hubService.getPublicFileUrl(hubSlug, fileName);
+  };
   const isOwner = !!currentUserId && currentUserId === initialVendor.owner_user_id;
 
   // State
@@ -121,7 +133,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       return { backgroundImage: `url(${bannerPreview})`, backgroundSize: 'cover', backgroundPosition: 'center' };
     }
     if (vendor.banner_mode === 'image' && vendor.banner_image_file_name) {
-      const imageUrl = marketplaceService.getVendorBannerUrl(hubSlug, vendor.banner_image_file_name);
+      const imageUrl = fileUrl(vendor.banner_image_file_name);
       return {
         backgroundImage: `url(${imageUrl})`,
         backgroundSize: 'cover',
@@ -170,7 +182,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       const updated = await marketplaceService.updateVendor(hubSlug, { logo_file_name: uploaded.name });
       setVendor(updated);
       URL.revokeObjectURL(previewUrl);
-      const freshUrl = marketplaceService.getVendorLogoUrl(hubSlug, updated.logo_file_name ?? '');
+      const freshUrl = fileUrl(updated.logo_file_name);
       setLogoPreview(freshUrl);
     } catch (err: any) {
       URL.revokeObjectURL(previewUrl);
@@ -197,7 +209,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       });
       setVendor(updated);
       URL.revokeObjectURL(previewUrl);
-      const freshUrl = marketplaceService.getVendorBannerUrl(hubSlug, updated.banner_image_file_name ?? '');
+      const freshUrl = fileUrl(updated.banner_image_file_name);
       setBannerPreview(freshUrl);
     } catch (err: any) {
       URL.revokeObjectURL(previewUrl);
@@ -308,7 +320,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
           >
             {(logoPreview || vendor.logo_file_name)
               ? <img
-                  src={logoPreview ?? (marketplaceService.getVendorLogoUrl(hubSlug, vendor.logo_file_name!) ?? undefined)}
+                  src={logoPreview ?? (fileUrl(vendor.logo_file_name) ?? undefined)}
                   alt={vendor.name}
                   className="w-full h-full object-cover rounded-2xl"
                 />
@@ -560,7 +572,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       {featuredListings.map((listing, idx) => {
                         const imageUrl = listing.image_file_name
-                          ? marketplaceService.getListingImageUrl(hubSlug, listing.image_file_name)
+                          ? fileUrl(listing.image_file_name)
                           : null;
                         return (
                           <motion.div
@@ -610,7 +622,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {activeListings.map((listing, idx) => {
                       const imageUrl = listing.image_file_name
-                        ? marketplaceService.getListingImageUrl(hubSlug, listing.image_file_name)
+                        ? fileUrl(listing.image_file_name)
                         : null;
                       return (
                         <motion.div
@@ -674,7 +686,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 opacity-60">
                         {inactiveListings.map(listing => {
                           const imageUrl = listing.image_file_name
-                            ? marketplaceService.getListingImageUrl(hubSlug, listing.image_file_name)
+                            ? fileUrl(listing.image_file_name)
                             : null;
                           return (
                             <div key={listing.id} className="bg-slate-50 dark:bg-zinc-800/50 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800">

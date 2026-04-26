@@ -1506,7 +1506,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             {appSaving ? 'Connecting…' : 'Connect & verify'}
                           </button>
                           <p className="text-xs text-slate-400 dark:text-zinc-500">
-                            Citinet will verify the connection before saving. The app must implement the hub-app contract at <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">/api/hub-app/info</code>.
+                            citinet will verify the connection before saving. The app must implement the hub-app contract at <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">/api/hub-app/info</code>.
                           </p>
                         </div>
                       </>
@@ -1819,3 +1819,4 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
     </div>
   );
 }
+

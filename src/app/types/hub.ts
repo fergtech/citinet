@@ -1,5 +1,5 @@
 /**
- * Hub Types for Citinet
+ * Hub Types for citinet
  * 
  * A "hub" is a citinet community node — a locally-operated micro data center
  * exposed to the internet via a tunnel (Tailscale, Cloudflare, etc.).
@@ -395,3 +395,4 @@ export interface HubListing {
   is_active: boolean;
   created_at: string;
 }
+

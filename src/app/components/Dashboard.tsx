@@ -54,6 +54,9 @@ export const DEFAULT_ENABLED_APPS: string[] = [
 const MOBILE_LAUNCHPAD_COLUMNS = 5;
 const MOBILE_LAUNCHPAD_ROWS = 2;
 const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
+const DESKTOP_LAUNCHPAD_COLUMNS_MD = 5;
+const DESKTOP_LAUNCHPAD_COLUMNS_XL = 8;
+const DESKTOP_LAUNCHPAD_ROWS = 2;
 
 interface DashboardProps {
   userName?: string;
@@ -355,10 +358,47 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   const mobileLaunchpadRef = useRef<HTMLDivElement | null>(null);
   const [mobileLaunchpadPage, setMobileLaunchpadPage] = useState(0);
+  const desktopLaunchpadRef = useRef<HTMLDivElement | null>(null);
+  const [desktopLaunchpadPage, setDesktopLaunchpadPage] = useState(0);
+  const [isXlDesktop, setIsXlDesktop] = useState(false);
+  const desktopLaunchpadDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: false });
+  const suppressDesktopLaunchpadClickRef = useRef(false);
+
+  const desktopLaunchpadItems: typeof APP_TILES = myVendor
+    ? [...visibleTiles, { Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
+    : visibleTiles;
+
+  const desktopLaunchpadItemsWithSuggest: typeof APP_TILES = [
+    ...desktopLaunchpadItems,
+    {
+      Icon: Sparkles,
+      label: 'Suggest',
+      screen: 'suggest',
+      gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600',
+    },
+  ];
+
+  const desktopLaunchpadColumns = isXlDesktop ? DESKTOP_LAUNCHPAD_COLUMNS_XL : DESKTOP_LAUNCHPAD_COLUMNS_MD;
+  const desktopLaunchpadPageSize = desktopLaunchpadColumns * DESKTOP_LAUNCHPAD_ROWS;
+  const desktopLaunchpadPages: typeof desktopLaunchpadItemsWithSuggest[] = [];
+  for (let i = 0; i < desktopLaunchpadItemsWithSuggest.length; i += desktopLaunchpadPageSize) {
+    desktopLaunchpadPages.push(desktopLaunchpadItemsWithSuggest.slice(i, i + desktopLaunchpadPageSize));
+  }
+
+  useEffect(() => {
+    const updateDesktopBreakpoint = () => setIsXlDesktop(window.innerWidth >= 1280);
+    updateDesktopBreakpoint();
+    window.addEventListener('resize', updateDesktopBreakpoint);
+    return () => window.removeEventListener('resize', updateDesktopBreakpoint);
+  }, []);
 
   useEffect(() => {
     setMobileLaunchpadPage(prev => Math.min(prev, Math.max(0, mobileLaunchpadPages.length - 1)));
   }, [mobileLaunchpadPages.length]);
+
+  useEffect(() => {
+    setDesktopLaunchpadPage(prev => Math.min(prev, Math.max(0, desktopLaunchpadPages.length - 1)));
+  }, [desktopLaunchpadPages.length]);
 
   const handleMobileLaunchpadScroll = () => {
     const el = mobileLaunchpadRef.current;
@@ -378,6 +418,65 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     const page = el.children[pageIndex] as HTMLElement | undefined;
     if (!page) return;
     el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
+  };
+
+  const handleDesktopLaunchpadScroll = () => {
+    const el = desktopLaunchpadRef.current;
+    if (!el) return;
+
+    const first = el.firstElementChild as HTMLElement | null;
+    const second = el.children[1] as HTMLElement | null;
+    const pageSpan = first && second ? (second.offsetLeft - first.offsetLeft) : el.clientWidth;
+    const nextPage = Math.round(el.scrollLeft / Math.max(pageSpan, 1));
+    const clamped = Math.max(0, Math.min(desktopLaunchpadPages.length - 1, nextPage));
+    if (clamped !== desktopLaunchpadPage) setDesktopLaunchpadPage(clamped);
+  };
+
+  const scrollToDesktopLaunchpadPage = (pageIndex: number) => {
+    const el = desktopLaunchpadRef.current;
+    if (!el) return;
+    const page = el.children[pageIndex] as HTMLElement | undefined;
+    if (!page) return;
+    el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
+  };
+
+  const handleDesktopLaunchpadPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const el = desktopLaunchpadRef.current;
+    if (!el) return;
+    desktopLaunchpadDragRef.current.active = true;
+    desktopLaunchpadDragRef.current.startX = e.clientX;
+    desktopLaunchpadDragRef.current.startScrollLeft = el.scrollLeft;
+    desktopLaunchpadDragRef.current.moved = false;
+    el.setPointerCapture(e.pointerId);
+  };
+
+  const handleDesktopLaunchpadPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!desktopLaunchpadDragRef.current.active) return;
+    const el = desktopLaunchpadRef.current;
+    if (!el) return;
+    const deltaX = e.clientX - desktopLaunchpadDragRef.current.startX;
+    if (Math.abs(deltaX) > 6) desktopLaunchpadDragRef.current.moved = true;
+    el.scrollLeft = desktopLaunchpadDragRef.current.startScrollLeft - deltaX;
+  };
+
+  const handleDesktopLaunchpadPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = desktopLaunchpadRef.current;
+    if (el?.hasPointerCapture(e.pointerId)) {
+      el.releasePointerCapture(e.pointerId);
+    }
+    if (!desktopLaunchpadDragRef.current.active) return;
+    desktopLaunchpadDragRef.current.active = false;
+    if (desktopLaunchpadDragRef.current.moved) {
+      suppressDesktopLaunchpadClickRef.current = true;
+    }
+  };
+
+  const handleDesktopLaunchpadTileClickCapture = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!suppressDesktopLaunchpadClickRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    suppressDesktopLaunchpadClickRef.current = false;
   };
 
   const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-cyan-200 border border-cyan-300/35 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-cyan-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70';
@@ -510,7 +609,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">About Citinet</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-300">About citinet</span>
                 </button>
                 <button
                   onClick={() => { setShowStartMenu(false); setShowSupportMenu(true); }}
@@ -593,7 +692,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         )}
         <button
           onClick={openProjectInfo}
-          title="About Citinet"
+          title="About citinet"
           className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
         >
           <CircleAlert className="w-5 h-5" />
@@ -971,53 +1070,80 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         {/* Desktop App Launcher - OS-style icon grid */}
         <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
           <div className="max-w-5xl mx-auto px-8 py-5">
-            <div className="grid grid-cols-5 lg:grid-cols-10 gap-1 justify-items-center">
-              {visibleTiles.map(app => {
-                const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-                return (
-                  <button
-                    key={app.screen}
-                    onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-                    className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
+            <div
+              ref={desktopLaunchpadRef}
+              onScroll={handleDesktopLaunchpadScroll}
+              onPointerDown={handleDesktopLaunchpadPointerDown}
+              onPointerMove={handleDesktopLaunchpadPointerMove}
+              onPointerUp={handleDesktopLaunchpadPointerEnd}
+              onPointerCancel={handleDesktopLaunchpadPointerEnd}
+              className="overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+              style={{ scrollbarWidth: 'none' }}
+            >
+              <div className="flex gap-3">
+                {desktopLaunchpadPages.map((page, pageIdx) => (
+                  <div
+                    key={`desktop-launchpad-page-${pageIdx}`}
+                    className={`snap-start shrink-0 w-full grid gap-1 justify-items-center content-start ${desktopLaunchpadColumns === DESKTOP_LAUNCHPAD_COLUMNS_XL ? 'grid-cols-8' : 'grid-cols-5'}`}
                   >
-                    <div className="relative">
-                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all`}>
-                        <app.Icon className="w-6 h-6 text-white" />
-                      </div>
-                      {badge > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-950/30">
-                          {badge > 9 ? '9+' : badge}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] font-medium text-slate-200 text-center leading-tight">{app.label}</span>
-                  </button>
-                );
-              })}
-              {myVendor && (
-                <button
-                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-                  className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-purple-500/15 dark:hover:bg-purple-400/15 transition-all group active:scale-95"
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white font-bold text-lg overflow-hidden">
-                    {vendorLogoUrl
-                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : myVendor.name.charAt(0).toUpperCase()
-                    }
+                    {page.map(app => {
+                      const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+                      const isSuggest = app.screen === 'suggest';
+                      const isVendorTile = app.screen.startsWith('vendor/');
+                      return (
+                        <button
+                          key={`${pageIdx}-${app.screen}`}
+                          onClickCapture={handleDesktopLaunchpadTileClickCapture}
+                          onClick={() => isSuggest ? setShowRequestModal(true) : handleTileNavigate(app.screen, app.notifyFeature)}
+                          className={`w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl transition-all group active:scale-95 ${
+                            isSuggest
+                              ? 'hover:bg-indigo-500/15'
+                              : 'hover:bg-purple-500/15 dark:hover:bg-purple-400/15'
+                          }`}
+                        >
+                          <div className="relative">
+                            <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all overflow-hidden text-white font-bold text-lg`}>
+                              {(isVendorTile && vendorLogoUrl)
+                                ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                : <app.Icon className="w-6 h-6 text-white" />
+                              }
+                            </div>
+                            {badge > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-950/30">
+                                {badge > 9 ? '9+' : badge}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-300' : isVendorTile ? 'text-purple-300' : 'text-slate-200'}`}>
+                            {app.label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <span className="text-[11px] font-medium text-purple-300 text-center leading-tight truncate w-full">{myVendor.name}</span>
-                </button>
-              )}
-              <button
-                onClick={() => setShowRequestModal(true)}
-                className="w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-indigo-500/15 transition-all group active:scale-95"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-[11px] font-medium text-indigo-300 text-center leading-tight">Suggest</span>
-              </button>
+                ))}
+              </div>
             </div>
+            {desktopLaunchpadPages.length > 1 && (
+              <div className="flex items-center justify-center gap-1.5 pt-3" aria-label="Desktop launchpad page indicator">
+                {desktopLaunchpadPages.map((_, idx) => {
+                  const active = idx === desktopLaunchpadPage;
+                  return (
+                    <button
+                      key={`desktop-launchpad-dot-${idx}`}
+                      type="button"
+                      onClick={() => scrollToDesktopLaunchpadPage(idx)}
+                      aria-label={`Go to desktop launchpad page ${idx + 1}`}
+                      className={`h-1.5 w-1.5 rounded-full transition-all ${
+                        active
+                          ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-110'
+                          : 'bg-slate-500/70 dark:bg-zinc-500/70 hover:bg-slate-400 dark:hover:bg-zinc-400'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1451,7 +1577,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
                   <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">About Citinet</span>
+                  <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
                 </button>
                 <button
                   onClick={() => { setShowMobileStartMenu(false); setShowSupportMenu(true); }}
@@ -1762,3 +1888,4 @@ const CATEGORY_COLORS: Record<string, string> = {
   PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
   REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
 };
+
