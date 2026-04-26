@@ -100,16 +100,11 @@ export default async function handler(req, res) {
         h => h.slug === slug || (id && h.id === id),
       );
 
-      // For new registrations, verify the hub is reachable before listing it.
-      // For updates to existing entries, trust the caller — the hub may not be
-      // reachable from Vercel's servers (e.g. Tailscale-only networks).
+      // Attempt to verify the hub is reachable — but treat it as advisory.
+      // A hub may be behind Tailscale or temporarily unreachable from Vercel;
+      // we still register it and let the online flag reflect actual reachability.
       let info = null;
-      if (existingIndex < 0) {
-        info = await verifyHub(tunnel_url);
-        if (!info) {
-          return res.status(400).json({ error: 'Hub is not reachable at the provided tunnel URL' });
-        }
-      }
+      try { info = await verifyHub(tunnel_url); } catch { /* soft fail */ }
 
       const hubEntry = {
         id:            id || slug,
@@ -119,7 +114,7 @@ export default async function handler(req, res) {
         description:   description || (info?.description) || (info?.hub_description) || '',
         tunnel_url,
         member_count:  member_count ?? 0,
-        online:        true,
+        online:        info !== null,
         registered_at: existingIndex >= 0 ? content.hubs[existingIndex].registered_at : now,
         last_seen:     now,
       };
