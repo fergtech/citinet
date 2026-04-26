@@ -120,6 +120,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [tunnelError, setTunnelError] = useState('');
   const [tunnelSuccess, setTunnelSuccess] = useState(false);
 
+  // Registry-based reconnect
+  const [registrySearchQuery, setRegistrySearchQuery] = useState('');
+  const [registryHubs, setRegistryHubs] = useState<import('../services/registryService').RegistryHub[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  const [showManualUrl, setShowManualUrl] = useState(false);
+
   const autoRegisterHub = (tunnelUrl: string) => {
     if (!currentHub) return;
     // Fire-and-forget — failure is silent, doesn't affect the user's flow
@@ -170,6 +176,37 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         setShowTunnelInput(false);
         setTunnelSuccess(false);
       }, 1500);
+    }
+  };
+
+  // When hub goes unreachable, auto-load registry so search is instant
+  useEffect(() => {
+    if (connectionStatus !== 'unreachable') return;
+    setRegistryLoading(true);
+    registryService.getHubs()
+      .then(hubs => setRegistryHubs(hubs))
+      .catch(() => {})
+      .finally(() => setRegistryLoading(false));
+  }, [connectionStatus]);
+
+  const filteredRegistryHubs = registrySearchQuery.trim()
+    ? registryHubs.filter(h =>
+        h.name.toLowerCase().includes(registrySearchQuery.toLowerCase()) ||
+        h.slug.toLowerCase().includes(registrySearchQuery.toLowerCase())
+      )
+    : registryHubs;
+
+  const handleRegistryReconnect = async (tunnelUrl: string) => {
+    setTunnelUpdating(true);
+    setTunnelError('');
+    const result = await updateTunnelUrl(tunnelUrl, true);
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      setRegistrySearchQuery('');
+      setTimeout(() => setTunnelSuccess(false), 2000);
+    } else {
+      setTunnelError('Could not reach that hub. Try another.');
     }
   };
 
@@ -509,42 +546,79 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </button>
       </div>
 
-      {/* Desktop Tunnel Update Panel */}
+      {/* Desktop Reconnect Panel */}
       {showTunnelInput && (
-        <div className="hidden md:block fixed top-10 right-4 z-40 w-72 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-slate-200 dark:border-zinc-800 p-4 space-y-2">
-          {currentHub?.tunnelUrl && (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate font-mono">{currentHub.tunnelUrl}</p>
-          )}
-          <div className="flex gap-1.5">
-            <input
-              type="url"
-              value={tunnelInput}
-              onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
-              onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
-              placeholder="New tunnel URL..."
-              className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:border-transparent focus:outline-none"
-              disabled={tunnelUpdating}
-            />
-            <button
-              onClick={handleTunnelReconnect}
-              disabled={tunnelUpdating || !tunnelInput.trim()}
-              className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
-            >
-              {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : tunnelSuccess ? <Check className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />}
-            </button>
+        <div className="hidden md:block fixed top-10 right-4 z-40 w-72 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-900 dark:text-white">Find your hub</p>
+            {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
+            {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
           </div>
-          {tunnelError && (
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
-              {tunnelInput.trim() && (
-                <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 dark:text-purple-400 underline hover:no-underline shrink-0">Save anyway</button>
-              )}
-            </div>
-          )}
-          {tunnelSuccess && <p className="text-[10px] text-green-500 dark:text-green-400">Reconnected!</p>}
-          {connectionStatus === 'unreachable' && !tunnelInput && (
-            <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — enter the new tunnel URL to reconnect.</p>
-          )}
+
+          {/* Name search */}
+          <div className="space-y-1.5">
+            <input
+              type="text"
+              value={registrySearchQuery}
+              onChange={e => setRegistrySearchQuery(e.target.value)}
+              placeholder="Search hub by name…"
+              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+            />
+            {registrySearchQuery.trim() && (
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {filteredRegistryHubs.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 px-1">No hubs found.</p>
+                ) : filteredRegistryHubs.map(hub => (
+                  <button
+                    key={hub.id}
+                    onClick={() => handleRegistryReconnect(hub.tunnel_url)}
+                    disabled={tunnelUpdating}
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
+                  >
+                    <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">{hub.location}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Manual URL fallback */}
+          <div>
+            <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 underline hover:no-underline">
+              {showManualUrl ? 'Hide' : 'Enter URL manually'}
+            </button>
+            {showManualUrl && (
+              <div className="mt-1.5 space-y-1.5">
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    value={tunnelInput}
+                    onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
+                    placeholder="https://…"
+                    className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                    disabled={tunnelUpdating}
+                  />
+                  <button
+                    onClick={handleTunnelReconnect}
+                    disabled={tunnelUpdating || !tunnelInput.trim()}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center shrink-0"
+                  >
+                    {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  </button>
+                </div>
+                {tunnelError && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
+                    {tunnelInput.trim() && (
+                      <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1015,53 +1089,82 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             </div>
 
             {connectionStatus === 'unreachable' && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-2">
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
                 <div className="flex items-center gap-2">
-                  <WifiOff className="w-4 h-4 text-orange-500" />
+                  <WifiOff className="w-4 h-4 text-orange-500 shrink-0" />
                   <span className="text-xs font-medium text-orange-700 dark:text-orange-300 flex-1">Hub unreachable</span>
-                  <button
-                    onClick={() => setShowTunnelInput(!showTunnelInput)}
-                    className="text-[10px] font-medium text-purple-600 dark:text-purple-400 underline"
-                  >
-                    Update URL
-                  </button>
+                  {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
+                  {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
                 </div>
-                {showTunnelInput && (
-                  <div className="space-y-2">
-                    <div className="flex gap-1.5">
-                      <input
-                        type="url"
-                        value={tunnelInput}
-                        onChange={(e) => { setTunnelInput(e.target.value); setTunnelError(''); }}
-                        onKeyDown={(e) => e.key === 'Enter' && handleTunnelReconnect()}
-                        placeholder="New tunnel URL..."
-                        className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/50 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                        disabled={tunnelUpdating}
-                      />
-                      <button
-                        onClick={handleTunnelReconnect}
-                        disabled={tunnelUpdating || !tunnelInput.trim()}
-                        className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
-                      >
-                        {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      </button>
+
+                {/* Registry search — friendly first */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Search for your hub by name:</p>
+                  <input
+                    type="text"
+                    value={registrySearchQuery}
+                    onChange={e => setRegistrySearchQuery(e.target.value)}
+                    placeholder="Hub name…"
+                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                  />
+                  {registrySearchQuery.trim() && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {filteredRegistryHubs.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No hubs found — try the URL option below.</p>
+                      ) : filteredRegistryHubs.map(hub => (
+                        <button
+                          key={hub.id}
+                          onClick={() => handleRegistryReconnect(hub.tunnel_url)}
+                          disabled={tunnelUpdating}
+                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
+                        >
+                          <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{hub.location}</span>
+                        </button>
+                      ))}
                     </div>
-                    {tunnelError && (
-                      <div className="flex items-center gap-2">
-                        <p className="text-[10px] text-red-500 flex-1">{tunnelError}</p>
-                        {tunnelInput.trim() && (
-                          <button
-                            onClick={handleForceUpdateUrl}
-                            className="text-[10px] text-purple-500 underline hover:no-underline shrink-0"
-                          >
-                            Save anyway
-                          </button>
-                        )}
+                  )}
+                </div>
+
+                {/* Manual URL — power-user fallback */}
+                <div>
+                  <button
+                    onClick={() => setShowManualUrl(v => !v)}
+                    className="text-[10px] text-slate-400 dark:text-slate-500 underline hover:no-underline"
+                  >
+                    {showManualUrl ? 'Hide' : 'Enter URL manually'}
+                  </button>
+                  {showManualUrl && (
+                    <div className="mt-1.5 space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input
+                          type="url"
+                          value={tunnelInput}
+                          onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                          onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
+                          placeholder="https://…"
+                          className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                          disabled={tunnelUpdating}
+                        />
+                        <button
+                          onClick={handleTunnelReconnect}
+                          disabled={tunnelUpdating || !tunnelInput.trim()}
+                          className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
+                        >
+                          {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        </button>
                       </div>
-                    )}
-                    {tunnelSuccess && <p className="text-[10px] text-green-500">Reconnected!</p>}
-                  </div>
-                )}
+                      {tunnelError && (
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] text-red-500 flex-1">{tunnelError}</p>
+                          {tunnelInput.trim() && (
+                            <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

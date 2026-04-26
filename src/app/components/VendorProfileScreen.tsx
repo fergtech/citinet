@@ -371,6 +371,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
             <motion.button
               whileHover={{ scale: 1.1 }}
               onClick={handleToggleSave}
+              title={isSaved ? 'Remove from saved' : 'Save vendor'}
               className={`p-2 rounded-lg transition-colors ${
                 isSaved
                   ? 'bg-red-100 dark:bg-red-900/30 text-red-600'
@@ -415,12 +416,32 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                 </motion.button>
               )
             ) : (
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                className="p-2 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400"
-              >
-                <Globe className="w-5 h-5" />
-              </motion.button>
+              <>
+                {/* Share — copy current URL */}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 text-xs font-medium transition-colors"
+                  title="Share this page"
+                >
+                  {linkCopied ? <Check className="w-3.5 h-3.5" /> : <Link className="w-3.5 h-3.5" />}
+                  {linkCopied ? 'Copied!' : 'Share'}
+                </motion.button>
+                {/* Join CTA — only shown to public/web visitors (hubBaseUrl means no hub session) */}
+                {hubBaseUrl && (
+                  <motion.a
+                    href={`https://citinet.cloud/join?url=${encodeURIComponent(hubBaseUrl)}`}
+                    whileHover={{ scale: 1.05 }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors"
+                  >
+                    Join {hubSlug}
+                  </motion.a>
+                )}
+              </>
             )}
           </div>
         </div>

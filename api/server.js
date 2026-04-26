@@ -2781,11 +2781,7 @@ app.get('/api/public/vendors/:slug', async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: 'Vendor not found or not public' });
     const vendor = rows[0];
     const { rows: listings } = await pool.query(
-      `SELECT l.*, hf.file_name AS image_file_name
-       FROM hub_listings l
-       LEFT JOIN hub_files hf ON hf.id = l.image_file_id
-       WHERE l.vendor_id = $1 AND l.is_active = TRUE
-       ORDER BY l.created_at DESC`,
+      `SELECT * FROM hub_listings WHERE vendor_id = $1 AND is_active = TRUE ORDER BY created_at DESC`,
       [vendor.id]
     );
     res.json({ vendor, listings });
