@@ -129,6 +129,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [confirmingAction, setConfirmingAction] = useState(false);
+  const [mightNeedAction, setMightNeedAction] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeConvoIdRef = useRef<string | null>(null);
@@ -277,6 +278,8 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
 
     const history = [...messages, userMsg];
     setThinking(true);
+    const actionSignals = ['create the post','create a post','write the post','write a post','make the post','make a post','post this','post it','publish this','publish it','share this to the feed','post for me','post on my behalf','create the poll','create a poll','make the poll','make a poll','start a poll','find posts about','search for posts','look up posts about','summarize the thread','summarize the replies'];
+    setMightNeedAction(actionSignals.some(s => content.toLowerCase().includes(s)));
     let firstChunk = true;
     let fullResponse = '';
 
@@ -298,6 +301,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       () => {
         setStreaming(false);
         setThinking(false);
+        setMightNeedAction(false);
         refreshConvoInList(finalId);
         // Persist completed assistant message
         if (fullResponse) {
@@ -308,6 +312,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
         setError(err);
         setStreaming(false);
         setThinking(false);
+        setMightNeedAction(false);
         // Still persist whatever came through
         if (fullResponse) {
           aiService.appendMessage(hubSlug, finalId, 'assistant', fullResponse).catch(() => {});
@@ -350,6 +355,12 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
     abortRef.current?.abort();
     setStreaming(false);
     setThinking(false);
+    // Remove trailing empty assistant message if nothing was streamed yet
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.role === 'assistant' && !last.content) return prev.slice(0, -1);
+      return prev;
+    });
   }
 
   function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -399,7 +410,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                     </button>
                     <button
                       onClick={() => setDeleteId(c.id)}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md hover:bg-rose-100 dark:hover:bg-rose-900/30 items-center justify-center hidden group-hover:flex transition-colors"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md hover:bg-rose-100 dark:hover:bg-rose-900/30 items-center justify-center flex md:hidden md:group-hover:flex transition-colors"
                       title="Delete"
                     >
                       <Trash2 className="w-3 h-3 text-rose-500" />
@@ -507,7 +518,10 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                 </div>
               </div>
             ) : (
-              messages.map((msg, i) => (
+              messages.filter((msg, i) =>
+                // Skip empty assistant messages that aren't the active thinking turn
+                !(msg.role === 'assistant' && !msg.content && !(thinking && i === messages.length - 1))
+              ).map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
@@ -521,7 +535,12 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                   }`}>
                     {msg.role === 'user' ? msg.content : (
                       msg.content === '' && thinking && i === messages.length - 1
-                        ? <ThinkingDots />
+                        ? <div className="space-y-1.5">
+                            <ThinkingDots />
+                            {mightNeedAction && (
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500">Working on it…</p>
+                            )}
+                          </div>
                         : <>
                             <MarkdownText content={msg.content} className="text-sm leading-relaxed" />
                             {streaming && i === messages.length - 1 && (

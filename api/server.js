@@ -4761,11 +4761,61 @@ app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
   const systemContext = await buildHubContext(lastUserMsg);
   const ollamaMessages = [
     { role: 'system', content: systemContext },
-    ...messages.map(m => ({ role: m.role, content: String(m.content) })),
+    ...messages.slice(-20).map(m => ({ role: m.role, content: String(m.content) })),
   ];
 
   try {
-    // Non-streaming call with tools so we can detect intent before committing
+    // Only include tools when the message clearly signals an action intent.
+    // For general questions, skip tools entirely and stream directly — faster and more reliable.
+    // Require explicit action phrasing — vague mentions of "post" in conversation don't qualify
+    const ACTION_SIGNALS = [
+      'create the post', 'create a post', 'write the post', 'write a post', 'make the post', 'make a post',
+      'post this', 'post it', 'publish this', 'publish it', 'share this to the feed', 'post for me', 'post on my behalf',
+      'create the poll', 'create a poll', 'make the poll', 'make a poll', 'start a poll',
+      'find posts about', 'search for posts', 'search posts', 'look up posts about',
+      'look up member', 'look up the member', 'find member', 'who is @',
+      'summarize the thread', 'summarize the replies', 'summarize this post',
+    ];
+    const msgLower = lastUserMsg.toLowerCase();
+    const mightNeedTools = ACTION_SIGNALS.some(sig => msgLower.includes(sig));
+
+    if (!mightNeedTools) {
+      // Conversational query — stream directly, no tools overhead
+      const streamRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: cfg.model, messages: ollamaMessages, stream: true }),
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!streamRes.ok) {
+        const err = await streamRes.text();
+        return res.status(502).json({ error: `Model error: ${err.slice(0, 200)}` });
+      }
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('X-Accel-Buffering', 'no');
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const chunk = JSON.parse(line);
+            if (chunk.message?.content) res.write(chunk.message.content);
+            if (chunk.done) { res.end(); return; }
+          } catch { /* malformed line */ }
+        }
+      }
+      return res.end();
+    }
+
+    // Action-intent path — non-streaming call with tools
     const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -358,6 +358,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     setRegistryResult(null);
     setRegistryError('');
     const stableId = hubNodeId ?? currentHub.slug;
+    // Clean up any old slug-based registry entries that predate stable node IDs
+    if (stableId !== currentHub.slug) {
+      await registryService.deregisterHub(currentHub.slug).catch(() => {});
+    }
     const result = await registryService.registerHub({
       id: stableId,
       name: currentHub.name,
