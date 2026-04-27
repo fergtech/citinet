@@ -560,7 +560,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   // ── render: loading ───────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
           <p className="text-sm text-slate-600 dark:text-slate-400">Loading conversations…</p>
@@ -598,7 +598,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   }
 
   return (
-    <div className="h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex relative overflow-hidden">
+    <div className="h-screen bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
       <DotGrid />
 
       {/* ── Lightbox Overlay ── */}

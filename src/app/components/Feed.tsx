@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { DotGrid } from './DotGrid';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -55,7 +55,7 @@ interface ComposeModalProps {
 
 function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
   const [category, setCategory] = useState('DISCUSSION');
-  // const [title, setTitle] = useState(initialTitle);
+  const [labelOpen, setLabelOpen] = useState(false);
   const [body, setBody] = useState(initialBody);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -139,24 +139,6 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
           {/* Form */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-6 overflow-y-auto max-h-[70vh]">
 
-            {/* Category */}
-            <div className="flex flex-wrap gap-2">
-              {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST'].map(cat => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategory(cat)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium uppercase tracking-wide ring-1 transition-all ${
-                    category === cat
-                      ? CATEGORY_COLORS[cat] + ' ring-1'
-                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  {cat.charAt(0) + cat.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-
             {/* Body / Caption */}
             <div>
               <textarea
@@ -204,22 +186,58 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
           </form>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-zinc-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitting || (!body.trim() && !mediaFile)}
-              className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity"
-            >
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {submitting ? 'Posting…' : 'Post'}
-            </button>
+          <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 space-y-3">
+            {/* Collapsible label picker */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setLabelOpen(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                  category !== 'DISCUSSION'
+                    ? CATEGORY_COLORS[category] + ' ring-1'
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {category.charAt(0) + category.slice(1).toLowerCase()}
+                <ChevronDown className={`w-3 h-3 transition-transform ${labelOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {labelOpen && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST'].map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => { setCategory(cat); setLabelOpen(false); }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                        category === cat
+                          ? CATEGORY_COLORS[cat] + ' ring-1'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || (!body.trim() && !mediaFile)}
+                className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting ? 'Posting…' : 'Post'}
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -301,7 +319,7 @@ export function Feed({ onBack }: FeedProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-purple-50/20 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 pb-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 pb-6">
       <DotGrid />
 
       {/* Header */}

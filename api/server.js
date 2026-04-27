@@ -239,6 +239,24 @@ async function initDb() {
       )
     `);
     await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_ai_conversations (
+        id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id    UUID         REFERENCES hub_users(id) ON DELETE CASCADE,
+        title      VARCHAR(200) NOT NULL DEFAULT 'New conversation',
+        created_at TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_ai_messages (
+        id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID        REFERENCES hub_ai_conversations(id) ON DELETE CASCADE,
+        role            VARCHAR(20) NOT NULL,
+        content         TEXT        NOT NULL DEFAULT '',
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS hub_atlas_pins (
         id          UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
         author_id   UUID REFERENCES hub_users(id) ON DELETE SET NULL,
@@ -4404,7 +4422,7 @@ async function getAiConfig() {
         const tr = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(3000) });
         if (tr.ok) {
           const td = await tr.json();
-          model = td.models?.[0]?.name || 'llama3.2:1b';
+          model = td.models?.find(m => !m.name.includes('embed'))?.name || 'llama3.2:1b';
         }
       } catch { model = 'llama3.2:1b'; }
     }
@@ -4463,12 +4481,102 @@ async function buildHubContext(query = '') {
       postLines
         ? `\n${usingRag ? 'Relevant' : 'Recent'} community posts:\n${postLines}`
         : '',
-      '\nBe helpful and concise. When referencing hub posts, cite them naturally. If asked about something specific to this community you have no context for, say so.',
+      '\nBe helpful and concise. When referencing hub posts, cite them naturally. If asked about something specific to this community you have no context for, say so. Only invoke tools when the member explicitly requests an action — answer general questions conversationally without tools. When using create_post, always write the complete post content yourself based on what the member described before calling the tool.',
     ].filter(Boolean).join('\n');
   } catch {
     return 'You are a helpful community AI assistant.';
   }
 }
+
+// ── AI Conversations (per-user, cross-origin history) ─────
+
+app.get('/api/ai/conversations', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.id, c.title, c.updated_at,
+             COUNT(m.id)::int AS message_count
+      FROM hub_ai_conversations c
+      LEFT JOIN hub_ai_messages m ON m.conversation_id = c.id
+      WHERE c.user_id = $1
+      GROUP BY c.id
+      ORDER BY c.updated_at DESC
+      LIMIT 200
+    `, [req.user.id]);
+    res.json({ conversations: rows });
+  } catch { res.status(500).json({ error: 'Failed to load conversations' }); }
+});
+
+app.post('/api/ai/conversations', authenticate, async (req, res) => {
+  try {
+    const { title } = req.body;
+    const { rows: [row] } = await pool.query(`
+      INSERT INTO hub_ai_conversations (user_id, title)
+      VALUES ($1, $2)
+      RETURNING id, title, created_at, updated_at
+    `, [req.user.id, (title || 'New conversation').slice(0, 200)]);
+    res.json(row);
+  } catch { res.status(500).json({ error: 'Failed to create conversation' }); }
+});
+
+app.get('/api/ai/conversations/:id', authenticate, async (req, res) => {
+  try {
+    const { rows: [convo] } = await pool.query(
+      `SELECT id, title, created_at, updated_at FROM hub_ai_conversations WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!convo) return res.status(404).json({ error: 'Not found' });
+    const { rows: messages } = await pool.query(
+      `SELECT role, content FROM hub_ai_messages WHERE conversation_id = $1 ORDER BY created_at`,
+      [req.params.id]
+    );
+    res.json({ ...convo, messages });
+  } catch { res.status(500).json({ error: 'Failed to load conversation' }); }
+});
+
+app.patch('/api/ai/conversations/:id', authenticate, async (req, res) => {
+  try {
+    const { title } = req.body;
+    if (!title) return res.status(400).json({ error: 'title required' });
+    await pool.query(
+      `UPDATE hub_ai_conversations SET title = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
+      [title.slice(0, 200), req.params.id, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: 'Failed to update conversation' }); }
+});
+
+app.delete('/api/ai/conversations/:id', authenticate, async (req, res) => {
+  try {
+    await pool.query(
+      `DELETE FROM hub_ai_conversations WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: 'Failed to delete conversation' }); }
+});
+
+app.post('/api/ai/conversations/:id/messages', authenticate, async (req, res) => {
+  try {
+    const { role, content } = req.body;
+    if (!role || !['user', 'assistant'].includes(role)) {
+      return res.status(400).json({ error: 'role must be user or assistant' });
+    }
+    const { rows: [convo] } = await pool.query(
+      `SELECT id FROM hub_ai_conversations WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (!convo) return res.status(404).json({ error: 'Not found' });
+    await pool.query(
+      `INSERT INTO hub_ai_messages (conversation_id, role, content) VALUES ($1, $2, $3)`,
+      [req.params.id, role, content ?? '']
+    );
+    await pool.query(
+      `UPDATE hub_ai_conversations SET updated_at = NOW() WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: 'Failed to save message' }); }
+});
 
 // GET /api/ai/status
 app.get('/api/ai/status', authenticate, async (_req, res) => {
@@ -4480,7 +4588,165 @@ app.get('/api/ai/status', authenticate, async (_req, res) => {
   }
 });
 
-// POST /api/ai/chat — streaming, hub-context-aware
+// ── Tool definitions ──────────────────────────────────────
+
+const HUB_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'create_post',
+      description: 'Draft and publish a post to the hub feed. ONLY use when the member explicitly asks to post or publish something. You MUST write the full post content yourself in the body field based on what the member described — do not leave body empty or ask the member to fill it in.',
+      parameters: {
+        type: 'object',
+        properties: {
+          body:     { type: 'string', description: 'The COMPLETE written post content you drafted — must be a full, ready-to-publish post, not a placeholder' },
+          category: { type: 'string', enum: ['DISCUSSION','ANNOUNCEMENT','PROJECT','REQUEST'], description: 'Post category — default DISCUSSION' },
+        },
+        required: ['body', 'category'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_poll',
+      description: 'Create a poll for members to vote on. ONLY use when explicitly asked to create or make a poll (e.g. "create a poll about X", "make a vote on Y").',
+      parameters: {
+        type: 'object',
+        properties: {
+          question:        { type: 'string', description: 'The poll question' },
+          options:         { type: 'array', items: { type: 'string' }, description: '2–6 answer options' },
+          closes_in_hours: { type: 'number', description: 'Hours until poll closes (default 72)' },
+        },
+        required: ['question', 'options'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_hub_posts',
+      description: 'Search hub posts by topic. ONLY use when explicitly asked to find, search, or look up posts (e.g. "find posts about X", "search for discussions on Y"). Do NOT use for general questions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search topic or keywords' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_member_info',
+      description: 'Look up a specific hub member by their exact username. ONLY use when asked about a named member (e.g. "who is @john", "tell me about member smith"). Do NOT use for general questions about the hub.',
+      parameters: {
+        type: 'object',
+        properties: {
+          username: { type: 'string', description: 'The member username to look up' },
+        },
+        required: ['username'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'summarize_thread',
+      description: 'Fetch and summarize replies on a specific post. ONLY use when explicitly asked to summarize a thread or discussion and a post ID is available.',
+      parameters: {
+        type: 'object',
+        properties: {
+          post_id: { type: 'string', description: 'UUID of the post to summarize' },
+        },
+        required: ['post_id'],
+      },
+    },
+  },
+];
+
+const WRITE_TOOLS = new Set(['create_post', 'create_poll']);
+
+async function executeReadTool(toolName, args) {
+  switch (toolName) {
+    case 'search_hub_posts': {
+      if (await isEmbedModelAvailable()) {
+        const results = await retrieveRelevantPosts(args.query, 8);
+        if (!results.length) return 'No relevant posts found.';
+        return results.map(p => `[${p.category}] "${p.title}": ${(p.body||'').slice(0,150)}`).join('\n');
+      }
+      const { rows } = await pool.query(
+        `SELECT title, body, category FROM hub_posts WHERE title ILIKE $1 OR body ILIKE $1 LIMIT 8`,
+        [`%${args.query}%`]
+      );
+      return rows.length
+        ? rows.map(p => `[${p.category}] "${p.title}": ${(p.body||'').slice(0,150)}`).join('\n')
+        : 'No posts found.';
+    }
+    case 'get_member_info': {
+      const { rows } = await pool.query(
+        `SELECT u.username, u.is_admin, u.created_at,
+                (SELECT COUNT(*) FROM hub_posts WHERE author_id = u.id)::int AS post_count
+         FROM hub_users u WHERE username ILIKE $1 LIMIT 1`,
+        [args.username]
+      );
+      if (!rows[0]) return `No member found with username "${args.username}".`;
+      const m = rows[0];
+      return `Username: ${m.username} | Role: ${m.is_admin ? 'Admin' : 'Member'} | Posts: ${m.post_count} | Joined: ${new Date(m.created_at).toLocaleDateString()}`;
+    }
+    case 'summarize_thread': {
+      const [post, replies] = await Promise.all([
+        pool.query(`SELECT title, body FROM hub_posts WHERE id = $1`, [args.post_id]),
+        pool.query(`SELECT u.username, r.body FROM hub_post_replies r JOIN hub_users u ON u.id = r.author_id WHERE r.post_id = $1 ORDER BY r.created_at`, [args.post_id]),
+      ]);
+      if (!post.rows[0]) return 'Post not found.';
+      const replyText = replies.rows.map(r => `${r.username}: ${r.body}`).join('\n');
+      return `Post: "${post.rows[0].title}"\n${post.rows[0].body}\n\nReplies (${replies.rows.length}):\n${replyText || 'No replies yet.'}`;
+    }
+    default: return 'Unknown tool.';
+  }
+}
+
+function cleanModelText(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/\\39;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\\u0027/g, "'")
+    .replace(/\\'/g, "'");
+}
+
+function generateActionPreview(toolName, args) {
+  switch (toolName) {
+    case 'create_post':
+      return {
+        label: 'Post to feed',
+        fields: [
+          { key: 'Category', value: (args.category||'DISCUSSION').charAt(0) + (args.category||'DISCUSSION').slice(1).toLowerCase() },
+          { key: 'Content',  value: args.body || '' },
+        ],
+      };
+    case 'create_poll':
+      return {
+        label: 'Create poll',
+        fields: [
+          { key: 'Question', value: args.question || '' },
+          { key: 'Options',  value: (args.options||[]).map((o, i) => `${i+1}. ${o}`).join('\n') },
+          { key: 'Closes in', value: `${args.closes_in_hours || 72} hours` },
+        ],
+      };
+    default:
+      return { label: toolName, fields: [] };
+  }
+}
+
+// POST /api/ai/chat — tool-aware, confirms write actions before executing
 app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
   const { messages } = req.body;
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -4488,13 +4754,8 @@ app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
   }
 
   const cfg = await getAiConfig();
-  if (!cfg.enabled) {
-    return res.status(403).json({ error: 'AI assistant is not enabled on this hub' });
-  }
-  const ready = await isOllamaReady();
-  if (!ready) {
-    return res.status(503).json({ error: 'AI model is not available yet. The hub may still be loading.' });
-  }
+  if (!cfg.enabled) return res.status(403).json({ error: 'AI assistant is not enabled on this hub' });
+  if (!(await isOllamaReady())) return res.status(503).json({ error: 'AI model is not available yet.' });
 
   const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || '';
   const systemContext = await buildHubContext(lastUserMsg);
@@ -4504,10 +4765,11 @@ app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
   ];
 
   try {
+    // Non-streaming call with tools so we can detect intent before committing
     const ollamaRes = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: cfg.model, messages: ollamaMessages, stream: true }),
+      body: JSON.stringify({ model: cfg.model, messages: ollamaMessages, tools: HUB_TOOLS, stream: false }),
       signal: AbortSignal.timeout(120000),
     });
 
@@ -4516,33 +4778,158 @@ app.post('/api/ai/chat', authenticate, aiLimiter, async (req, res) => {
       return res.status(502).json({ error: `Model error: ${err.slice(0, 200)}` });
     }
 
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Transfer-Encoding', 'chunked');
-    res.setHeader('X-Accel-Buffering', 'no');
+    const response = await ollamaRes.json();
+    const message = response.message ?? {};
+    let toolCalls = message.tool_calls ?? [];
 
-    const reader = ollamaRes.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
+    // Some models output tool calls as JSON text in content instead of structured tool_calls
+    if (toolCalls.length === 0 && message.content) {
+      const trimmed = message.content.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[{')) {
         try {
-          const chunk = JSON.parse(line);
-          if (chunk.message?.content) res.write(chunk.message.content);
-          if (chunk.done) { res.end(); return; }
-        } catch { /* malformed line */ }
+          const arr = trimmed.startsWith('[') ? JSON.parse(trimmed) : [JSON.parse(trimmed)];
+          const call = arr[0];
+          if (call?.name && HUB_TOOLS.some(t => t.function.name === call.name)) {
+            toolCalls = [{ function: { name: call.name, arguments: call.parameters || call.arguments || {} } }];
+          }
+        } catch { /* not a tool call, treat as regular text */ }
       }
     }
+
+    if (toolCalls.length > 0) {
+      const call = toolCalls[0];
+      const toolName = call.function?.name;
+      const rawArgs = call.function?.arguments;
+      const toolArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs ?? {});
+
+      if (WRITE_TOOLS.has(toolName)) {
+        // If the model called create_post with no body, generate the content server-side
+        if (toolName === 'create_post' && !toolArgs.body?.trim()) {
+          try {
+            const genRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                model: cfg.model,
+                messages: [
+                  ...ollamaMessages,
+                  { role: 'user', content: 'Based on the conversation above, write the complete post text exactly as it should appear in the hub feed. Write naturally and directly — no placeholders like [Name] or [Date], no preamble, no explanation, just the post.' },
+                ],
+                stream: false,
+              }),
+              signal: AbortSignal.timeout(60000),
+            });
+            if (genRes.ok) {
+              const genData = await genRes.json();
+              let body = cleanModelText(genData.message?.content?.trim() || '');
+              if ((body.startsWith('"') && body.endsWith('"')) || (body.startsWith("'") && body.endsWith("'"))) {
+                body = body.slice(1, -1).trim();
+              }
+              toolArgs.body = body;
+            }
+          } catch { /* leave body empty, user will see it */ }
+        }
+        // Clean and strip wrapping quotes from body
+        if (typeof toolArgs.body === 'string') {
+          let b = cleanModelText(toolArgs.body).trim();
+          if ((b.startsWith('"') && b.endsWith('"')) || (b.startsWith("'") && b.endsWith("'"))) {
+            b = b.slice(1, -1).trim();
+          }
+          toolArgs.body = b;
+        }
+        // Ensure category is valid
+        const validCats = ['DISCUSSION','ANNOUNCEMENT','PROJECT','REQUEST'];
+        if (!validCats.includes(toolArgs.category)) toolArgs.category = 'DISCUSSION';
+
+        return res.json({ type: 'action_required', tool: toolName, args: toolArgs, preview: generateActionPreview(toolName, toolArgs) });
+      }
+
+      // Read-only tool — execute silently, fold result back, return final response
+      const toolResult = await executeReadTool(toolName, toolArgs);
+      const messagesWithResult = [
+        ...ollamaMessages,
+        { role: 'assistant', content: message.content || '', tool_calls: toolCalls },
+        { role: 'tool', content: toolResult },
+      ];
+      const finalRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: cfg.model, messages: messagesWithResult, stream: false }),
+        signal: AbortSignal.timeout(120000),
+      });
+      const final = finalRes.ok ? await finalRes.json() : null;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.write(final?.message?.content || toolResult);
+      return res.end();
+    }
+
+    // Guard: if the model leaked tool schema or metadata as text, retry without tools
+    const content = message.content || '';
+    const looksLikeToolLeak = content.includes('{function ') ||
+      (content.includes('"type": "string"') && content.includes('"description"')) ||
+      (content.trim().startsWith('{') && content.includes('parameters'));
+
+    if (looksLikeToolLeak) {
+      try {
+        const retryRes = await fetch(`${OLLAMA_URL}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: cfg.model, messages: ollamaMessages, stream: false }),
+          signal: AbortSignal.timeout(120000),
+        });
+        const retryData = retryRes.ok ? await retryRes.json() : null;
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.write(retryData?.message?.content || "I'm not sure what you'd like to do next — could you give me more details?");
+        return res.end();
+      } catch { /* fall through to original content */ }
+    }
+
+    // Regular response — send as text
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.write(content);
     res.end();
   } catch (err) {
     if (!res.headersSent) res.status(500).json({ error: 'AI request failed' });
     else res.end();
+  }
+});
+
+// POST /api/ai/action — execute a user-confirmed write action
+app.post('/api/ai/action', authenticate, async (req, res) => {
+  const { tool, args } = req.body;
+  if (!tool || !args) return res.status(400).json({ error: 'tool and args required' });
+  try {
+    switch (tool) {
+      case 'create_post': {
+        const body = (args.body || '').trim();
+        const category = (['DISCUSSION','ANNOUNCEMENT','PROJECT','REQUEST'].includes(args.category) ? args.category : 'DISCUSSION');
+        if (!body) return res.status(400).json({ error: 'Post body is required' });
+        const title = body.split('\n')[0].slice(0, 100) || 'Untitled';
+        const { rows: [post] } = await pool.query(
+          `INSERT INTO hub_posts (category, title, body, author_id) VALUES ($1,$2,$3,$4) RETURNING id, title`,
+          [category, title, body, req.user.id]
+        );
+        embedPost(post.id, title, body, category).catch(() => {});
+        return res.json({ ok: true, result: `Done — published to the feed as a ${category.charAt(0) + category.slice(1).toLowerCase()}:\n\n"${body}"` });
+      }
+      case 'create_poll': {
+        const { question, options, closes_in_hours = 72 } = args;
+        if (!question || !Array.isArray(options) || options.length < 2) {
+          return res.status(400).json({ error: 'Question and at least 2 options required' });
+        }
+        const closesAt = new Date(Date.now() + Number(closes_in_hours) * 3_600_000);
+        await pool.query(
+          `INSERT INTO hub_polls (question, options, created_by, closes_at) VALUES ($1,$2::jsonb,$3,$4)`,
+          [question, JSON.stringify(options.slice(0, 6)), req.user.id, closesAt]
+        );
+        return res.json({ ok: true, result: `Done — poll created: "${question}" with ${options.length} options. Members can vote in the Polls screen.` });
+      }
+      default:
+        return res.status(400).json({ error: `Unknown action: ${tool}` });
+    }
+  } catch (err) {
+    console.error('[ai-action]', err.message);
+    res.status(500).json({ error: 'Action failed' });
   }
 });
 
@@ -4554,7 +4941,9 @@ app.get('/api/ai/models', authenticate, async (req, res) => {
   try {
     const r = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(5000) });
     const data = await r.json();
-    res.json({ models: (data.models || []).map(m => m.name) });
+    // Exclude embedding-only models from the chat model list
+    const chatModels = (data.models || []).map(m => m.name).filter(n => !n.includes('embed'));
+    res.json({ models: chatModels });
   } catch {
     res.json({ models: [] });
   }

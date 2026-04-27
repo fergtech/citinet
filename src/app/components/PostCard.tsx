@@ -13,13 +13,21 @@ interface PostCardProps {
   categoryColors?: Record<string, string>;
 }
 
-const DEFAULT_COLORS = 'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-purple-200 dark:ring-purple-500/20';
 
-export function PostCard({ variant, category, title, author, timestamp, content, mediaUrl, replyCount, categoryColors }: PostCardProps) {
-  const badgeClass = (categoryColors?.[category] ?? DEFAULT_COLORS) + ' ring-1';
+export function PostCard({ variant, category, title, author, timestamp, content, mediaUrl, replyCount }: PostCardProps) {
+  const isAnnouncement = category === 'ANNOUNCEMENT';
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-slate-200 dark:border-zinc-800 overflow-hidden transition-all duration-200 hover:shadow-lg hover:scale-[1.01] hover:border-slate-300 dark:hover:border-zinc-700">
+    <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border overflow-hidden transition-all duration-200 hover:shadow-lg hover:scale-[1.01] hover:border-slate-300 dark:hover:border-zinc-700 ${
+      isAnnouncement
+        ? 'border-amber-300 dark:border-amber-600/50'
+        : 'border-slate-200 dark:border-zinc-800'
+    }`}>
+
+      {/* Announcement accent bar */}
+      {isAnnouncement && (
+        <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-amber-500" />
+      )}
 
       {/* Media */}
       {variant === 'image' && mediaUrl && (

@@ -50,6 +50,30 @@ async function patch<T>(hubSlug: string, path: string, body: unknown): Promise<T
   return r.json();
 }
 
+export interface ActionField {
+  key: string;
+  value: string;
+}
+
+export interface PendingAction {
+  type: 'action_required';
+  tool: string;
+  args: Record<string, unknown>;
+  preview: { label: string; fields: ActionField[] };
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  created_at: string;
+  messages: ChatMessage[];
+}
+
 export interface IndexStatus {
   total: number;
   indexed: number;
@@ -71,6 +95,47 @@ export const aiService = {
     await patch(hubSlug, '/api/ai/config', cfg);
   },
 
+  async listConversations(hubSlug: string): Promise<ConversationSummary[]> {
+    const data = await get<{ conversations: ConversationSummary[] }>(hubSlug, '/api/ai/conversations');
+    return data.conversations;
+  },
+
+  async createConversation(hubSlug: string, title: string): Promise<ConversationSummary> {
+    const { base, token } = conn(hubSlug);
+    const r = await fetch(`${base}/api/ai/conversations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title }),
+    });
+    if (!r.ok) throw new Error('Failed to create conversation');
+    return r.json();
+  },
+
+  async getConversation(hubSlug: string, id: string): Promise<ConversationDetail> {
+    return get(hubSlug, `/api/ai/conversations/${id}`);
+  },
+
+  async updateConversationTitle(hubSlug: string, id: string, title: string): Promise<void> {
+    await patch(hubSlug, `/api/ai/conversations/${id}`, { title });
+  },
+
+  async deleteConversation(hubSlug: string, id: string): Promise<void> {
+    const { base, token } = conn(hubSlug);
+    await fetch(`${base}/api/ai/conversations/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  },
+
+  async appendMessage(hubSlug: string, conversationId: string, role: string, content: string): Promise<void> {
+    const { base, token } = conn(hubSlug);
+    await fetch(`${base}/api/ai/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ role, content }),
+    });
+  },
+
   async getIndexStatus(hubSlug: string): Promise<IndexStatus> {
     return get(hubSlug, '/api/ai/index/status');
   },
@@ -87,14 +152,15 @@ export const aiService = {
     }
   },
 
-  // Streams assistant reply token-by-token. Calls onChunk for each text fragment,
-  // calls onDone when the stream ends. Returns abort controller so caller can cancel.
+  // Sends a chat message. The server either streams a text response OR returns a
+  // JSON action proposal for write operations that need user confirmation.
   chat(
     hubSlug: string,
     messages: ChatMessage[],
     onChunk: (text: string) => void,
     onDone: () => void,
     onError: (err: string) => void,
+    onActionRequired?: (action: PendingAction) => void,
   ): AbortController {
     const ac = new AbortController();
     const { base, token } = conn(hubSlug);
@@ -114,6 +180,16 @@ export const aiService = {
           return;
         }
 
+        // Action proposal — server returns JSON instead of streaming text
+        const ct = r.headers.get('content-type') ?? '';
+        if (ct.includes('application/json')) {
+          const action = await r.json() as PendingAction;
+          onActionRequired?.(action);
+          onDone();
+          return;
+        }
+
+        // Regular text response
         const reader = r.body!.getReader();
         const decoder = new TextDecoder();
         while (true) {
@@ -130,6 +206,21 @@ export const aiService = {
     })();
 
     return ac;
+  },
+
+  async executeAction(hubSlug: string, tool: string, args: Record<string, unknown>): Promise<string> {
+    const { base, token } = conn(hubSlug);
+    const r = await fetch(`${base}/api/ai/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ tool, args }),
+    });
+    if (!r.ok) {
+      const b = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error(b.error ?? 'Action failed');
+    }
+    const { result } = await r.json();
+    return result as string;
   },
 
   // Streams pull progress lines (NDJSON). Returns abort controller.

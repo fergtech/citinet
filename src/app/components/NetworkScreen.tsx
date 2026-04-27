@@ -46,7 +46,7 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const tunnelUrl = currentHub?.tunnelUrl || '';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
       <DotGrid />
         {/* Header */}
       <div className="sticky top-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">

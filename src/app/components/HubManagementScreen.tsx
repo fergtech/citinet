@@ -239,7 +239,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         aiService.getIndexStatus(hubSlug).catch(() => null),
       ]);
       setAiStatus(status);
-      setInstalledModels(models);
+      setInstalledModels(models.filter(m => !m.includes('embed')));
       setIndexStatus(idxStatus);
     } catch {}
     setAiStatusLoading(false);
@@ -607,7 +607,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-zinc-950 dark:to-zinc-900 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center px-6">
           <Shield className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Admin access required</p>
@@ -623,7 +623,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
       <DotGrid />
       {/* Header */}
       <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
@@ -1876,31 +1876,37 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   </button>
                 </div>
 
-                {/* Active model picker */}
+                {/* Chat model picker */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Active Model</p>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Chat Model</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Powers all AI responses — click a model to make it active</p>
+                  </div>
                   <div className="space-y-2">
                     {installedModels.length > 0 ? (
-                      installedModels.map(m => (
-                        <button
-                          key={m}
-                          onClick={() => handleSetModel(m)}
-                          disabled={aiConfigSaving}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all disabled:opacity-50 ${
-                            aiStatus?.model === m
-                              ? 'border-violet-400 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/20'
-                              : 'border-slate-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700'
-                          }`}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-900 dark:text-white">{m}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">Installed</p>
-                          </div>
-                          {aiStatus?.model === m && <Check className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />}
-                        </button>
-                      ))
+                      installedModels.map(m => {
+                        const isActive = aiStatus?.model === m;
+                        return (
+                          <button
+                            key={m}
+                            onClick={() => handleSetModel(m)}
+                            disabled={aiConfigSaving || isActive}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all disabled:cursor-default ${
+                              isActive
+                                ? 'border-violet-400 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/20'
+                                : 'border-slate-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700'
+                            }`}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">{m}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{isActive ? 'Currently active' : 'Installed — click to activate'}</p>
+                            </div>
+                            {isActive && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-600 text-white shrink-0">Active</span>}
+                          </button>
+                        );
+                      })
                     ) : (
-                      <p className="text-xs text-slate-400 dark:text-slate-500 italic">No models pulled yet — download one below</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 italic">No chat models downloaded yet — add one below</p>
                     )}
                   </div>
                 </div>
@@ -1978,7 +1984,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
                 {/* Download a model */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Download Model</p>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Add a Chat Model</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a model to download, then click Pull. Once downloaded it appears above.</p>
+                  </div>
                   <div className="space-y-1.5">
                     {SUGGESTED_MODELS.map(m => (
                       <button
@@ -1986,15 +1995,20 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         onClick={() => setPullModel(m.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border text-left transition-all ${
                           pullModel === m.id
-                            ? 'border-violet-400 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/20'
-                            : 'border-slate-200 dark:border-zinc-700 hover:border-violet-300 dark:hover:border-violet-700'
+                            ? 'border-slate-400 dark:border-zinc-500 bg-slate-100 dark:bg-zinc-800'
+                            : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 dark:text-white">{m.label}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-slate-900 dark:text-white">{m.label}</p>
+                            {installedModels.includes(m.id) && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Installed</span>}
+                          </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400">{m.note}</p>
                         </div>
-                        {pullModel === m.id && <Check className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />}
+                        <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${pullModel === m.id ? 'border-slate-500 dark:border-zinc-400' : 'border-slate-300 dark:border-zinc-600'}`}>
+                          {pullModel === m.id && <div className="w-2 h-2 rounded-full bg-slate-500 dark:bg-zinc-400" />}
+                        </div>
                       </button>
                     ))}
                   </div>
