@@ -3621,12 +3621,30 @@ async function ensureAppUser(provider, username) {
   await proxyToApp(provider, '/users/ensure', 'POST', { email, name: username });
 }
 
+// GET /api/spaces/app-info  — metadata about the societies/spaces app
+app.get('/api/spaces/app-info', async (req, res) => {
+  const p = await getProvider('societies') || await getProvider('spaces');
+  if (!p) return res.json(null);
+  try {
+    const { status, data } = await proxyToApp(p, '/info');
+    if (data && !data.websiteUrl) {
+      try { data.websiteUrl = new URL(p.url).origin; } catch {}
+    }
+    res.status(status).json(data);
+  } catch {
+    res.json(null);
+  }
+});
+
 // GET /api/initiatives/app-info  — metadata about the installed initiatives app
 app.get('/api/initiatives/app-info', async (req, res) => {
   const p = await getProvider('initiatives');
   if (!p) return res.json(null); // no app configured — hub-agnostic mode
   try {
     const { status, data } = await proxyToApp(p, '/info');
+    if (data && !data.websiteUrl) {
+      try { data.websiteUrl = new URL(p.url).origin; } catch {}
+    }
     res.status(status).json(data);
   } catch {
     res.json(null); // fail silently — UI degrades gracefully

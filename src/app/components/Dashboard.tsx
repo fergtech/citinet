@@ -86,6 +86,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     featuredService.getFeatured(hubSlug).then(setFeaturedItems);
     marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
     aiService.getStatus(hubSlug).then(s => setAiEnabled(s.enabled)).catch(() => {});
+    setActivityExpanded(false);
   }, [hubSlug, isConnected]);
 
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
@@ -405,6 +406,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const desktopLaunchpadRef = useRef<HTMLDivElement | null>(null);
   const [desktopLaunchpadPage, setDesktopLaunchpadPage] = useState(0);
   const [isXlDesktop, setIsXlDesktop] = useState(false);
+  const [activityExpanded, setActivityExpanded] = useState(false);
 
   const desktopLaunchpadItems: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
@@ -1364,35 +1366,53 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
                 <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {activityItems.map(item => (
-                  <ActivityCard
-                    key={item.id}
-                    item={item}
-                    onClick={() => {
-                      const postTypes = ['discussion', 'announcement', 'project', 'request'];
-                      if (postTypes.includes(item.type) && item.itemId) {
-                        handleFeaturedPostClick(item.itemId);
-                      } else if (item.type === 'file_shared' && item.itemId) {
-                        sessionStorage.setItem('citinet-deeplink-file', item.itemId);
-                        onNavigate('files');
-                      } else if (item.type === 'pin_added' && item.itemId) {
-                        sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
-                        onNavigate('atlas');
-                      } else if (item.type === 'space_created') {
-                        onNavigate('spaces');
-                      } else if (item.type === 'neighbor_joined') {
-                        sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
-                        onNavigate('feed');
-                      } else {
-                        onNavigate(item.navigateTo);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              const PAGE = 6;
+              const visible = activityExpanded ? activityItems : activityItems.slice(0, PAGE);
+              const hiddenCount = activityItems.length - PAGE;
+              const handleClick = (item: ActivityItem) => {
+                const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                if (postTypes.includes(item.type) && item.itemId) {
+                  handleFeaturedPostClick(item.itemId);
+                } else if (item.type === 'file_shared' && item.itemId) {
+                  sessionStorage.setItem('citinet-deeplink-file', item.itemId);
+                  onNavigate('files');
+                } else if (item.type === 'pin_added' && item.itemId) {
+                  sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
+                  onNavigate('atlas');
+                } else if (item.type === 'space_created') {
+                  onNavigate('spaces');
+                } else if (item.type === 'neighbor_joined') {
+                  sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
+                  onNavigate('feed');
+                } else {
+                  onNavigate(item.navigateTo);
+                }
+              };
+              return (
+                <div className="space-y-2">
+                  {visible.map(item => (
+                    <ActivityCard key={item.id} item={item} onClick={() => handleClick(item)} />
+                  ))}
+                  {!activityExpanded && hiddenCount > 0 && (
+                    <button
+                      onClick={() => setActivityExpanded(true)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-400 dark:hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-900/10 transition-all font-medium"
+                    >
+                      Show {hiddenCount} more
+                    </button>
+                  )}
+                  {activityExpanded && activityItems.length > PAGE && (
+                    <button
+                      onClick={() => setActivityExpanded(false)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-all font-medium"
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
             </div>
 
             {/* Right: Initiatives + Events */}

@@ -1,7 +1,7 @@
 {
-  "name": "citinet — Community Network",
+  "name": "Citinet - Community Cloud",
   "short_name": "citinet",
-  "description": "A decentralized community network platform. Connect with your neighbors, share resources, and build local resilience.",
+  "description": "A decentralized community network platform. Connect with your neighbors, share resources, build local resilience and individual digital sovereignty.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

@@ -83,6 +83,19 @@ function fileTypeIcon(mime?: string) {
 function isImage(mime?: string) { return !!mime?.startsWith('image/'); }
 function isVideo(mime?: string) { return !!mime?.startsWith('video/'); }
 
+function truncateText(text: string, maxLength: number = 150): { truncated: string; isTruncated: boolean } {
+  if (!text || text.length <= maxLength) {
+    return { truncated: text, isTruncated: false };
+  }
+  // Truncate at word boundary
+  const truncated = text.substring(0, maxLength);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return {
+    truncated: (lastSpace > maxLength * 0.7 ? truncated.substring(0, lastSpace) : truncated).trim() + '…',
+    isTruncated: true
+  };
+}
+
 // ── Banner style ─────────────────────────────────────────
 
 function getBannerStyle(space: HubSpace, tunnelUrl: string): React.CSSProperties {
@@ -259,7 +272,6 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
 
 function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceSlug: string; onPosted: (p: HubPost) => void }) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -289,7 +301,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
         mediaFile: mediaFile ?? undefined
       });
       onPosted(post);
-      setTitle(''); setBody(''); removeMedia(); setOpen(false);
+      setBody(''); removeMedia(); setOpen(false);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }
@@ -541,6 +553,14 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
 
   const isActive = space.my_status === 'active';
   const isPending = space.my_status === 'pending';
+
+  const [spaceAppInfo, setSpaceAppInfo] = useState<{ name: string; faviconUrl?: string; websiteUrl?: string } | null>(null);
+  useEffect(() => {
+    fetch(`${tunnelUrl}/api/spaces/app-info`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setSpaceAppInfo(d))
+      .catch(() => {});
+  }, [tunnelUrl]);
   const isInvited = space.my_status === 'invited';
   const isAdmin = canManage(space.my_role);
   const isProxySocietySpace = /^c[a-z0-9]{20,}$/.test(space.slug);
@@ -828,30 +848,35 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                   || authorUsernameLower.includes('@')
                   || !post.author_id
                 );
-                const sourceBrandName = (post as any).source_name
+                const sourceBrandName = spaceAppInfo?.name
+                  || (post as any).source_name
                   || (post as any).app_name
                   || (post as any).platform_name
                   || (post as any).source
-                  || (post as any).platform
                   || 'Society+';
-                const sourceBrandLogo = (post as any).source_logo_url
-                  || (post as any).logo_url
+                const sourceBrandLogo = spaceAppInfo?.faviconUrl
+                  || (post as any).source_logo_url
                   || (post as any).source_favicon_url
-                  || (post as any).favicon_url
                   || null;
                 return (
                   <div key={post.id} onClick={() => setSelectedPost(post)}
                     className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:bg-zinc-800/70 transition-colors">
                     <div className="flex items-center gap-2 mb-3">
                       {isExternalProxyAuthor ? (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/70 border border-zinc-700/80">
+                        <a
+                          href={spaceAppInfo?.websiteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/70 border border-zinc-700/80 hover:border-zinc-500 transition-colors"
+                        >
                           {sourceBrandLogo
                             ? <img src={sourceBrandLogo} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                             : <LayoutGrid className="w-3 h-3 text-zinc-400" />
                           }
                           <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Shared from</span>
                           <span className="text-xs font-semibold text-zinc-200 leading-none">{sourceBrandName}</span>
-                        </div>
+                        </a>
                       ) : (
                         <>
                           <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
@@ -860,7 +885,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       )}
                       <span className="text-xs text-zinc-500 ml-auto">{timeAgo(post.created_at)}</span>
                     </div>
-                    {post.body && <p className="text-sm text-zinc-400 leading-relaxed">{post.body}</p>}
+                    {post.body && (() => {
+                      const { truncated, isTruncated } = truncateText(post.body);
+                      return <p className="text-sm text-zinc-400 leading-relaxed">{truncated}{isTruncated && <span className="text-purple-400 font-medium"> Click to read more</span>}</p>;
+                    })()}
                     {mediaUrl && (
                       <div className="mt-3 rounded-xl overflow-hidden">
                         {isVidMedia
@@ -1049,6 +1077,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 return `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}`;
               }}
               onDeleted={(postId: string) => { setPosts(prev => prev.filter(p => p.id !== postId)); setSelectedPost(null); }}
+              sourceBrandInfo={spaceAppInfo ?? undefined}
             />
           );
         })()}

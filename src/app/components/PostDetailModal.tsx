@@ -21,6 +21,7 @@ interface PostDetailModalProps {
   categoryColors: Record<string, string>;
   publicFileUrl: (name: string) => string;
   onDeleted: (postId: string) => void;
+  sourceBrandInfo?: { name: string; faviconUrl?: string; websiteUrl?: string };
 }
 
 function formatTimestamp(iso: string): string {
@@ -112,7 +113,7 @@ function getSourceBranding(post: HubPost): { name: string; logoUrl: string | nul
 
 export function PostDetailModal({
   isOpen, onClose, post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin,
-  categoryColors, publicFileUrl, onDeleted,
+  categoryColors, publicFileUrl, onDeleted, sourceBrandInfo,
 }: PostDetailModalProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
@@ -247,8 +248,10 @@ export function PostDetailModal({
   const variant = post.media_file_name
     ? (['mp4','webm','mov'].includes(post.media_file_name.split('.').pop()?.toLowerCase() ?? '') ? 'video' : 'image')
     : 'text';
-  const externalSourcePost = isExternalSourcePost(post);
-  const sourceBrand = getSourceBranding(post);
+  const externalSourcePost = isExternalSourcePost(post) || !!sourceBrandInfo;
+  const sourceBrand = sourceBrandInfo
+    ? { name: sourceBrandInfo.name, logoUrl: sourceBrandInfo.faviconUrl ?? null, websiteUrl: sourceBrandInfo.websiteUrl }
+    : { ...getSourceBranding(post), websiteUrl: undefined };
 
   return (
     <AnimatePresence>
@@ -370,14 +373,20 @@ export function PostDetailModal({
                     <>
                       <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
                         {externalSourcePost ? (
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                          <a
+                            href={sourceBrand.websiteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-slate-400 dark:hover:border-zinc-500 transition-colors"
+                          >
                             {sourceBrand.logoUrl
                               ? <img src={sourceBrand.logoUrl} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                               : <div className="w-3.5 h-3.5 rounded-sm bg-slate-300 dark:bg-zinc-700 text-[8px] font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-center">SP</div>
                             }
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Shared from</span>
                             <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
-                          </div>
+                          </a>
                         ) : (
                           <>
                             <AvatarCircle
