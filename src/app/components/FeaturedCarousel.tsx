@@ -123,32 +123,40 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
                 )}
 
                 {/* Text content — bottom-left */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 text-white">
-                  {/* Author row: avatar + name + role chip + category */}
-                  <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-                    {item.authorUsername && (
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 ring-1 ring-white/30">
-                        {item.authorUsername.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    {item.authorUsername && (
-                      <span className="text-xs text-white/80 font-medium">{item.authorUsername}</span>
-                    )}
-                    {item.authorUsername && <span className="text-white/30 text-xs">·</span>}
-                    <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md backdrop-blur-sm ring-1 ring-white/20 ${item.type === 'custom' ? 'bg-purple-600/80 text-white' : 'bg-white/20 text-white/90'}`}>
-                      {item.type === 'custom' ? 'Admin Pick' : 'Member'}
-                    </span>
-                    {item.categoryLabel && item.type !== 'custom' && (
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide backdrop-blur-sm ring-1 ring-white/20 ${labelBg(item.categoryLabel)}`}>
-                        {item.categoryLabel}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight line-clamp-2 leading-tight mb-1.5">
+                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5 text-white">
+                  {/* Compact meta: avatar · username · category chip */}
+                  {(item.authorUsername || item.categoryLabel) && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      {item.authorUsername && (() => {
+                        const avatarUrl = item.authorId ? hubService.getAvatarUrl(hubSlug, item.authorId) : null;
+                        return avatarUrl ? (
+                          <img
+                            src={avatarUrl}
+                            alt={item.authorUsername}
+                            className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-white/30"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white text-[9px] font-bold shrink-0 ring-1 ring-white/30">
+                            {item.authorUsername.charAt(0).toUpperCase()}
+                          </div>
+                        );
+                      })()}
+                      {item.authorUsername && (
+                        <span className="text-xs text-white/70 font-medium">{item.authorUsername}</span>
+                      )}
+                      {item.categoryLabel && (
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide backdrop-blur-sm ${labelBg(item.categoryLabel)} text-white/95`}>
+                          {item.categoryLabel}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <h3 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight line-clamp-2 leading-tight mb-1">
                     {item.title}
                   </h3>
                   {item.caption && (
-                    <p className="text-white/80 text-sm line-clamp-2 max-w-[80%]">{item.caption}</p>
+                    <p className="text-white/75 text-sm line-clamp-1 max-w-[80%]">{item.caption}</p>
                   )}
                 </div>
               </div>

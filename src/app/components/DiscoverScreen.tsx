@@ -487,6 +487,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={name => hubService.getPublicFileUrl(slug, name) ?? ''}
           onDeleted={() => setSelectedPost(null)}
+          onNavigateToProfile={(userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); }}
         />
       )}
     </div>

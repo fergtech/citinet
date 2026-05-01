@@ -1481,7 +1481,7 @@ class HubService {
   /** Create a new post. Optionally attach an image file. */
   async createPost(
     hubSlug: string,
-    post: { category: string; title: string; body: string; mediaFile?: File }
+    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string }
   ): Promise<HubPost> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection?.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
@@ -1491,6 +1491,8 @@ class HubService {
     formData.append('title', post.title);
     formData.append('body', post.body);
     if (post.mediaFile) formData.append('media', post.mediaFile);
+    if (post.eventDate) formData.append('event_date', post.eventDate);
+    if (post.eventLocation) formData.append('event_location', post.eventLocation);
 
     const headers: Record<string, string> = {};
     if (connection.user?.authToken) headers['Authorization'] = `Bearer ${connection.user.authToken}`;
@@ -1504,6 +1506,32 @@ class HubService {
     return response.json();
   }
 
+  /** Fetch upcoming EVENT posts sorted by event_date ascending. */
+  async getUpcomingEvents(hubSlug: string, limit = 3): Promise<HubPost[]> {
+    try {
+      const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+      // Try the dedicated endpoint first; fall back to the posts endpoint with client-side filtering
+      const dedicated = await fetch(`${tunnelUrl}/api/events/upcoming?limit=${limit}`, { headers });
+      if (dedicated.ok) {
+        const data = await dedicated.json();
+        const events: HubPost[] = data.events ?? [];
+        if (events.length > 0) return events;
+      }
+      // Fallback: fetch all recent posts filtered to EVENT category, then filter + sort client-side
+      const fallback = await fetch(`${tunnelUrl}/api/posts?category=EVENT&limit=50`, { headers });
+      if (!fallback.ok) return [];
+      const data = await fallback.json();
+      const posts: HubPost[] = data.posts ?? [];
+      const cutoff = Date.now() - 2 * 3600 * 1000; // 2-hour grace window
+      return posts
+        .filter(p => p.event_date && new Date(p.event_date).getTime() >= cutoff)
+        .sort((a, b) => new Date(a.event_date!).getTime() - new Date(b.event_date!).getTime())
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
   /** Delete a post (author or admin only). */
   async deletePost(hubSlug: string, postId: string): Promise<void> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
@@ -1511,17 +1539,25 @@ class HubService {
     if (!response.ok && response.status !== 204) await this.parseErrorResponse(response, hubSlug);
   }
 
-  /** Update a post's text content (author or admin only). */
+  /** Update a post — text, media (add/replace/remove), and event fields. */
   async updatePost(
     hubSlug: string,
     postId: string,
-    updates: { title?: string; body?: string }
+    updates: { title?: string; body?: string; mediaFile?: File; removeMedia?: boolean; eventDate?: string; eventLocation?: string }
   ): Promise<HubPost> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const formData = new FormData();
+    if (updates.title !== undefined) formData.append('title', updates.title);
+    if (updates.body !== undefined) formData.append('body', updates.body);
+    if (updates.mediaFile) formData.append('media', updates.mediaFile);
+    if (updates.removeMedia) formData.append('remove_media', 'true');
+    if (updates.eventDate) formData.append('event_date', updates.eventDate);
+    if (updates.eventLocation !== undefined) formData.append('event_location', updates.eventLocation);
+    // No Content-Type header — browser sets multipart boundary automatically
     const response = await fetch(`${tunnelUrl}/api/posts/${postId}`, {
       method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
+      headers,
+      body: formData,
     });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     return response.json();

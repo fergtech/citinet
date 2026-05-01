@@ -29,6 +29,7 @@ function rowToItem(row: Record<string, unknown>): FeaturedItem {
     displayOrder:  row.display_order as number,
     createdAt:     row.created_at as string,
     authorUsername: (row.author_username as string | null) ?? undefined,
+    authorId:       (row.author_id as string | null) ?? undefined,
   };
 }
 

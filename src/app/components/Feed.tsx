@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { DotGrid } from './DotGrid';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown, Calendar, MapPin, ArrowUpDown, SlidersHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -10,6 +10,7 @@ import type { HubPost } from '../types/hub';
 
 interface FeedProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 // const POST_CATEGORIES = ['All', 'Discussion', 'Announcement', 'Project', 'Request'];
@@ -19,6 +20,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
   PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
   REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
+  EVENT:        'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-purple-200 dark:ring-purple-500/20',
 };
 
 function formatTimestamp(iso: string): string {
@@ -61,6 +63,8 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -89,6 +93,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!body.trim() && !mediaFile) { setError('Add a caption or media'); return; }
+    if (category === 'EVENT' && !eventDate) { setError('Pick a date and time for the event'); return; }
     setError('');
     setSubmitting(true);
     try {
@@ -97,6 +102,9 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
         title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
+        // Convert datetime-local (local time, no TZ) to ISO string with timezone so server stores correct UTC
+        eventDate: category === 'EVENT' && eventDate ? new Date(eventDate).toISOString() : undefined,
+        eventLocation: category === 'EVENT' ? eventLocation : undefined,
       });
       onCreated(post);
       onClose();
@@ -180,6 +188,36 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
               </label>
             )}
 
+            {/* Event-specific fields */}
+            {category === 'EVENT' && (
+              <div className="space-y-3 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800/50">
+                <div>
+                  <label className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={eventDate}
+                    onChange={e => setEventDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full bg-white dark:bg-zinc-800 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" /> Location <span className="text-slate-400">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={eventLocation}
+                    onChange={e => setEventLocation(e.target.value)}
+                    placeholder="e.g. Community Center, Central Park…"
+                    className="w-full bg-white dark:bg-zinc-800 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  />
+                </div>
+              </div>
+            )}
+
             {error && (
               <p className="text-sm text-rose-500 dark:text-rose-400">{error}</p>
             )}
@@ -203,7 +241,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
               </button>
               {labelOpen && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST'].map(cat => (
+                  {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'].map(cat => (
                     <button
                       key={cat}
                       type="button"
@@ -247,15 +285,16 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
 
 // ── Feed ──────────────────────────────────────────────────
 
-export function Feed({ onBack }: FeedProps) {
+export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
 
   const [posts, setPosts] = useState<HubPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
@@ -280,8 +319,7 @@ export function Feed({ onBack }: FeedProps) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const cat = activeCategory === 'All' ? undefined : activeCategory.toUpperCase();
-      const data = await hubService.listPosts(hubSlug, cat);
+      const data = await hubService.listPosts(hubSlug);
       setPosts(data);
     } catch (err) {
       if (!silent) {
@@ -291,7 +329,7 @@ export function Feed({ onBack }: FeedProps) {
     } finally {
       setLoading(false);
     }
-  }, [hubSlug, activeCategory]);
+  }, [hubSlug]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -301,13 +339,26 @@ export function Feed({ onBack }: FeedProps) {
     return () => clearInterval(id);
   }, [load]);
 
-  const filteredPosts = searchQuery.trim()
-    ? posts.filter(p =>
-        p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.body?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.author_username?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : posts;
+  const filteredPosts = useMemo(() => {
+    let result = posts;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p =>
+        p.title.toLowerCase().includes(q) ||
+        p.body?.toLowerCase().includes(q) ||
+        p.author_username?.toLowerCase().includes(q)
+      );
+    }
+    if (activeFilter) {
+      result = result.filter(p => p.category === activeFilter);
+    }
+    if (sortOrder === 'asc') {
+      result = [...result].sort((a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    }
+    return result;
+  }, [posts, searchQuery, activeFilter, sortOrder]);
 
   function handleCreated(post: HubPost) {
     setPosts(prev => [post, ...prev]);
@@ -328,7 +379,7 @@ export function Feed({ onBack }: FeedProps) {
           {/* Title + Search + Buttons */}
           <div className="flex items-start gap-4 mb-4">
             <div className="flex-shrink-0">
-              <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight">Discussions</h2>
+              <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight">Feed</h2>
               
             </div>
 
@@ -337,7 +388,7 @@ export function Feed({ onBack }: FeedProps) {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search discussions..."
+                placeholder="Search the feed…"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-9 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
@@ -367,6 +418,31 @@ export function Feed({ onBack }: FeedProps) {
               </button>
             </div>
           </div>
+
+          {/* Mobile filter strip — horizontal scroll chips, inside header so it's naturally sticky */}
+          <div className="xl:hidden flex items-center gap-2 overflow-x-auto no-scrollbar pt-1 pb-0.5 -mx-1 px-1">
+            {([null, 'DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'] as const).map(cat => (
+              <button
+                key={cat ?? 'all'}
+                onClick={() => setActiveFilter(cat)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  activeFilter === cat
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {cat ? cat.charAt(0) + cat.slice(1).toLowerCase() : 'All'}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 shrink-0 mx-1" />
+            <button
+              onClick={() => setSortOrder(s => s === 'desc' ? 'asc' : 'desc')}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+            >
+              <ArrowUpDown className="w-3 h-3" />
+              {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -374,8 +450,8 @@ export function Feed({ onBack }: FeedProps) {
       <div className="max-w-4xl mx-auto px-4 pt-6">
         <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-blue-200/50 dark:border-blue-700/50 mb-6">
           <p className="text-sm text-slate-700 dark:text-slate-300 font-light">
-            <strong className="font-semibold">No algorithms here.</strong>{' '}
-            All discussions appear in the order they were posted. Nothing is hidden, ranked, or optimized for engagement.
+            <strong className="font-semibold">No algorithms.</strong>{' '}
+            Nothing is ranked, hidden, or optimized for engagement — you control what you see.
           </p>
         </div>
       </div>
@@ -407,7 +483,7 @@ export function Feed({ onBack }: FeedProps) {
             <p className="text-slate-500 dark:text-slate-400 text-sm mb-2">
               {searchQuery
                 ? `No posts matching "${searchQuery}"`
-                : `No ${activeCategory === 'All' ? '' : activeCategory.toLowerCase() + ' '}posts yet.`}
+                : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
             </p>
             {searchQuery
               ? <button onClick={() => setSearchQuery('')} className="text-blue-500 hover:text-blue-600 text-sm font-medium transition-colors">Clear search</button>
@@ -435,12 +511,78 @@ export function Feed({ onBack }: FeedProps) {
                     mediaUrl={mediaUrl}
                     replyCount={post.reply_count}
                     categoryColors={CATEGORY_COLORS}
+                    eventDate={post.event_date}
+                    eventLocation={post.event_location}
                   />
                 </div>
               );
             })}
           </div>
         )}
+      </div>
+
+      {/* Desktop filter panel — fixed in right gutter, only on xl+ screens */}
+      <div className="hidden xl:block fixed top-24 right-6 z-20 w-44">
+        <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-100 dark:border-zinc-800">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Filter & Sort</span>
+          </div>
+
+          <div className="p-2 space-y-3">
+            {/* Type */}
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300 dark:text-zinc-600 px-1 mb-1">Type</p>
+              {([null, 'DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'] as const).map(cat => (
+                <button
+                  key={cat ?? 'all'}
+                  onClick={() => setActiveFilter(cat)}
+                  className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+                    activeFilter === cat
+                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {cat ? cat.charAt(0) + cat.slice(1).toLowerCase() : 'All types'}
+                </button>
+              ))}
+            </div>
+
+            <div className="border-t border-slate-100 dark:border-zinc-800" />
+
+            {/* Sort */}
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300 dark:text-zinc-600 px-1 mb-1">Sort</p>
+              {(['desc', 'asc'] as const).map(order => (
+                <button
+                  key={order}
+                  onClick={() => setSortOrder(order)}
+                  className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
+                    sortOrder === order
+                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {order === 'desc' ? 'Newest first' : 'Oldest first'}
+                </button>
+              ))}
+            </div>
+
+            {/* Reset — only shown when non-default */}
+            {(activeFilter !== null || sortOrder !== 'desc') && (
+              <>
+                <div className="border-t border-slate-100 dark:border-zinc-800" />
+                <button
+                  onClick={() => { setActiveFilter(null); setSortOrder('desc'); }}
+                  className="w-full text-[11px] text-slate-400 dark:text-zinc-500 hover:text-purple-600 dark:hover:text-purple-400 text-center py-0.5 transition-colors"
+                >
+                  Reset
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Post detail modal */}
@@ -456,6 +598,7 @@ export function Feed({ onBack }: FeedProps) {
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
           onDeleted={handlePostDeleted}
+          onNavigateToProfile={onNavigate ? (userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); } : undefined}
         />
       )}
 

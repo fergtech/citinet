@@ -182,7 +182,7 @@ function HubDashboardRoute() {
 
 function HubFeedRoute() {
   const navigate = useNavigate();
-  return <Feed onBack={() => navigate(-1)} />;
+  return <Feed onBack={() => navigate(-1)} onNavigate={screen => navigate(hubPath(`/${screen}`))} />;
 }
 
 function HubNeighborsRoute() {
@@ -436,7 +436,7 @@ function HubFloatingSupportLauncher() {
   const getFeatureContext = () => {
     const firstSegment = path.toLowerCase().split('/').filter(Boolean)[0] ?? '';
     const labelMap: Record<string, string> = {
-      feed: 'Discussions',
+      feed: 'Feed',
       discover: 'Discover',
       atlas: 'Atlas',
       marketplace: 'Exchange',

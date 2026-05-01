@@ -267,6 +267,8 @@ export interface HubPost {
   reply_count: number;
   created_at: string;
   updated_at: string;
+  event_date?: string | null;
+  event_location?: string | null;
 }
 
 /** A reply to a hub post */

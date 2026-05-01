@@ -1392,7 +1392,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { screen: 'feed',        label: 'Discussions',  emoji: '💬' },
+                    { screen: 'feed',        label: 'Feed',         emoji: '💬' },
                     { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
                     { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
                     { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },

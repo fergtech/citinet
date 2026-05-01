@@ -1,9 +1,9 @@
 import {
   Users, MessageCircle, Radio, Store,
-  Calendar, Lightbulb, Activity, MapPin, Clock, Wrench, LogOut, FolderOpen,
+  Calendar, Lightbulb, Activity, MapPin, Clock, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronLeft, ChevronRight, UserPlus, Share2, CheckCircle2, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Bot,
+  X, ChevronLeft, ChevronRight, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
+  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Package, Bot,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,14 +24,14 @@ import type { HubPost, HubVendor } from '../types/hub';
 
 const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
   { Icon: Layers,        label: 'Spaces',      screen: 'spaces',      gradient: 'bg-gradient-to-br from-purple-500 to-violet-600' },
-  { Icon: MessageCircle, label: 'Discussions', screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
+  { Icon: MessageCircle, label: 'Feed',        screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
   { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
   { Icon: Users,         label: 'Neighbors',   screen: 'neighbors',   gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' },
   { Icon: FolderOpen,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
   { Icon: Target,        label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
-  { Icon: Wrench,        label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
+  { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
   { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
   { Icon: Vote,          label: 'Polls',       screen: 'polls',       gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600' },
@@ -39,12 +39,10 @@ const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradi
   { Icon: NotebookPen,   label: 'Notes',       screen: 'notes',       gradient: 'bg-gradient-to-br from-amber-500 to-yellow-500' },
 ];
 
-const MOBILE_DOCK_APPS = [
-  { Icon: MessageCircle, label: 'Discuss', screen: 'feed' },
-  { Icon: Map, label: 'Atlas', screen: 'atlas' },
-  { Icon: Store, label: 'Exchange', screen: 'marketplace' },
-  { Icon: MessageCircle, label: 'Messages', screen: 'messages' },
-];
+// Priority-ordered screen IDs for the mobile bottom dock.
+// Derived from visibleTiles so icons, labels, badges, and feature-gating
+// all stay in sync with the launchpad automatically.
+const DOCK_PRIORITY_SCREENS = ['feed', 'atlas', 'marketplace', 'messages'];
 
 // Apps enabled on a fresh hub with no admin configuration yet.
 // null enabledApps on the Hub object means "all apps" (backward compat).
@@ -57,7 +55,7 @@ const MOBILE_LAUNCHPAD_ROWS = 2;
 const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
 const DESKTOP_LAUNCHPAD_COLUMNS_MD = 5;
 const DESKTOP_LAUNCHPAD_COLUMNS_XL = 8;
-const DESKTOP_LAUNCHPAD_ROWS = 2;
+const DESKTOP_LAUNCHPAD_ROWS = 1;
 
 interface DashboardProps {
   userName?: string;
@@ -239,7 +237,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     signalStrength: currentHub?.connectionStatus === 'connected' ? 'Strong' : currentHub?.connectionStatus === 'connecting' ? 'Weak' : 'Offline'
   };
 
-  const [rsvpDone, setRsvpDone] = useState<Record<number, boolean>>({});
   const [showNodeStatus, setShowNodeStatus] = useState(false);
 
   // ── Hub app: initiatives ────────────────────────────────
@@ -269,34 +266,22 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       .catch(() => { setLiveInitiatives([]); });
   }, [currentHub?.tunnelUrl, currentUser?.authToken]);
 
-  const upcomingEvents = [
-    {
-      id: 1,
-      title: 'Town Hall: Infrastructure Planning',
-      date: 'Thursday, Jan 9',
-      time: '7:00 PM',
-      location: 'Community Center',
-      organizer: 'Hub Admin',
-      attendees: 34,
-      description: 'Join your neighbors for an open discussion on upcoming infrastructure improvements, road maintenance priorities, and broadband expansion plans for our community. All residents welcome — bring your questions and ideas.',
-    },
-    {
-      id: 2,
-      title: 'Weekend Farmers Market',
-      date: 'Saturday, Jan 11',
-      time: '9:00 AM',
-      location: 'Central Square',
-      organizer: 'Local Growers Collective',
-      attendees: 112,
-      description: 'Fresh produce, local honey, artisan goods, and live music. Our weekly market brings together over 20 local vendors. Bring your own bags and enjoy a morning in the square with the community.',
-    },
-  ] as const;
-
   // activeInitiatives: live data when available, empty otherwise (no mock fallback)
   const activeInitiatives: LiveInitiative[] = liveInitiatives ?? [];
 
-  const [selectedEvent, setSelectedEvent] = useState<typeof upcomingEvents[number] | null>(null);
+  // ── Live events ─────────────────────────────────────────
+  const [upcomingEvents, setUpcomingEvents] = useState<HubPost[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<HubPost | null>(null);
   const [selectedInitiative] = useState<null>(null);
+
+  useEffect(() => {
+    if (!hubSlug || !isConnected) return;
+    setEventsLoading(true);
+    hubService.getUpcomingEvents(hubSlug, 3)
+      .then(setUpcomingEvents)
+      .finally(() => setEventsLoading(false));
+  }, [hubSlug, isConnected]);
 
   const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
   const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
@@ -311,7 +296,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
     const labelMap: Record<string, string> = {
       '': 'Dashboard',
-      feed: 'Discussions',
+      feed: 'Feed',
       discover: 'Discover',
       atlas: 'Atlas',
       marketplace: 'Exchange',
@@ -381,6 +366,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' };
   const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
   const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
+
+  // Bottom dock — priority screens resolved from visibleTiles so icons/labels/badges/gating stay in sync
+  const dockItems = DOCK_PRIORITY_SCREENS
+    .map(screen => visibleTiles.find(t => t.screen === screen))
+    .filter((t): t is typeof APP_TILES[number] => !!t);
 
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
@@ -692,11 +682,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </button>
         <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700 mx-2 shrink-0" />
         {[
-          { Icon: MessageCircle, label: 'Discussions', screen: 'feed' },
+          { Icon: MessageCircle, label: 'Feed', screen: 'feed' },
           { Icon: Map,           label: 'Atlas',       screen: 'atlas' },
           { Icon: Store,         label: 'Exchange',    screen: 'marketplace' },
           { Icon: Users,         label: 'Neighbors',   screen: 'neighbors' },
-          { Icon: Wrench,        label: 'Resources',   screen: 'toolkit' },
+          { Icon: Package,       label: 'Resources',   screen: 'toolkit' },
         ].filter(app => !enabledSet || enabledSet.includes(app.screen)).map(app => (
           <button
             key={app.screen}
@@ -859,7 +849,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
               <MessageCircle className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Discussions</span>
+              <span className="text-sm font-medium text-slate-900 dark:text-white">Feed</span>
             </button>
 
             <button
@@ -914,7 +904,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               onClick={() => onNavigate('toolkit')}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
             >
-              <Wrench className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
+              <Package className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
               <span className="text-sm font-medium text-slate-900 dark:text-white">Resources</span>
             </button>
 
@@ -1140,7 +1130,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
         {/* Desktop App Launcher - OS-style icon grid */}
         <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
-          <div className="max-w-5xl mx-auto px-8 py-5">
+          <div className="max-w-5xl mx-auto px-8 py-3">
             <div
               ref={desktopLaunchpadRef}
               onScroll={handleDesktopLaunchpadScroll}
@@ -1191,7 +1181,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               </div>
             </div>
             {desktopLaunchpadPages.length > 1 && (
-              <div className="flex items-center justify-center gap-3 pt-3">
+              <div className="flex items-center justify-center gap-3 pt-1">
                 {/* Left arrow */}
                 <button
                   type="button"
@@ -1241,7 +1231,340 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
 
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8 overflow-x-hidden">
-          {/* Mobile launcher - app first, widgets second */}
+          {/* Featured Content - Curated by Admins/Mods */}
+          <div className="max-w-full overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Featured</h2>
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-light">Curated by community moderators</span>
+            </div>
+            <FeaturedCarousel
+              items={featuredItems}
+              hubSlug={hubSlug}
+              onPostClick={handleFeaturedPostClick}
+            />
+          </div>
+          {/* Activity + sidebar two-column layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            {/* Left: Recent Activity */}
+            <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
+                {!activityLoading && activityItems.some(i => i.actor !== 'A neighbor') && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Live</span>
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={refreshActivity}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                aria-label="Refresh activity"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-400 dark:text-slate-500 ${activityLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {/* Who's Active — presence strip */}
+            {!activityLoading && activityItems.length > 0 && (() => {
+              const seen = new Set<string>();
+              const activeActors = activityItems.filter(i => {
+                // Skip fallback "A neighbor" entries — not real members
+                if (i.actor === 'A neighbor') return false;
+                if (seen.has(i.actor)) return false;
+                seen.add(i.actor);
+                return true;
+              }).slice(0, 6);
+              if (activeActors.length === 0) return null;
+              return (
+                <div className="flex items-center gap-4 mb-5 overflow-x-auto pb-1 no-scrollbar">
+                  {activeActors.map(item => {
+                    const ini = item.actor.charAt(0).toUpperCase();
+                    // Current user is always green — they're online right now
+                    const isCurrentUser = item.actor === currentUser?.username;
+                    const fresh = isCurrentUser || Date.now() - item.timestamp.getTime() < 3_600_000;
+                    return (
+                      <button
+                        key={item.actor}
+                        onClick={() => {
+                          const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                          if (postTypes.includes(item.type) && item.itemId) handleFeaturedPostClick(item.itemId);
+                          else onNavigate(item.navigateTo);
+                        }}
+                        className="flex flex-col items-center gap-1.5 shrink-0 group"
+                      >
+                        <div className="relative">
+                          {item.actorAvatarUrl ? (
+                            <img src={item.actorAvatarUrl} alt={item.actor} className="w-11 h-11 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all">
+                              {ini}
+                            </div>
+                          )}
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-950 ${fresh ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-zinc-600'}`} />
+                        </div>
+                        <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 max-w-[48px] truncate leading-tight">{item.actor.split(' ')[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {activityLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                    <div className="p-4 space-y-2">
+                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
+                      <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
+                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : activityItems.length === 0 ? (
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+                <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
+              </div>
+            ) : (() => {
+              const PAGE = 6;
+              const visible = activityExpanded ? activityItems : activityItems.slice(0, PAGE);
+              const hiddenCount = activityItems.length - PAGE;
+              const handleClick = (item: ActivityItem) => {
+                const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                if (postTypes.includes(item.type) && item.itemId) {
+                  handleFeaturedPostClick(item.itemId);
+                } else if (item.type === 'file_shared' && item.itemId) {
+                  sessionStorage.setItem('citinet-deeplink-file', item.itemId);
+                  onNavigate('files');
+                } else if (item.type === 'pin_added' && item.itemId) {
+                  sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
+                  onNavigate('atlas');
+                } else if (item.type === 'space_created') {
+                  onNavigate('spaces');
+                } else if (item.type === 'neighbor_joined') {
+                  sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
+                  onNavigate('feed');
+                } else {
+                  onNavigate(item.navigateTo);
+                }
+              };
+              return (
+                <div className="space-y-2">
+                  {visible.map(item => (
+                    <ActivityCard key={item.id} item={item} onClick={() => handleClick(item)} />
+                  ))}
+                  {!activityExpanded && hiddenCount > 0 && (
+                    <button
+                      onClick={() => setActivityExpanded(true)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-400 dark:hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-900/10 transition-all font-medium"
+                    >
+                      Show {hiddenCount} more
+                    </button>
+                  )}
+                  {activityExpanded && activityItems.length > PAGE && (
+                    <button
+                      onClick={() => setActivityExpanded(false)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-all font-medium"
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            </div>
+
+            {/* Right: Initiatives + Events */}
+            <div className="flex flex-col gap-6">
+              {/* Upcoming Events */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Upcoming Events</h2>
+              <button onClick={() => onNavigate('feed')} className={`${sectionLinkClass} text-sm`}>
+                See all →
+              </button>
+            </div>
+
+            {eventsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading…</span>
+              </div>
+            ) : upcomingEvents.length === 0 ? (
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-5 text-center">
+                <Calendar className="w-7 h-7 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming events yet</p>
+                <button
+                  onClick={() => onNavigate('feed')}
+                  className="mt-2 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+                >
+                  Post one in the Feed →
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingEvents.map(event => {
+                  const d = event.event_date ? new Date(event.event_date) : null;
+                  const dateStr = d ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : null;
+                  const timeStr = d ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : null;
+                  return (
+                    <button
+                      key={event.id}
+                      onClick={() => setSelectedEvent(event)}
+                      className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                    >
+                      <div className="flex gap-3 items-center">
+                        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                          <Calendar className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-1 truncate">{event.title}</h3>
+                          <div className="space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
+                            {dateStr && (
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="w-3 h-3" />
+                                <span>{dateStr}{timeStr ? ` · ${timeStr}` : ''}</span>
+                              </div>
+                            )}
+                            {event.event_location && (
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="w-3 h-3" />
+                                <span className="truncate">{event.event_location}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Community Initiatives — compact list */}
+          {(liveInitiatives === null || activeInitiatives.length > 0) && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Initiatives</h2>
+                  {initiativesAppInfo && (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                      {initiativesAppInfo.faviconUrl
+                        ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        : <Lightbulb className="w-3 h-3 text-purple-400" />
+                      }
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
+                    </div>
+                  )}
+                </div>
+                {activeInitiatives.length > 0 && (
+                  <button onClick={() => onNavigate('initiatives')} className={`${sectionLinkClass} text-xs`}>
+                    See all →
+                  </button>
+                )}
+              </div>
+
+              {liveInitiatives === null ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Loading…</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeInitiatives.map(initiative => {
+                    const memberCount = initiative.members?.length ?? 0;
+                    const iLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
+                    const iStyle = initiative.status === 'active'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                      : initiative.status === 'completed'
+                      ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                      : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+                    const iGradient = initiative.status === 'active'
+                      ? 'from-emerald-500/25 to-teal-500/20 dark:from-emerald-900/50 dark:to-teal-900/40'
+                      : initiative.status === 'completed'
+                      ? 'from-slate-300/60 to-slate-400/40 dark:from-zinc-700 dark:to-zinc-800'
+                      : 'from-amber-400/25 to-orange-400/20 dark:from-amber-900/50 dark:to-orange-900/40';
+                    return (
+                      <button
+                        key={initiative.id}
+                        onClick={() => onNavigate(`initiatives/${initiative.id}`)}
+                        className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-3.5 border border-slate-200 dark:border-zinc-800 hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
+                      >
+                        <div className={`w-12 h-12 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${!initiative.imageUrl ? `bg-gradient-to-br ${iGradient}` : ''}`}>
+                          {initiative.imageUrl
+                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            : <Lightbulb className="w-5 h-5 text-white/60" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1 leading-tight flex-1">{initiative.title}</h3>
+                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${iStyle}`}>{iLabel}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Users className="w-3 h-3 text-slate-400" />
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+                            <span className="font-mono text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto">{initiative.progress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          
+
+          {/* Node Status */}
+          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Activity className="w-4 h-4 text-slate-200 shrink-0" />
+                <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-100 truncate">Node Status</h2>
+              </div>
+              <button
+                onClick={() => setShowNodeStatus(v => !v)}
+                className="text-xs font-semibold text-cyan-200 hover:text-cyan-100 transition-colors"
+              >
+                {showNodeStatus ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            {showNodeStatus && (
+              <>
+                <div className="mt-3 h-px bg-slate-600/70" />
+                <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.activeMembers}</div>
+                    <div className="text-xs text-slate-200">Active Members</div>
+                  </div>
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.onlineNow}</div>
+                    <div className="text-xs text-slate-200">Online Now</div>
+                  </div>
+                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
+                    <div className="text-base font-semibold mb-1">{nodeStatus.signalStrength}</div>
+                    <div className="text-xs text-slate-200">Signal</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+            </div>
+          </div>
+
+          {/* Mobile launcher — apps after community content */}
           <div className="md:hidden space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
@@ -1322,259 +1645,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             )}
           </div>
 
-          {/* Featured Content - Curated by Admins/Mods */}
-          <div className="max-w-full overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Featured</h2>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-light">Curated by community moderators</span>
-            </div>
-            <FeaturedCarousel
-              items={featuredItems}
-              hubSlug={hubSlug}
-              onPostClick={handleFeaturedPostClick}
-            />
-          </div>
-          {/* Activity + sidebar two-column layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-            {/* Left: Recent Activity */}
-            <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
-              <button
-                onClick={refreshActivity}
-                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                aria-label="Refresh activity"
-              >
-                <RefreshCw className={`w-4 h-4 text-slate-400 dark:text-slate-500 ${activityLoading ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-
-            {activityLoading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
-                    <div className="p-4 space-y-2">
-                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
-                      <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
-                      <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/4" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : activityItems.length === 0 ? (
-              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
-                <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
-              </div>
-            ) : (() => {
-              const PAGE = 6;
-              const visible = activityExpanded ? activityItems : activityItems.slice(0, PAGE);
-              const hiddenCount = activityItems.length - PAGE;
-              const handleClick = (item: ActivityItem) => {
-                const postTypes = ['discussion', 'announcement', 'project', 'request'];
-                if (postTypes.includes(item.type) && item.itemId) {
-                  handleFeaturedPostClick(item.itemId);
-                } else if (item.type === 'file_shared' && item.itemId) {
-                  sessionStorage.setItem('citinet-deeplink-file', item.itemId);
-                  onNavigate('files');
-                } else if (item.type === 'pin_added' && item.itemId) {
-                  sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
-                  onNavigate('atlas');
-                } else if (item.type === 'space_created') {
-                  onNavigate('spaces');
-                } else if (item.type === 'neighbor_joined') {
-                  sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
-                  onNavigate('feed');
-                } else {
-                  onNavigate(item.navigateTo);
-                }
-              };
-              return (
-                <div className="space-y-2">
-                  {visible.map(item => (
-                    <ActivityCard key={item.id} item={item} onClick={() => handleClick(item)} />
-                  ))}
-                  {!activityExpanded && hiddenCount > 0 && (
-                    <button
-                      onClick={() => setActivityExpanded(true)}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-400 dark:hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-900/10 transition-all font-medium"
-                    >
-                      Show {hiddenCount} more
-                    </button>
-                  )}
-                  {activityExpanded && activityItems.length > PAGE && (
-                    <button
-                      onClick={() => setActivityExpanded(false)}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-all font-medium"
-                    >
-                      Show less
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
-            </div>
-
-            {/* Right: Initiatives + Events */}
-            <div className="flex flex-col gap-6">
-          {/* Community Initiatives — compact list */}
-          {(liveInitiatives === null || activeInitiatives.length > 0) && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Initiatives</h2>
-                  {initiativesAppInfo && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-                      {initiativesAppInfo.faviconUrl
-                        ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        : <Lightbulb className="w-3 h-3 text-purple-400" />
-                      }
-                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
-                    </div>
-                  )}
-                </div>
-                {activeInitiatives.length > 0 && (
-                  <button onClick={() => onNavigate('initiatives')} className={`${sectionLinkClass} text-xs`}>
-                    See all →
-                  </button>
-                )}
-              </div>
-
-              {liveInitiatives === null ? (
-                <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Loading…</span>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {activeInitiatives.map(initiative => {
-                    const memberCount = initiative.members?.length ?? 0;
-                    const iLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
-                    const iStyle = initiative.status === 'active'
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                      : initiative.status === 'completed'
-                      ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
-                      : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
-                    const iGradient = initiative.status === 'active'
-                      ? 'from-emerald-500/25 to-teal-500/20 dark:from-emerald-900/50 dark:to-teal-900/40'
-                      : initiative.status === 'completed'
-                      ? 'from-slate-300/60 to-slate-400/40 dark:from-zinc-700 dark:to-zinc-800'
-                      : 'from-amber-400/25 to-orange-400/20 dark:from-amber-900/50 dark:to-orange-900/40';
-                    return (
-                      <button
-                        key={initiative.id}
-                        onClick={() => onNavigate(`initiatives/${initiative.id}`)}
-                        className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-3.5 border border-slate-200 dark:border-zinc-800 hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
-                      >
-                        <div className={`w-12 h-12 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${!initiative.imageUrl ? `bg-gradient-to-br ${iGradient}` : ''}`}>
-                          {initiative.imageUrl
-                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            : <Lightbulb className="w-5 h-5 text-white/60" />
-                          }
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1 leading-tight flex-1">{initiative.title}</h3>
-                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${iStyle}`}>{iLabel}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <Users className="w-3 h-3 text-slate-400" />
-                            <span className="text-xs text-slate-500 dark:text-slate-400">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
-                            <span className="font-mono text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto">{initiative.progress}%</span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Upcoming Events */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Upcoming Events</h2>
-              <button
-                onClick={() => onNavigate('atlas')}
-                className={`${sectionLinkClass} text-sm`}
-              >
-                Atlas →
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {upcomingEvents.map(event => (
-                <button
-                  key={event.id}
-                  onClick={() => setSelectedEvent(event)}
-                  className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
-                >
-                  <div className="flex gap-3 items-center">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-1 truncate">{event.title}</h3>
-                      <div className="space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-3 h-3" />
-                          <span>{event.date} • {event.time}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3 h-3" />
-                          <span>{event.location}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Node Status */}
-          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Activity className="w-4 h-4 text-slate-200 shrink-0" />
-                <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-100 truncate">Node Status</h2>
-              </div>
-              <button
-                onClick={() => setShowNodeStatus(v => !v)}
-                className="text-xs font-semibold text-cyan-200 hover:text-cyan-100 transition-colors"
-              >
-                {showNodeStatus ? 'Hide' : 'Show'}
-              </button>
-            </div>
-
-            {showNodeStatus && (
-              <>
-                <div className="mt-3 h-px bg-slate-600/70" />
-                <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.activeMembers}</div>
-                    <div className="text-xs text-slate-200">Active Members</div>
-                  </div>
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.onlineNow}</div>
-                    <div className="text-xs text-slate-200">Online Now</div>
-                  </div>
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-base font-semibold mb-1">{nodeStatus.signalStrength}</div>
-                    <div className="text-xs text-slate-200">Signal</div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-            </div>
-          </div>
-
         {/* Bottom padding so last content clears the tab bar */}
         <div className="md:hidden h-20" />
         </div>
@@ -1582,23 +1652,22 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
       {/* Mobile Bottom Dock */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
-        <div className="grid grid-cols-5 h-16 px-1">
+        <div className="flex items-stretch h-16 px-1">
           <button
             onClick={() => setShowMobileStartMenu(true)}
-            className="flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-transform"
           >
             <LayoutGrid className="w-5 h-5" />
             <span className="text-[10px] font-semibold leading-none">Start</span>
           </button>
 
-          {MOBILE_DOCK_APPS.map(app => {
-            const notifyFeature = APP_TILES.find(t => t.screen === app.screen)?.notifyFeature;
-            const badge = notifyFeature ? notifCounts[notifyFeature] : 0;
+          {dockItems.map(app => {
+            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
             return (
               <button
                 key={app.screen}
-                onClick={() => handleTileNavigate(app.screen, notifyFeature)}
-                className="flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+                onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
               >
                 <div className="relative">
                   <app.Icon className="w-5 h-5" />
@@ -1740,6 +1809,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
           onDeleted={() => setFeaturedPost(null)}
+          onNavigateToProfile={(userId) => { setFeaturedPost(null); onNavigate(`profile/${userId}`); }}
         />
       )}
 
@@ -1814,89 +1884,22 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         )}
       </AnimatePresence>
 
-      {/* ── Event Detail Modal ── */}
-      <AnimatePresence>
-        {selectedEvent && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSelectedEvent(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 24, scale: 0.97 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 340 }}
-              className="w-full sm:max-w-lg bg-white dark:bg-zinc-900 sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden"
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Header gradient */}
-              <div className="relative bg-gradient-to-br from-blue-600 via-purple-600 to-purple-700 px-6 pt-6 pb-8">
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-                <div className="w-12 h-12 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center mb-3">
-                  <Calendar className="w-6 h-6 text-white" />
-                </div>
-                <h2 className="text-xl font-bold text-white leading-tight pr-8">{selectedEvent.title}</h2>
-                <p className="text-sm text-white/70 mt-1">Organised by {selectedEvent.organizer}</p>
-              </div>
-
-              {/* Body */}
-              <div className="px-6 py-5 space-y-4">
-                {/* Meta chips */}
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <Clock className="w-3.5 h-3.5 text-purple-500" />
-                    {selectedEvent.date} · {selectedEvent.time}
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <MapPin className="w-3.5 h-3.5 text-purple-500" />
-                    {selectedEvent.location}
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <Users className="w-3.5 h-3.5 text-purple-500" />
-                    {rsvpDone[selectedEvent.id] ? selectedEvent.attendees + 1 : selectedEvent.attendees} going
-                  </div>
-                </div>
-
-                {/* Description */}
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{selectedEvent.description}</p>
-
-                {/* Actions */}
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => setRsvpDone(prev => ({ ...prev, [selectedEvent.id]: !prev[selectedEvent.id] }))}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                      rsvpDone[selectedEvent.id]
-                        ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-sm'
-                    }`}
-                  >
-                    {rsvpDone[selectedEvent.id]
-                      ? <><CheckCircle2 className="w-4 h-4" /> You're going</>
-                      : <><UserPlus className="w-4 h-4" /> RSVP</>
-                    }
-                  </button>
-                  <button
-                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                    aria-label="Share event"
-                    title="Share"
-                  >
-                    <Share2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Event Detail Modal (reuses PostDetailModal — events are posts) ── */}
+      {selectedEvent && (
+        <PostDetailModal
+          isOpen
+          onClose={() => setSelectedEvent(null)}
+          post={selectedEvent}
+          hubSlug={hubSlug}
+          currentUserId={currentUser?.hubUserId}
+          currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
+          isAdmin={isAdmin}
+          categoryColors={CATEGORY_COLORS}
+          publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
+          onDeleted={(postId) => { setUpcomingEvents(prev => prev.filter(e => e.id !== postId)); setSelectedEvent(null); }}
+          onNavigateToProfile={(userId) => { setSelectedEvent(null); onNavigate(`profile/${userId}`); }}
+        />
+      )}
 
       {/* ── Initiative Detail Modal ── */}
       <AnimatePresence>
@@ -1926,7 +1929,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
 };
 
 const ACTIVITY_LOCATION: Record<string, string> = {
-  feed:        'in Discussions',
+  feed:        'in Feed',
   files:       'in Files',
   atlas:       'in Atlas',
   neighbors:   'in Neighbors',
@@ -1937,6 +1940,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
   const cfg = ACTIVITY_CONFIG[item.type];
   const initial = item.actor.charAt(0).toUpperCase();
   const location = ACTIVITY_LOCATION[item.navigateTo] ?? '';
+  const isLive = Date.now() - item.timestamp.getTime() < 3_600_000;
 
   return (
     <button
@@ -1946,48 +1950,48 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
       {/* Left accent bar */}
       <div className={`w-1 shrink-0 self-stretch ${cfg.barColor} rounded-l-xl`} />
 
-      <div className="flex items-start gap-3 px-4 py-3 flex-1 min-w-0">
-        {/* Avatar */}
-        {item.actorAvatarUrl ? (
-          <img
-            src={item.actorAvatarUrl}
-            alt={item.actor}
-            className="w-10 h-10 rounded-full object-cover shrink-0"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {initial}
-          </div>
-        )}
+      <div className="flex items-start gap-2 px-4 py-3.5 flex-1 min-w-0">
+        <div className="flex-1 min-w-0 space-y-1.5">
+          {/* Title leads — this is the content, make it the hero */}
+          <p className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug pr-1">{item.title}</p>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          {/* Row 1: name + verb */}
-          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
-            <span className="text-sm text-slate-800 dark:text-slate-200">{item.actor}</span>
-            <span className={`text-sm font-semibold ${cfg.verbColor}`}>{item.summary}</span>
+          {/* Attribution row: mini-avatar · name · verb · location · time */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {item.actorAvatarUrl ? (
+              <img src={item.actorAvatarUrl} alt={item.actor} className="w-4 h-4 rounded-full object-cover shrink-0" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            ) : (
+              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{initial}</div>
+            )}
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{item.actor}</span>
+            <span className={`text-xs font-medium ${cfg.verbColor}`}>{item.summary}</span>
+            {location && <><span className="text-xs text-slate-300 dark:text-zinc-600">·</span><span className="text-xs text-slate-500 dark:text-slate-400">{location}</span></>}
+            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
+            <span className="font-mono text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
+              {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
+              {timeAgo(item.timestamp)}
+            </span>
           </div>
-          {/* Row 2: location · timestamp */}
-          <div className="flex items-center gap-1.5 mt-0.5">
-            {location && <span className="text-xs text-slate-500 dark:text-slate-400">{location}</span>}
-            {location && <span className="text-xs text-slate-400 dark:text-slate-500">·</span>}
-            <span className="font-mono text-xs text-slate-400 dark:text-slate-500">{timeAgo(item.timestamp)}</span>
-          </div>
-          {/* Row 3: title as caption */}
-          <p className="text-sm text-slate-700 dark:text-slate-300 mt-1 line-clamp-2 leading-snug">{item.title}</p>
-          {/* CTA */}
-          {item.cta && (
-            <div className="mt-1.5">
-              <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
-                {item.cta}
-              </span>
+
+          {/* Social signals row: reply count + CTA */}
+          {((item.replyCount !== undefined && item.replyCount > 0) || item.cta) && (
+            <div className="flex items-center gap-3 pt-0.5">
+              {item.replyCount !== undefined && item.replyCount > 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <MessageCircle className="w-3 h-3" />
+                  {item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}
+                </span>
+              )}
+              {item.cta && (
+                <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
+                  {item.cta}
+                </span>
+              )}
             </div>
           )}
         </div>
 
         {/* Chevron */}
-        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-1" />
+        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />
       </div>
     </button>
   );

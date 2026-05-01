@@ -15,4 +15,5 @@ export interface FeaturedItem {
   displayOrder: number;
   createdAt: string;
   authorUsername?: string;
+  authorId?: string;
 }

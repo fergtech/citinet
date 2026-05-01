@@ -27,6 +27,8 @@ export interface ActivityItem {
   itemId?: string;
   /** If present, render a CTA button with this label */
   cta?: string;
+  /** Reply count for post-type activities */
+  replyCount?: number;
 }
 
 export function timeAgo(date: Date): string {
@@ -124,6 +126,7 @@ export function useActivityFeed(hubSlug: string) {
           timestamp: new Date(post.created_at),
           navigateTo: 'feed',
           itemId: post.id,
+          replyCount: (post as any).reply_count ?? 0,
         });
       }
     }

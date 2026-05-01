@@ -823,7 +823,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                 {/* ── Step 4: Choose Apps ──────────────── */}
                 {step === 'apps' && (() => {
                   const ALL_HUB_APPS = [
-                    { id: 'feed',        label: 'Discussions',  emoji: '💬', desc: 'Community posts and conversations' },
+                    { id: 'feed',        label: 'Feed',         emoji: '💬', desc: 'Community posts, events, and conversations' },
                     { id: 'messages',    label: 'Messages',     emoji: '✉️', desc: 'Private and group messaging' },
                     { id: 'atlas',       label: 'Atlas',        emoji: '🗺️', desc: 'Interactive community map' },
                     { id: 'neighbors',   label: 'Neighbors',    emoji: '👥', desc: 'Browse and connect with members' },
