@@ -2836,6 +2836,11 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
     );
     if (!existing[0]) return res.status(404).json({ error: 'Note not found' });
 
+    // Only admins and moderators can publish notes to the public web
+    if (req.body.is_web_public === true && !req.user.is_admin && req.user.role !== 'moderator') {
+      return res.status(403).json({ error: 'Only admins and moderators can publish notes to the public web' });
+    }
+
     const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'is_web_public', 'web_body_plain', 'web_body_rich', 'color'];
     const updates = [];
     const values = [];
@@ -2913,12 +2918,36 @@ app.get('/api/public/vendors/:slug', async (req, res) => {
   }
 });
 
+// Public notes feed — no auth required, returns all web_public notes for blog use
+app.get('/api/public/notes', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const { rows } = await pool.query(
+      `SELECT n.id, n.title, n.web_body_plain, n.color, n.created_at, n.updated_at,
+              u.username AS author
+       FROM hub_notes n
+       JOIN hub_users u ON n.owner_id = u.id
+       WHERE n.is_web_public = TRUE AND n.is_archived = FALSE
+       ORDER BY n.updated_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ notes: rows });
+  } catch (err) {
+    console.error('Public notes feed error:', err);
+    res.status(500).json({ error: 'Failed to load notes feed' });
+  }
+});
+
 // Public note share — no auth required, only if is_web_public = true
 app.get('/api/public/notes/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, owner_id, title, web_body_plain, web_body_rich, color, created_at, updated_at
-       FROM hub_notes WHERE id = $1 AND is_web_public = TRUE AND is_archived = FALSE`,
+      `SELECT n.id, n.owner_id, u.username AS author, n.title,
+              n.web_body_plain, n.web_body_rich, n.color, n.created_at, n.updated_at
+       FROM hub_notes n
+       JOIN hub_users u ON n.owner_id = u.id
+       WHERE n.id = $1 AND n.is_web_public = TRUE AND n.is_archived = FALSE`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Note not found or not public' });

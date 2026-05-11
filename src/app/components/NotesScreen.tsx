@@ -6,11 +6,13 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
 import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
   Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2,
+  Heading1, Heading2, Heading3, ImagePlus, Code2,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
@@ -41,16 +43,22 @@ function SaveIndicator({ status }: { status: 'idle' | 'saving' | 'saved' | 'erro
 
 // ─── Format Toolbar ───────────────────────────────────────────────────────────
 
-function FormatToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
+function FormatToolbar({ editor, hubSlug }: { editor: ReturnType<typeof useEditor>; hubSlug: string }) {
+  const [imgUploading, setImgUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (!editor) return null;
 
-  const btn = (active: boolean, onClick: () => void, title: string, icon: React.ReactNode) => (
+  const btn = (active: boolean, onClick: () => void, title: string, icon: React.ReactNode, disabled = false) => (
     <button
       type="button"
       onClick={onClick}
       title={title}
+      disabled={disabled}
       className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${
-        active
+        disabled
+          ? 'opacity-40 cursor-not-allowed text-slate-400 dark:text-zinc-600'
+          : active
           ? 'bg-slate-200 dark:bg-zinc-600 text-slate-900 dark:text-white'
           : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700 hover:text-slate-800 dark:hover:text-zinc-200'
       }`}
@@ -61,22 +69,58 @@ function FormatToolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
 
   const handleLink = () => {
     const url = prompt('Enter URL:');
-    if (url) {
-      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+  };
+
+  const handleImageFile = async (file: File) => {
+    setImgUploading(true);
+    try {
+      const result = await hubService.uploadFile(hubSlug, file, true);
+      const conn = hubService.getHubConnection(hubSlug);
+      if (conn?.hub.tunnelUrl) {
+        const url = `${conn.hub.tunnelUrl}/api/public/files/${encodeURIComponent(result.name)}`;
+        editor.chain().focus().setImage({ src: url }).run();
+      }
+    } catch {
+      // upload failed — silent for now
+    } finally {
+      setImgUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
+  const sep = <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />;
+
   return (
-    <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 flex-shrink-0">
-      {btn(editor.isActive('bold'),        () => editor.chain().focus().toggleBold().run(),        'Bold',          <Bold className="w-3.5 h-3.5" />)}
-      {btn(editor.isActive('italic'),      () => editor.chain().focus().toggleItalic().run(),      'Italic',        <Italic className="w-3.5 h-3.5" />)}
-      {btn(editor.isActive('underline'),   () => editor.chain().focus().toggleUnderline().run(),   'Underline',     <UnderlineIcon className="w-3.5 h-3.5" />)}
-      {btn(editor.isActive('link'),        handleLink,                                              'Add link',      <LinkIcon className="w-3.5 h-3.5" />)}
-      <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
-      {btn(editor.isActive('bulletList'),  () => editor.chain().focus().toggleBulletList().run(),  'Bullet list',   <List className="w-3.5 h-3.5" />)}
-      {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Ordered list',  <ListOrdered className="w-3.5 h-3.5" />)}
-      {btn(editor.isActive('taskList'),    () => editor.chain().focus().toggleTaskList().run(),    'Checklist',     <CheckSquare className="w-3.5 h-3.5" />)}
-    </div>
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImageFile(file);
+        }}
+      />
+      <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 flex-shrink-0 flex-wrap">
+        {btn(editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run(), 'Heading 1', <Heading1 className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'Heading 2', <Heading2 className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run(), 'Heading 3', <Heading3 className="w-3.5 h-3.5" />)}
+        {sep}
+        {btn(editor.isActive('bold'),        () => editor.chain().focus().toggleBold().run(),        'Bold',         <Bold className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('italic'),      () => editor.chain().focus().toggleItalic().run(),      'Italic',       <Italic className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('underline'),   () => editor.chain().focus().toggleUnderline().run(),   'Underline',    <UnderlineIcon className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('code'),        () => editor.chain().focus().toggleCode().run(),        'Inline code',  <Code2 className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('link'),        handleLink,                                             'Add link',     <LinkIcon className="w-3.5 h-3.5" />)}
+        {btn(false, () => fileInputRef.current?.click(), 'Insert image', imgUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />, imgUploading)}
+        {sep}
+        {btn(editor.isActive('bulletList'),  () => editor.chain().focus().toggleBulletList().run(),  'Bullet list',  <List className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run(), 'Ordered list', <ListOrdered className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('taskList'),    () => editor.chain().focus().toggleTaskList().run(),    'Checklist',    <CheckSquare className="w-3.5 h-3.5" />)}
+        {btn(editor.isActive('codeBlock'),   () => editor.chain().focus().toggleCodeBlock().run(),   'Code block',   <Code2 className="w-3.5 h-3.5" />)}
+      </div>
+    </>
   );
 }
 
@@ -174,6 +218,10 @@ function NoteEditor({
   const latestNote = useRef(note);
   latestNote.current = note;
 
+  // Ref holds the latest upload-and-insert function so editorProps callbacks
+  // (created once on mount) always call the current closure.
+  const uploadImageRef = useRef<(file: File) => void>(() => {});
+
   useEffect(() => {
     if (autoFocusTitle) setTimeout(() => titleRef.current?.focus(), 30);
   }, [autoFocusTitle]);
@@ -209,14 +257,35 @@ function NoteEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: false, codeBlock: false }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       Underline,
       TaskList,
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: 'Start writing…' }),
+      Image.configure({ inline: false, allowBase64: false }),
     ],
     content: note.body_rich ?? '',
     editable: !readOnly,
+    editorProps: {
+      handleDrop: (_view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/'));
+        if (!files.length) return false;
+        event.preventDefault();
+        files.forEach(f => uploadImageRef.current(f));
+        return true;
+      },
+      handlePaste: (_view, event) => {
+        const files = Array.from(event.clipboardData?.files ?? []).filter(f => f.type.startsWith('image/'));
+        if (!files.length) return false;
+        files.forEach(f => {
+          // Clipboard images often arrive with a generic name; make it unique.
+          const named = new File([f], `paste-${Date.now()}.${f.type.split('/')[1] || 'png'}`, { type: f.type });
+          uploadImageRef.current(named);
+        });
+        return true;
+      },
+    },
     onUpdate: ({ editor }) => {
       if (readOnly) return;
       scheduleAutosave({
@@ -225,6 +294,21 @@ function NoteEditor({
       });
     },
   });
+
+  // Keep the upload ref in sync with the current editor + hubSlug closure.
+  useEffect(() => {
+    uploadImageRef.current = async (file: File) => {
+      if (!editor) return;
+      try {
+        const result = await hubService.uploadFile(hubSlug, file, true);
+        const conn = hubService.getHubConnection(hubSlug);
+        if (conn?.hub.tunnelUrl) {
+          const url = `${conn.hub.tunnelUrl}/api/public/files/${encodeURIComponent(result.name)}`;
+          editor.chain().focus().setImage({ src: url }).run();
+        }
+      } catch { /* silent — no toast plumbing here */ }
+    };
+  }, [editor, hubSlug]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (readOnly) return;
@@ -240,7 +324,7 @@ function NoteEditor({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {!readOnly && <FormatToolbar editor={editor} />}
+      {!readOnly && <FormatToolbar editor={editor} hubSlug={hubSlug} />}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 md:px-10 py-7">
           <input
