@@ -510,6 +510,7 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // Note web-public sharing — anyone with link, no auth required
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_web_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_blog_published BOOLEAN NOT NULL DEFAULT FALSE`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_plain TEXT`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_rich JSONB`);
     // File visibility — web_public allows anyone-with-link access (no auth required)
@@ -2836,12 +2837,16 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
     );
     if (!existing[0]) return res.status(404).json({ error: 'Note not found' });
 
-    // Only admins and moderators can publish notes to the public web
-    if (req.body.is_web_public === true && !req.user.is_admin && req.user.role !== 'moderator') {
+    const isAdminOrMod = req.user.is_admin || req.user.role === 'moderator';
+
+    if (req.body.is_web_public === true && !isAdminOrMod) {
       return res.status(403).json({ error: 'Only admins and moderators can publish notes to the public web' });
     }
+    if (req.body.is_blog_published === true && !isAdminOrMod) {
+      return res.status(403).json({ error: 'Only admins and moderators can publish notes to the blog' });
+    }
 
-    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'is_web_public', 'web_body_plain', 'web_body_rich', 'color'];
+    const allowed = ['title', 'body_rich', 'body_plain', 'is_pinned', 'is_archived', 'is_public', 'is_web_public', 'is_blog_published', 'web_body_plain', 'web_body_rich', 'color'];
     const updates = [];
     const values = [];
     let i = 1;
@@ -2927,7 +2932,7 @@ app.get('/api/public/notes', async (req, res) => {
               u.username AS author
        FROM hub_notes n
        JOIN hub_users u ON n.owner_id = u.id
-       WHERE n.is_web_public = TRUE AND n.is_archived = FALSE
+       WHERE n.is_blog_published = TRUE AND n.is_archived = FALSE
        ORDER BY n.updated_at DESC
        LIMIT $1`,
       [limit]
@@ -2947,7 +2952,7 @@ app.get('/api/public/notes/:id', async (req, res) => {
               n.web_body_plain, n.web_body_rich, n.color, n.created_at, n.updated_at
        FROM hub_notes n
        JOIN hub_users u ON n.owner_id = u.id
-       WHERE n.id = $1 AND n.is_web_public = TRUE AND n.is_archived = FALSE`,
+       WHERE n.id = $1 AND n.is_blog_published = TRUE AND n.is_archived = FALSE`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Note not found or not public' });

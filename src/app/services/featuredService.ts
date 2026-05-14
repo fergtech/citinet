@@ -145,6 +145,8 @@ class FeaturedService {
       caption:       row.caption ?? undefined,
       categoryLabel: row.category_label ?? undefined,
       imageUrl:      row.image_url ?? undefined,
+      mediaFileName: (row.media_file_name as string | null) ?? undefined,
+      mediaType:     resolveMediaType(row),
     };
   }
 

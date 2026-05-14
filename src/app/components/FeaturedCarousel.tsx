@@ -69,8 +69,18 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
   };
 
   function resolveMediaUrl(item: FeaturedItem): string | null {
-    if (item.imageUrl) return item.imageUrl;
+    // Pinned posts: filename stored separately — always construct fresh so the
+    // URL reflects the current tunnelUrl (never stale).
     if (item.mediaFileName) return hubService.getPublicFileUrl(hubSlug, item.mediaFileName);
+    if (item.imageUrl) {
+      // Custom card uploads store the full URL at upload time, which may be a
+      // localhost URL (admin was on the hub machine) or an old tunnel address.
+      // Extract the filename and re-resolve via the current tunnelUrl so the
+      // image loads on any device, matching how pinned-post media works.
+      const m = item.imageUrl.match(/\/api\/public\/files\/([^?#]+)/);
+      if (m) return hubService.getPublicFileUrl(hubSlug, decodeURIComponent(m[1]));
+      return item.imageUrl; // External URL (e.g. unsplash.com) — use as-is
+    }
     return null;
   }
 

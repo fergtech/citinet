@@ -948,7 +948,16 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       }`}>
                         {(item.imageUrl || item.mediaFileName) && item.mediaType === 'image' ? (
                           <img
-                            src={item.imageUrl ?? hubService.getPublicFileUrl(currentHub?.slug ?? '', item.mediaFileName!) ?? ''}
+                            src={(() => {
+                              const slug = currentHub?.slug ?? '';
+                              if (item.mediaFileName) return hubService.getPublicFileUrl(slug, item.mediaFileName) ?? '';
+                              if (item.imageUrl) {
+                                const m = item.imageUrl.match(/\/api\/public\/files\/([^?#]+)/);
+                                if (m) return hubService.getPublicFileUrl(slug, decodeURIComponent(m[1])) ?? item.imageUrl;
+                                return item.imageUrl;
+                              }
+                              return '';
+                            })()}
                             alt=""
                             className="w-full h-full object-cover"
                             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}

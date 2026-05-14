@@ -11,7 +11,7 @@ import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
-  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2,
+  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2, Newspaper,
   Heading1, Heading2, Heading3, ImagePlus, Code2,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
@@ -167,7 +167,10 @@ function NoteListItem({
           {title}
         </span>
         <div className="flex items-center gap-1 shrink-0">
-          {note.is_web_public && !inArchive && (
+          {note.is_blog_published && !inArchive && (
+            <Newspaper className="w-3 h-3 text-violet-500 opacity-80" aria-label="Published to blog" />
+          )}
+          {note.is_web_public && !note.is_blog_published && !inArchive && (
             <Globe className="w-3 h-3 text-emerald-500 opacity-80" aria-label="Web public note" />
           )}
           {note.is_public && !note.is_web_public && !inArchive && (
@@ -457,30 +460,35 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
     setActionsOpen(false);
   };
 
-  const handleSetNoteVisibility = async (target: 'private' | 'hub' | 'web') => {
+  const handleSetNoteVisibility = async (target: 'private' | 'hub' | 'web' | 'blog') => {
     if (!selected) return;
     setVisPopoverOpen(false);
     setActionsOpen(false);
     try {
       let updated: HubNote;
-      if (target === 'web') {
-        // Enable web-public: also send the decrypted body so the public
-        // endpoint can serve plaintext even if the stored body is encrypted.
+      if (target === 'blog') {
+        // Blog: web-public + blog-published. Flush decrypted body for public serving.
         updated = await hubService.setNoteWebPublic(hubSlug, selected.id, true, {
           body_plain: selected.body_plain,
           body_rich: selected.body_rich,
         });
-        // Also make it hub-public so it shows on the profile page
-        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true });
-        updated = { ...updated, is_web_public: true };
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true, is_blog_published: true });
+        updated = { ...updated, is_web_public: true, is_blog_published: true };
+      } else if (target === 'web') {
+        updated = await hubService.setNoteWebPublic(hubSlug, selected.id, true, {
+          body_plain: selected.body_plain,
+          body_rich: selected.body_rich,
+        });
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true, is_blog_published: false });
+        updated = { ...updated, is_web_public: true, is_blog_published: false };
       } else if (target === 'hub') {
         updated = await hubService.setNoteWebPublic(hubSlug, selected.id, false);
-        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true });
-        updated = { ...updated, is_web_public: false };
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: true, is_blog_published: false });
+        updated = { ...updated, is_web_public: false, is_blog_published: false };
       } else {
         updated = await hubService.setNoteWebPublic(hubSlug, selected.id, false);
-        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: false });
-        updated = { ...updated, is_web_public: false };
+        updated = await hubService.updateNote(hubSlug, selected.id, { is_public: false, is_blog_published: false });
+        updated = { ...updated, is_web_public: false, is_blog_published: false };
       }
       setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
       setSelected(updated);
@@ -726,7 +734,8 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
 
               {/* Visibility popover — own notes only */}
               {isOwnNote && !showArchive && (() => {
-                const vis = selected.is_web_public ? 'web' : selected.is_public ? 'hub' : 'private';
+                const isAdminOrMod = currentUser?.isAdmin || currentUser?.hubRole === 'moderator';
+                const vis = selected.is_blog_published ? 'blog' : selected.is_web_public ? 'web' : selected.is_public ? 'hub' : 'private';
                 return (
                   <div className="relative">
                     {visPopoverOpen && <div className="fixed inset-0 z-40" onClick={() => setVisPopoverOpen(false)} />}
@@ -734,29 +743,32 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
                       onClick={() => setVisPopoverOpen(v => !v)}
                       title="Set visibility"
                       className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                        vis === 'web'
+                        vis === 'blog'
+                          ? 'text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20'
+                          : vis === 'web'
                           ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
                           : vis === 'hub'
                           ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20'
                           : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                       }`}
                     >
-                      {vis === 'web' ? <Globe className="w-4 h-4" /> : vis === 'hub' ? <Users className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                      {vis === 'blog' ? <Newspaper className="w-4 h-4" /> : vis === 'web' ? <Globe className="w-4 h-4" /> : vis === 'hub' ? <Users className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                     </button>
                     {visPopoverOpen && (
-                      <div className="absolute right-0 top-9 z-50 w-56 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden">
+                      <div className="absolute right-0 top-9 z-50 w-60 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden">
                         <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Who can read</p>
                         {([
-                          { key: 'private', label: 'Only me', sub: 'Private', Icon: Lock },
-                          { key: 'hub',     label: 'Hub members', sub: 'Requires account', Icon: Users },
-                          { key: 'web',     label: 'Anyone with link', sub: 'No account needed', Icon: Globe },
-                        ] as const).map(({ key, label, sub, Icon }) => (
+                          { key: 'private', label: 'Only me',          sub: 'Private',            Icon: Lock,      color: 'text-slate-400' },
+                          { key: 'hub',     label: 'Hub members',       sub: 'Requires account',   Icon: Users,     color: 'text-indigo-400' },
+                          { key: 'web',     label: 'Anyone with link',  sub: 'No account needed',  Icon: Globe,     color: 'text-emerald-500' },
+                          ...(isAdminOrMod ? [{ key: 'blog', label: 'Published to blog', sub: 'Listed on the public blog', Icon: Newspaper, color: 'text-violet-500' }] : []),
+                        ] as { key: 'private'|'hub'|'web'|'blog'; label: string; sub: string; Icon: React.ElementType; color: string }[]).map(({ key, label, sub, Icon, color }) => (
                           <button
                             key={key}
                             onClick={() => handleSetNoteVisibility(key)}
                             className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                           >
-                            <Icon className={`w-4 h-4 shrink-0 ${key === 'web' ? 'text-emerald-500' : key === 'hub' ? 'text-indigo-400' : 'text-slate-400'}`} />
+                            <Icon className={`w-4 h-4 shrink-0 ${color}`} />
                             <span className="flex-1 min-w-0">
                               <span className="block text-sm font-medium text-slate-800 dark:text-zinc-100">{label}</span>
                               <span className="block text-xs text-slate-400 dark:text-zinc-500">{sub}</span>

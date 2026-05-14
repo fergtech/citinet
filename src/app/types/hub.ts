@@ -388,6 +388,8 @@ export interface HubNote {
   is_public: boolean;
   /** Anyone with the share link can read this note (no account needed) */
   is_web_public?: boolean;
+  /** Listed on the public blog feed; implies is_web_public. Admin/mod only. */
+  is_blog_published?: boolean;
   color?: string | null;
   created_at: string;
   updated_at: string;

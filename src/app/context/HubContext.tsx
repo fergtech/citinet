@@ -90,7 +90,11 @@ export function HubProvider({ children }: { children: ReactNode }) {
       // Hub mode (e.g. ?hub=riverdale or subdomain) — load connection by subdomain slug
       const connection = hubService.getHubConnection(slug);
       if (connection) {
-        setCurrentHub(connection.hub);
+        // Always start in 'connecting' state when loading from storage so the
+        // "Hub unreachable" banner never flashes on app open due to a stale status.
+        // The health check will immediately determine the actual status.
+        const statusOnLoad = connection.hub.connectionStatus === 'connected' ? 'connected' : 'connecting';
+        setCurrentHub({ ...connection.hub, connectionStatus: statusOnLoad });
         setCurrentUser(resolveUserAvatar(connection.hub, connection.user));
         // Fetch user preferences in background (non-blocking)
         preferencesService.getPreferences(slug).then(setUserPreferences).catch(() => {});
@@ -137,6 +141,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let consecutiveFailures = 0;
 
     const runCheck = async () => {
       if (cancelled) return;
@@ -144,6 +149,17 @@ export function HubProvider({ children }: { children: ReactNode }) {
         await hubService.refreshHubStatus(currentHub.slug);
         const activeConn = hubService.getActiveHubConnection();
         if (activeConn && !cancelled) {
+          if (activeConn.hub.connectionStatus === 'unreachable') {
+            consecutiveFailures++;
+            // Suppress 'unreachable' on the first failure — gives the mobile
+            // network ~5 s to reconnect after the app is foregrounded.
+            if (consecutiveFailures < 2) {
+              timer = setTimeout(runCheck, 5_000);
+              return;
+            }
+          } else {
+            consecutiveFailures = 0;
+          }
           setCurrentHub(activeConn.hub);
           setCurrentUser(resolveUserAvatar(activeConn.hub, activeConn.user));
           // Fast retry while unreachable so UI recovers within 5 s of hub coming online
@@ -153,6 +169,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
           timer = setTimeout(runCheck, 60_000);
         }
       } catch {
+        consecutiveFailures++;
         if (!cancelled) timer = setTimeout(runCheck, 5_000);
       }
     };
