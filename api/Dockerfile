@@ -2,7 +2,7 @@
 FROM node:20-alpine AS portal-builder
 WORKDIR /portal
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 COPY index.html tsconfig.json vite.config.ts postcss.config.mjs ./
 COPY public ./public
 COPY src ./src
