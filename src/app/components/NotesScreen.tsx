@@ -364,10 +364,16 @@ function NoteEditor({
     },
     onUpdate: ({ editor }) => {
       if (readOnly) return;
-      scheduleAutosave({
-        body_rich: editor.getJSON() as object,
-        body_plain: editor.getText(),
-      });
+      const body_rich  = editor.getJSON() as object;
+      const body_plain = editor.getText();
+      const patch: Parameters<typeof scheduleAutosave>[0] = { body_rich, body_plain };
+      // Keep the published snapshot (web_body_rich) in sync automatically so
+      // edits made after publishing appear on the blog without re-publishing.
+      if (latestNote.current.is_web_public || latestNote.current.is_blog_published) {
+        patch.web_body_rich  = body_rich;
+        patch.web_body_plain = body_plain;
+      }
+      scheduleAutosave(patch);
     },
   });
 

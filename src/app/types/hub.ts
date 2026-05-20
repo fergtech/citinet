@@ -383,6 +383,9 @@ export interface HubNote {
   title: string;
   body_rich?: object | null;
   body_plain: string;
+  /** Published snapshot — copied from body_rich/body_plain when note is made web-public */
+  web_body_rich?: object | null;
+  web_body_plain?: string | null;
   is_pinned: boolean;
   is_archived: boolean;
   is_public: boolean;

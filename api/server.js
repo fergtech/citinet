@@ -2897,7 +2897,9 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
 
     const { rows } = await pool.query(
       `UPDATE hub_notes SET ${updates.join(', ')} WHERE id = $${i}
-       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived, is_public, color, created_at, updated_at`,
+       RETURNING id, owner_id, title, body_rich, body_plain, is_pinned, is_archived,
+                 is_public, is_web_public, is_blog_published, web_body_plain, web_body_rich,
+                 color, created_at, updated_at`,
       values
     );
     res.json(rows[0]);
