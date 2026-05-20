@@ -34,7 +34,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const busboy = require('busboy');
 const Minio = require('minio');
-const ogs = require('open-graph-scraper');
+// open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '9090', 10);
@@ -1799,6 +1799,7 @@ app.get('/api/public/og', async (req, res) => {
     return res.status(400).json({ error: 'Invalid URL' });
   }
   try {
+    const { default: ogs } = await import('open-graph-scraper');
     const { result } = await ogs({ url, timeout: 5000 });
     if (!result.success) return res.status(404).json({ error: 'Could not fetch metadata' });
     res.json({
