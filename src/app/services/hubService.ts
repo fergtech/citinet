@@ -1869,7 +1869,7 @@ class HubService {
     return this.maybeDecryptNote(hubSlug, await res.json() as HubNote);
   }
 
-  async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'is_public' | 'color'>>): Promise<HubNote> {
+  async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'is_pinned' | 'is_archived' | 'is_public' | 'is_blog_published' | 'color'>>): Promise<HubNote> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');
     // Encrypt body content fields if present in patch
