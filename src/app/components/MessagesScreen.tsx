@@ -5,6 +5,7 @@ import {
   RefreshCw, Plus, MessageCircle, X, Check,
   Paperclip, File as FileIcon, Download, ArrowLeft,
 } from 'lucide-react';
+import { SupportLauncher } from './SupportLauncher';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -860,6 +861,11 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
               })}
             </AnimatePresence>
           )}
+        </div>
+
+        {/* Support — sticky to sidebar bottom */}
+        <div className="shrink-0 px-3 py-2 border-t border-slate-200/50 dark:border-zinc-800/50">
+          <SupportLauncher variant="sidebar" />
         </div>
       </aside>
 

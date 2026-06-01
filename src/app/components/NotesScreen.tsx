@@ -11,6 +11,7 @@ import Youtube from '@tiptap/extension-youtube';
 import Link from '@tiptap/extension-link';
 import { Video } from './editor/VideoExtension';
 import { LinkPreview } from './editor/LinkPreviewExtension';
+import { SupportLauncher } from './SupportLauncher';
 import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { PENDING_FORK_KEY } from './ShareNotePage';
 import type { HubNote } from '../types/hub';
 
 interface NotesScreenProps {
@@ -468,21 +470,37 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
   // Is the currently selected note owned by this user?
   const isOwnNote = !selected || selected.owner_id === currentUser?.hubUserId;
 
-  // Load active notes on mount, then resolve any initialNoteId
+  // Load active notes on mount, then resolve any initialNoteId or pending fork intent
   useEffect(() => {
     if (!hubSlug) return;
     hubService.listNotes(hubSlug)
       .then(async data => {
+        // Check for a pending "copy note" intent from ShareNotePage
+        const pendingRaw = sessionStorage.getItem(PENDING_FORK_KEY);
+        if (pendingRaw) {
+          try {
+            const pending = JSON.parse(pendingRaw) as { noteId: string; hubSlug: string };
+            if (pending.hubSlug === hubSlug) {
+              sessionStorage.removeItem(PENDING_FORK_KEY);
+              const forked = await hubService.forkNote(hubSlug, pending.noteId);
+              const merged = [forked, ...data];
+              setNotes(merged);
+              setLoading(false);
+              setSelected(forked);
+              setMobileView('editor');
+              return;
+            }
+          } catch { /* fork failed — fall through to normal load */ }
+        }
+
         setNotes(data);
         setLoading(false);
         if (initialNoteId) {
-          // First check if it's in the already-loaded list (own active note)
           const inList = data.find(n => n.id === initialNoteId);
           if (inList) {
             setSelected(inList);
             setMobileView('editor');
           } else {
-            // Could be archived or someone else's public note — fetch directly
             try {
               const note = await hubService.getNote(hubSlug, initialNoteId);
               setSelected(note);
@@ -782,7 +800,7 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
           )}
         </div>
 
-        {/* Archive toggle — fixed at bottom */}
+        {/* Archive toggle + Support — fixed at bottom */}
         <div className="flex-shrink-0 border-t border-slate-100 dark:border-zinc-800/60 px-3 py-2">
           {showArchive ? (
             <button
@@ -806,6 +824,9 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
               )}
             </button>
           )}
+          <div className="mt-1">
+            <SupportLauncher variant="sidebar" />
+          </div>
         </div>
       </div>
 

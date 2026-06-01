@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Bug, CircleHelp, Lightbulb, MessageSquareWarning, X } from 'lucide-react';
+import { SupportLauncher } from './components/SupportLauncher';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
@@ -141,6 +141,17 @@ function HubOnboardRoute() {
     const finalData: HubUser = isCreator ? { ...data, isAdmin: true } : data;
     // completeOnboarding already called inside registerUser/loginUser — just update context
     onOnboardingComplete(hubSlug, finalData);
+    // If the user arrived here via a "copy note" intent, route to notes so NotesScreen can execute the fork
+    const pendingForkRaw = sessionStorage.getItem('citinet-pending-fork');
+    if (pendingForkRaw) {
+      try {
+        const pending = JSON.parse(pendingForkRaw) as { noteId: string; hubSlug: string };
+        if (pending.hubSlug === hubSlug) {
+          navigate(hubPath('/notes'));
+          return;
+        }
+      } catch { /* ignore malformed value */ }
+    }
     navigate(hubPath('/'));
   };
 
@@ -408,163 +419,17 @@ function HubGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function HubFloatingSupportLauncher() {
-  const location = useLocation();
-  const { currentHub } = useHub();
-  const [open, setOpen] = useState(false);
-
-  const path = location.pathname || '/';
-  const hideLauncher = path === '/' || path === '/onboard' || path.startsWith('/messages');
-  const nodeName = currentHub?.name || getSubdomain() || 'Community Hub';
-
-  useEffect(() => {
-    setOpen(false);
-  }, [path]);
-
-  if (hideLauncher) return null;
-
-  const getFeatureContext = () => {
-    const firstSegment = path.toLowerCase().split('/').filter(Boolean)[0] ?? '';
-    const labelMap: Record<string, string> = {
-      feed: 'Feed',
-      discover: 'Discover',
-      atlas: 'Atlas',
-      marketplace: 'Exchange',
-      neighbors: 'Neighbors',
-      files: 'Files',
-      initiatives: 'Initiatives',
-      toolkit: 'Resources',
-      network: 'Network',
-      messages: 'Messages',
-      account: 'Account',
-      profile: 'Profile',
-      settings: 'Settings',
-      'hub-management': 'Hub Management',
-      vendor: 'Vendor Profile',
-      chat: 'Chat',
-      signal: 'Signal',
-      post: 'Create Post',
-    };
-
-    const featureName = labelMap[firstSegment] ?? (firstSegment ? `${firstSegment.charAt(0).toUpperCase()}${firstSegment.slice(1)}` : 'Dashboard');
-    return { featureName };
-  };
-
-  const buildSupportUrl = (kind: 'help' | 'bug' | 'feature') => {
-    const { featureName } = getFeatureContext();
-    const params = new URLSearchParams();
-    const contextText = [
-      `Feature/Screen: ${featureName}`,
-      `Route: ${path}`,
-      `Hub: ${nodeName}`,
-    ].join('\n');
-
-    if (kind === 'help') {
-      params.set('template', 'help.yml');
-      params.set('title', `[Help] ${featureName}: `);
-      params.set('question-summary', `Need help with ${featureName}`);
-      params.set('additional-info', contextText);
-    }
-
-    if (kind === 'bug') {
-      params.set('template', 'bug_report.yml');
-      params.set('title', `[Bug] ${featureName}: `);
-      params.set('what-happened', `Issue encountered in ${featureName}.`);
-      params.set('steps-to-reproduce', `1. Open ${featureName}\n2. ...\n3. Observe issue`);
-      params.set('additional-info', contextText);
-    }
-
-    if (kind === 'feature') {
-      params.set('template', 'feature_request.yml');
-      params.set('title', `[Feature] ${featureName}: `);
-      params.set('feature-summary', `Enhance ${featureName}`);
-      params.set('use-case', `While using ${featureName}, it would help if ...`);
-      params.set('additional-info', contextText);
-    }
-
-    return `https://github.com/fergtech/citinet/issues/new?${params.toString()}`;
-  };
-
-  const openSupport = (kind: 'help' | 'bug' | 'feature') => {
-    window.open(buildSupportUrl(kind), '_blank', 'noopener,noreferrer');
-    setOpen(false);
-  };
-
+function HubSupportFooter() {
+  const { pathname } = useLocation();
+  // Sidebar screens embed their own support button; dashboard has no need for one
+  const skip = pathname === '/' || pathname.startsWith('/messages') || pathname.startsWith('/notes') || pathname.startsWith('/assistant');
+  if (skip) return null;
   return (
-    <>
-      {open && (
-        <button
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
-          aria-label="Close support menu"
-        />
-      )}
-
-      <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-2">
-        {open && (
-          <div className="w-72 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl overflow-hidden">
-            <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-slate-100 dark:border-zinc-800">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Support</h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">Context will include this screen automatically</p>
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-              </button>
-            </div>
-
-            <div className="p-2 space-y-1">
-              <button
-                onClick={() => openSupport('help')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-              >
-                <CircleHelp className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Get Help</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Troubleshooting and support</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => openSupport('bug')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-              >
-                <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Report a Bug</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Report an issue on this feature</p>
-                </div>
-              </button>
-
-              <button
-                onClick={() => openSupport('feature')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-              >
-                <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-white">Request a Feature</p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Suggest an enhancement for this screen</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        <button
-          onClick={() => setOpen(v => !v)}
-          className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center"
-          aria-expanded={open}
-          aria-label="Open support options"
-          title="Support"
-        >
-          <MessageSquareWarning className="w-4 h-4" />
-        </button>
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+      <div className="pointer-events-auto">
+        <SupportLauncher variant="pill" align="center" />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -663,7 +528,7 @@ function AppInner() {
   return (
     <div className="w-full">
       {subdomain ? <HubModeRoutes /> : <OnboardingModeRoutes />}
-      {subdomain ? <HubFloatingSupportLauncher /> : null}
+      {subdomain ? <HubSupportFooter /> : null}
     </div>
   );
 }

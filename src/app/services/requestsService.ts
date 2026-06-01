@@ -4,6 +4,7 @@ export type RequestStatus   = 'submitted' | 'needs_clarification' | 'under_revie
 export type RequestPriority = 'nice_to_have' | 'important' | 'urgent';
 export type RequestScope    = 'hub_only' | 'all_hubs';
 export type RequestData     = 'none' | 'public' | 'private';
+export type RequestType     = 'feature' | 'help' | 'bug';
 
 export interface HubRequest {
   id:              string;
@@ -15,6 +16,8 @@ export interface HubRequest {
   dataInvolved:    RequestData;
   scope:           RequestScope;
   priority:        RequestPriority;
+  type:            RequestType;
+  screenContext:   string | null;
   status:          RequestStatus;
   adminNote:       string | null;
   pollId:          string | null;
@@ -35,6 +38,8 @@ function rowToRequest(row: Record<string, unknown>): HubRequest {
     dataInvolved:    ((row.data_involved as string) ?? 'none') as RequestData,
     scope:           ((row.scope as string) ?? 'hub_only') as RequestScope,
     priority:        ((row.priority as string) ?? 'nice_to_have') as RequestPriority,
+    type:            ((row.type as string) ?? 'feature') as RequestType,
+    screenContext:   (row.screen_context as string | null) ?? null,
     status:          ((row.status as string) ?? 'submitted') as RequestStatus,
     adminNote:       (row.admin_note as string | null) ?? null,
     pollId:          (row.poll_id as string | null) ?? null,
@@ -59,6 +64,8 @@ class RequestsService {
     dataInvolved:    RequestData;
     scope:           RequestScope;
     priority:        RequestPriority;
+    type:            RequestType;
+    screenContext?:  string;
   }): Promise<HubRequest> {
     const conn = this.getConn(hubSlug);
     if (!conn) throw new Error('Not connected to hub');
@@ -72,6 +79,8 @@ class RequestsService {
         data_involved:    data.dataInvolved,
         scope:            data.scope,
         priority:         data.priority,
+        type:             data.type,
+        screen_context:   data.screenContext,
       }),
     });
     if (!res.ok) {

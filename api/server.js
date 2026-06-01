@@ -413,6 +413,8 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_polls    ADD COLUMN IF NOT EXISTS quorum_pct  INT  NOT NULL DEFAULT 0`);
     await client.query(`ALTER TABLE hub_polls    ADD COLUMN IF NOT EXISTS pass_pct    INT  NOT NULL DEFAULT 50`);
     await client.query(`ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS poll_id     UUID REFERENCES hub_polls(id)    ON DELETE SET NULL`);
+    await client.query(`ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS type           TEXT NOT NULL DEFAULT 'feature'`);
+    await client.query(`ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS screen_context TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS logo_file_name TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_mode TEXT`);
     await client.query(`ALTER TABLE hub_vendors ADD COLUMN IF NOT EXISTS banner_image_file_name TEXT`);
@@ -2448,14 +2450,15 @@ app.patch('/api/featured/:id', authenticate, async (req, res) => {
 
 // ── Feature requests routes ────────────────────────────────
 
-// Submit a feature request (any authenticated user)
+// Submit a request (any authenticated user)
 app.post('/api/requests', authenticate, async (req, res) => {
-  const { problem, who_it_helps, expected_outcome, data_involved, scope, priority } = req.body || {};
+  const { problem, who_it_helps, expected_outcome, data_involved, scope, priority, type, screen_context } = req.body || {};
   if (!problem?.trim()) return res.status(400).json({ error: 'problem is required' });
 
   const VALID_DATA     = ['none', 'public', 'private'];
   const VALID_SCOPE    = ['hub_only', 'all_hubs'];
   const VALID_PRIORITY = ['nice_to_have', 'important', 'urgent'];
+  const VALID_TYPE     = ['feature', 'help', 'bug'];
 
   if (data_involved && !VALID_DATA.includes(data_involved))
     return res.status(400).json({ error: `data_involved must be one of: ${VALID_DATA.join(', ')}` });
@@ -2463,12 +2466,14 @@ app.post('/api/requests', authenticate, async (req, res) => {
     return res.status(400).json({ error: `scope must be one of: ${VALID_SCOPE.join(', ')}` });
   if (priority && !VALID_PRIORITY.includes(priority))
     return res.status(400).json({ error: `priority must be one of: ${VALID_PRIORITY.join(', ')}` });
+  if (type && !VALID_TYPE.includes(type))
+    return res.status(400).json({ error: `type must be one of: ${VALID_TYPE.join(', ')}` });
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO hub_requests (author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority, status, admin_note, created_at, updated_at,
+      `INSERT INTO hub_requests (author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority, type, screen_context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, author_id, problem, who_it_helps, expected_outcome, data_involved, scope, priority, type, screen_context, status, admin_note, created_at, updated_at,
                  (SELECT username FROM hub_users WHERE id = $1) AS author_username`,
       [
         req.user.id,
@@ -2478,6 +2483,8 @@ app.post('/api/requests', authenticate, async (req, res) => {
         data_involved || 'none',
         scope || 'hub_only',
         priority || 'nice_to_have',
+        type || 'feature',
+        screen_context?.trim() || null,
       ]
     );
     res.status(201).json(rows[0]);
@@ -2493,7 +2500,8 @@ app.get('/api/requests', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT r.id, r.author_id, r.problem, r.who_it_helps, r.expected_outcome,
-              r.data_involved, r.scope, r.priority, r.status, r.admin_note,
+              r.data_involved, r.scope, r.priority, r.type, r.screen_context,
+              r.status, r.admin_note,
               r.poll_id, r.created_at, r.updated_at, u.username AS author_username,
               p.question AS poll_question, p.closed AS poll_closed,
               p.quorum_pct, p.pass_pct

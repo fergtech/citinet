@@ -4,6 +4,7 @@ import { ArrowLeft, Bot, Send, Square, Info, Plus, MessageSquare, Trash2, X, Clo
 import { useHub } from '../context/HubContext';
 import { aiService, type ChatMessage, type ConversationSummary, type PendingAction } from '../services/aiService';
 import { MarkdownText } from '../utils/renderMarkdown';
+import { SupportLauncher } from './SupportLauncher';
 
 interface AssistantScreenProps {
   onBack: () => void;
@@ -382,7 +383,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-4">
+      <div className="flex-1 overflow-y-auto p-2 space-y-4 min-h-0">
         {convosLoading ? (
           <div className="flex items-center justify-center py-8 text-slate-400 gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -421,6 +422,10 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
             </div>
           ))
         )}
+      </div>
+
+      <div className="shrink-0 px-3 py-2 border-t border-slate-200/50 dark:border-zinc-800/50">
+        <SupportLauncher variant="sidebar" />
       </div>
     </div>
   );

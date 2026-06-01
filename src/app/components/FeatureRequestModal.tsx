@@ -30,6 +30,7 @@ export function FeatureRequestModal({ hubSlug, onClose }: FeatureRequestModalPro
         dataInvolved,
         scope,
         priority,
+        type:            'feature',
       });
       setSubmitted(true);
     } catch (e) {

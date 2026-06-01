@@ -6,7 +6,7 @@ import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
 import { featuredService } from '../services/featuredService';
-import { requestsService, type HubRequest, type RequestStatus } from '../services/requestsService';
+import { requestsService, type HubRequest, type RequestStatus, type RequestType } from '../services/requestsService';
 import type { HubMember, HubPost } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
@@ -192,6 +192,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
   const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
   const [requestNote, setRequestNote] = useState<Record<string, string>>({});
+  const [requestsTypeFilter, setRequestsTypeFilter] = useState<RequestType | 'all'>('all');
 
   const loadRequests = async () => {
     setRequestsLoading(true);
@@ -1663,8 +1664,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Feature Requests</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Member-submitted suggestions for new functionality</p>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Support &amp; Requests</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Help requests, bug reports, and feature suggestions from members</p>
               </div>
               <button
                 onClick={loadRequests}
@@ -1672,6 +1673,30 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               >
                 <RefreshCw className={`w-4 h-4 text-slate-400 ${requestsLoading ? 'animate-spin' : ''}`} />
               </button>
+            </div>
+
+            {/* Type filter chips */}
+            <div className="flex gap-1.5 flex-wrap">
+              {(['all', 'help', 'bug', 'feature'] as const).map(f => {
+                const TYPE_CHIP: Record<string, string> = {
+                  all:     requestsTypeFilter === 'all'    ? 'bg-slate-800 text-white dark:bg-white dark:text-zinc-900'     : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700',
+                  help:    requestsTypeFilter === 'help'   ? 'bg-blue-600 text-white'    : 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30',
+                  bug:     requestsTypeFilter === 'bug'    ? 'bg-rose-600 text-white'    : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30',
+                  feature: requestsTypeFilter === 'feature'? 'bg-amber-500 text-white'   : 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30',
+                };
+                const TYPE_LABEL: Record<string, string> = { all: 'All', help: 'Help', bug: 'Bug', feature: 'Feature' };
+                return (
+                  <button key={f} onClick={() => setRequestsTypeFilter(f)} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${TYPE_CHIP[f]}`}>
+                    {TYPE_LABEL[f]}
+                    {f !== 'all' && hubRequests.filter(r => r.type === f).length > 0 && (
+                      <span className="ml-1 opacity-70">{hubRequests.filter(r => r.type === f).length}</span>
+                    )}
+                    {f === 'all' && hubRequests.length > 0 && (
+                      <span className="ml-1 opacity-70">{hubRequests.length}</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {requestsLoading ? (
@@ -1682,12 +1707,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             ) : hubRequests.length === 0 ? (
               <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
                 <ClipboardList className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-400 dark:text-zinc-500">No suggestions yet</p>
-                <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">Members can submit feature requests from the dashboard</p>
+                <p className="text-sm text-slate-400 dark:text-zinc-500">No requests yet</p>
+                <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">Members can submit help requests, bug reports, and feature suggestions via the Support button</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {hubRequests.map(req => {
+                {hubRequests.filter(r => requestsTypeFilter === 'all' || r.type === requestsTypeFilter).map(req => {
                   const isExpanded = expandedRequest === req.id;
                   const STATUS_COLORS: Record<RequestStatus, string> = {
                     submitted:           'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',
@@ -1698,6 +1723,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     shipped:             'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
                     declined:            'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400',
                   };
+                  const TYPE_BADGE: Record<RequestType, string> = {
+                    help:    'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400',
+                    bug:     'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400',
+                    feature: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400',
+                  };
+                  const TYPE_LABEL_MAP: Record<RequestType, string> = { help: 'Help', bug: 'Bug', feature: 'Feature' };
                   const PRIORITY_LABEL: Record<string, string> = {
                     nice_to_have: 'Nice to have',
                     important:    'Important',
@@ -1720,6 +1751,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${TYPE_BADGE[req.type ?? 'feature']}`}>
+                              {TYPE_LABEL_MAP[req.type ?? 'feature']}
+                            </span>
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${STATUS_COLORS[req.status]}`}>
                               {STATUS_LABEL[req.status]}
                             </span>
@@ -1731,9 +1765,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             )}
                           </div>
                           <p className="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-2">{req.problem}</p>
-                          {req.authorUsername && (
-                            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">by {req.authorUsername}</p>
-                          )}
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {req.authorUsername && (
+                              <p className="text-xs text-slate-400 dark:text-zinc-500">by {req.authorUsername}</p>
+                            )}
+                            {req.screenContext && (
+                              <p className="text-[10px] text-slate-300 dark:text-zinc-600">· {req.screenContext}</p>
+                            )}
+                          </div>
                         </div>
                         <ChevronRight className={`w-4 h-4 text-slate-300 dark:text-zinc-600 shrink-0 mt-0.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                       </button>
@@ -1755,6 +1794,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           <div className="flex gap-4 flex-wrap text-xs text-slate-400 dark:text-zinc-500">
                             <span>Data: <span className="text-slate-600 dark:text-zinc-300">{req.dataInvolved}</span></span>
                             <span>Scope: <span className="text-slate-600 dark:text-zinc-300">{req.scope === 'hub_only' ? 'This hub' : 'All hubs'}</span></span>
+                            {req.screenContext && (
+                              <span>Screen: <span className="text-slate-600 dark:text-zinc-300">{req.screenContext}</span></span>
+                            )}
                           </div>
 
                           {/* Admin note field */}
