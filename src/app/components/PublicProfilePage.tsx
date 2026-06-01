@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   Loader2, AlertCircle, MapPin, Globe, Link as LinkIcon,
-  Calendar, MessageCircle, Tag, NotebookPen,
+  Calendar, MessageCircle, Tag, NotebookPen, Pin, FileText,
 } from 'lucide-react';
+
+// ── Types ─────────────────────────────────────────────────────
 
 interface PublicProfile {
   user_id: string;
@@ -30,12 +32,32 @@ interface PublicPost {
   title: string;
   body: string;
   created_at: string;
-  event_date?: string | null;
-  event_location?: string | null;
-  author_username: string;
   reply_count: number;
   media_file_name?: string | null;
 }
+
+interface PublicNote {
+  id: string;
+  title: string;
+  web_body_plain: string | null;
+  color: string | null;
+  is_pinned: boolean;
+  updated_at: string;
+}
+
+interface PublicPin {
+  id: string;
+  latitude: number;
+  longitude: number;
+  title: string;
+  description: string | null;
+  category: string;
+  created_at: string;
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+
+const PREVIEW_LIMIT = 4;
 
 function getMediaVariant(name?: string | null): 'image' | 'video' | null {
   if (!name) return null;
@@ -57,11 +79,21 @@ function avatarColor(name: string): string {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-500/10 text-blue-400 ring-blue-500/20',
-  ANNOUNCEMENT: 'bg-amber-500/10 text-amber-400 ring-amber-500/20',
-  PROJECT:      'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20',
-  REQUEST:      'bg-rose-500/10 text-rose-400 ring-rose-500/20',
-  EVENT:        'bg-purple-500/10 text-purple-400 ring-purple-500/20',
+  DISCUSSION:   'bg-blue-500/15 text-blue-400',
+  ANNOUNCEMENT: 'bg-amber-500/15 text-amber-400',
+  PROJECT:      'bg-emerald-500/15 text-emerald-400',
+  REQUEST:      'bg-rose-500/15 text-rose-400',
+  EVENT:        'bg-purple-500/15 text-purple-400',
+};
+
+const PIN_CATEGORY_COLORS: Record<string, string> = {
+  food:         'bg-orange-500/15 text-orange-400',
+  service:      'bg-blue-500/15 text-blue-400',
+  community:    'bg-emerald-500/15 text-emerald-400',
+  safety:       'bg-red-500/15 text-red-400',
+  nature:       'bg-teal-500/15 text-teal-400',
+  event:        'bg-purple-500/15 text-purple-400',
+  other:        'bg-zinc-500/15 text-zinc-400',
 };
 
 function formatDate(iso: string): string {
@@ -89,12 +121,156 @@ function BannerArea({ profile, src }: { profile: PublicProfile; src: string }) {
   return <div className="h-36 w-full bg-gradient-to-br from-zinc-800 to-zinc-900" />;
 }
 
+// ── Mini cards ────────────────────────────────────────────────
+
+function PostMiniCard({ post, src }: { post: PublicPost; src: string }) {
+  const mediaVariant = getMediaVariant(post.media_file_name);
+  const mediaUrl = post.media_file_name
+    ? `${src}/api/public/files/${encodeURIComponent(post.media_file_name)}`
+    : null;
+  const catColor = CATEGORY_COLORS[post.category] ?? 'bg-zinc-500/15 text-zinc-400';
+
+  return (
+    <div className="bg-zinc-800/60 rounded-xl overflow-hidden border border-zinc-700/50 flex flex-col">
+      {mediaUrl && mediaVariant === 'image' && (
+        <div className="relative w-full h-24 overflow-hidden bg-zinc-900 shrink-0">
+          <div
+            className="absolute inset-0 scale-110 blur-lg opacity-60"
+            style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+          />
+          <img src={mediaUrl} alt="" className="relative w-full h-full object-contain" />
+        </div>
+      )}
+      {mediaUrl && mediaVariant === 'video' && (
+        <div className="relative w-full h-24 bg-black shrink-0 flex items-center justify-center">
+          <video src={mediaUrl} className="w-full h-full object-contain" />
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <div className="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-l-[9px] border-l-white ml-0.5" />
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="p-2.5 flex-1 flex flex-col gap-1">
+        <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-md ${catColor}`}>
+          {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
+        </span>
+        <p className="text-xs font-semibold text-zinc-200 leading-snug line-clamp-2">{post.title}</p>
+        {post.body && !mediaUrl && (
+          <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2 mt-0.5">{post.body}</p>
+        )}
+        {typeof post.reply_count === 'number' && post.reply_count > 0 && (
+          <div className="flex items-center gap-1 mt-auto pt-1 text-[10px] text-zinc-600">
+            <MessageCircle className="w-2.5 h-2.5" />
+            {post.reply_count}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NoteMiniCard({ note }: { note: PublicNote }) {
+  const accent = note.color ?? '#6366f1';
+  return (
+    <div
+      className="rounded-xl border border-zinc-700/50 overflow-hidden flex flex-col"
+      style={{ background: `color-mix(in srgb, ${accent} 8%, #27272a)` }}
+    >
+      {/* Color accent bar */}
+      <div className="h-1 w-full shrink-0" style={{ backgroundColor: accent }} />
+      <div className="p-2.5 flex-1 flex flex-col gap-1">
+        {note.is_pinned && (
+          <Pin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+        )}
+        <p className="text-xs font-semibold text-zinc-200 leading-snug line-clamp-2">
+          {note.title || 'Untitled'}
+        </p>
+        {note.web_body_plain && (
+          <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3 mt-0.5">
+            {note.web_body_plain}
+          </p>
+        )}
+        <p className="text-[9px] text-zinc-600 mt-auto pt-1">{formatDate(note.updated_at)}</p>
+      </div>
+    </div>
+  );
+}
+
+function PinMiniCard({ pin }: { pin: PublicPin }) {
+  const catColor = PIN_CATEGORY_COLORS[pin.category?.toLowerCase()] ?? PIN_CATEGORY_COLORS.other;
+  return (
+    <div className="bg-zinc-800/60 rounded-xl border border-zinc-700/50 p-2.5 flex flex-col gap-1.5">
+      <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-md ${catColor}`}>
+        {pin.category}
+      </span>
+      <p className="text-xs font-semibold text-zinc-200 leading-snug line-clamp-2">{pin.title}</p>
+      {pin.description && (
+        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">{pin.description}</p>
+      )}
+      <p className="text-[9px] text-zinc-600 font-mono mt-auto pt-1">
+        {pin.latitude.toFixed(3)}, {pin.longitude.toFixed(3)}
+      </p>
+    </div>
+  );
+}
+
+// ── Section wrapper ───────────────────────────────────────────
+
+function BentoSection({
+  title, icon, count, hasMore, joinUrl, hubSlug, children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  count: number;
+  hasMore: boolean;
+  joinUrl: string;
+  hubSlug: string;
+  children: React.ReactNode;
+}) {
+  if (count === 0) return null;
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
+      {/* Section header */}
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+        <span className="text-zinc-500">{icon}</span>
+        <span className="text-sm font-semibold text-zinc-300">{title}</span>
+        <span className="ml-auto text-xs text-zinc-600">{count}</span>
+      </div>
+
+      {/* Mini grid */}
+      <div className="px-3 grid grid-cols-2 gap-2">
+        {children}
+      </div>
+
+      {/* Join CTA */}
+      {hasMore && (
+        <div className="px-4 py-3 mt-2 border-t border-zinc-800/60">
+          <a
+            href={joinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors font-medium"
+          >
+            Join {hubSlug} to see more →
+          </a>
+        </div>
+      )}
+      {!hasMore && <div className="pb-3" />}
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────
+
 export function PublicProfilePage() {
   const { hubSlug, username } = useParams<{ hubSlug: string; username: string }>();
   const [searchParams] = useSearchParams();
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [posts, setPosts]     = useState<PublicPost[]>([]);
+  const [notes, setNotes]     = useState<PublicNote[]>([]);
+  const [pins, setPins]       = useState<PublicPin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
@@ -103,26 +279,48 @@ export function PublicProfilePage() {
 
     const src = searchParams.get('src');
     if (!src || !/^https?:\/\/.+/.test(src)) {
-      setError('This profile cannot be reached — the hub does not have a public tunnel URL. The owner needs to set up Tailscale Funnel.');
+      setError('This profile cannot be reached — the hub does not have a public tunnel URL configured.');
       setLoading(false);
       return;
     }
 
+    const enc = encodeURIComponent(username);
+    const lim = PREVIEW_LIMIT + 1; // fetch one extra to know if there are more
+
     Promise.all([
-      fetch(`${src}/api/public/profile/${encodeURIComponent(username)}`),
-      fetch(`${src}/api/public/profile/${encodeURIComponent(username)}/posts`),
+      fetch(`${src}/api/public/profile/${enc}`),
+      fetch(`${src}/api/public/profile/${enc}/posts?limit=${lim}`),
+      fetch(`${src}/api/public/profile/${enc}/notes?limit=${lim}`),
+      fetch(`${src}/api/public/profile/${enc}/pins?limit=${lim}`),
     ])
-      .then(async ([pRes, postsRes]) => {
+      .then(async ([pRes, postsRes, notesRes, pinsRes]) => {
         if (!pRes.ok) { setError('This profile is not public or does not exist.'); return; }
-        const [profileData, postsData] = await Promise.all([pRes.json(), postsRes.ok ? postsRes.json() : { posts: [] }]);
+        const [profileData, postsData, notesData, pinsData] = await Promise.all([
+          pRes.json(),
+          postsRes.ok  ? postsRes.json()  : { posts: [] },
+          notesRes.ok  ? notesRes.json()  : { notes: [] },
+          pinsRes.ok   ? pinsRes.json()   : { pins: [] },
+        ]);
         setProfile(profileData as PublicProfile);
         setPosts((postsData.posts ?? []) as PublicPost[]);
+        setNotes((notesData.notes ?? []) as PublicNote[]);
+        setPins((pinsData.pins   ?? []) as PublicPin[]);
       })
-      .catch((err) => setError(`Could not reach the hub at ${src} — it may be offline or the tunnel URL is wrong. (${err?.message ?? 'network error'})`))
+      .catch(err => setError(`Could not reach the hub — it may be offline. (${err?.message ?? 'network error'})`))
       .finally(() => setLoading(false));
   }, [hubSlug, username]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const src = searchParams.get('src') ?? '';
+  const src     = searchParams.get('src') ?? '';
+  const joinUrl = 'https://citinet.cloud';
+
+  const shownPosts = posts.slice(0, PREVIEW_LIMIT);
+  const shownNotes = notes.slice(0, PREVIEW_LIMIT);
+  const shownPins  = pins.slice(0, PREVIEW_LIMIT);
+  const morePosts  = posts.length > PREVIEW_LIMIT;
+  const moreNotes  = notes.length > PREVIEW_LIMIT;
+  const morePins   = pins.length  > PREVIEW_LIMIT;
+
+  const hasContent = shownPosts.length > 0 || shownNotes.length > 0 || shownPins.length > 0;
 
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col">
@@ -145,7 +343,8 @@ export function PublicProfilePage() {
           </div>
         ) : profile ? (
           <div className="w-full max-w-2xl">
-            {/* Banner + Avatar */}
+
+            {/* ── Banner + Avatar ── */}
             <div className="relative">
               <BannerArea profile={profile} src={src} />
               <div className="absolute -bottom-10 left-6">
@@ -163,17 +362,15 @@ export function PublicProfilePage() {
               </div>
             </div>
 
-            {/* Profile info */}
+            {/* ── Profile info ── */}
             <div className="mt-14 px-6">
               <div className="flex items-start justify-between flex-wrap gap-3">
                 <div>
-                  <h1 className="text-xl font-bold text-white">
-                    {profile.display_name || profile.username}
-                  </h1>
+                  <h1 className="text-xl font-bold text-white">{profile.display_name || profile.username}</h1>
                   <p className="text-sm text-zinc-400">@{profile.username}</p>
                 </div>
                 <a
-                  href={`https://citinet.cloud`}
+                  href={joinUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="shrink-0 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
@@ -216,80 +413,45 @@ export function PublicProfilePage() {
               )}
             </div>
 
-            {/* Divider */}
-            <div className="mx-6 mt-6 border-t border-zinc-800" />
+            {/* ── Bento content grid ── */}
+            <div className="mx-6 mt-8 mb-2">
+              {hasContent ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <BentoSection
+                    title="Posts" icon={<FileText className="w-3.5 h-3.5" />}
+                    count={shownPosts.length} hasMore={morePosts} joinUrl={joinUrl} hubSlug={hubSlug!}
+                  >
+                    {shownPosts.map(p => <PostMiniCard key={p.id} post={p} src={src} />)}
+                  </BentoSection>
 
-            {/* Posts */}
-            <div className="px-6 mt-6">
-              <h2 className="text-sm font-semibold text-zinc-400 mb-4">Posts</h2>
-              {posts.length === 0 ? (
-                <div className="text-center py-10">
-                  <NotebookPen className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
-                  <p className="text-sm text-zinc-500">No public posts yet.</p>
+                  <BentoSection
+                    title="Notes" icon={<NotebookPen className="w-3.5 h-3.5" />}
+                    count={shownNotes.length} hasMore={moreNotes} joinUrl={joinUrl} hubSlug={hubSlug!}
+                  >
+                    {shownNotes.map(n => <NoteMiniCard key={n.id} note={n} />)}
+                  </BentoSection>
+
+                  <BentoSection
+                    title="Pins" icon={<Pin className="w-3.5 h-3.5" />}
+                    count={shownPins.length} hasMore={morePins} joinUrl={joinUrl} hubSlug={hubSlug!}
+                  >
+                    {shownPins.map(p => <PinMiniCard key={p.id} pin={p} />)}
+                  </BentoSection>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
-                  {posts.map(post => {
-                    const mediaVariant = getMediaVariant(post.media_file_name);
-                    const mediaUrl = post.media_file_name
-                      ? `${src}/api/public/files/${encodeURIComponent(post.media_file_name)}`
-                      : null;
-                    return (
-                      <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                        {/* Media */}
-                        {mediaUrl && mediaVariant === 'image' && (
-                          <div className="relative w-full h-56 overflow-hidden">
-                            {/* Blurred background fill — no black bars, uniform height */}
-                            <div
-                              className="absolute inset-0 scale-110 blur-xl opacity-70"
-                              style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-                            />
-                            <img
-                              src={mediaUrl}
-                              alt=""
-                              className="relative w-full h-full object-contain"
-                            />
-                          </div>
-                        )}
-                        {mediaUrl && mediaVariant === 'video' && (
-                          <video
-                            src={mediaUrl}
-                            controls
-                            className="w-full h-56 object-contain bg-black"
-                          />
-                        )}
-                        <div className="p-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ${CATEGORY_COLORS[post.category] ?? 'bg-zinc-800 text-zinc-400 ring-zinc-700'}`}>
-                              {post.category}
-                            </span>
-                            <span className="text-xs text-zinc-500">{formatDate(post.created_at)}</span>
-                          </div>
-                          <p className="text-sm font-medium text-zinc-200 leading-snug">{post.title}</p>
-                          {post.body && (
-                            <p className="mt-1 text-xs text-zinc-400 leading-relaxed line-clamp-3">{post.body}</p>
-                          )}
-                          {typeof post.reply_count === 'number' && (
-                            <div className="flex items-center gap-1 mt-3 text-xs text-zinc-600">
-                              <MessageCircle className="w-3 h-3" />
-                              {post.reply_count === 0 ? 'No replies' : `${post.reply_count} ${post.reply_count === 1 ? 'reply' : 'replies'}`}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="text-center py-12">
+                  <p className="text-sm text-zinc-500">Nothing public shared yet.</p>
                 </div>
               )}
             </div>
 
-            {/* Footer CTA */}
-            <div className="mx-6 mt-10 p-5 rounded-2xl bg-zinc-900 border border-zinc-800 text-center">
+            {/* ── Footer CTA ── */}
+            <div className="mx-6 mt-8 p-5 rounded-2xl bg-zinc-900 border border-zinc-800 text-center">
               <p className="text-sm text-zinc-400 mb-3">
                 Want to connect with <span className="text-white font-medium">{profile.display_name || profile.username}</span> and the {hubSlug} community?
               </p>
               <a
-                href={`https://citinet.cloud`}
+                href={joinUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-block px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"

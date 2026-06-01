@@ -3073,6 +3073,50 @@ app.get('/api/public/profile/:username/posts', async (req, res) => {
   }
 });
 
+// Public profile notes — no auth, only web-public notes from public profiles
+app.get('/api/public/profile/:username/notes', async (req, res) => {
+  try {
+    const lim = Math.min(parseInt(req.query.limit) || 5, 10);
+    const { rows } = await pool.query(
+      `SELECT n.id, n.title, n.web_body_plain, n.color, n.is_pinned, n.created_at, n.updated_at
+       FROM hub_notes n
+       JOIN hub_users u ON n.owner_id = u.id
+       WHERE u.username = $1
+         AND u.profile_visibility = 'public'
+         AND n.is_web_public = TRUE
+         AND n.is_archived = FALSE
+       ORDER BY n.is_pinned DESC, n.updated_at DESC
+       LIMIT $2`,
+      [req.params.username, lim]
+    );
+    res.json({ notes: rows });
+  } catch (err) {
+    console.error('Public profile notes error:', err);
+    res.status(500).json({ error: 'Failed to load notes' });
+  }
+});
+
+// Public profile pins — no auth, all pins from public profiles
+app.get('/api/public/profile/:username/pins', async (req, res) => {
+  try {
+    const lim = Math.min(parseInt(req.query.limit) || 5, 10);
+    const { rows } = await pool.query(
+      `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category, p.created_at
+       FROM hub_atlas_pins p
+       JOIN hub_users u ON p.author_id = u.id
+       WHERE u.username = $1
+         AND u.profile_visibility = 'public'
+       ORDER BY p.created_at DESC
+       LIMIT $2`,
+      [req.params.username, lim]
+    );
+    res.json({ pins: rows });
+  } catch (err) {
+    console.error('Public profile pins error:', err);
+    res.status(500).json({ error: 'Failed to load pins' });
+  }
+});
+
 // Public single post — no auth, only if author is public and post visibility = inherit
 app.get('/api/public/posts/:id', async (req, res) => {
   try {
