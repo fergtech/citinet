@@ -402,13 +402,17 @@ export function PostDetailModal({
 
                 {/* Media */}
                 {variant === 'image' && mediaUrl && (
-                  <div className="w-full">
-                    <img src={mediaUrl} alt={post.title} className="w-full object-cover max-h-72" />
+                  <div className="relative w-full aspect-video bg-zinc-900 overflow-hidden">
+                    <div
+                      className="absolute inset-0 scale-110 blur-xl opacity-60"
+                      style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                    />
+                    <img src={mediaUrl} alt={post.title} className="relative w-full h-full object-contain" />
                   </div>
                 )}
                 {variant === 'video' && mediaUrl && (
-                  <div className="w-full bg-black">
-                    <video src={mediaUrl} controls preload="auto" className="w-full max-h-72 object-contain" />
+                  <div className="relative w-full aspect-video bg-black overflow-hidden">
+                    <video src={mediaUrl} controls preload="auto" className="w-full h-full object-contain" />
                   </div>
                 )}
 

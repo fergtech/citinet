@@ -13,20 +13,21 @@ interface PostCardProps {
   categoryColors?: Record<string, string>;
   eventDate?: string | null;
   eventLocation?: string | null;
+  autoPlay?: boolean;
 }
 
 
-export function PostCard({ variant, category, title, author, timestamp, content, mediaUrl, replyCount, eventDate, eventLocation }: PostCardProps) {
+export function PostCard({ variant, category, title, author, timestamp, content, mediaUrl, replyCount, eventDate, eventLocation, autoPlay }: PostCardProps) {
   const isAnnouncement = category === 'ANNOUNCEMENT';
   const isEvent = category === 'EVENT';
 
   return (
-    <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border overflow-hidden transition-all duration-200 hover:shadow-lg hover:scale-[1.01] hover:border-slate-300 dark:hover:border-zinc-700 ${
+    <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border overflow-hidden transition-all duration-200 hover:shadow-xl hover:scale-[1.01] ${
       isAnnouncement
-        ? 'border-amber-300 dark:border-amber-600/50'
+        ? 'border-amber-300 dark:border-amber-600/50 hover:border-amber-400 dark:hover:border-amber-500/70'
         : isEvent
-        ? 'border-purple-300 dark:border-purple-700/50'
-        : 'border-slate-200 dark:border-zinc-800'
+        ? 'border-purple-300 dark:border-purple-700/50 hover:border-purple-400 dark:hover:border-purple-600/70'
+        : 'border-slate-200 dark:border-zinc-700/60 hover:border-slate-300 dark:hover:border-zinc-600'
     }`}>
 
       {/* Accent bar */}
@@ -39,18 +40,33 @@ export function PostCard({ variant, category, title, author, timestamp, content,
 
       {/* Media */}
       {variant === 'image' && mediaUrl && (
-        <div className="w-full aspect-video bg-slate-200 dark:bg-zinc-700">
-          <img src={mediaUrl} alt={title} className="w-full h-full object-cover" />
+        <div className="relative w-full aspect-video bg-zinc-900 overflow-hidden">
+          {/* Blurred fill — covers letterbox bars for non-16:9 images */}
+          <div
+            className="absolute inset-0 scale-110 blur-xl opacity-60"
+            style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+          />
+          <img src={mediaUrl} alt={title} className="relative w-full h-full object-contain" />
         </div>
       )}
       {variant === 'video' && mediaUrl && (
         <div className="relative w-full aspect-video bg-black">
-          <video src={mediaUrl} preload="metadata" className="w-full h-full object-contain" />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-              <Play className="w-7 h-7 text-white fill-white" />
+          <video
+            src={mediaUrl}
+            preload={autoPlay ? 'auto' : 'metadata'}
+            autoPlay={autoPlay}
+            muted={autoPlay}
+            loop={autoPlay}
+            playsInline
+            className="w-full h-full object-contain"
+          />
+          {!autoPlay && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                <Play className="w-7 h-7 text-white fill-white" />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

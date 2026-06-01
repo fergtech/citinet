@@ -338,7 +338,68 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
 
 // ── Feed ──────────────────────────────────────────────────
 
-const PEEK_PX = 76; // px of the next card exposed at the bottom of the viewport
+const CATEGORY_ACCENT: Record<string, string> = {
+  DISCUSSION:   'bg-blue-400',
+  ANNOUNCEMENT: 'bg-amber-400',
+  PROJECT:      'bg-emerald-400',
+  REQUEST:      'bg-rose-400',
+  EVENT:        'bg-purple-400',
+};
+
+function CompactRow({ post, hubSlug, onClick }: { post: HubPost; hubSlug: string; onClick: () => void }) {
+  const mediaVariant = getVariant(post.media_file_name);
+  const hasImage = mediaVariant === 'image' && !!post.media_file_name;
+  const hasVideo = mediaVariant === 'video' && !!post.media_file_name;
+  const mediaUrl = (hasImage || hasVideo) ? hubService.getPublicFileUrl(hubSlug, post.media_file_name!) ?? '' : '';
+  const dot = CATEGORY_ACCENT[post.category] ?? 'bg-zinc-400';
+
+  // Use body/caption only — ignore auto-generated title field
+  const caption = post.body?.trim();
+  const displayText = caption || (hasImage ? 'Image' : hasVideo ? 'Video' : null);
+  const isPlaceholder = !caption && !!displayText;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left flex items-center bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700/40 rounded-2xl overflow-hidden hover:border-slate-300 dark:hover:border-zinc-600 transition-colors opacity-60 hover:opacity-90 shrink-0"
+      style={{ height: '88px' }}
+    >
+      {/* Image strip */}
+      {hasImage && (
+        <div className="relative w-24 h-full shrink-0 bg-zinc-800">
+          <div className="absolute inset-0 blur-sm opacity-50 scale-110" style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+          <img src={mediaUrl} alt="" className="relative w-full h-full object-contain" />
+        </div>
+      )}
+      {/* Video strip — first frame via metadata + play icon */}
+      {hasVideo && (
+        <div className="relative w-24 h-full shrink-0 bg-zinc-900 overflow-hidden flex items-center justify-center">
+          <video src={mediaUrl} preload="metadata" muted className="absolute inset-0 w-full h-full object-contain" />
+          <div className="relative z-10 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center shrink-0">
+            <div className="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-l-[9px] border-l-white ml-0.5" />
+          </div>
+        </div>
+      )}
+      {/* Category dot for text-only posts */}
+      {!hasImage && !hasVideo && (
+        <div className={`ml-3 w-1 h-6 rounded-full shrink-0 ${dot}`} />
+      )}
+
+      {/* Text */}
+      <div className={`min-w-0 flex-1 ${(hasImage || hasVideo) ? 'pl-3' : 'pl-2.5'}`}>
+        <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-none mb-1">
+          {post.author_username} · {formatTimestamp(post.created_at)}
+        </p>
+        {displayText && (
+          <p className={`text-xs font-medium truncate leading-snug line-clamp-2 ${isPlaceholder ? 'italic text-zinc-400 dark:text-zinc-500' : 'text-zinc-700 dark:text-zinc-200'}`}>
+            {displayText}
+          </p>
+        )}
+      </div>
+      <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0 mx-3" />
+    </button>
+  );
+}
 
 export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser } = useHub();
@@ -354,8 +415,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const postCountRef = useRef(0);
+  const wheelCooldown = useRef(false);
+  const touchStartY = useRef(0);
+  const scrollDir = useRef<1 | -1>(1);
 
   // Deep-link: open compose with pre-filled welcome message
   useEffect(() => {
@@ -420,23 +484,44 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
 
   postCountRef.current = filteredPosts.length;
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const slotH = el.clientHeight - PEEK_PX;
-    if (slotH <= 0) return;
-    const idx = Math.round(el.scrollTop / slotH);
-    setActiveIndex(Math.max(0, Math.min(idx, postCountRef.current - 1)));
+  // One step per gesture, with a brief cooldown to prevent over-firing
+  const step = useCallback((dir: 1 | -1) => {
+    scrollDir.current = dir;
+    setActiveIndex(prev => Math.max(0, Math.min(prev + dir, postCountRef.current - 1)));
   }, []);
 
-  // Snap back to top when filters/search change
+  // Native wheel listener (needs passive:false to call preventDefault)
   useEffect(() => {
-    setActiveIndex(0);
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-  }, [activeFilter, sortOrder, searchQuery]);
+    const el = feedRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (wheelCooldown.current) return;
+      if (Math.abs(e.deltaY) < 5) return;
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 350);
+      step(e.deltaY > 0 ? 1 : -1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [step]);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    const dy = touchStartY.current - e.changedTouches[0].clientY;
+    if (Math.abs(dy) < 40) return;
+    step(dy > 0 ? 1 : -1);
+  }, [step]);
+
+  // Reset to first post when filters/search change
+  useEffect(() => { setActiveIndex(0); }, [activeFilter, sortOrder, searchQuery]);
 
   function handleCreated(post: HubPost) {
     setPosts(prev => [post, ...prev]);
+    setActiveIndex(0);
   }
 
   function handlePostDeleted(postId: string) {
@@ -522,29 +607,21 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         </div>
       </div>
 
-      {/* ── Snap-scroll feed ── */}
+      {/* ── Centered feed — active post always at vertical center ── */}
       <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-scroll overscroll-contain"
-        style={{ scrollSnapType: 'y mandatory' }}
+        ref={feedRef}
+        className="flex-1 min-h-0 overflow-hidden select-none"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
       >
-        {/* Loading */}
         {loading && (
-          <div
-            className="flex items-center justify-center"
-            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
-          >
+          <div className="h-full flex items-center justify-center">
             <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
           </div>
         )}
 
-        {/* Error */}
         {!loading && error && (
-          <div
-            className="flex flex-col items-center gap-3 justify-center text-center px-4"
-            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
-          >
+          <div className="h-full flex flex-col items-center gap-3 justify-center text-center px-4">
             <AlertCircle className="w-8 h-8 text-rose-400" />
             <p className="text-slate-600 dark:text-slate-400 text-sm">{error}</p>
             <button
@@ -556,12 +633,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           </div>
         )}
 
-        {/* Empty */}
         {!loading && !error && filteredPosts.length === 0 && (
-          <div
-            className="flex flex-col items-center justify-center text-center px-4"
-            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
-          >
+          <div className="h-full flex flex-col items-center justify-center text-center px-4">
             <p className="text-slate-500 dark:text-slate-400 text-sm mb-2">
               {searchQuery
                 ? `No posts matching "${searchQuery}"`
@@ -574,120 +647,78 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           </div>
         )}
 
-        {/* Cards */}
-        {!loading && !error && filteredPosts.map((post, index) => {
-          const isActive = activeIndex === index;
-          const prevPost = filteredPosts[index - 1] ?? null;
-          const nextPost = filteredPosts[index + 1] ?? null;
-          const mediaUrl = post.media_file_name
-            ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
+        {!loading && !error && filteredPosts.length > 0 && (() => {
+          const active = filteredPosts[activeIndex];
+          if (!active) return null;
+          const prevPosts = filteredPosts.slice(Math.max(0, activeIndex - 6), activeIndex);
+          const nextPosts = filteredPosts.slice(activeIndex + 1, activeIndex + 7);
+          const mediaUrl = active.media_file_name
+            ? hubService.getPublicFileUrl(hubSlug, active.media_file_name) ?? undefined
             : undefined;
 
-          const ghostMask = (dir: 'top' | 'bottom') =>
-            dir === 'bottom'
-              ? 'linear-gradient(to bottom, transparent 0%, black 35%, transparent 100%)'
-              : 'linear-gradient(to top,   transparent 0%, black 35%, transparent 100%)';
-
-          // Renders media thumbnail for image posts, ghost text for everything else
-          const peekContent = (p: HubPost, side: 'top' | 'bottom') => {
-            const variant = getVariant(p.media_file_name);
-            if (variant === 'image' && p.media_file_name) {
-              const imgUrl = hubService.getPublicFileUrl(hubSlug, p.media_file_name) ?? '';
-              return (
-                <div className={`max-w-xl mx-auto h-full overflow-hidden ${side === 'top' ? 'rounded-b-2xl' : 'rounded-t-2xl'}`}>
-                  <img src={imgUrl} className="w-full h-full object-cover" alt="" draggable={false} />
-                </div>
-              );
-            }
-            return (
-              <div className="max-w-xl mx-auto h-full flex flex-col justify-center px-4 gap-0.5">
-                <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                  {p.author_username} · {formatTimestamp(p.created_at)}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                  {p.body || p.title}
-                </p>
-              </div>
-            );
-          };
-
           return (
-            <div
-              key={post.id}
-              style={{
-                height: `calc(100% - ${PEEK_PX}px)`,
-                scrollSnapAlign: 'start',
-                scrollSnapStop: 'always',
-                position: 'relative',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                padding: '0 16px',
-              }}
-            >
-              {/* Top peek — only on active card to prevent double-ghost collision */}
-              {prevPost && isActive && (
-                <div
-                  className="absolute top-0 left-0 right-0 pointer-events-none"
-                  style={{
-                    height: `${PEEK_PX}px`,
-                    opacity: 0.48,
-                    maskImage: ghostMask('top'),
-                    WebkitMaskImage: ghostMask('top'),
-                  }}
-                >
-                  {peekContent(prevPost, 'top')}
-                </div>
-              )}
+            <div className="h-full grid px-4 gap-2" style={{ gridTemplateRows: '1fr auto 1fr' }}>
 
-              {/* Focused card */}
-              <motion.div
-                className="max-w-xl mx-auto w-full"
-                animate={{
-                  scale: isActive ? 1 : 0.965,
-                  opacity: isActive ? 1 : 0.52,
-                  y: isActive ? 0 : 8,
-                }}
-                transition={{
-                  duration: 0.48,
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
-              >
-                <div className="cursor-pointer" onClick={() => setSelectedPost(post)}>
-                  <PostCard
-                    id={post.id}
-                    variant={getVariant(post.media_file_name)}
-                    category={post.category}
-                    title={post.title}
-                    author={post.author_username}
-                    timestamp={formatTimestamp(post.created_at)}
-                    content={post.body}
-                    mediaUrl={mediaUrl}
-                    replyCount={post.reply_count}
-                    categoryColors={CATEGORY_COLORS}
-                    eventDate={post.event_date}
-                    eventLocation={post.event_location}
-                  />
-                </div>
-              </motion.div>
+              {/* Previous posts — grow downward from the bottom of the top half */}
+              <div className="overflow-hidden flex flex-col justify-end gap-2 pb-2 max-w-xl mx-auto w-full">
+                {prevPosts.map((p, i) => {
+                  const idx = activeIndex - prevPosts.length + i;
+                  return (
+                    <CompactRow
+                      key={p.id} post={p} hubSlug={hubSlug}
+                      onClick={() => { scrollDir.current = -1; setActiveIndex(idx); }}
+                    />
+                  );
+                })}
+              </div>
 
-              {/* Bottom peek */}
-              {nextPost && (
-                <div
-                  className="absolute bottom-0 left-0 right-0 pointer-events-none"
-                  style={{
-                    height: `${PEEK_PX}px`,
-                    opacity: 0.48,
-                    maskImage: ghostMask('bottom'),
-                    WebkitMaskImage: ghostMask('bottom'),
-                  }}
-                >
-                  {peekContent(nextPost, 'bottom')}
-                </div>
-              )}
+              {/* Active post — always at vertical center */}
+              <div className="max-w-xl mx-auto w-full">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={activeIndex}
+                    initial={{ opacity: 0.5, y: scrollDir.current > 0 ? 18 : -18, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+                    className="cursor-pointer"
+                    onClick={() => setSelectedPost(active)}
+                  >
+                    <PostCard
+                      id={active.id}
+                      variant={getVariant(active.media_file_name)}
+                      category={active.category}
+                      title={active.title}
+                      author={active.author_username}
+                      timestamp={formatTimestamp(active.created_at)}
+                      content={active.body}
+                      mediaUrl={mediaUrl}
+                      replyCount={active.reply_count}
+                      categoryColors={CATEGORY_COLORS}
+                      eventDate={active.event_date}
+                      eventLocation={active.event_location}
+                      autoPlay={getVariant(active.media_file_name) === 'video'}
+                    />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Next posts — grow downward from the top of the bottom half */}
+              <div className="overflow-hidden flex flex-col gap-2 pt-2 max-w-xl mx-auto w-full">
+                {nextPosts.map((p, i) => {
+                  const idx = activeIndex + 1 + i;
+                  return (
+                    <CompactRow
+                      key={p.id} post={p} hubSlug={hubSlug}
+                      onClick={() => { scrollDir.current = 1; setActiveIndex(idx); }}
+                    />
+                  );
+                })}
+              </div>
+
             </div>
           );
-        })}
+        })()}
       </div>
 
       {/* Post detail modal */}
