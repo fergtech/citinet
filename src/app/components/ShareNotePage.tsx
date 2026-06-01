@@ -73,7 +73,7 @@ export function ShareNotePage() {
     // ?src= is the hub tunnel URL embedded by getPublicNoteLink()
     const src = searchParams.get('src');
     if (!src || !/^https?:\/\/.+/.test(src)) {
-      setError('This share link is missing the hub source. Ask the owner to re-copy the link.');
+      setError('This note cannot be reached — the hub does not have a public tunnel URL configured. The owner needs to set up Tailscale Funnel and re-share the link.');
       setLoading(false);
       return;
     }

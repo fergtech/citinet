@@ -120,7 +120,7 @@ class HubService {
     const reportedTunnelUrl = probeInfo?.tunnel_url
       ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
       : undefined;
-    const publicTunnelUrl = reportedTunnelUrl && !this.isShellUrl(reportedTunnelUrl)
+    const publicTunnelUrl = reportedTunnelUrl && !this.isShellUrl(reportedTunnelUrl) && !this.isPrivateUrl(reportedTunnelUrl)
       ? reportedTunnelUrl
       : undefined;
 
@@ -334,20 +334,22 @@ class HubService {
       profileHeadline?: string; website?: string;
       bannerMode?: 'image' | 'solid' | 'gradient'; bannerColor?: string;
       bannerGradientFrom?: string; bannerGradientTo?: string;
+      profileVisibility?: 'public' | 'hub' | 'private';
     }
   ): Promise<HubUser> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const body: Record<string, unknown> = {};
-    if (updates.displayName       !== undefined) body.display_name        = updates.displayName;
-    if (updates.location          !== undefined) body.location             = updates.location;
-    if (updates.bio               !== undefined) body.bio                  = updates.bio;
-    if (updates.tags              !== undefined) body.tags                 = updates.tags;
-    if (updates.profileHeadline   !== undefined) body.profile_headline     = updates.profileHeadline;
-    if (updates.website           !== undefined) body.website              = updates.website;
-    if (updates.bannerMode        !== undefined) body.banner_mode          = updates.bannerMode;
-    if (updates.bannerColor       !== undefined) body.banner_color         = updates.bannerColor;
+    if (updates.displayName        !== undefined) body.display_name        = updates.displayName;
+    if (updates.location           !== undefined) body.location             = updates.location;
+    if (updates.bio                !== undefined) body.bio                  = updates.bio;
+    if (updates.tags               !== undefined) body.tags                 = updates.tags;
+    if (updates.profileHeadline    !== undefined) body.profile_headline     = updates.profileHeadline;
+    if (updates.website            !== undefined) body.website              = updates.website;
+    if (updates.bannerMode         !== undefined) body.banner_mode          = updates.bannerMode;
+    if (updates.bannerColor        !== undefined) body.banner_color         = updates.bannerColor;
     if (updates.bannerGradientFrom !== undefined) body.banner_gradient_from = updates.bannerGradientFrom;
-    if (updates.bannerGradientTo  !== undefined) body.banner_gradient_to   = updates.bannerGradientTo;
+    if (updates.bannerGradientTo   !== undefined) body.banner_gradient_to   = updates.bannerGradientTo;
+    if (updates.profileVisibility  !== undefined) body.profile_visibility   = updates.profileVisibility;
 
     const res = await fetch(`${tunnelUrl}/api/auth/profile`, {
       method: 'PATCH',
@@ -360,17 +362,52 @@ class HubService {
     }
 
     return this.updateUserProfile(hubSlug, {
-      displayName:       updates.displayName,
-      location:          updates.location,
-      bio:               updates.bio,
-      tags:              updates.tags,
-      profileHeadline:   updates.profileHeadline,
-      website:           updates.website,
-      bannerMode:        updates.bannerMode,
-      bannerColor:       updates.bannerColor,
+      displayName:        updates.displayName,
+      location:           updates.location,
+      bio:                updates.bio,
+      tags:               updates.tags,
+      profileHeadline:    updates.profileHeadline,
+      website:            updates.website,
+      bannerMode:         updates.bannerMode,
+      bannerColor:        updates.bannerColor,
       bannerGradientFrom: updates.bannerGradientFrom,
-      bannerGradientTo:  updates.bannerGradientTo,
+      bannerGradientTo:   updates.bannerGradientTo,
+      profileVisibility:  updates.profileVisibility,
     });
+  }
+
+  /** Update visibility on a single post. */
+  async updatePostVisibility(hubSlug: string, postId: string, visibility: 'inherit' | 'hub' | 'private'): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/posts/${postId}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '_keep_', visibility }), // title required by PATCH schema
+    });
+    if (!res.ok) throw new Error('Failed to update post visibility');
+  }
+
+  /** Fetch a publicly accessible profile (no auth required). */
+  async getPublicProfile(username: string, tunnelUrl: string): Promise<Record<string, unknown>> {
+    const res = await fetch(`${tunnelUrl}/api/public/profile/${encodeURIComponent(username)}`);
+    if (!res.ok) throw new Error('Profile not found or not public');
+    return res.json();
+  }
+
+  /** Fetch public posts for a publicly accessible profile (no auth required). */
+  async getPublicProfilePosts(username: string, tunnelUrl: string): Promise<{ posts: unknown[] }> {
+    const res = await fetch(`${tunnelUrl}/api/public/profile/${encodeURIComponent(username)}/posts`);
+    if (!res.ok) throw new Error('Failed to load public posts');
+    return res.json();
+  }
+
+  /** Shareable public URL for a profile. Only meaningful when profile_visibility = 'public'. */
+  getPublicProfileUrl(hubSlug: string, username: string): string {
+    const conn = this.getHubConnection(hubSlug);
+    const publicUrl = conn?.hub?.publicTunnelUrl;
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+    const src = publicUrl ? `?src=${encodeURIComponent(publicUrl)}` : '';
+    return `${base}/u/${hubSlug}/${encodeURIComponent(username)}${src}`;
   }
 
   /** Upload a profile banner image. Saves to MinIO and updates banner_mode to 'image'. */
@@ -521,7 +558,7 @@ class HubService {
   /** Update profile fields for the current user on a hub (stored locally) */
   updateUserProfile(
     hubSlug: string,
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName' | 'profileVisibility'>>
   ): HubUser {
     const connections = this.getAllHubConnections();
     const connection = connections[hubSlug];
@@ -593,7 +630,7 @@ class HubService {
       // localStorage entries that predate this field, and keeps it current.
       if (result.info?.tunnel_url) {
         const pub = this.normalizeTunnelUrl(result.info.tunnel_url);
-        if (!this.isShellUrl(pub) && pub !== connections[slug].hub.publicTunnelUrl) {
+        if (!this.isShellUrl(pub) && !this.isPrivateUrl(pub) && pub !== connections[slug].hub.publicTunnelUrl) {
           connections[slug].hub.publicTunnelUrl = pub;
           dirty = true;
         }
@@ -762,6 +799,12 @@ class HubService {
 
   private isShellUrl(url: string): boolean {
     return !url || url === 'http://' || url === 'https://' || url.trim() === '';
+  }
+
+  /** Returns true if the URL points to a private/local address that is not internet-accessible. */
+  private isPrivateUrl(url: string): boolean {
+    if (!url) return true;
+    return /localhost|127\.0\.0\.1|192\.168\.|^https?:\/\/10\.|172\.(1[6-9]|2\d|3[01])\.|100\.\d+\.\d+\.\d+/.test(url);
   }
 
   /** Extract a fallback name from a URL hostname */
@@ -1947,14 +1990,9 @@ class HubService {
       return `${base}/share-note/${hubSlug}/${noteId}?src=${encodeURIComponent(publicUrl)}`;
     }
 
-    const lanIp = conn?.hub?.lanIp;
-    const swapLocal = (url: string) =>
-      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
-
-    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
-    const base = swapLocal(window.location.origin);
-    const src = srcUrl && !this.isShellUrl(srcUrl) ? `?src=${encodeURIComponent(srcUrl)}` : '';
-    return `${base}/share-note/${hubSlug}/${noteId}${src}`;
+    // No public tunnel URL available — don't embed a private address in the link.
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+    return `${base}/share-note/${hubSlug}/${noteId}`;
   }
 
   async getPublicNotes(hubSlug: string, userId: string): Promise<HubNote[]> {

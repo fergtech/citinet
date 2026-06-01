@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DotGrid } from './DotGrid';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown, Calendar, MapPin, ArrowUpDown, SlidersHorizontal } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown, Calendar, MapPin, ArrowUpDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -285,6 +285,8 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
 
 // ── Feed ──────────────────────────────────────────────────
 
+const PEEK_PX = 76; // px of the next card exposed at the bottom of the viewport
+
 export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
@@ -298,6 +300,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const postCountRef = useRef(0);
 
   // Deep-link: open compose with pre-filled welcome message
   useEffect(() => {
@@ -360,6 +365,23 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     return result;
   }, [posts, searchQuery, activeFilter, sortOrder]);
 
+  postCountRef.current = filteredPosts.length;
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const slotH = el.clientHeight - PEEK_PX;
+    if (slotH <= 0) return;
+    const idx = Math.round(el.scrollTop / slotH);
+    setActiveIndex(Math.max(0, Math.min(idx, postCountRef.current - 1)));
+  }, []);
+
+  // Snap back to top when filters/search change
+  useEffect(() => {
+    setActiveIndex(0);
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [activeFilter, sortOrder, searchQuery]);
+
   function handleCreated(post: HubPost) {
     setPosts(prev => [post, ...prev]);
   }
@@ -370,20 +392,15 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 pb-6">
+    <div className="h-dvh flex flex-col overflow-hidden bg-slate-50 dark:bg-zinc-950">
       <DotGrid />
 
-      {/* Header */}
-      <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
-        <div className="max-w-4xl mx-auto p-4">
+      {/* ── Header ── */}
+      <div className="shrink-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
+        <div className="max-w-2xl mx-auto px-4 pt-4 pb-3">
           {/* Title + Search + Buttons */}
-          <div className="flex items-start gap-4 mb-4">
-            <div className="flex-shrink-0">
-              <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight">Feed</h2>
-              
-            </div>
-
-            {/* Search */}
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="text-slate-900 dark:text-white font-semibold text-xl tracking-tight shrink-0">Feed</h2>
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
@@ -399,28 +416,24 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 </button>
               )}
             </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <button
-                onClick={() => setComposing(true)}
-                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md hover:opacity-90 transition-opacity flex-shrink-0"
-                title="New post"
-              >
-                <Plus className="w-5 h-5 text-white" />
-              </button>
-              <button
-                onClick={onBack}
-                className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors flex-shrink-0"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4 text-white" />
-              </button>
-            </div>
+            <button
+              onClick={() => setComposing(true)}
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center shadow-md hover:opacity-90 transition-opacity shrink-0"
+              title="New post"
+            >
+              <Plus className="w-5 h-5 text-white" />
+            </button>
+            <button
+              onClick={onBack}
+              className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4 text-white" />
+            </button>
           </div>
 
-          {/* Mobile filter strip — horizontal scroll chips, inside header so it's naturally sticky */}
-          <div className="xl:hidden flex items-center gap-2 overflow-x-auto no-scrollbar pt-1 pb-0.5 -mx-1 px-1">
+          {/* Filter + sort chips */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 -mx-1 px-1">
             {([null, 'DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'] as const).map(cat => (
               <button
                 key={cat ?? 'all'}
@@ -446,27 +459,39 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         </div>
       </div>
 
-      {/* No-algorithm notice */}
-      <div className="max-w-4xl mx-auto px-4 pt-6">
-        <div className="bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-4 border border-blue-200/50 dark:border-blue-700/50 mb-6">
-          <p className="text-sm text-slate-700 dark:text-slate-300 font-light">
-            <strong className="font-semibold">No algorithms.</strong>{' '}
-            Nothing is ranked, hidden, or optimized for engagement — you control what you see.
+      {/* ── No-algorithm notice ── */}
+      <div className="shrink-0 max-w-2xl w-full mx-auto px-4 pt-3">
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/15 dark:to-purple-900/15 rounded-xl px-4 py-2.5 border border-blue-200/40 dark:border-blue-700/40">
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            <strong className="font-medium text-slate-800 dark:text-slate-200">No algorithms.</strong>{' '}
+            Nothing is ranked, hidden, or optimized for engagement.
           </p>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 max-w-4xl mx-auto">
-
+      {/* ── Snap-scroll feed ── */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-scroll overscroll-contain"
+        style={{ scrollSnapType: 'y mandatory' }}
+      >
+        {/* Loading */}
         {loading && (
-          <div className="flex items-center justify-center py-16">
+          <div
+            className="flex items-center justify-center"
+            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
+          >
             <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
           </div>
         )}
 
+        {/* Error */}
         {!loading && error && (
-          <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <div
+            className="flex flex-col items-center gap-3 justify-center text-center px-4"
+            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
+          >
             <AlertCircle className="w-8 h-8 text-rose-400" />
             <p className="text-slate-600 dark:text-slate-400 text-sm">{error}</p>
             <button
@@ -478,8 +503,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           </div>
         )}
 
+        {/* Empty */}
         {!loading && !error && filteredPosts.length === 0 && (
-          <div className="text-center py-16">
+          <div
+            className="flex flex-col items-center justify-center text-center px-4"
+            style={{ height: `calc(100% - ${PEEK_PX}px)` }}
+          >
             <p className="text-slate-500 dark:text-slate-400 text-sm mb-2">
               {searchQuery
                 ? `No posts matching "${searchQuery}"`
@@ -492,14 +521,86 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           </div>
         )}
 
-        {!loading && !error && filteredPosts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredPosts.map(post => {
-              const mediaUrl = post.media_file_name
-                ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
-                : undefined;
+        {/* Cards */}
+        {!loading && !error && filteredPosts.map((post, index) => {
+          const isActive = activeIndex === index;
+          const prevPost = filteredPosts[index - 1] ?? null;
+          const nextPost = filteredPosts[index + 1] ?? null;
+          const mediaUrl = post.media_file_name
+            ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
+            : undefined;
+
+          const ghostMask = (dir: 'top' | 'bottom') =>
+            dir === 'bottom'
+              ? 'linear-gradient(to bottom, transparent 0%, black 35%, transparent 100%)'
+              : 'linear-gradient(to top,   transparent 0%, black 35%, transparent 100%)';
+
+          // Renders media thumbnail for image posts, ghost text for everything else
+          const peekContent = (p: HubPost, side: 'top' | 'bottom') => {
+            const variant = getVariant(p.media_file_name);
+            if (variant === 'image' && p.media_file_name) {
+              const imgUrl = hubService.getPublicFileUrl(hubSlug, p.media_file_name) ?? '';
               return (
-                <div key={post.id} onClick={() => setSelectedPost(post)} className="cursor-pointer">
+                <div className={`max-w-xl mx-auto h-full overflow-hidden ${side === 'top' ? 'rounded-b-2xl' : 'rounded-t-2xl'}`}>
+                  <img src={imgUrl} className="w-full h-full object-cover" alt="" draggable={false} />
+                </div>
+              );
+            }
+            return (
+              <div className="max-w-xl mx-auto h-full flex flex-col justify-center px-4 gap-0.5">
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  {p.author_username} · {formatTimestamp(p.created_at)}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  {p.body || p.title}
+                </p>
+              </div>
+            );
+          };
+
+          return (
+            <div
+              key={post.id}
+              style={{
+                height: `calc(100% - ${PEEK_PX}px)`,
+                scrollSnapAlign: 'start',
+                scrollSnapStop: 'always',
+                position: 'relative',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                padding: '0 16px',
+              }}
+            >
+              {/* Top peek — only on active card to prevent double-ghost collision */}
+              {prevPost && isActive && (
+                <div
+                  className="absolute top-0 left-0 right-0 pointer-events-none"
+                  style={{
+                    height: `${PEEK_PX}px`,
+                    opacity: 0.48,
+                    maskImage: ghostMask('top'),
+                    WebkitMaskImage: ghostMask('top'),
+                  }}
+                >
+                  {peekContent(prevPost, 'top')}
+                </div>
+              )}
+
+              {/* Focused card */}
+              <motion.div
+                className="max-w-xl mx-auto w-full"
+                animate={{
+                  scale: isActive ? 1 : 0.965,
+                  opacity: isActive ? 1 : 0.52,
+                  y: isActive ? 0 : 8,
+                }}
+                transition={{
+                  duration: 0.48,
+                  ease: [0.25, 0.46, 0.45, 0.94],
+                }}
+              >
+                <div className="cursor-pointer" onClick={() => setSelectedPost(post)}>
                   <PostCard
                     id={post.id}
                     variant={getVariant(post.media_file_name)}
@@ -515,74 +616,25 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                     eventLocation={post.event_location}
                   />
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              </motion.div>
 
-      {/* Desktop filter panel — fixed in right gutter, only on xl+ screens */}
-      <div className="hidden xl:block fixed top-24 right-6 z-20 w-44">
-        <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-zinc-800 shadow-lg overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-100 dark:border-zinc-800">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500">Filter & Sort</span>
-          </div>
-
-          <div className="p-2 space-y-3">
-            {/* Type */}
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300 dark:text-zinc-600 px-1 mb-1">Type</p>
-              {([null, 'DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'] as const).map(cat => (
-                <button
-                  key={cat ?? 'all'}
-                  onClick={() => setActiveFilter(cat)}
-                  className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-                    activeFilter === cat
-                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                  }`}
+              {/* Bottom peek */}
+              {nextPost && (
+                <div
+                  className="absolute bottom-0 left-0 right-0 pointer-events-none"
+                  style={{
+                    height: `${PEEK_PX}px`,
+                    opacity: 0.48,
+                    maskImage: ghostMask('bottom'),
+                    WebkitMaskImage: ghostMask('bottom'),
+                  }}
                 >
-                  {cat ? cat.charAt(0) + cat.slice(1).toLowerCase() : 'All types'}
-                </button>
-              ))}
+                  {peekContent(nextPost, 'bottom')}
+                </div>
+              )}
             </div>
-
-            <div className="border-t border-slate-100 dark:border-zinc-800" />
-
-            {/* Sort */}
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-300 dark:text-zinc-600 px-1 mb-1">Sort</p>
-              {(['desc', 'asc'] as const).map(order => (
-                <button
-                  key={order}
-                  onClick={() => setSortOrder(order)}
-                  className={`w-full text-left text-xs px-2.5 py-1.5 rounded-lg font-medium transition-colors ${
-                    sortOrder === order
-                      ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  {order === 'desc' ? 'Newest first' : 'Oldest first'}
-                </button>
-              ))}
-            </div>
-
-            {/* Reset — only shown when non-default */}
-            {(activeFilter !== null || sortOrder !== 'desc') && (
-              <>
-                <div className="border-t border-slate-100 dark:border-zinc-800" />
-                <button
-                  onClick={() => { setActiveFilter(null); setSortOrder('desc'); }}
-                  className="w-full text-[11px] text-slate-400 dark:text-zinc-500 hover:text-purple-600 dark:hover:text-purple-400 text-center py-0.5 transition-colors"
-                >
-                  Reset
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       {/* Post detail modal */}

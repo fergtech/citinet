@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Bug, CircleHelp, Lightbulb, MessageSquareWarning, X } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -33,6 +33,7 @@ import { ShareFilePage } from './components/ShareFilePage';
 import { ShareNotePage } from './components/ShareNotePage';
 import { ShareSpacePage } from './components/ShareSpacePage';
 import { ShareVendorPage } from './components/ShareVendorPage';
+import { PublicProfilePage } from './components/PublicProfilePage';
 import { HubBackground } from './components/HubBackground';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
@@ -411,10 +412,6 @@ function HubFloatingSupportLauncher() {
   const location = useLocation();
   const { currentHub } = useHub();
   const [open, setOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileBottomOffset, setMobileBottomOffset] = useState(0);
-  const dragState = useRef({ active: false, startY: 0, startOffset: 0, moved: false });
-  const suppressClickRef = useRef(false);
 
   const path = location.pathname || '/';
   const hideLauncher = path === '/' || path === '/onboard';
@@ -423,13 +420,6 @@ function HubFloatingSupportLauncher() {
   useEffect(() => {
     setOpen(false);
   }, [path]);
-
-  useEffect(() => {
-    const updateMobile = () => setIsMobile(window.innerWidth < 768);
-    updateMobile();
-    window.addEventListener('resize', updateMobile);
-    return () => window.removeEventListener('resize', updateMobile);
-  }, []);
 
   if (hideLauncher) return null;
 
@@ -500,32 +490,6 @@ function HubFloatingSupportLauncher() {
     setOpen(false);
   };
 
-  const clampOffset = (value: number) => {
-    const maxOffset = Math.max(0, window.innerHeight - 180);
-    return Math.max(0, Math.min(maxOffset, value));
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isMobile || open) return;
-    dragState.current.active = true;
-    dragState.current.startY = e.clientY;
-    dragState.current.startOffset = mobileBottomOffset;
-    dragState.current.moved = false;
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragState.current.active || !isMobile || open) return;
-    const deltaY = dragState.current.startY - e.clientY;
-    if (Math.abs(deltaY) > 4) dragState.current.moved = true;
-    setMobileBottomOffset(clampOffset(dragState.current.startOffset + deltaY));
-  };
-
-  const handlePointerEnd = () => {
-    if (!dragState.current.active) return;
-    dragState.current.active = false;
-    if (dragState.current.moved) suppressClickRef.current = true;
-  };
-
   return (
     <>
       {open && (
@@ -536,12 +500,9 @@ function HubFloatingSupportLauncher() {
         />
       )}
 
-      <div
-        className="fixed left-4 md:left-6 md:bottom-6 z-50"
-        style={{ bottom: isMobile ? `${16 + mobileBottomOffset}px` : undefined }}
-      >
+      <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-2">
         {open && (
-          <div className="mb-3 w-72 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl overflow-hidden">
+          <div className="w-72 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl shadow-2xl overflow-hidden">
             <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-slate-100 dark:border-zinc-800">
               <div>
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Support</h3>
@@ -594,22 +555,11 @@ function HubFloatingSupportLauncher() {
         )}
 
         <button
-          onClick={() => {
-            if (suppressClickRef.current) {
-              suppressClickRef.current = false;
-              return;
-            }
-            setOpen(v => !v);
-          }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
+          onClick={() => setOpen(v => !v)}
           className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center"
           aria-expanded={open}
           aria-label="Open support options"
           title="Support"
-          style={{ touchAction: isMobile ? 'none' : 'auto' }}
         >
           <MessageSquareWarning className="w-4 h-4" />
         </button>
@@ -631,6 +581,7 @@ function OnboardingModeRoutes() {
       {/* Public pages — no account required. Must be before the * catch-all. */}
       <Route path="/share/:hubSlug/:fileName" element={<ShareFilePage />} />
       <Route path="/share-note/:hubSlug/:noteId" element={<ShareNotePage />} />
+      <Route path="/u/:hubSlug/:username" element={<PublicProfilePage />} />
       <Route path="/share-space/:hubSlug/:spaceSlug" element={<ShareSpacePage />} />
       <Route path="/v/:hubSlug/:vendorSlug" element={<ShareVendorPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -688,7 +639,7 @@ function HubModeRoutes() {
 // ──────────────────────────────────────────────
 
 function AppInner() {
-  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/v/');
+  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/v/') || window.location.pathname.startsWith('/u/');
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
   const [probing, setProbing] = useState(!subdomain && !isSharePath);

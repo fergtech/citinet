@@ -123,6 +123,8 @@ export interface HubUser {
   bannerGradientTo?: string;
   /** Banner image MinIO key */
   bannerImageFileName?: string;
+  /** Who can see this profile: 'public' (www) | 'hub' (members only) | 'private' (self only) */
+  profileVisibility?: 'public' | 'hub' | 'private';
 }
 
 /** What we store per hub in localStorage */
@@ -269,6 +271,8 @@ export interface HubPost {
   updated_at: string;
   event_date?: string | null;
   event_location?: string | null;
+  /** Who can see this post: 'inherit' (follow profile) | 'hub' (members only) | 'private' (author only) */
+  visibility?: 'inherit' | 'hub' | 'private';
 }
 
 /** A reply to a hub post */

@@ -30,7 +30,7 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -62,6 +62,8 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [profileHeadline, setProfileHeadline] = useState(currentUser?.profileHeadline || '');
   const [website, setWebsite] = useState(currentUser?.website || '');
+  const [profileVisibility, setProfileVisibility] = useState<'public' | 'hub' | 'private'>(currentUser?.profileVisibility ?? 'hub');
+  const [copiedProfileLink, setCopiedProfileLink] = useState(false);
   const [tags, setTags] = useState<string[]>(currentUser?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
   const tagInputRef = useRef<HTMLInputElement>(null);
@@ -219,6 +221,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         tags,
         profileHeadline: profileHeadline.trim(),
         website: website.trim(),
+        profileVisibility,
       });
       if (email.trim()) updateUserProfile({ email: email.trim() });
       setSaved(true);
@@ -530,6 +533,54 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <LocationPicker defaultValue={currentUser?.location || ''} onSelect={setLocationResult}
               placeholder="Your neighborhood or city…"
               inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Profile visibility</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: 'public',  label: 'Public',      desc: 'Anyone on the internet', icon: '🌐' },
+                { value: 'hub',     label: 'Hub only',    desc: 'Members of this hub',    icon: '🏘️' },
+                { value: 'private', label: 'Private',     desc: 'Only you',               icon: '🔒' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setProfileVisibility(opt.value)}
+                  className={`flex flex-col items-center gap-1 p-3 rounded-xl border text-center transition-all ${
+                    profileVisibility === opt.value
+                      ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                      : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
+                  }`}
+                >
+                  <span className="text-lg">{opt.icon}</span>
+                  <span className={`text-xs font-medium ${profileVisibility === opt.value ? 'text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-300'}`}>{opt.label}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+            {profileVisibility === 'public' && (
+              <div className="mt-2 flex items-start justify-between gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50">
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                  Your profile and posts are visible to anyone on the internet. Posts default to public; you can hide individual ones.
+                </p>
+                {currentHub?.slug && currentUser?.username && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = hubService.getPublicProfileUrl(currentHub.slug, currentUser.username);
+                      navigator.clipboard.writeText(url).then(() => {
+                        setCopiedProfileLink(true);
+                        setTimeout(() => setCopiedProfileLink(false), 2000);
+                      });
+                    }}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
+                  >
+                    {copiedProfileLink ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    {copiedProfileLink ? 'Copied!' : 'Copy link'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <button onClick={handleSave} disabled={saving}

@@ -535,6 +535,9 @@ async function initDb() {
         updated_at        TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Profile + post visibility
+    await client.query(`ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS profile_visibility TEXT NOT NULL DEFAULT 'hub'`);
+    await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS visibility        TEXT NOT NULL DEFAULT 'inherit'`);
     // Stable hub identity — generated once, never changes even if hub is renamed
     await client.query(`
       INSERT INTO hub_config (key, value)
@@ -989,7 +992,8 @@ app.get('/api/auth/profile-banner/:userId', async (req, res) => {
 
 // Update own profile (display name, location, bio, tags, headline, banner, website)
 app.patch('/api/auth/profile', authenticate, async (req, res) => {
-  const { display_name, location, bio, tags, profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, website } = req.body || {};
+  const { display_name, location, bio, tags, profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, website, profile_visibility } = req.body || {};
+  const VALID_VISIBILITY = ['public', 'hub', 'private'];
   const fields = [];
   const values = [];
   let idx = 1;
@@ -1004,6 +1008,11 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
   if (banner_gradient_from !== undefined) { fields.push(`banner_gradient_from = $${idx++}`); values.push(banner_gradient_from || null); }
   if (banner_gradient_to  !== undefined) { fields.push(`banner_gradient_to = $${idx++}`);   values.push(banner_gradient_to || null); }
   if (website             !== undefined) { fields.push(`website = $${idx++}`);              values.push(website || null); }
+  if (profile_visibility  !== undefined) {
+    if (!VALID_VISIBILITY.includes(profile_visibility)) return res.status(400).json({ error: 'Invalid profile_visibility' });
+    fields.push(`profile_visibility = $${idx++}`);
+    values.push(profile_visibility);
+  }
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -1014,7 +1023,7 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
     const result = await pool.query(
       `UPDATE hub_users SET ${fields.join(', ')} WHERE id = $${idx}
        RETURNING id AS user_id, username, display_name, location, bio, tags, avatar_url, is_admin, created_at, updated_at,
-                 profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website`,
+                 profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility`,
       values
     );
     res.json(result.rows[0]);
@@ -1031,7 +1040,7 @@ app.get('/api/members', authenticate, async (_req, res) => {
     const result = await pool.query(
       `SELECT id AS user_id, username, display_name, location, bio, tags,
               is_admin, created_at, avatar_url,
-              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website
+              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
        FROM hub_users ORDER BY created_at`
     );
     res.json({ members: result.rows });
@@ -1047,7 +1056,7 @@ app.get('/api/members/:id', authenticate, async (req, res) => {
     const result = await pool.query(
       `SELECT id AS user_id, username, display_name, location, bio, tags,
               avatar_url, is_admin, created_at,
-              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website
+              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
        FROM hub_users WHERE id = $1`,
       [req.params.id]
     );
@@ -1955,13 +1964,16 @@ app.get('/api/posts', authenticate, async (req, res) => {
 
     // Main feed: posts with no space_id, OR space posts shared to feed
     const spaceClause = `(p.space_id IS NULL OR p.shared_to_feed = TRUE)`;
+    // Private posts are only visible to their author
+    const visClause = `(p.visibility != 'private' OR p.author_id = $${params.length + 1})`;
+    params.push(req.user.id);
     const combinedWhere = where
-      ? `${where} AND ${spaceClause}`
-      : `WHERE ${spaceClause}`;
+      ? `${where} AND ${spaceClause} AND ${visClause}`
+      : `WHERE ${spaceClause} AND ${visClause}`;
 
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
-              p.space_id, p.shared_to_feed, p.event_date, p.event_location,
+              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               s.name AS space_name, s.slug AS space_slug,
@@ -1984,8 +1996,10 @@ app.get('/api/posts', authenticate, async (req, res) => {
 
 // Create a post (with optional image upload)
 app.post('/api/posts', authenticate, upload.single('media'), async (req, res) => {
-  const { category, title, body, event_date, event_location } = req.body || {};
+  const { category, title, body, event_date, event_location, visibility } = req.body || {};
   const cat = (category || '').toUpperCase();
+  const VALID_VIS = ['inherit', 'hub', 'private'];
+  const vis = VALID_VIS.includes(visibility) ? visibility : 'inherit';
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
   if (!POST_CATEGORIES.includes(cat)) {
@@ -2020,10 +2034,10 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
     const eventLocVal  = (cat === 'EVENT' && event_location?.trim()) ? event_location.trim() : null;
 
     const result = await pool.query(
-      `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location`,
-      [cat, title.trim(), body?.trim() || '', req.user.id, mediaFileId, eventDateVal, eventLocVal]
+      `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, visibility)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility`,
+      [cat, title.trim(), body?.trim() || '', req.user.id, mediaFileId, eventDateVal, eventLocVal, vis]
     );
 
     // Ensure post-attached media is always publicly readable
@@ -2049,7 +2063,7 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
 
 // Update a post (author or admin)
 app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, res) => {
-  const { title, body, event_date, event_location, remove_media } = req.body || {};
+  const { title, body, event_date, event_location, remove_media, visibility } = req.body || {};
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
   try {
     const { rows } = await pool.query(
@@ -2080,6 +2094,7 @@ app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, re
       mediaFileId = fileResult.rows[0].id;
     }
 
+    const VALID_VIS = ['inherit', 'hub', 'private'];
     const params = [title.trim(), body?.trim() || '', mediaFileId];
     const sets = ['title = $1', 'body = $2', 'media_file_id = $3', 'updated_at = NOW()'];
     if (existing.category === 'EVENT') {
@@ -2088,11 +2103,15 @@ app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, re
       params.push(event_location?.trim() || null);
       sets.push(`event_location = $${params.length}`);
     }
+    if (visibility && VALID_VIS.includes(visibility)) {
+      params.push(visibility);
+      sets.push(`visibility = $${params.length}`);
+    }
     params.push(req.params.id);
 
     const result = await pool.query(
       `UPDATE hub_posts SET ${sets.join(', ')} WHERE id = $${params.length}
-       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at`,
+       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at, visibility`,
       params
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
@@ -2989,7 +3008,7 @@ app.get('/api/public/notes/:id', async (req, res) => {
               n.web_body_plain, n.web_body_rich, n.color, n.created_at, n.updated_at
        FROM hub_notes n
        JOIN hub_users u ON n.owner_id = u.id
-       WHERE n.id = $1 AND n.is_blog_published = TRUE AND n.is_archived = FALSE`,
+       WHERE n.id = $1 AND n.is_web_public = TRUE AND n.is_archived = FALSE`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Note not found or not public' });
@@ -2997,6 +3016,77 @@ app.get('/api/public/notes/:id', async (req, res) => {
   } catch (err) {
     console.error('Public note error:', err);
     res.status(500).json({ error: 'Failed to load note' });
+  }
+});
+
+// Public profile — no auth, only if profile_visibility = 'public'
+app.get('/api/public/profile/:username', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id AS user_id, username, display_name, location, bio, tags,
+              avatar_url, created_at, profile_headline,
+              banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name,
+              website, role
+       FROM hub_users
+       WHERE username = $1 AND profile_visibility = 'public'`,
+      [req.params.username]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Profile not found or not public' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Public profile error:', err);
+    res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
+
+// Public profile posts — no auth, only posts where visibility = 'inherit' on a public profile
+app.get('/api/public/profile/:username/posts', async (req, res) => {
+  try {
+    const lim = Math.min(parseInt(req.query.limit) || 30, 50);
+    const { rows } = await pool.query(
+      `SELECT p.id, p.category, p.title, p.body, p.created_at, p.event_date, p.event_location,
+              u.username AS author_username, u.id AS author_id,
+              f.file_name AS media_file_name,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+       FROM hub_posts p
+       JOIN hub_users u ON p.author_id = u.id
+       LEFT JOIN hub_files f ON p.media_file_id = f.id
+       WHERE u.username = $1
+         AND u.profile_visibility = 'public'
+         AND p.visibility = 'inherit'
+         AND (p.space_id IS NULL OR p.shared_to_feed = TRUE)
+       ORDER BY p.created_at DESC
+       LIMIT $2`,
+      [req.params.username, lim]
+    );
+    res.json({ posts: rows });
+  } catch (err) {
+    console.error('Public profile posts error:', err);
+    res.status(500).json({ error: 'Failed to load posts' });
+  }
+});
+
+// Public single post — no auth, only if author is public and post visibility = inherit
+app.get('/api/public/posts/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+              p.event_date, p.event_location,
+              u.username AS author_username, u.id AS author_id,
+              u.display_name, u.avatar_url,
+              f.file_name AS media_file_name,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+       FROM hub_posts p
+       JOIN hub_users u ON p.author_id = u.id
+       LEFT JOIN hub_files f ON p.media_file_id = f.id
+       WHERE p.id = $1 AND p.visibility = 'inherit' AND u.profile_visibility = 'public'`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Post not found or not public' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Public post error:', err);
+    res.status(500).json({ error: 'Failed to load post' });
   }
 });
 
