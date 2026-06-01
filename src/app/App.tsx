@@ -414,7 +414,7 @@ function HubFloatingSupportLauncher() {
   const [open, setOpen] = useState(false);
 
   const path = location.pathname || '/';
-  const hideLauncher = path === '/' || path === '/onboard';
+  const hideLauncher = path === '/' || path === '/onboard' || path.startsWith('/messages');
   const nodeName = currentHub?.name || getSubdomain() || 'Community Hub';
 
   useEffect(() => {

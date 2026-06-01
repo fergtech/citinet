@@ -2013,6 +2013,20 @@ class HubService {
     return decryptedNotes.filter(note => note.id);
   }
 
+  async forkNote(hubSlug: string, noteId: string): Promise<HubNote> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn) throw new Error('Not connected');
+    const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}/fork`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${conn.user.authToken}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Failed to fork note' }));
+      throw new Error((data as { error?: string }).error || 'Failed to fork note');
+    }
+    return res.json() as Promise<HubNote>;
+  }
+
   private saveHub(hub: Hub): void {
     const connections = this.getAllHubConnections();
     const existing = connections[hub.slug];

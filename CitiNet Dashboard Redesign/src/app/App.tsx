@@ -233,9 +233,9 @@ export default function App() {
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
       {/* Top Menu Bar */}
       <TopMenuBar
-        hubName="CitiNet"
+        hubName="Citinet"
         onlineCount={247}
-        tunnelUrl="citinet.local"
+        tunnelUrl="Citinet.local"
       />
 
       {/* Main Content */}
@@ -328,3 +328,4 @@ export default function App() {
     </div>
   );
 }
+

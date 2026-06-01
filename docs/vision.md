@@ -1,12 +1,12 @@
-# CitiNet — Vision & Roadmap
+# Citinet — Vision & Roadmap
 
 > *A community-owned digital commons. Built by the people, for the people.*
 
 ---
 
-## What CitiNet Is
+## What Citinet Is
 
-CitiNet is a self-hosted community platform that gives neighborhoods, towns, and regions their own digital home base — independent of Big Tech platforms, corporate algorithms, and centralized data ownership.
+Citinet is a self-hosted community platform that gives neighborhoods, towns, and regions their own digital home base — independent of Big Tech platforms, corporate algorithms, and centralized data ownership.
 
 It is not a replacement for the internet. It is a place that belongs to a community the same way a community center, a local newspaper, or a neighborhood co-op belongs to a community. You can still use Google, YouTube, and Instagram. But when you want to know what is happening in your neighborhood, trade with your neighbors, organize local initiatives, share resources, or simply connect with the people around you — there is a place that is *yours*, governed by *you*, that no corporation can monetize, moderate, or shut down on your behalf.
 
@@ -50,17 +50,17 @@ The focus shifts from foundation to depth and federation.
 
 **Spaces** — sub-communities within a hub, similar to channels or rooms. A hub for Baltimore could have a Space for Sandtown, a Space for Charles Village, a Space for local gardeners. Each Space has its own feed, its own members, its own identity — all within the same hub.
 
-**Profile pages as personal landing pages** — transforming user profiles from a simple post feed into a genuine personal homepage. Your profile on CitiNet should feel like *your corner of the web* — customizable, expressive, and representative of who you are and what you contribute to the community. Not an algorithm-ranked feed. A page you own.
+**Profile pages as personal landing pages** — transforming user profiles from a simple post feed into a genuine personal homepage. Your profile on Citinet should feel like *your corner of the web* — customizable, expressive, and representative of who you are and what you contribute to the community. Not an algorithm-ranked feed. A page you own.
 
 **Hub-to-hub federation (early)** — two hubs in the same region should be able to share selected content. A marketplace listing on hub1 should be visible to users on hub2. A community-wide announcement should be able to cross hub boundaries. This is the beginning of the regional network feeling without requiring everyone to be on the same server.
 
-**Hub app ecosystem** — third-party developers building integrations (events, payments, mutual aid tools, local news aggregators) that plug into CitiNet hubs via the open hub-app contract. The platform becomes extensible without becoming centralized.
+**Hub app ecosystem** — third-party developers building integrations (events, payments, mutual aid tools, local news aggregators) that plug into Citinet hubs via the open hub-app contract. The platform becomes extensible without becoming centralized.
 
 ---
 
 ## Medium Term — Mission 3
 
-**Full federation protocol** — hubs become peers, not just servers. A signed, append-only event model lets hubs exchange community objects (posts, listings, pins, identities) with cryptographic authorship and conflict resolution. A user's identity becomes portable across hubs. This is CitiNet's answer to ActivityPub — purpose-built for local community rather than global social media.
+**Full federation protocol** — hubs become peers, not just servers. A signed, append-only event model lets hubs exchange community objects (posts, listings, pins, identities) with cryptographic authorship and conflict resolution. A user's identity becomes portable across hubs. This is Citinet's answer to ActivityPub — purpose-built for local community rather than global social media.
 
 **Local-first and offline-capable** — the app works even when the upstream internet connection is degraded or temporarily unavailable. Core features (feed, messages, files, marketplace) continue to function within the local network. Sync catches up when connectivity returns.
 
@@ -72,13 +72,13 @@ The focus shifts from foundation to depth and federation.
 
 ## Long Term — The Bigger Vision
 
-This is where CitiNet becomes something larger than a platform.
+This is where Citinet becomes something larger than a platform.
 
 ### A Citizens' Web
 
 The current internet is technically decentralized but practically centralized. A handful of companies own the infrastructure, the identity systems, the content distribution, and the monetization layer. Users are the product. Communities have no leverage.
 
-CitiNet's long-term arc is toward a genuinely citizen-owned web — where the network itself, not just the software running on it, belongs to the people using it.
+Citinet's long-term arc is toward a genuinely citizen-owned web — where the network itself, not just the software running on it, belongs to the people using it.
 
 ### Community Wireless Infrastructure
 
@@ -90,14 +90,14 @@ Internet service providers are a chokepoint. A community that owns its connectiv
 - Sector antennas at each relay serving dozens of nearby homes via CPE radios or local Wi-Fi
 - Users connect to their nearest access point the same way they connect to any Wi-Fi — nothing special required on their device
 
-This is not science fiction. Ubiquiti and MikroTik hardware makes this buildable for a few hundred to a few thousand dollars per site. Community wireless ISPs in cities like Detroit, New York, and Baltimore are already doing this. CitiNet is designed to run on top of exactly this kind of infrastructure.
+This is not science fiction. Ubiquiti and MikroTik hardware makes this buildable for a few hundred to a few thousand dollars per site. Community wireless ISPs in cities like Detroit, New York, and Baltimore are already doing this. Citinet is designed to run on top of exactly this kind of infrastructure.
 
 **The legal path:**
 Operating as a private member network or formal cooperative avoids consumer ISP resale restrictions. Cost-sharing among members funds operations. Transparency and simple governance — published costs, open financials, an acceptable use policy — are what separate a community network from an informal arrangement that creates liability.
 
 ### The Hybrid Network Model
 
-CitiNet hubs will support multiple transport modes so communities are not dependent on any single infrastructure path:
+Citinet hubs will support multiple transport modes so communities are not dependent on any single infrastructure path:
 
 | Mode | Description | Use case |
 |---|---|---|
@@ -111,7 +111,7 @@ As connectivity improves, mode selection is automatic. As connectivity degrades,
 
 ### Capability Tiers
 
-Not every link is broadband. CitiNet should work across the spectrum:
+Not every link is broadband. Citinet should work across the spectrum:
 
 | Tier | Link type | Available features |
 |---|---|---|
@@ -121,7 +121,7 @@ Not every link is broadband. CitiNet should work across the spectrum:
 
 ### True Mesh at the Application Layer
 
-Beyond connectivity, CitiNet hubs will eventually communicate directly with each other as peers — not through a central coordinator, not through a registry, but through a gossip-style protocol where hubs announce themselves, exchange signed event streams, and maintain a regional view of the network without any single point of control or failure.
+Beyond connectivity, Citinet hubs will eventually communicate directly with each other as peers — not through a central coordinator, not through a registry, but through a gossip-style protocol where hubs announce themselves, exchange signed event streams, and maintain a regional view of the network without any single point of control or failure.
 
 This is the application-layer mesh: hubs as autonomous nodes in a graph, each owning its data, each capable of operating independently, each able to share selectively with neighbors it trusts.
 
@@ -139,10 +139,11 @@ These do not change across missions.
 
 **Local first.** The unit of value is the neighborhood, the town, the region. Global reach is optional and federation-based. The community closest to you is the one that matters most.
 
-**Owned by no one, belonging to everyone.** CitiNet the software is open source. CitiNet hubs are owned by whoever runs them. The network that emerges from connected hubs is owned collectively, governed locally, and accountable to the people who use it — not to shareholders, advertisers, or platform operators.
+**Owned by no one, belonging to everyone.** Citinet the software is open source. Citinet hubs are owned by whoever runs them. The network that emerges from connected hubs is owned collectively, governed locally, and accountable to the people who use it — not to shareholders, advertisers, or platform operators.
 
 ---
 
 ## The One-Sentence Version
 
-> CitiNet is what the web was supposed to be: yours.
+> Citinet is what the web was supposed to be: yours.
+

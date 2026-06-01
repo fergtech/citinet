@@ -89,6 +89,8 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const [savingBanner, setSavingBanner] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [forkingNoteId, setForkingNoteId] = useState<string | null>(null);
+  const [forkedNoteId, setForkedNoteId] = useState<string | null>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !!currentUser?.hubUserId && currentUser.hubUserId === userId;
@@ -178,6 +180,17 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     sessionStorage.setItem('citinet-dm-userId', userId);
     sessionStorage.setItem('citinet-dm-username', member?.username ?? '');
     onNavigate('messages');
+  };
+
+  const handleForkNote = async (noteId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setForkingNoteId(noteId);
+    try {
+      await hubService.forkNote(slug, noteId);
+      setForkedNoteId(noteId);
+      setTimeout(() => setForkedNoteId(null), 2000);
+    } catch { /* silent */ }
+    finally { setForkingNoteId(null); }
   };
 
   // ── Loading / Error ──────────────────────────────────────
@@ -613,12 +626,31 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{note.body_plain}</p>
                             )}
                           </div>
-                          {note.color && (
-                            <div
-                              className="w-3 h-3 rounded-full shrink-0 mt-0.5"
-                              style={{ backgroundColor: note.color }}
-                            />
-                          )}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {note.color && (
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: note.color }} />
+                            )}
+                            {!isOwnProfile && (
+                              <button
+                                onClick={e => handleForkNote(note.id, e)}
+                                disabled={forkingNoteId === note.id}
+                                title="Copy this note into your own notes"
+                                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all opacity-0 group-hover:opacity-100 ${
+                                  forkedNoteId === note.id
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                                    : 'bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-800'
+                                }`}
+                              >
+                                {forkingNoteId === note.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : forkedNoteId === note.id ? (
+                                  <><Check className="w-3 h-3" /> Copied!</>
+                                ) : (
+                                  <><Copy className="w-3 h-3" /> Copy</>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </motion.div>
                     ))}

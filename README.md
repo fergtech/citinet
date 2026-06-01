@@ -1,13 +1,13 @@
-# CitiNet
+# Citinet
 ## Community Hub — Web Portal
 
 **A self-hosted digital commons for hyperlocal communities. Owned by citizens, not corporations.**
 
 ---
 
-## What Is CitiNet?
+## What Is Citinet?
 
-CitiNet gives neighborhoods and communities their own digital home base — independent of Big Tech platforms, corporate algorithms, and centralized data ownership.
+Citinet gives neighborhoods and communities their own digital home base — independent of Big Tech platforms, corporate algorithms, and centralized data ownership.
 
 A hub runs on hardware your community controls. Your data stays on your machines. Your community sets the rules. No platform can monetize, moderate, or shut it down on your behalf.
 
@@ -17,9 +17,9 @@ See [docs/vision.md](./docs/vision.md) for the full picture of where this is hea
 
 ## How It Works
 
-**For community members:** Open the CitiNet web portal in any browser. Browse the hub directory or enter a hub's URL directly. Create an account on the hub and start using it — no app install required.
+**For community members:** Open the Citinet web portal in any browser. Browse the hub directory or enter a hub's URL directly. Create an account on the hub and start using it — no app install required.
 
-**For hub operators:** Run the CitiNet hub stack (4 Docker containers) on any machine you own — a spare PC, mini PC, or Raspberry Pi. The web portal connects members to your hub over your local network or via Tailscale for public access.
+**For hub operators:** Run the Citinet hub stack (4 Docker containers) on any machine you own — a spare PC, mini PC, or Raspberry Pi. The web portal connects members to your hub over your local network or via Tailscale for public access.
 
 ---
 
@@ -50,7 +50,7 @@ See [docs/vision.md](./docs/vision.md) for the full picture of where this is hea
 
 ## The Hub Stack
 
-Each CitiNet hub runs 4 containers via Docker Compose:
+Each Citinet hub runs 4 containers via Docker Compose:
 
 ```
 citinet-api       (port 9090)  — Node.js/Express: auth, posts, messages, files, atlas
@@ -76,7 +76,7 @@ All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage/cach
 
 ### Quick Start
 
-1. Open the CitiNet web portal
+1. Open the Citinet web portal
 2. Click **Create Hub** and complete the wizard
 3. Download the generated setup script for your OS
 4. Run it — it installs Docker, writes your config, and starts the hub
@@ -269,3 +269,4 @@ See [SECURITY.md](./SECURITY.md) for the full security backlog and hardening roa
 ## License
 
 See [ATTRIBUTIONS.md](./ATTRIBUTIONS.md) for third-party licenses and credits.
+

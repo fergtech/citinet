@@ -1,6 +1,6 @@
 # Router DNS Quick Reference
 
-Use this when you want `http://citinet:9090` to resolve to your CitiNet hub on the LAN.
+Use this when you want `http://citinet:9090` to resolve to your Citinet hub on the LAN.
 
 ## Goal
 

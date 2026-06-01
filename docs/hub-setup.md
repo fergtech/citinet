@@ -1,6 +1,6 @@
 # Hub Operator Setup Guide
 
-How to get a CitiNet hub running on your hardware, what to expect, and how to manage it day-to-day.
+How to get a Citinet hub running on your hardware, what to expect, and how to manage it day-to-day.
 
 ---
 
@@ -29,7 +29,7 @@ Everything lives in a directory on a drive you choose. Moving the hub to a diffe
 
 ## Part 1 — Create the Hub
 
-1. Open the CitiNet web portal (or `http://localhost:5173` if running locally)
+1. Open the Citinet web portal (or `http://localhost:5173` if running locally)
 2. Click **Create Hub**
 3. Complete the 6-step wizard:
    - Hub name, location, description, visibility
@@ -235,3 +235,4 @@ Database-only backup (without stopping):
 ```bash
 docker exec citinet-db pg_dump -U citinet citinet > backup-$(date +%Y%m%d).sql
 ```
+

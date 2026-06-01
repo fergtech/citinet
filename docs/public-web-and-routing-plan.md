@@ -6,7 +6,7 @@
 
 ## Background
 
-As CitiNet matures, two distinct routing concerns have emerged that need deliberate design:
+As Citinet matures, two distinct routing concerns have emerged that need deliberate design:
 
 1. **Portal routing cleanup** — the current `?hub=slug` query-param approach in `subdomain.ts` is functional but produces ugly URLs and complicates deep-linking.
 2. **Public web surface** — hub-authenticated content (notes, files, posts, profiles) cannot currently be accessed without a hub login. A separate public-facing site (`citinet.io`) would let users publish selected content to the open web.
@@ -84,7 +84,7 @@ These are **two separate problems** and should be tackled separately.
 
 **Risk:** Low-medium on backend (additive only). Medium on frontend (new Vercel project + shared component logic).
 
-**When to do it:** After Spaces and profile-page-as-landing-page work in Mission 2 is settled, since the public profile model depends on what "a CitiNet profile" becomes.
+**When to do it:** After Spaces and profile-page-as-landing-page work in Mission 2 is settled, since the public profile model depends on what "a Citinet profile" becomes.
 
 ---
 
@@ -99,3 +99,4 @@ These are **two separate problems** and should be tackled separately.
 ## Source of this plan
 
 Synthesized from a VS Code Copilot analysis session and internal architectural review, April 2026.
+

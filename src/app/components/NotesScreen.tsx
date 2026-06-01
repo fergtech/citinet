@@ -15,7 +15,7 @@ import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
-  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2, Newspaper,
+  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2, Newspaper, Copy,
   Heading1, Heading2, Heading3, ImagePlus, Code2, Video as VideoIcon, Youtube as YoutubeIcon, ExternalLink,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
@@ -252,6 +252,12 @@ function NoteListItem({
           )}
         </div>
       </div>
+      {note.forked_from_username && (
+        <p className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 mt-0.5">
+          <Copy className="w-2.5 h-2.5 shrink-0" />
+          Copied from @{note.forked_from_username}
+        </p>
+      )}
       <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">{preview}</p>
     </button>
   );

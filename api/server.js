@@ -514,6 +514,8 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS is_blog_published BOOLEAN NOT NULL DEFAULT FALSE`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_plain TEXT`);
     await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS web_body_rich JSONB`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS forked_from_note_id TEXT`);
+    await client.query(`ALTER TABLE hub_notes ADD COLUMN IF NOT EXISTS forked_from_username TEXT`);
     // File visibility — web_public allows anyone-with-link access (no auth required)
     await client.query(`ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`);
     // E2E Encryption — key registry
@@ -2963,6 +2965,33 @@ app.delete('/api/notes/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Delete note error:', err);
     res.status(500).json({ error: 'Failed to delete note' });
+  }
+});
+
+// Fork a note — copies a public note into the current user's notes
+app.post('/api/notes/:id/fork', authenticate, async (req, res) => {
+  try {
+    const { rows: [source] } = await pool.query(
+      `SELECT n.*, u.username AS owner_username
+         FROM hub_notes n JOIN hub_users u ON n.owner_id = u.id
+        WHERE n.id = $1`,
+      [req.params.id]
+    );
+    if (!source) return res.status(404).json({ error: 'Note not found' });
+    if (source.owner_id === req.user.id) return res.status(400).json({ error: 'Cannot fork your own note' });
+    if (!source.is_public || source.is_archived) return res.status(403).json({ error: 'Note is not public' });
+
+    const { rows: [fork] } = await pool.query(
+      `INSERT INTO hub_notes
+         (owner_id, title, body_rich, body_plain, color, forked_from_note_id, forked_from_username)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [req.user.id, source.title, source.body_rich, source.body_plain, source.color, source.id, source.owner_username]
+    );
+    res.status(201).json(fork);
+  } catch (err) {
+    console.error('Fork note error:', err);
+    res.status(500).json({ error: 'Failed to fork note' });
   }
 });
 

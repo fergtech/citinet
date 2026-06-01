@@ -1,7 +1,7 @@
 
-  # CitiNet Dashboard Redesign
+  # Citinet Dashboard Redesign
 
-  This is a code bundle for CitiNet Dashboard Redesign. The original project is available at https://www.figma.com/design/TGIE21QQyoCviBFPQtOMlw/CitiNet-Dashboard-Redesign.
+  This is a code bundle for Citinet Dashboard Redesign. The original project is available at https://www.figma.com/design/TGIE21QQyoCviBFPQtOMlw/Citinet-Dashboard-Redesign.
 
   ## Running the code
 

@@ -399,6 +399,8 @@ export interface HubNote {
   /** Listed on the public blog feed; implies is_web_public. Admin/mod only. */
   is_blog_published?: boolean;
   color?: string | null;
+  forked_from_note_id?: string | null;
+  forked_from_username?: string | null;
   created_at: string;
   updated_at: string;
 }
