@@ -737,21 +737,44 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 onClick={e => e.stopPropagation()}
                 className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm pointer-events-auto overflow-hidden"
               >
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
-                  <div>
-                    <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Share Profile</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">@{member.username}</p>
-                  </div>
+                {/* Profile identity card */}
+                <div className="relative">
+                  {/* Banner strip */}
+                  <div
+                    className={`h-20 w-full ${hasBannerStyle ? '' : `bg-gradient-to-br ${avatarColor(member.username)}`}`}
+                    style={hasBannerStyle ? { ...bannerStyle, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
+                  />
+                  <div className="absolute inset-0 bg-black/25 rounded-t-2xl" />
+                  {/* Close button */}
                   <button
                     onClick={() => setShowShareModal(false)}
-                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                    className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center transition-colors"
                   >
-                    <X className="w-4 h-4 text-slate-500" />
+                    <X className="w-3.5 h-3.5 text-white" />
                   </button>
+                  {/* Avatar + identity — overlaps banner */}
+                  <div className="relative flex flex-col items-center px-5 pb-4 -mt-10">
+                    {member.avatar_url && avatarUrl
+                      ? <img
+                          src={avatarUrl}
+                          alt={displayName}
+                          className="w-20 h-20 rounded-full object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      : <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${avatarColor(member.username)} ring-4 ring-white dark:ring-zinc-900 flex items-center justify-center text-white font-bold text-2xl shadow-lg`}>
+                          {(displayName || member.username).charAt(0).toUpperCase()}
+                        </div>
+                    }
+                    <h2 className="mt-3 text-base font-bold text-slate-900 dark:text-white leading-tight">
+                      {displayName || member.username}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      @{member.username} · {hubName}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="p-5 space-y-4">
+                <div className="px-5 pb-5 space-y-4">
                   {/* Visibility notice */}
                   {isPublic ? (
                     <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-700 dark:text-emerald-300">
@@ -774,9 +797,9 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   )}
 
                   {/* QR code */}
-                  <div className="flex justify-center py-1">
+                  <div className="flex justify-center">
                     <div className="p-3 bg-white rounded-xl border border-slate-200 dark:border-zinc-700 shadow-sm">
-                      <QRCodeSVG value={profileUrl} size={168} level="M" />
+                      <QRCodeSVG value={profileUrl} size={148} level="M" />
                     </div>
                   </div>
 

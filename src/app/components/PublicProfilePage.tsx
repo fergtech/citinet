@@ -238,17 +238,24 @@ export function PublicProfilePage() {
                       <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
                         {/* Media */}
                         {mediaUrl && mediaVariant === 'image' && (
-                          <img
-                            src={mediaUrl}
-                            alt=""
-                            className="w-full max-h-64 object-cover"
-                          />
+                          <div className="relative w-full h-56 overflow-hidden">
+                            {/* Blurred background fill — no black bars, uniform height */}
+                            <div
+                              className="absolute inset-0 scale-110 blur-xl opacity-70"
+                              style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                            />
+                            <img
+                              src={mediaUrl}
+                              alt=""
+                              className="relative w-full h-full object-contain"
+                            />
+                          </div>
                         )}
                         {mediaUrl && mediaVariant === 'video' && (
                           <video
                             src={mediaUrl}
                             controls
-                            className="w-full max-h-64 object-contain bg-black"
+                            className="w-full h-56 object-contain bg-black"
                           />
                         )}
                         <div className="p-4">
