@@ -203,6 +203,7 @@ export interface HubMember {
   banner_gradient_to?: string | null;
   banner_image_file_name?: string | null;
   website?: string | null;
+  profile_visibility?: 'public' | 'hub' | 'private' | null;
 }
 
 /** A conversation participant */

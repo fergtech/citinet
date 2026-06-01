@@ -2064,7 +2064,9 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
 // Update a post (author or admin)
 app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, res) => {
   const { title, body, event_date, event_location, remove_media, visibility } = req.body || {};
-  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  // title is only required when content fields are being updated
+  const updatingContent = title !== undefined || body !== undefined;
+  if (updatingContent && !title?.trim()) return res.status(400).json({ error: 'Title is required' });
   try {
     const { rows } = await pool.query(
       'SELECT id, author_id, category, media_file_id FROM hub_posts WHERE id = $1',
@@ -2094,9 +2096,14 @@ app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, re
       mediaFileId = fileResult.rows[0].id;
     }
 
+    // Build SET clause from only the fields that were actually sent
     const VALID_VIS = ['inherit', 'hub', 'private'];
-    const params = [title.trim(), body?.trim() || '', mediaFileId];
-    const sets = ['title = $1', 'body = $2', 'media_file_id = $3', 'updated_at = NOW()'];
+    const params = [];
+    const sets = ['updated_at = NOW()'];
+    if (title !== undefined) { params.push(title.trim()); sets.push(`title = $${params.length}`); }
+    if (body !== undefined)  { params.push(body?.trim() || ''); sets.push(`body = $${params.length}`); }
+    // Always sync media_file_id so remove/replace is honoured
+    params.push(mediaFileId); sets.push(`media_file_id = $${params.length}`);
     if (existing.category === 'EVENT') {
       params.push(event_date ? new Date(event_date) : null);
       sets.push(`event_date = $${params.length}`);

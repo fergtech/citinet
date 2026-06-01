@@ -1,6 +1,6 @@
-import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film } from 'lucide-react';
+import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film, Globe, Users, Lock, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { hubService } from '../services/hubService';
 import type { HubPost, HubPostReply } from '../types/hub';
 import {
@@ -111,6 +111,35 @@ function isExternalSourcePost(post: HubPost): boolean {
   );
 }
 
+/** Render plain text with URLs converted to clickable links. */
+function linkifyText(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const re = /https?:\/\/[^\s<>"']+/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    const url = m[0];
+    nodes.push(
+      <a key={m.index} href={url} target="_blank" rel="noopener noreferrer"
+        className="text-blue-500 dark:text-blue-400 hover:underline break-all"
+        onClick={e => e.stopPropagation()}
+      >{url}</a>
+    );
+    last = re.lastIndex;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+type PostVisibility = 'inherit' | 'hub' | 'private';
+
+const VISIBILITY_OPTIONS: { value: PostVisibility; label: string; icon: ReactNode; desc: string }[] = [
+  { value: 'inherit', label: 'Default',   icon: <Globe className="w-3.5 h-3.5" />, desc: 'Follows your profile visibility' },
+  { value: 'hub',     label: 'Hub only',  icon: <Users className="w-3.5 h-3.5" />, desc: 'Members only, even if profile is public' },
+  { value: 'private', label: 'Only me',   icon: <Lock className="w-3.5 h-3.5" />,  desc: 'Visible only to you' },
+];
+
 function getSourceBranding(post: HubPost): { name: string; logoUrl: string | null } {
   return {
     name: post.source_name || post.app_name || post.platform_name || post.source || post.platform || 'Society+',
@@ -137,6 +166,8 @@ export function PostDetailModal({
   const [editEventDate, setEditEventDate] = useState('');
   const [editEventLocation, setEditEventLocation] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editVisibility, setEditVisibility] = useState<PostVisibility>((post.visibility as PostVisibility) ?? 'inherit');
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
   const repliesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [replyingTo, setReplyingTo] = useState<{ replyId: string; userId: string; username: string } | null>(null);
@@ -170,7 +201,8 @@ export function PostDetailModal({
     setEditRemoveMedia(false);
     setEditEventDate(post.event_date ? toDatetimeLocal(post.event_date) : '');
     setEditEventLocation(post.event_location || '');
-  }, [isOpen, post.title, post.body, post.event_date, post.event_location]);
+    setEditVisibility((post.visibility as PostVisibility) ?? 'inherit');
+  }, [isOpen, post.title, post.body, post.event_date, post.event_location, post.visibility]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -261,12 +293,14 @@ export function PostDetailModal({
         removeMedia: editRemoveMedia,
         eventDate: post.category === 'EVENT' && editEventDate ? new Date(editEventDate).toISOString() : undefined,
         eventLocation: post.category === 'EVENT' ? editEventLocation : undefined,
+        visibility: editVisibility,
       });
       post.title = updated.title;
       post.body = updated.body ?? '';
       post.media_file_name = updated.media_file_name ?? undefined;
       post.event_date = updated.event_date;
       post.event_location = updated.event_location;
+      post.visibility = updated.visibility;
       setIsEditing(false);
       setEditMediaFile(null);
       setEditMediaPreview(null);
@@ -466,6 +500,48 @@ export function PostDetailModal({
                         </div>
                       )}
 
+                      {/* Visibility picker */}
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5 block">Visibility</label>
+                        <div className="relative inline-block">
+                          <button
+                            type="button"
+                            onClick={() => setVisibilityOpen(v => !v)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                              editVisibility !== 'inherit'
+                                ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-indigo-200 dark:ring-indigo-500/20'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-zinc-700'
+                            }`}
+                          >
+                            {VISIBILITY_OPTIONS.find(o => o.value === editVisibility)?.icon}
+                            {VISIBILITY_OPTIONS.find(o => o.value === editVisibility)?.label}
+                            <ChevronDown className={`w-3 h-3 transition-transform ${visibilityOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {visibilityOpen && (
+                            <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-xl w-56">
+                              {VISIBILITY_OPTIONS.map(opt => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => { setEditVisibility(opt.value); setVisibilityOpen(false); }}
+                                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                                    editVisibility === opt.value
+                                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0">{opt.icon}</span>
+                                  <span>
+                                    <span className="block text-xs font-medium">{opt.label}</span>
+                                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</span>
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2 justify-end">
                         <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                           Cancel
@@ -541,8 +617,57 @@ export function PostDetailModal({
 
                       {post.body && (
                         <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm whitespace-pre-wrap">
-                          {post.body}
+                          {linkifyText(post.body)}
                         </p>
+                      )}
+
+                      {/* Visibility indicator — author-only, shown in view mode */}
+                      {canEdit && (
+                        <div className="relative mt-3">
+                          <button
+                            type="button"
+                            onClick={() => setVisibilityOpen(v => !v)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium ring-1 transition-all ${
+                              (post.visibility ?? 'inherit') !== 'inherit'
+                                ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-indigo-200 dark:ring-indigo-500/20'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                            }`}
+                          >
+                            {VISIBILITY_OPTIONS.find(o => o.value === (post.visibility ?? 'inherit'))?.icon}
+                            {VISIBILITY_OPTIONS.find(o => o.value === (post.visibility ?? 'inherit'))?.label}
+                            <ChevronDown className={`w-3 h-3 transition-transform ${visibilityOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {visibilityOpen && (
+                            <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-xl w-56">
+                              {VISIBILITY_OPTIONS.map(opt => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={async () => {
+                                    setVisibilityOpen(false);
+                                    if (opt.value === (post.visibility ?? 'inherit')) return;
+                                    try {
+                                      await hubService.updatePostVisibility(hubSlug, post.id, opt.value);
+                                      post.visibility = opt.value;
+                                      setEditVisibility(opt.value);
+                                    } catch { /* non-critical */ }
+                                  }}
+                                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                                    (post.visibility ?? 'inherit') === opt.value
+                                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+                                  }`}
+                                >
+                                  <span className="mt-0.5 shrink-0">{opt.icon}</span>
+                                  <span>
+                                    <span className="block text-xs font-medium">{opt.label}</span>
+                                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</span>
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </>
                   )}

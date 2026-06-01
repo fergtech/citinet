@@ -4,8 +4,9 @@ import {
   Loader2, AlertCircle, Tag, Globe,
   ImagePlus, Palette, Pencil, ArrowLeft,
   FileText, Pin, Hash, Building2,
-  BookOpen, Map,
+  BookOpen, Map, Share2, Copy, Check, X, Users, Lock,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
@@ -86,6 +87,8 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const [selectedNote, setSelectedNote] = useState<HubNote | null>(null);
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !!currentUser?.hubUserId && currentUser.hubUserId === userId;
@@ -210,6 +213,15 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           {isOwnProfile && (
             <button onClick={() => onNavigate('account')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0">
               <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+          )}
+          {member.profile_visibility !== 'private' && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors shrink-0"
+              title="Share profile"
+            >
+              <Share2 className="w-4 h-4 text-slate-600 dark:text-slate-400" />
             </button>
           )}
         </div>
@@ -698,6 +710,96 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           onEdit={isOwnProfile ? () => { onNavigate('notes'); setSelectedNote(null); } : undefined}
         />
       )}
+
+      {/* Share profile modal */}
+      {showShareModal && member.profile_visibility !== 'private' && (() => {
+        const profileUrl = hubService.getPublicProfileUrl(slug, member.username);
+        const hasPublicUrl = !!(currentHub?.publicTunnelUrl);
+        const isPublic = member.profile_visibility === 'public';
+        const handleCopy = () => {
+          navigator.clipboard.writeText(profileUrl).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
+        };
+        return (
+          <>
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+              onClick={() => setShowShareModal(false)}
+            />
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 24 }}
+                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                onClick={e => e.stopPropagation()}
+                className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm pointer-events-auto overflow-hidden"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Share Profile</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">@{member.username}</p>
+                  </div>
+                  <button
+                    onClick={() => setShowShareModal(false)}
+                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
+                  >
+                    <X className="w-4 h-4 text-slate-500" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  {/* Visibility notice */}
+                  {isPublic ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-800/50 text-xs text-emerald-700 dark:text-emerald-300">
+                      <Globe className="w-3.5 h-3.5 shrink-0" />
+                      Public profile — anyone with this link can view it
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800/50 text-xs text-blue-700 dark:text-blue-300">
+                      <Users className="w-3.5 h-3.5 shrink-0" />
+                      Hub members only — recipient must be a member to view
+                    </div>
+                  )}
+
+                  {/* No tunnel warning */}
+                  {!hasPublicUrl && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-700 dark:text-amber-300">
+                      <Lock className="w-3.5 h-3.5 shrink-0" />
+                      No public tunnel set up — link may not load remotely
+                    </div>
+                  )}
+
+                  {/* QR code */}
+                  <div className="flex justify-center py-1">
+                    <div className="p-3 bg-white rounded-xl border border-slate-200 dark:border-zinc-700 shadow-sm">
+                      <QRCodeSVG value={profileUrl} size={168} level="M" />
+                    </div>
+                  </div>
+
+                  {/* URL + copy */}
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+                    <span className="flex-1 text-xs text-slate-600 dark:text-slate-300 truncate font-mono">{profileUrl}</span>
+                    <button
+                      onClick={handleCopy}
+                      className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        copied
+                          ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-zinc-600'
+                      }`}
+                    >
+                      {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

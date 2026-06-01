@@ -376,13 +376,15 @@ class HubService {
     });
   }
 
-  /** Update visibility on a single post. */
+  /** Update visibility on a single post without touching any other fields. */
   async updatePostVisibility(hubSlug: string, postId: string, visibility: 'inherit' | 'hub' | 'private'): Promise<void> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const formData = new FormData();
+    formData.append('visibility', visibility);
     const res = await fetch(`${tunnelUrl}/api/posts/${postId}`, {
       method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '_keep_', visibility }), // title required by PATCH schema
+      headers, // no Content-Type — browser sets multipart boundary
+      body: formData,
     });
     if (!res.ok) throw new Error('Failed to update post visibility');
   }
@@ -1524,7 +1526,7 @@ class HubService {
   /** Create a new post. Optionally attach an image file. */
   async createPost(
     hubSlug: string,
-    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string }
+    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string; visibility?: 'inherit' | 'hub' | 'private' }
   ): Promise<HubPost> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection?.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
@@ -1536,6 +1538,7 @@ class HubService {
     if (post.mediaFile) formData.append('media', post.mediaFile);
     if (post.eventDate) formData.append('event_date', post.eventDate);
     if (post.eventLocation) formData.append('event_location', post.eventLocation);
+    if (post.visibility && post.visibility !== 'inherit') formData.append('visibility', post.visibility);
 
     const headers: Record<string, string> = {};
     if (connection.user?.authToken) headers['Authorization'] = `Bearer ${connection.user.authToken}`;
@@ -1586,7 +1589,7 @@ class HubService {
   async updatePost(
     hubSlug: string,
     postId: string,
-    updates: { title?: string; body?: string; mediaFile?: File; removeMedia?: boolean; eventDate?: string; eventLocation?: string }
+    updates: { title?: string; body?: string; mediaFile?: File; removeMedia?: boolean; eventDate?: string; eventLocation?: string; visibility?: 'inherit' | 'hub' | 'private' }
   ): Promise<HubPost> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const formData = new FormData();
@@ -1596,6 +1599,7 @@ class HubService {
     if (updates.removeMedia) formData.append('remove_media', 'true');
     if (updates.eventDate) formData.append('event_date', updates.eventDate);
     if (updates.eventLocation !== undefined) formData.append('event_location', updates.eventLocation);
+    if (updates.visibility !== undefined) formData.append('visibility', updates.visibility);
     // No Content-Type header — browser sets multipart boundary automatically
     const response = await fetch(`${tunnelUrl}/api/posts/${postId}`, {
       method: 'PATCH',

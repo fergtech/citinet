@@ -70,6 +70,8 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [locationResult, setLocationResult] = useState<LocationResult | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [isDirty, setIsDirty] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -122,9 +124,18 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   useEffect(() => {
     if (!currentHub?.slug || !currentUser?.hubUserId) return;
     hubService.getMember(currentHub.slug, currentUser.hubUserId)
-      .then(setMemberProfile)
+      .then(member => {
+        setMemberProfile(member);
+        // Hydrate form with authoritative server data — corrects any stale localStorage
+        if (member.display_name)  setDisplayName(member.display_name);
+        if (member.bio)           setBio(member.bio);
+        if (member.profile_headline) setProfileHeadline(member.profile_headline);
+        if (member.website)       setWebsite(member.website);
+        if (member.tags?.length)  setTags(member.tags);
+        if (member.profile_visibility) setProfileVisibility(member.profile_visibility as 'public' | 'hub' | 'private');
+      })
       .catch(() => {});
-  }, [currentHub?.slug, currentUser?.hubUserId]);
+  }, [currentHub?.slug, currentUser?.hubUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveBannerFields = async (fields: Parameters<typeof hubService.updateProfile>[1]) => {
     if (!currentHub?.slug) return;
@@ -198,20 +209,23 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     if (!val || tags.includes(val) || tags.length >= 10) return;
     setTags(prev => [...prev, val]);
     setTagInput('');
+    setIsDirty(true);
   }, [tagInput, tags]);
 
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitTag(); }
     if (e.key === 'Backspace' && tagInput === '' && tags.length > 0) {
       setTags(prev => prev.slice(0, -1));
+      setIsDirty(true);
     }
   };
 
-  const removeTag = (tag: string) => setTags(prev => prev.filter(t => t !== tag));
+  const removeTag = (tag: string) => { setTags(prev => prev.filter(t => t !== tag)); setIsDirty(true); };
 
   const handleSave = async () => {
     if (!currentHub?.slug) return;
     setSaving(true);
+    setSaveError('');
     const location = locationResult?.displayName ?? currentUser?.location ?? '';
     try {
       await hubService.updateProfile(currentHub.slug, {
@@ -224,20 +238,11 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         profileVisibility,
       });
       if (email.trim()) updateUserProfile({ email: email.trim() });
+      setIsDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      updateUserProfile({
-        displayName: displayName.trim() || currentUser?.displayName,
-        email: email.trim(),
-        location: location.trim(),
-        bio: bio.trim(),
-        tags,
-        profileHeadline: profileHeadline.trim(),
-        website: website.trim(),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -475,7 +480,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Display Name</label>
-            <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)}
+            <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setIsDirty(true); }}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="Your display name" />
           </div>
@@ -487,20 +492,20 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Headline</label>
-            <input type="text" value={profileHeadline} onChange={e => setProfileHeadline(e.target.value)} maxLength={100}
+            <input type="text" value={profileHeadline} onChange={e => { setProfileHeadline(e.target.value); setIsDirty(true); }} maxLength={100}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="e.g. Local food advocate & urban gardener" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Bio</label>
-            <textarea value={bio} onChange={e => setBio(e.target.value)} maxLength={160} rows={2}
+            <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={160} rows={2}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
               placeholder="A short intro about you (160 chars)" />
             <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/160</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Website</label>
-            <input type="url" value={website} onChange={e => setWebsite(e.target.value)}
+            <input type="url" value={website} onChange={e => { setWebsite(e.target.value); setIsDirty(true); }}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="https://yoursite.com" />
           </div>
@@ -530,7 +535,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Location</label>
-            <LocationPicker defaultValue={currentUser?.location || ''} onSelect={setLocationResult}
+            <LocationPicker defaultValue={currentUser?.location || ''} onSelect={r => { setLocationResult(r); setIsDirty(true); }}
               placeholder="Your neighborhood or city…"
               inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow" />
           </div>
@@ -545,7 +550,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setProfileVisibility(opt.value)}
+                  onClick={() => { setProfileVisibility(opt.value); setIsDirty(true); }}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl border text-center transition-all ${
                     profileVisibility === opt.value
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
@@ -583,10 +588,25 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             )}
           </div>
         </div>
+        {isDirty && !saving && !saved && (
+          <p className="mt-4 text-xs text-amber-600 dark:text-amber-400 text-center flex items-center justify-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+            You have unsaved changes
+          </p>
+        )}
+        {saveError && (
+          <p className="mt-2 text-sm text-red-500 dark:text-red-400 text-center">{saveError}</p>
+        )}
         <button onClick={handleSave} disabled={saving}
-          className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+          className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-medium transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed ${
+            saved
+              ? 'bg-emerald-500 scale-[1.02] shadow-lg shadow-emerald-500/30'
+              : isDirty
+              ? 'bg-purple-600 hover:bg-purple-500 shadow-md shadow-purple-500/20'
+              : 'bg-slate-400 dark:bg-zinc-600 hover:bg-slate-500 dark:hover:bg-zinc-500'
+          }`}>
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-          {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Changes'}
+          {saving ? 'Saving…' : saved ? 'Changes saved!' : 'Save Changes'}
         </button>
       </div>
     </div>

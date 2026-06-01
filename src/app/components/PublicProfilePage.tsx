@@ -37,6 +37,14 @@ interface PublicPost {
   media_file_name?: string | null;
 }
 
+function getMediaVariant(name?: string | null): 'image' | 'video' | null {
+  if (!name) return null;
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext)) return 'image';
+  return null;
+}
+
 const AVATAR_COLORS = [
   'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
   'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
@@ -110,7 +118,7 @@ export function PublicProfilePage() {
         setProfile(profileData as PublicProfile);
         setPosts((postsData.posts ?? []) as PublicPost[]);
       })
-      .catch(() => setError('Could not reach the hub. It may be offline.'))
+      .catch((err) => setError(`Could not reach the hub at ${src} — it may be offline or the tunnel URL is wrong. (${err?.message ?? 'network error'})`))
       .finally(() => setLoading(false));
   }, [hubSlug, username]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -221,26 +229,49 @@ export function PublicProfilePage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {posts.map(post => (
-                    <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ${CATEGORY_COLORS[post.category] ?? 'bg-zinc-800 text-zinc-400 ring-zinc-700'}`}>
-                          {post.category}
-                        </span>
-                        <span className="text-xs text-zinc-500">{formatDate(post.created_at)}</span>
-                      </div>
-                      <p className="text-sm font-medium text-zinc-200 leading-snug">{post.title}</p>
-                      {post.body && (
-                        <p className="mt-1 text-xs text-zinc-400 leading-relaxed line-clamp-3">{post.body}</p>
-                      )}
-                      {typeof post.reply_count === 'number' && (
-                        <div className="flex items-center gap-1 mt-3 text-xs text-zinc-600">
-                          <MessageCircle className="w-3 h-3" />
-                          {post.reply_count === 0 ? 'No replies' : `${post.reply_count} ${post.reply_count === 1 ? 'reply' : 'replies'}`}
+                  {posts.map(post => {
+                    const mediaVariant = getMediaVariant(post.media_file_name);
+                    const mediaUrl = post.media_file_name
+                      ? `${src}/api/public/files/${encodeURIComponent(post.media_file_name)}`
+                      : null;
+                    return (
+                      <div key={post.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                        {/* Media */}
+                        {mediaUrl && mediaVariant === 'image' && (
+                          <img
+                            src={mediaUrl}
+                            alt=""
+                            className="w-full max-h-64 object-cover"
+                          />
+                        )}
+                        {mediaUrl && mediaVariant === 'video' && (
+                          <video
+                            src={mediaUrl}
+                            controls
+                            className="w-full max-h-64 object-contain bg-black"
+                          />
+                        )}
+                        <div className="p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ${CATEGORY_COLORS[post.category] ?? 'bg-zinc-800 text-zinc-400 ring-zinc-700'}`}>
+                              {post.category}
+                            </span>
+                            <span className="text-xs text-zinc-500">{formatDate(post.created_at)}</span>
+                          </div>
+                          <p className="text-sm font-medium text-zinc-200 leading-snug">{post.title}</p>
+                          {post.body && (
+                            <p className="mt-1 text-xs text-zinc-400 leading-relaxed line-clamp-3">{post.body}</p>
+                          )}
+                          {typeof post.reply_count === 'number' && (
+                            <div className="flex items-center gap-1 mt-3 text-xs text-zinc-600">
+                              <MessageCircle className="w-3 h-3" />
+                              {post.reply_count === 0 ? 'No replies' : `${post.reply_count} ${post.reply_count === 1 ? 'reply' : 'replies'}`}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

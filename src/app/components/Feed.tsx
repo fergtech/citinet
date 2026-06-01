@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { DotGrid } from './DotGrid';
 import { PostCard } from './PostCard';
 import { PostDetailModal } from './PostDetailModal';
-import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown, Calendar, MapPin, ArrowUpDown } from 'lucide-react';
+import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronDown, Calendar, MapPin, ArrowUpDown, Globe, Users, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
@@ -55,9 +55,19 @@ interface ComposeModalProps {
   initialBody?: string;
 }
 
+type PostVisibility = 'inherit' | 'hub' | 'private';
+
+const VISIBILITY_OPTIONS: { value: PostVisibility; label: string; icon: ReactNode; desc: string }[] = [
+  { value: 'inherit', label: 'Default', icon: <Globe className="w-3.5 h-3.5" />, desc: 'Follows your profile visibility' },
+  { value: 'hub',     label: 'Hub only', icon: <Users className="w-3.5 h-3.5" />, desc: 'Members only, even if profile is public' },
+  { value: 'private', label: 'Only me',  icon: <Lock className="w-3.5 h-3.5" />,  desc: 'Visible only to you' },
+];
+
 function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
   const [category, setCategory] = useState('DISCUSSION');
   const [labelOpen, setLabelOpen] = useState(false);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [visibility, setVisibility] = useState<PostVisibility>('inherit');
   const [body, setBody] = useState(initialBody);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -105,6 +115,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
         // Convert datetime-local (local time, no TZ) to ISO string with timezone so server stores correct UTC
         eventDate: category === 'EVENT' && eventDate ? new Date(eventDate).toISOString() : undefined,
         eventLocation: category === 'EVENT' ? eventLocation : undefined,
+        visibility,
       });
       onCreated(post);
       onClose();
@@ -225,38 +236,80 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
 
           {/* Footer */}
           <div className="px-6 py-4 border-t border-slate-200 dark:border-zinc-800 space-y-3">
-            {/* Collapsible label picker */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setLabelOpen(v => !v)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
-                  category !== 'DISCUSSION'
-                    ? CATEGORY_COLORS[category] + ' ring-1'
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
-                }`}
-              >
-                {category.charAt(0) + category.slice(1).toLowerCase()}
-                <ChevronDown className={`w-3 h-3 transition-transform ${labelOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {labelOpen && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'].map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => { setCategory(cat); setLabelOpen(false); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
-                        category === cat
-                          ? CATEGORY_COLORS[cat] + ' ring-1'
-                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      {cat.charAt(0) + cat.slice(1).toLowerCase()}
-                    </button>
-                  ))}
-                </div>
-              )}
+            {/* Pickers row: category + visibility */}
+            <div className="flex items-start gap-2 flex-wrap">
+              {/* Collapsible label picker */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => { setLabelOpen(v => !v); setVisibilityOpen(false); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                    category !== 'DISCUSSION'
+                      ? CATEGORY_COLORS[category] + ' ring-1'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {category.charAt(0) + category.slice(1).toLowerCase()}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${labelOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {labelOpen && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'].map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => { setCategory(cat); setLabelOpen(false); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                          category === cat
+                            ? CATEGORY_COLORS[cat] + ' ring-1'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Visibility picker */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => { setVisibilityOpen(v => !v); setLabelOpen(false); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
+                    visibility !== 'inherit'
+                      ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-indigo-200 dark:ring-indigo-500/20'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.icon}
+                  {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.label}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${visibilityOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {visibilityOpen && (
+                  <div className="flex flex-col gap-1 mt-2 p-1.5 rounded-xl bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-lg w-56">
+                    {VISIBILITY_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { setVisibility(opt.value); setVisibilityOpen(false); }}
+                        className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                          visibility === opt.value
+                            ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        <span className="mt-0.5 shrink-0">{opt.icon}</span>
+                        <span>
+                          <span className="block text-xs font-medium">{opt.label}</span>
+                          <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-3">
