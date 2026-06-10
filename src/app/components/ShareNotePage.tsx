@@ -7,7 +7,6 @@ import TaskItem from '@tiptap/extension-task-item';
 import Underline from '@tiptap/extension-underline';
 import { Loader2, AlertCircle, NotebookPen, Copy, Check, LogIn } from 'lucide-react';
 import { hubService } from '../services/hubService';
-import { getHubUrl } from '../utils/subdomain';
 
 export const PENDING_FORK_KEY = 'citinet-pending-fork';
 
@@ -60,7 +59,7 @@ function NoteViewer({ note }: { note: PublicNote }) {
 
 type CopyState = 'idle' | 'copying' | 'done' | 'redirecting' | 'error';
 
-function CopyButton({ hubSlug, noteId }: { hubSlug: string; noteId: string }) {
+function CopyButton({ hubSlug, noteId, src }: { hubSlug: string; noteId: string; src: string }) {
   const [state, setState] = useState<CopyState>('idle');
   const isConnected = !!hubService.getHubConnection(hubSlug);
 
@@ -80,8 +79,9 @@ function CopyButton({ hubSlug, noteId }: { hubSlug: string; noteId: string }) {
     } else {
       setState('redirecting');
       sessionStorage.setItem(PENDING_FORK_KEY, JSON.stringify({ noteId, hubSlug }));
+      // Redirect to the join flow with the hub URL pre-filled and auto-probed
       setTimeout(() => {
-        window.location.href = getHubUrl(hubSlug);
+        window.location.href = `${window.location.origin}/join?url=${encodeURIComponent(src)}`;
       }, 600);
     }
   };
@@ -142,14 +142,19 @@ export function ShareNotePage() {
   useEffect(() => {
     if (!hubSlug || !noteId) { setError('Invalid share link'); setLoading(false); return; }
 
-    const src = searchParams.get('src');
-    if (!src || !/^https?:\/\/.+/.test(src)) {
+    const localConn = hubService.getHubConnection(hubSlug);
+    const localTunnelUrl = localConn?.hub?.tunnelUrl;
+    const srcParam = searchParams.get('src');
+    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
+    const fetchBase = (localTunnelUrl && !isShell(localTunnelUrl)) ? localTunnelUrl : srcParam;
+
+    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
       setError('This note cannot be reached — the hub does not have a public tunnel URL configured. The owner needs to set up Tailscale Funnel and re-share the link.');
       setLoading(false);
       return;
     }
 
-    fetch(`${src}/api/public/notes/${noteId}`)
+    fetch(`${fetchBase}/api/public/notes/${noteId}`)
       .then(async r => {
         if (!r.ok) { setError('This note is not publicly accessible or no longer exists.'); return; }
         setNote(await r.json() as PublicNote);
@@ -190,12 +195,12 @@ export function ShareNotePage() {
             </div>
 
             {/* Copy action */}
-            {hubSlug && noteId && (
+            {hubSlug && noteId && searchParams.get('src') && (
               <div className="flex flex-col items-center gap-2">
-                <CopyButton hubSlug={hubSlug} noteId={noteId} />
+                <CopyButton hubSlug={hubSlug} noteId={noteId} src={searchParams.get('src')!} />
                 {!hubService.getHubConnection(hubSlug) && (
                   <p className="text-xs text-zinc-600 text-center max-w-xs">
-                    You'll be asked to sign in (or join) the <span className="text-zinc-400">{hubSlug}</span> hub, then the note will be added to your notes automatically.
+                    You'll be taken to sign in or create an account first — the note will be copied to yours automatically right after.
                   </p>
                 )}
               </div>

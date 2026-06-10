@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { hubService } from '../services/hubService';
 import {
   Loader2, AlertCircle, MapPin, Globe, Link as LinkIcon,
   Calendar, MessageCircle, Tag, NotebookPen, Pin, FileText,
@@ -277,8 +278,16 @@ export function PublicProfilePage() {
   useEffect(() => {
     if (!hubSlug || !username) { setError('Invalid profile link.'); setLoading(false); return; }
 
-    const src = searchParams.get('src');
-    if (!src || !/^https?:\/\/.+/.test(src)) {
+    // Prefer local hub connection when available — avoids Tailscale hairpin
+    // issues where the public *.ts.net URL can't be reached from the same machine.
+    const localConn = hubService.getHubConnection(hubSlug);
+    const localTunnelUrl = localConn?.hub?.tunnelUrl;
+    const srcParam = searchParams.get('src');
+    const fetchBase = (localTunnelUrl && localTunnelUrl !== '' && localTunnelUrl !== 'http://' && localTunnelUrl !== 'https://')
+      ? localTunnelUrl
+      : srcParam;
+
+    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
       setError('This profile cannot be reached — the hub does not have a public tunnel URL configured.');
       setLoading(false);
       return;
@@ -293,10 +302,10 @@ export function PublicProfilePage() {
     };
 
     Promise.all([
-      fetch(`${src}/api/public/profile/${enc}`),
-      fetch(`${src}/api/public/profile/${enc}/posts?limit=${lim}`),
-      fetch(`${src}/api/public/profile/${enc}/notes?limit=${lim}`),
-      fetch(`${src}/api/public/profile/${enc}/pins?limit=${lim}`),
+      fetch(`${fetchBase}/api/public/profile/${enc}`),
+      fetch(`${fetchBase}/api/public/profile/${enc}/posts?limit=${lim}`),
+      fetch(`${fetchBase}/api/public/profile/${enc}/notes?limit=${lim}`),
+      fetch(`${fetchBase}/api/public/profile/${enc}/pins?limit=${lim}`),
     ])
       .then(async ([pRes, postsRes, notesRes, pinsRes]) => {
         if (!pRes.ok) { setError('This profile is not public or does not exist.'); return; }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Loader2, AlertCircle, Users, Globe, MessageCircle, LayoutGrid } from 'lucide-react';
+import { hubService } from '../services/hubService';
 import type { HubPost } from '../types/hub';
 
 interface PublicSpace {
@@ -85,18 +86,25 @@ export function ShareSpacePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'feed' | 'members' | 'files'>('feed');
-  const src = searchParams.get('src') ?? '';
+  const [resolvedSrc, setResolvedSrc] = useState('');
+  const srcParam = searchParams.get('src') ?? '';
 
   useEffect(() => {
     if (!hubSlug || !spaceSlug) { setError('Invalid share link'); setLoading(false); return; }
 
-    if (!src || !/^https?:\/\/.+/.test(src)) {
+    const localConn = hubService.getHubConnection(hubSlug);
+    const localTunnelUrl = localConn?.hub?.tunnelUrl;
+    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
+    const fetchBase = (localTunnelUrl && !isShell(localTunnelUrl)) ? localTunnelUrl : srcParam;
+
+    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
       setError('This share link is missing the hub source. Ask the owner to re-copy the link.');
       setLoading(false);
       return;
     }
 
-    fetch(`${src}/api/public/spaces/${spaceSlug}`)
+    setResolvedSrc(fetchBase);
+    fetch(`${fetchBase}/api/public/spaces/${spaceSlug}`)
       .then(async r => {
         if (!r.ok) {
           setError('This space is not publicly accessible or no longer exists.');
@@ -116,7 +124,7 @@ export function ShareSpacePage() {
           <span className="text-xs text-zinc-500 font-medium">community cloud</span>
         </a>
         {data && (
-          <a href={`${src}?auth=true`} target="_blank" rel="noopener noreferrer"
+          <a href={`${resolvedSrc || srcParam}?auth=true`} target="_blank" rel="noopener noreferrer"
             className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white transition-colors">
             Sign in to Join
           </a>
@@ -138,7 +146,7 @@ export function ShareSpacePage() {
           <div className="w-full space-y-4">
             {/* Space header card */}
             <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
-              <div className="h-24" style={getBannerStyle(data.space, src)} />
+              <div className="h-24" style={getBannerStyle(data.space, resolvedSrc || srcParam)} />
               <div className="bg-zinc-900 px-6 py-4">
                 <h1 className="text-xl font-bold text-white mb-1">{data.space.name}</h1>
                 {data.space.description && (
@@ -176,7 +184,7 @@ export function ShareSpacePage() {
                 )}
                 {data.posts.map(post => {
                   const mediaUrl = (post as any).media_url as string | undefined
-                    ?? (post.media_file_name ? `${src}/api/public/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}` : null);
+                    ?? (post.media_file_name ? `${resolvedSrc || srcParam}/api/public/spaces/${spaceSlug}/files/${encodeURIComponent(post.media_file_name)}` : null);
                   const isVideo = mediaUrl && /\.(mp4|webm|mov)$/i.test(mediaUrl);
                   const { truncated, isTruncated } = truncateText(post.body);
                   

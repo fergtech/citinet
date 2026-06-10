@@ -119,6 +119,10 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts. Please wait 15 minutes and try again.' },
+  skip: (req) => {
+    const ip = req.ip ?? '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  },
 });
 
 // General API limit — generous, just prevents hammering

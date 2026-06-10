@@ -1295,12 +1295,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         className="flex flex-col items-center gap-1.5 shrink-0 group"
                       >
                         <div className="relative">
-                          {item.actorAvatarUrl ? (
-                            <img src={item.actorAvatarUrl} alt={item.actor} className="w-11 h-11 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                          ) : (
-                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all">
-                              {ini}
-                            </div>
+                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all">
+                            {ini}
+                          </div>
+                          {item.actorAvatarUrl && (
+                            <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-11 h-11 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                           )}
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-950 ${fresh ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-zinc-600'}`} />
                         </div>
@@ -1957,11 +1956,12 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
 
           {/* Attribution row: mini-avatar · name · verb · location · time */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            {item.actorAvatarUrl ? (
-              <img src={item.actorAvatarUrl} alt={item.actor} className="w-4 h-4 rounded-full object-cover shrink-0" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-            ) : (
-              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{initial}</div>
-            )}
+            <div className="relative w-4 h-4 shrink-0">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold">{initial}</div>
+              {item.actorAvatarUrl && (
+                <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-full h-full rounded-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              )}
+            </div>
             <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{item.actor}</span>
             <span className={`text-xs font-medium ${cfg.verbColor}`}>{item.summary}</span>
             {location && <><span className="text-xs text-slate-300 dark:text-zinc-600">·</span><span className="text-xs text-slate-500 dark:text-slate-400">{location}</span></>}

@@ -55,6 +55,8 @@
 .tiptap-editor .ProseMirror strong { font-weight: 600; }
 .tiptap-editor .ProseMirror em { font-style: italic; }
 .tiptap-editor .ProseMirror u { text-decoration: underline; }
+.tiptap-editor .ProseMirror a { color: #f59e0b; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.tiptap-editor .ProseMirror a:hover { color: #fbbf24; }
 
 /* ── Prevent iOS auto-zoom on input focus ───────────────── */
 /* iOS Safari zooms when font-size < 16px. This rule prevents that
