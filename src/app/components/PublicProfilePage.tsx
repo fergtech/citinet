@@ -294,35 +294,52 @@ export function PublicProfilePage() {
     }
 
     const enc = encodeURIComponent(username);
-    const lim = PREVIEW_LIMIT + 1; // fetch one extra to know if there are more
+    const lim = PREVIEW_LIMIT + 1;
 
     const safeJson = async (res: Response, fallback: unknown) => {
       if (!res.ok) return fallback;
       try { return await res.json(); } catch { return fallback; }
     };
 
-    Promise.all([
-      fetch(`${fetchBase}/api/public/profile/${enc}`),
-      fetch(`${fetchBase}/api/public/profile/${enc}/posts?limit=${lim}`),
-      fetch(`${fetchBase}/api/public/profile/${enc}/notes?limit=${lim}`),
-      fetch(`${fetchBase}/api/public/profile/${enc}/pins?limit=${lim}`),
-    ])
-      .then(async ([pRes, postsRes, notesRes, pinsRes]) => {
-        if (!pRes.ok) { setError('This profile is not public or does not exist.'); return; }
-        let profileData: unknown;
-        try { profileData = await pRes.json(); }
-        catch { setError('Could not reach the hub — it returned an unexpected response.'); return; }
-        const [postsData, notesData, pinsData] = await Promise.all([
-          safeJson(postsRes, { posts: [] }),
-          safeJson(notesRes, { notes: [] }),
-          safeJson(pinsRes,  { pins:  [] }),
-        ]);
-        setProfile(profileData as PublicProfile);
-        setPosts(((postsData as { posts?: PublicPost[] }).posts ?? []) as PublicPost[]);
-        setNotes(((notesData as { notes?: PublicNote[] }).notes ?? []) as PublicNote[]);
-        setPins(((pinsData  as { pins?:  PublicPin[]  }).pins  ?? []) as PublicPin[]);
-      })
-      .catch(() => setError('Could not reach the hub — it may be offline or the tunnel is not configured.'))
+    const fetchWithTimeout = (url: string, ms: number) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    };
+
+    const tryBase = async (base: string) => {
+      const [pRes, postsRes, notesRes, pinsRes] = await Promise.all([
+        fetchWithTimeout(`${base}/api/public/profile/${enc}`, 5000),
+        fetchWithTimeout(`${base}/api/public/profile/${enc}/posts?limit=${lim}`, 5000),
+        fetchWithTimeout(`${base}/api/public/profile/${enc}/notes?limit=${lim}`, 5000),
+        fetchWithTimeout(`${base}/api/public/profile/${enc}/pins?limit=${lim}`, 5000),
+      ]);
+      if (!pRes.ok) throw new Error('not_found');
+      const profileData = await pRes.json();
+      const [postsData, notesData, pinsData] = await Promise.all([
+        safeJson(postsRes, { posts: [] }),
+        safeJson(notesRes, { notes: [] }),
+        safeJson(pinsRes,  { pins:  [] }),
+      ]);
+      setProfile(profileData as PublicProfile);
+      setPosts(((postsData as { posts?: PublicPost[] }).posts ?? []) as PublicPost[]);
+      setNotes(((notesData as { notes?: PublicNote[] }).notes ?? []) as PublicNote[]);
+      setPins(((pinsData  as { pins?:  PublicPin[]  }).pins  ?? []) as PublicPin[]);
+    };
+
+    (async () => {
+      const bases = [fetchBase, 'http://localhost:9090'];
+      for (const base of bases) {
+        try { await tryBase(base); return; }
+        catch (err) {
+          if ((err as Error).message === 'not_found') {
+            setError('This profile is not public or does not exist.');
+            return;
+          }
+        }
+      }
+      setError('Could not reach the hub — it may be offline or the tunnel is not configured.');
+    })()
       .finally(() => setLoading(false));
   }, [hubSlug, username]); // eslint-disable-line react-hooks/exhaustive-deps
 

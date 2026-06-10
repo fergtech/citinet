@@ -154,13 +154,26 @@ export function ShareNotePage() {
       return;
     }
 
-    fetch(`${fetchBase}/api/public/notes/${noteId}`)
-      .then(async r => {
-        if (!r.ok) { setError('This note is not publicly accessible or no longer exists.'); return; }
-        setNote(await r.json() as PublicNote);
-      })
-      .catch(() => setError('Could not reach the hub. It may be offline.'))
-      .finally(() => setLoading(false));
+    const fetchWithTimeout = (url: string, ms: number) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
+    };
+
+    const load = async () => {
+      const bases = [fetchBase, 'http://localhost:9090'];
+      for (const base of bases) {
+        try {
+          const r = await fetchWithTimeout(`${base}/api/public/notes/${noteId}`, 5000);
+          if (!r.ok) { setError('This note is not publicly accessible or no longer exists.'); return; }
+          setNote(await r.json() as PublicNote);
+          return;
+        } catch { /* try next */ }
+      }
+      setError('Could not reach the hub. It may be offline.');
+    };
+
+    load().finally(() => setLoading(false));
   }, [hubSlug, noteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
