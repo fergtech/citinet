@@ -591,8 +591,13 @@ async function authenticate(req, res, next) {
     );
     if (!result.rows[0]) return res.status(401).json({ error: 'Invalid or expired token' });
     req.user = result.rows[0];
-    // Fire-and-forget presence heartbeat — no await so it never blocks the request
+    // Fire-and-forget: presence heartbeat + slide the session window so active
+    // members never see a login prompt — session only expires after 30 days idle.
     pool.query('UPDATE hub_users SET last_seen_at = NOW() WHERE id = $1', [req.user.id]).catch(() => {});
+    pool.query(
+      `UPDATE hub_sessions SET expires_at = NOW() + INTERVAL '30 days' WHERE token = $1`,
+      [token]
+    ).catch(() => {});
     next();
   } catch {
     res.status(500).json({ error: 'Auth check failed' });

@@ -834,7 +834,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   <p className="text-[10px] text-green-500 dark:text-green-400">Reconnected!</p>
                 )}
                 {connectionStatus === 'unreachable' && !tunnelInput && (
-                  <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — enter the new tunnel URL to reconnect.</p>
+                  <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — auto-retrying. Enter a new URL only if the address changed.</p>
                 )}
               </div>
             )}

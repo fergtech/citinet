@@ -151,9 +151,10 @@ export function HubProvider({ children }: { children: ReactNode }) {
         if (activeConn && !cancelled) {
           if (activeConn.hub.connectionStatus === 'unreachable') {
             consecutiveFailures++;
-            // Suppress 'unreachable' on the first failure — gives the mobile
-            // network ~5 s to reconnect after the app is foregrounded.
-            if (consecutiveFailures < 2) {
+            // Require 3 consecutive failures (~15 s) before surfacing 'unreachable'
+            // to the UI. Absorbs brief network hiccups, sleep/wake, and tab switches
+            // without triggering the reconnect panel on a transient blip.
+            if (consecutiveFailures < 3) {
               timer = setTimeout(runCheck, 5_000);
               return;
             }
@@ -352,7 +353,7 @@ export function useHubStatus(): {
     connected: { label: 'Connected', color: 'text-green-600 dark:text-green-400', dotColor: 'bg-green-500' },
     connecting: { label: 'Connecting...', color: 'text-yellow-600 dark:text-yellow-400', dotColor: 'bg-yellow-500' },
     disconnected: { label: 'Local Only', color: 'text-slate-600 dark:text-slate-400', dotColor: 'bg-slate-400' },
-    unreachable: { label: 'Hub Unreachable', color: 'text-orange-600 dark:text-orange-400', dotColor: 'bg-orange-500' },
+    unreachable: { label: 'Reconnecting…', color: 'text-orange-600 dark:text-orange-400', dotColor: 'bg-orange-500 animate-pulse' },
   };
 
   return { status, ...statusMap[status] };

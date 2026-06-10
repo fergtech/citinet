@@ -104,7 +104,9 @@ class HubService {
   ): Promise<Hub> {
     const cleanUrl = this.normalizeTunnelUrl(tunnelUrl);
     const hubName = probeInfo?.name || this.extractNameFromUrl(cleanUrl);
-    const slug = this.slugify(hubName);
+    // Prefer the stable hub_slug the server reports over a slugified display name,
+    // so renaming the hub (which changes 'name') doesn't orphan the localStorage key.
+    const slug = probeInfo?.hub_slug ? this.slugify(probeInfo.hub_slug) : this.slugify(hubName);
 
     // If we probed via localhost/LAN, keep that as the stored URL — the machine can't
     // reach its own Tailscale funnel URL from the inside. Only prefer the API-reported
