@@ -92,7 +92,7 @@ const PIN_CATEGORY_COLORS: Record<string, string> = {
   service:      'bg-blue-500/15 text-blue-400',
   community:    'bg-emerald-500/15 text-emerald-400',
   safety:       'bg-red-500/15 text-red-400',
-  nature:       'bg-teal-500/15 text-teal-400',
+  nature:       'bg-slate-500/15 text-slate-400',
   event:        'bg-purple-500/15 text-purple-400',
   other:        'bg-zinc-500/15 text-zinc-400',
 };

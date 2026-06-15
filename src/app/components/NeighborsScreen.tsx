@@ -291,7 +291,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                             onNavigate('feed');
                           }}
                           title={`Say welcome to @${member.username}`}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 opacity-0 group-hover:opacity-100 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-all shrink-0"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-zinc-900/20 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-zinc-800 opacity-0 group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-zinc-900/40 transition-all shrink-0"
                         >
                           <MessageSquarePlus className="w-3 h-3" />
                           Welcome

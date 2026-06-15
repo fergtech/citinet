@@ -214,6 +214,15 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     }
   }, []);
 
+  // Read search query set by the Dashboard's search bar
+  useEffect(() => {
+    const q = sessionStorage.getItem('citinet-deeplink-search');
+    if (q) {
+      setSearchQuery(q);
+      sessionStorage.removeItem('citinet-deeplink-search');
+    }
+  }, []);
+
   // Fetch all data once
   useEffect(() => {
     if (!slug) return;

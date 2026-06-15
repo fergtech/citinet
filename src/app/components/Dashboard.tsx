@@ -2,8 +2,9 @@ import {
   Users, MessageCircle, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, Clock, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronLeft, ChevronRight, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug,
-  LayoutGrid, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Package, Bot,
+  X, ChevronRight, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug, Search,
+  Grid3x3, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Package, Bot,
+  PanelLeft, PanelBottom, Hexagon, Pencil, MessageSquare,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -42,7 +43,7 @@ const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradi
 // Priority-ordered screen IDs for the mobile bottom dock.
 // Derived from visibleTiles so icons, labels, badges, and feature-gating
 // all stay in sync with the launchpad automatically.
-const DOCK_PRIORITY_SCREENS = ['feed', 'atlas', 'marketplace', 'messages'];
+const DOCK_PRIORITY_SCREENS = ['feed', 'atlas', 'messages'];
 
 // Apps enabled on a fresh hub with no admin configuration yet.
 // null enabledApps on the Hub object means "all apps" (backward compat).
@@ -53,9 +54,6 @@ export const DEFAULT_ENABLED_APPS: string[] = [
 const MOBILE_LAUNCHPAD_COLUMNS = 5;
 const MOBILE_LAUNCHPAD_ROWS = 2;
 const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
-const DESKTOP_LAUNCHPAD_COLUMNS_MD = 5;
-const DESKTOP_LAUNCHPAD_COLUMNS_XL = 8;
-const DESKTOP_LAUNCHPAD_ROWS = 1;
 
 interface DashboardProps {
   userName?: string;
@@ -110,11 +108,37 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   // Feature request modal
   const [showRequestModal, setShowRequestModal] = useState(false);
 
-  // Mobile start/menu
-  const [showMobileStartMenu, setShowMobileStartMenu] = useState(false);
-  // Desktop start menu
-  const [showStartMenu, setShowStartMenu] = useState(false);
+  // Mobile account menu (mirrors desktop's Account Menu Panel)
+  const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
+  // Desktop account menu
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showSupportMenu, setShowSupportMenu] = useState(false);
+  const [showHubInfoModal, setShowHubInfoModal] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  // Dashboard search — submits to Discover with the query pre-filled
+  const [searchQuery, setSearchQuery] = useState('');
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    sessionStorage.setItem('citinet-deeplink-search', q);
+    setSearchQuery('');
+    onNavigate('discover');
+  }
+
+  // Desktop nav layout: bottom dock (default) or left sidebar
+  const [desktopNavLayout, setDesktopNavLayout] = useState<'dock' | 'sidebar'>(() => {
+    if (typeof window === 'undefined') return 'dock';
+    return localStorage.getItem('citinet-desktop-nav-layout') === 'sidebar' ? 'sidebar' : 'dock';
+  });
+  const toggleDesktopNavLayout = () => {
+    setDesktopNavLayout(prev => {
+      const next = prev === 'dock' ? 'sidebar' : 'dock';
+      localStorage.setItem('citinet-desktop-nav-layout', next);
+      return next;
+    });
+  };
 
   // Tunnel reconnect state
   const [showTunnelInput, setShowTunnelInput] = useState(false);
@@ -372,6 +396,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     .map(screen => visibleTiles.find(t => t.screen === screen))
     .filter((t): t is typeof APP_TILES[number] => !!t);
 
+  // Desktop dock/sidebar — primary navigation icons, shared between both layouts
+  const desktopNavItems = [
+    { Icon: MessageCircle, label: 'Feed',      screen: 'feed' },
+    { Icon: MessageSquare, label: 'Messages',  screen: 'messages', notifyFeature: 'messages' as const },
+    { Icon: Map,           label: 'Atlas',     screen: 'atlas' },
+    { Icon: Store,         label: 'Exchange',  screen: 'marketplace' },
+    { Icon: Users,         label: 'Neighbors', screen: 'neighbors' },
+    { Icon: Package,       label: 'Resources', screen: 'toolkit' },
+  ].filter(app => !enabledSet || enabledSet.includes(app.screen));
+
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : visibleTiles;
@@ -393,17 +427,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   const mobileLaunchpadRef = useRef<HTMLDivElement | null>(null);
   const [mobileLaunchpadPage, setMobileLaunchpadPage] = useState(0);
-  const desktopLaunchpadRef = useRef<HTMLDivElement | null>(null);
-  const [desktopLaunchpadPage, setDesktopLaunchpadPage] = useState(0);
-  const [isXlDesktop, setIsXlDesktop] = useState(false);
   const [activityExpanded, setActivityExpanded] = useState(false);
 
-  const desktopLaunchpadItems: typeof APP_TILES = myVendor
+  const desktopAppItems: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : visibleTiles;
 
-  const desktopLaunchpadItemsWithSuggest: typeof APP_TILES = [
-    ...desktopLaunchpadItems,
+  const desktopAppItemsWithSuggest: typeof APP_TILES = [
+    ...desktopAppItems,
     {
       Icon: Sparkles,
       label: 'Suggest',
@@ -412,27 +443,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     },
   ];
 
-  const desktopLaunchpadColumns = isXlDesktop ? DESKTOP_LAUNCHPAD_COLUMNS_XL : DESKTOP_LAUNCHPAD_COLUMNS_MD;
-  const desktopLaunchpadPageSize = desktopLaunchpadColumns * DESKTOP_LAUNCHPAD_ROWS;
-  const desktopLaunchpadPages: typeof desktopLaunchpadItemsWithSuggest[] = [];
-  for (let i = 0; i < desktopLaunchpadItemsWithSuggest.length; i += desktopLaunchpadPageSize) {
-    desktopLaunchpadPages.push(desktopLaunchpadItemsWithSuggest.slice(i, i + desktopLaunchpadPageSize));
-  }
-
-  useEffect(() => {
-    const updateDesktopBreakpoint = () => setIsXlDesktop(window.innerWidth >= 1280);
-    updateDesktopBreakpoint();
-    window.addEventListener('resize', updateDesktopBreakpoint);
-    return () => window.removeEventListener('resize', updateDesktopBreakpoint);
-  }, []);
+  // "More" overlay — everything not already pinned in the dock/sidebar (or shown as the vendor tile)
+  const pinnedScreens = new Set(desktopNavItems.map(item => item.screen));
+  const moreNavItems = desktopAppItemsWithSuggest.filter(app => !pinnedScreens.has(app.screen) && !app.screen.startsWith('vendor/'));
 
   useEffect(() => {
     setMobileLaunchpadPage(prev => Math.min(prev, Math.max(0, mobileLaunchpadPages.length - 1)));
   }, [mobileLaunchpadPages.length]);
-
-  useEffect(() => {
-    setDesktopLaunchpadPage(prev => Math.min(prev, Math.max(0, desktopLaunchpadPages.length - 1)));
-  }, [desktopLaunchpadPages.length]);
 
   const handleMobileLaunchpadScroll = () => {
     const el = mobileLaunchpadRef.current;
@@ -454,27 +471,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
   };
 
-  const handleDesktopLaunchpadScroll = () => {
-    const el = desktopLaunchpadRef.current;
-    if (!el) return;
 
-    const first = el.firstElementChild as HTMLElement | null;
-    const second = el.children[1] as HTMLElement | null;
-    const pageSpan = first && second ? (second.offsetLeft - first.offsetLeft) : el.clientWidth;
-    const nextPage = Math.round(el.scrollLeft / Math.max(pageSpan, 1));
-    const clamped = Math.max(0, Math.min(desktopLaunchpadPages.length - 1, nextPage));
-    if (clamped !== desktopLaunchpadPage) setDesktopLaunchpadPage(clamped);
-  };
-
-  const scrollToDesktopLaunchpadPage = (pageIndex: number) => {
-    const el = desktopLaunchpadRef.current;
-    if (!el) return;
-    // Each page is w-full so its scroll position is exactly pageIndex * clientWidth
-    el.scrollTo({ left: pageIndex * el.clientWidth, behavior: 'smooth' });
-  };
-
-
-  const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-cyan-200 border border-cyan-300/35 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-cyan-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70';
+  const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-slate-400 border border-slate-600/30 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40';
 
   return (
     <div className="min-h-screen flex relative">
@@ -483,9 +481,26 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
       {/* Desktop Top Menubar */}
       <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-slate-950/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-800/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
-        <div className="w-2 h-2 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 shrink-0" />
-        <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
-        <div className="flex-1" />
+        <button
+          onClick={() => setShowHubInfoModal(true)}
+          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-white/10 transition-colors shrink-0"
+          title="About this hub"
+        >
+          <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+          <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
+        </button>
+        <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search posts, people, files…"
+              className="w-full h-6 pl-7 pr-2 rounded-md bg-white/5 border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 hover:bg-white/10 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
+            />
+          </div>
+        </form>
         <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
         <span className="text-xs text-slate-300">{statusLabel}</span>
         {nodeStatus.onlineNow > 0 && (
@@ -580,17 +595,17 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         </div>
       )}
 
-      {/* Desktop Start Menu Panel */}
+      {/* Desktop Account Menu Panel */}
       <AnimatePresence>
-        {showStartMenu && (
+        {showAccountMenu && (
           <>
-            <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setShowStartMenu(false)} />
+            <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setShowAccountMenu(false)} />
             <motion.div
               initial={{ opacity: 0, y: 8, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.97 }}
               transition={{ type: 'spring', damping: 30, stiffness: 400 }}
-              className="hidden md:block fixed bottom-16 left-4 z-50 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden"
+              className={`hidden md:block fixed z-50 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden ${desktopNavLayout === 'sidebar' ? 'left-[4.5rem] bottom-12' : 'bottom-16 right-4'}`}
             >
               <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-slate-200 dark:border-zinc-800">
                 <div className="flex items-center gap-3">
@@ -612,43 +627,26 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <div className="p-2 space-y-0.5">
                 {currentUser?.hubUserId && (
                   <button
-                    onClick={() => { setShowStartMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
+                    onClick={() => { setShowAccountMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                   >
                     <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">My Profile</span>
+                    <span className="text-sm text-slate-700 dark:text-slate-300">View Profile</span>
                   </button>
                 )}
                 <button
-                  onClick={() => { setShowStartMenu(false); onNavigate('account'); }}
+                  onClick={() => { setShowAccountMenu(false); onNavigate('account'); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">My Account</span>
-                </button>
-                
-                {isAdmin && (
-                  <button
-                    onClick={() => { setShowStartMenu(false); onNavigate('hub-management'); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                  >
-                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Hub Admin</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => { setShowStartMenu(false); openProjectInfo(); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">About citinet</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
                 </button>
                 <button
-                  onClick={() => { setShowStartMenu(false); setShowSupportMenu(true); }}
+                  onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Support</span>
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Help & Support</span>
                 </button>
               </div>
               {onLogout && (
@@ -656,7 +654,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
                   <div className="p-2">
                     <button
-                      onClick={() => { setShowStartMenu(false); onLogout(); }}
+                      onClick={() => { setShowAccountMenu(false); onLogout(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
                     >
                       <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
@@ -671,35 +669,37 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       </AnimatePresence>
 
       {/* Desktop Bottom Dock */}
+      {desktopNavLayout === 'dock' ? (
       <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60 items-center px-4 gap-1">
+        {desktopNavItems.map(app => {
+          const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+          return (
+            <button
+              key={app.screen}
+              onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+              title={app.label}
+              className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+            >
+              <app.Icon className="w-5 h-5" />
+              {badge > 0 && (
+                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
         <button
-          onClick={() => setShowStartMenu(v => !v)}
-          className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white hover:from-blue-700 hover:to-purple-700 transition-all shadow-sm hover:shadow-md active:scale-95 shrink-0"
-          title="Menu"
-          aria-label="Open menu"
+          onClick={() => setShowMoreMenu(true)}
+          title="More"
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
         >
-          <LayoutGrid className="w-5 h-5" />
+          <Grid3x3 className="w-5 h-5" />
         </button>
-        <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700 mx-2 shrink-0" />
-        {[
-          { Icon: MessageCircle, label: 'Feed', screen: 'feed' },
-          { Icon: Map,           label: 'Atlas',       screen: 'atlas' },
-          { Icon: Store,         label: 'Exchange',    screen: 'marketplace' },
-          { Icon: Users,         label: 'Neighbors',   screen: 'neighbors' },
-          { Icon: Package,       label: 'Resources',   screen: 'toolkit' },
-        ].filter(app => !enabledSet || enabledSet.includes(app.screen)).map(app => (
-          <button
-            key={app.screen}
-            onClick={() => onNavigate(app.screen)}
-            title={app.label}
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
-          >
-            <app.Icon className="w-5 h-5" />
-          </button>
-        ))}
         {myVendor && (
           <>
-            <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700 mx-1 shrink-0" />
+            <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
             <button
               onClick={() => onNavigate(`vendor/${myVendor.id}`)}
               title={myVendor.name}
@@ -730,8 +730,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           <CircleAlert className="w-5 h-5" />
         </button>
         <button
-          onClick={() => onNavigate('account')}
-          title="My Account"
+          onClick={() => setShowAccountMenu(v => !v)}
+          title="Account"
+          aria-label="Open account menu"
           className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm active:scale-95 ml-1 shrink-0 hover:ring-2 hover:ring-purple-400 transition-all"
         >
           {resolvedCurrentUserAvatarUrl
@@ -739,7 +740,126 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             : displayName.charAt(0).toUpperCase()
           }
         </button>
+        <button
+          onClick={toggleDesktopNavLayout}
+          title="Switch to sidebar layout"
+          aria-label="Switch to sidebar layout"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0 ml-1"
+        >
+          <PanelLeft className="w-4 h-4" />
+        </button>
       </div>
+      ) : (
+      <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-r border-slate-700/60 dark:border-zinc-800/60 group">
+        {desktopNavItems.map(app => {
+          const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+          return (
+            <button
+              key={app.screen}
+              onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+              title={app.label}
+              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            >
+              <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
+                <app.Icon className="w-5 h-5" />
+                {badge > 0 && (
+                  <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </span>
+              <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">{app.label}</span>
+            </button>
+          );
+        })}
+
+        <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+
+        <button
+          onClick={() => setShowMoreMenu(true)}
+          title="More"
+          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+        >
+          <span className="w-16 h-12 flex items-center justify-center shrink-0">
+            <Grid3x3 className="w-5 h-5" />
+          </span>
+          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
+        </button>
+
+        {myVendor && (
+          <>
+            <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+            <button
+              onClick={() => onNavigate(`vendor/${myVendor.id}`)}
+              title={myVendor.name}
+              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            >
+              <span className="w-16 h-12 flex items-center justify-center shrink-0">
+                <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold overflow-hidden">
+                  {vendorLogoUrl
+                    ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    : myVendor.name.charAt(0).toUpperCase()
+                  }
+                </span>
+              </span>
+              <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{myVendor.name}</span>
+            </button>
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        {isAdmin && (
+          <button
+            onClick={() => onNavigate('hub-management')}
+            title="Hub Admin"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0">
+              <Shield className="w-5 h-5" />
+            </span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Hub Admin</span>
+          </button>
+        )}
+        <button
+          onClick={openProjectInfo}
+          title="About citinet"
+          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+        >
+          <span className="w-16 h-12 flex items-center justify-center shrink-0">
+            <CircleAlert className="w-5 h-5" />
+          </span>
+          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">About citinet</span>
+        </button>
+        <button
+          onClick={() => setShowAccountMenu(v => !v)}
+          title="Account"
+          aria-label="Open account menu"
+          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+        >
+          <span className="w-16 h-12 flex items-center justify-center shrink-0">
+            <span className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+              {resolvedCurrentUserAvatarUrl
+                ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : displayName.charAt(0).toUpperCase()
+              }
+            </span>
+          </span>
+          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{displayName}</span>
+        </button>
+        <button
+          onClick={toggleDesktopNavLayout}
+          title="Switch to bottom dock"
+          aria-label="Switch to bottom dock"
+          className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+        >
+          <span className="w-16 h-12 flex items-center justify-center shrink-0">
+            <PanelBottom className="w-5 h-5" />
+          </span>
+          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Bottom dock</span>
+        </button>
+      </div>
+      )}
 
       {/* Desktop Sidebar - Hidden; replaced by OS dock + launcher */}
       <aside className="hidden">
@@ -1001,50 +1121,35 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 pb-24 md:pb-16 md:pt-9 overflow-x-hidden relative z-10">
+      <div className={`flex-1 pb-24 md:pt-9 overflow-x-hidden relative z-10 ${desktopNavLayout === 'sidebar' ? 'md:pl-16' : 'md:pb-16'}`}>
         {/* Mobile Header - System strip + start menu trigger */}
         <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 sticky top-0 z-20">
           <div className="px-4 py-3 space-y-3">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowMobileStartMenu(true)}
-                className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white shadow-sm active:scale-95 transition-transform"
-                aria-label="Open menu"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Hub Desktop</p>
-                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
+              <div className="min-w-0 flex-1 flex items-center gap-2">
+                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
+                  <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80">
+              <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
                 <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
                 <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
               </div>
-
-              <button
-                onClick={() => setShowMobileStartMenu(true)}
-                className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shadow-sm active:scale-95 transition-transform"
-                aria-label="Open profile menu"
-              >
-                {resolvedCurrentUserAvatarUrl
-                  ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  : displayName.charAt(0).toUpperCase()
-                }
-              </button>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 px-3 py-2">
-              <span className="text-xs text-slate-600 dark:text-slate-300">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</span>
-              <button
-                onClick={() => setShowSupportMenu(true)}
-                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400"
-              >
-                Support
-              </button>
-            </div>
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search posts, people, files…"
+                className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 border border-transparent text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-purple-400/40 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
+              />
+            </form>
 
             {connectionStatus === 'unreachable' && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
@@ -1128,108 +1233,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div>
         </div>
 
-        {/* Desktop App Launcher - OS-style icon grid */}
-        <div className="hidden md:block border-b border-slate-800/60 dark:border-zinc-800/60 bg-slate-950/35 dark:bg-black/30 backdrop-blur-sm">
-          <div className="max-w-5xl mx-auto px-8 py-3">
-            <div
-              ref={desktopLaunchpadRef}
-              onScroll={handleDesktopLaunchpadScroll}
-              className="overflow-x-auto snap-x snap-mandatory no-scrollbar"
-              style={{ scrollbarWidth: 'none' }}
-            >
-              <div className="flex gap-3">
-                {desktopLaunchpadPages.map((page, pageIdx) => (
-                  <div
-                    key={`desktop-launchpad-page-${pageIdx}`}
-                    className={`snap-start shrink-0 w-full grid gap-1 justify-items-center content-start ${desktopLaunchpadColumns === DESKTOP_LAUNCHPAD_COLUMNS_XL ? 'grid-cols-8' : 'grid-cols-5'}`}
-                  >
-                    {page.map(app => {
-                      const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-                      const isSuggest = app.screen === 'suggest';
-                      const isVendorTile = app.screen.startsWith('vendor/');
-                      return (
-                        <button
-                          key={`${pageIdx}-${app.screen}`}
-                          onClick={() => isSuggest ? setShowRequestModal(true) : handleTileNavigate(app.screen, app.notifyFeature)}
-                          className={`w-full max-w-[92px] flex flex-col items-center gap-2 p-3 rounded-2xl transition-all group active:scale-95 cursor-pointer ${
-                            isSuggest
-                              ? 'hover:bg-indigo-500/15'
-                              : 'hover:bg-purple-500/15 dark:hover:bg-purple-400/15'
-                          }`}
-                        >
-                          <div className="relative">
-                            <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all overflow-hidden text-white font-bold text-lg`}>
-                              {(isVendorTile && vendorLogoUrl)
-                                ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                : <app.Icon className="w-6 h-6 text-white" />
-                              }
-                            </div>
-                            {badge > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 shadow-md ring-2 ring-slate-950/30">
-                                {badge > 9 ? '9+' : badge}
-                              </span>
-                            )}
-                          </div>
-                          <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-300' : isVendorTile ? 'text-purple-300' : 'text-slate-200'}`}>
-                            {app.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-            {desktopLaunchpadPages.length > 1 && (
-              <div className="flex items-center justify-center gap-3 pt-1">
-                {/* Left arrow */}
-                <button
-                  type="button"
-                  onClick={() => scrollToDesktopLaunchpadPage(desktopLaunchpadPage - 1)}
-                  disabled={desktopLaunchpadPage === 0}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 disabled:opacity-0 disabled:pointer-events-none transition-all"
-                  aria-label="Previous page"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {/* Dots */}
-                <div className="flex items-center gap-1.5">
-                  {desktopLaunchpadPages.map((_, idx) => {
-                    const active = idx === desktopLaunchpadPage;
-                    return (
-                      <button
-                        key={`desktop-launchpad-dot-${idx}`}
-                        type="button"
-                        onClick={() => scrollToDesktopLaunchpadPage(idx)}
-                        aria-label={`Go to page ${idx + 1}`}
-                        className="p-2 flex items-center justify-center"
-                      >
-                        <span className={`block h-1.5 w-1.5 rounded-full transition-all ${
-                          active
-                            ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-125'
-                            : 'bg-slate-500/70 hover:bg-slate-400'
-                        }`} />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Right arrow */}
-                <button
-                  type="button"
-                  onClick={() => scrollToDesktopLaunchpadPage(desktopLaunchpadPage + 1)}
-                  disabled={desktopLaunchpadPage === desktopLaunchpadPages.length - 1}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 disabled:opacity-0 disabled:pointer-events-none transition-all"
-                  aria-label="Next page"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
         <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8 overflow-x-hidden">
           {/* Featured Content - Curated by Admins/Mods */}
           <div className="max-w-full overflow-hidden">
@@ -1247,6 +1250,23 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             {/* Left: Recent Activity */}
             <div>
+            {/* Quick post prompt */}
+            <button
+              onClick={() => { sessionStorage.setItem('citinet-deeplink-compose', '1'); onNavigate('feed'); }}
+              className="w-full flex items-center gap-3 mb-4 rounded-2xl p-3 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md hover:shadow-md hover:-translate-y-0.5 transition-all text-left group"
+            >
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+                {resolvedCurrentUserAvatarUrl
+                  ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  : displayName.charAt(0).toUpperCase()
+                }
+              </div>
+              <span className="text-sm text-slate-300 flex-1">Share something with your neighbors…</span>
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center text-purple-300 group-hover:bg-purple-500/15 group-hover:text-purple-200 transition-colors shrink-0">
+                <Plus className="w-4 h-4" />
+              </span>
+            </button>
+
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Recent Activity</h2>
@@ -1314,7 +1334,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             {activityLoading ? (
               <div className="space-y-3">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                  <div key={i} className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 overflow-hidden">
                     <div className="p-4 space-y-2">
                       <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
                       <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
@@ -1324,7 +1344,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 ))}
               </div>
             ) : activityItems.length === 0 ? (
-              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+              <div className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 p-8 text-center text-white">
                 <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
                 <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
               </div>
@@ -1394,7 +1414,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 <span>Loading…</span>
               </div>
             ) : upcomingEvents.length === 0 ? (
-              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200 dark:border-zinc-800 p-5 text-center">
+              <div className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 p-5 text-center text-white">
                 <Calendar className="w-7 h-7 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
                 <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming events yet</p>
                 <button
@@ -1414,7 +1434,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                     <button
                       key={event.id}
                       onClick={() => setSelectedEvent(event)}
-                      className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                      className="w-full text-left relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
                     >
                       <div className="flex gap-3 items-center">
                         <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
@@ -1493,7 +1513,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       <button
                         key={initiative.id}
                         onClick={() => onNavigate(`initiatives/${initiative.id}`)}
-                        className="w-full text-left bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl p-3.5 border border-slate-200 dark:border-zinc-800 hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
+                        className="w-full text-left relative overflow-hidden rounded-2xl p-3.5 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
                       >
                         <div className={`w-12 h-12 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${!initiative.imageUrl ? `bg-gradient-to-br ${iGradient}` : ''}`}>
                           {initiative.imageUrl
@@ -1534,7 +1554,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               </div>
               <button
                 onClick={() => setShowNodeStatus(v => !v)}
-                className="text-xs font-semibold text-cyan-200 hover:text-cyan-100 transition-colors"
+                className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
               >
                 {showNodeStatus ? 'Hide' : 'Show'}
               </button>
@@ -1565,15 +1585,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
           {/* Mobile launcher — apps after community content */}
           <div className="md:hidden space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
-              <button
-                onClick={() => setShowMobileStartMenu(true)}
-                className="text-xs font-semibold text-purple-600 dark:text-purple-400"
-              >
-                Open Menu
-              </button>
-            </div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
             <div
               ref={mobileLaunchpadRef}
               onScroll={handleMobileLaunchpadScroll}
@@ -1652,15 +1664,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       {/* Mobile Bottom Dock */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
         <div className="flex items-stretch h-16 px-1">
-          <button
-            onClick={() => setShowMobileStartMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-purple-600 dark:text-purple-400 active:scale-95 transition-transform"
-          >
-            <LayoutGrid className="w-5 h-5" />
-            <span className="text-[10px] font-semibold leading-none">Start</span>
-          </button>
-
-          {dockItems.map(app => {
+          {dockItems.slice(0, 2).map(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
             return (
               <button
@@ -1680,19 +1684,61 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               </button>
             );
           })}
+
+          <button
+            onClick={() => onNavigate('discover')}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <Search className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Search</span>
+          </button>
+
+          {dockItems.slice(2).map(app => {
+            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+            return (
+              <button
+                key={app.screen}
+                onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+              >
+                <div className="relative">
+                  <app.Icon className="w-5 h-5" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium leading-none">{app.label}</span>
+              </button>
+            );
+          })}
+
+          <button
+            onClick={() => setShowMobileAccountMenu(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <div className="w-5 h-5 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-[10px]">
+              {resolvedCurrentUserAvatarUrl
+                ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : displayName.charAt(0).toUpperCase()
+              }
+            </div>
+            <span className="text-[10px] font-medium leading-none">Profile</span>
+          </button>
         </div>
       </nav>
 
-      {/* Mobile Start Menu Sheet */}
+      {/* Mobile Account Menu Sheet — mirrors the desktop Account Menu Panel, plus Hub Admin/About (no dedicated icons on mobile) */}
       <AnimatePresence>
-        {showMobileStartMenu && (
+        {showMobileAccountMenu && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm md:hidden"
-              onClick={() => setShowMobileStartMenu(false)}
+              onClick={() => setShowMobileAccountMenu(false)}
             />
             <motion.div
               initial={{ opacity: 0, y: 28 }}
@@ -1711,12 +1757,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                       }
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                        {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                      </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
                     </div>
                   </div>
                   <button
-                    onClick={() => setShowMobileStartMenu(false)}
+                    onClick={() => setShowMobileAccountMenu(false)}
                     className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
                     aria-label="Close menu"
                   >
@@ -1728,23 +1777,34 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <div className="p-3 space-y-1">
                 {currentUser?.hubUserId && (
                   <button
-                    onClick={() => { setShowMobileStartMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
+                    onClick={() => { setShowMobileAccountMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
                     <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    <span className="text-sm text-slate-800 dark:text-slate-200">My Profile</span>
+                    <span className="text-sm text-slate-800 dark:text-slate-200">View Profile</span>
                   </button>
                 )}
                 <button
-                  onClick={() => { setShowMobileStartMenu(false); onNavigate('account'); }}
+                  onClick={() => { setShowMobileAccountMenu(false); onNavigate('account'); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
                   <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">My Account</span>
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
                 </button>
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Help & Support</span>
+                </button>
+              </div>
+
+              <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+              <div className="p-3 space-y-1">
                 {isAdmin && (
                   <button
-                    onClick={() => { setShowMobileStartMenu(false); onNavigate('hub-management'); }}
+                    onClick={() => { setShowMobileAccountMenu(false); onNavigate('hub-management'); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
                     <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
@@ -1752,36 +1812,28 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   </button>
                 )}
                 <button
-                  onClick={() => { setShowMobileStartMenu(false); openProjectInfo(); }}
+                  onClick={() => { setShowMobileAccountMenu(false); openProjectInfo(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
                   <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
                 </button>
-                <button
-                  onClick={() => { setShowMobileStartMenu(false); setShowSupportMenu(true); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Support</span>
-                </button>
-                <button
-                  onClick={() => { setShowMobileStartMenu(false); onNavigate('discover'); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                >
-                  <Compass className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Find Apps & People</span>
-                </button>
-                {onLogout && (
-                  <button
-                    onClick={() => { setShowMobileStartMenu(false); onLogout(); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
-                  >
-                    <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
-                    <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
-                  </button>
-                )}
               </div>
+
+              {onLogout && (
+                <>
+                  <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+                  <div className="p-3">
+                    <button
+                      onClick={() => { setShowMobileAccountMenu(false); onLogout(); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
+                    >
+                      <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
+                      <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </motion.div>
           </>
         )}
@@ -1883,6 +1935,139 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         )}
       </AnimatePresence>
 
+      {/* About this hub modal */}
+      <AnimatePresence>
+        {showHubInfoModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => setShowHubInfoModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center shrink-0">
+                    <Hexagon className="w-5 h-5 text-purple-500 dark:text-purple-400" fill="currentColor" strokeWidth={0} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Hub</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHubInfoModal(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {currentHub?.description ? (
+                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{currentHub.description}</p>
+                ) : (
+                  <p className="text-sm italic text-slate-400 dark:text-slate-500">
+                    {isAdmin ? 'No description yet — tell your neighbors what this hub is about.' : "This hub hasn't added a description yet."}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                  {currentHub?.location && (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{currentHub.location}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{nodeStatus.activeMembers} {nodeStatus.activeMembers === 1 ? 'member' : 'members'}</span>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <button
+                    onClick={() => { setShowHubInfoModal(false); onNavigate('hub-management'); }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    {currentHub?.description ? 'Edit hub info' : 'Add a description'}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* "More" overlay — waffle-style grid of everything not already pinned in the dock/sidebar */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => setShowMoreMenu(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">More</h3>
+                <button
+                  onClick={() => setShowMoreMenu(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+
+              <div className="p-5 grid grid-cols-4 gap-3">
+                {moreNavItems.map(app => {
+                  const isSuggest = app.screen === 'suggest';
+                  return (
+                    <button
+                      key={app.screen}
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        if (isSuggest) setShowRequestModal(true);
+                        else handleTileNavigate(app.screen, app.notifyFeature);
+                      }}
+                      className={`flex flex-col items-center gap-2 p-2 rounded-2xl transition-all group active:scale-95 ${
+                        isSuggest ? 'hover:bg-indigo-500/10 dark:hover:bg-indigo-400/10' : 'hover:bg-purple-500/10 dark:hover:bg-purple-400/10'
+                      }`}
+                    >
+                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white`}>
+                        <app.Icon className="w-6 h-6" />
+                      </div>
+                      <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {app.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* ── Event Detail Modal (reuses PostDetailModal — events are posts) ── */}
       {selectedEvent && (
         <PostDetailModal
@@ -1944,12 +2129,11 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
+      className="w-full relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
     >
-      {/* Left accent bar */}
-      <div className={`w-1 shrink-0 self-stretch ${cfg.barColor} rounded-l-xl`} />
+      {/* Left accent bar removed — type is already communicated via verb text color */}
 
-      <div className="flex items-start gap-2 px-4 py-3.5 flex-1 min-w-0">
+      <div className="flex items-start gap-2 flex-1 min-w-0">
         <div className="flex-1 min-w-0 space-y-1.5">
           {/* Title leads — this is the content, make it the hero */}
           <p className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug pr-1">{item.title}</p>
@@ -1982,7 +2166,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
                 </span>
               )}
               {item.cta && (
-                <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/40 transition-colors">
+                <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-zinc-900/20 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-zinc-800 group-hover:bg-slate-100 dark:group-hover:bg-zinc-900/40 transition-colors">
                   {item.cta}
                 </span>
               )}

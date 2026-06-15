@@ -33,6 +33,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const multer = require('multer');
 const busboy = require('busboy');
+const { PassThrough } = require('stream');
 const Minio = require('minio');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
@@ -1521,29 +1522,59 @@ app.post('/api/files', authenticate, (req, res) => {
     const mimeType = info.mimeType || 'application/octet-stream';
     const fileKey = `${req.user.id}/${filename}`;
 
-    // Stream directly from the HTTP request body into MinIO — no RAM buffering.
-    // Passing undefined as size lets MinIO use chunked/streaming upload mode.
-    minioClient.putObject(STORAGE_BUCKET, fileKey, fileStream, undefined, { 'Content-Type': mimeType })
-      .then(() => minioClient.statObject(STORAGE_BUCKET, fileKey))
-      .then(async (stat) => {
-        const result = await pool.query(
-          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (file_key) DO UPDATE
-             SET size_bytes  = EXCLUDED.size_bytes,
-                 mime_type   = EXCLUDED.mime_type,
-                 is_public   = EXCLUDED.is_public,
-                 web_public  = EXCLUDED.web_public,
-                 uploaded_at = NOW()
-           RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, uploaded_at`,
-          [filename, fileKey, mimeType, stat.size, req.user.id, isPublic, false]
-        );
-        if (!res.headersSent) res.json(result.rows[0]);
-      })
-      .catch((err) => {
-        console.error('Upload error:', err);
-        if (!res.headersSent) res.status(500).json({ error: 'Upload failed' });
-      });
+    const putToStorage = (body, size) => {
+      minioClient.putObject(STORAGE_BUCKET, fileKey, body, size, { 'Content-Type': mimeType })
+        .then(() => minioClient.statObject(STORAGE_BUCKET, fileKey))
+        .then(async (stat) => {
+          const result = await pool.query(
+            `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (file_key) DO UPDATE
+               SET size_bytes  = EXCLUDED.size_bytes,
+                   mime_type   = EXCLUDED.mime_type,
+                   is_public   = EXCLUDED.is_public,
+                   web_public  = EXCLUDED.web_public,
+                   uploaded_at = NOW()
+             RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, uploaded_at`,
+            [filename, fileKey, mimeType, stat.size, req.user.id, isPublic, false]
+          );
+          if (!res.headersSent) res.json(result.rows[0]);
+        })
+        .catch((err) => {
+          console.error('Upload error:', err);
+          if (!res.headersSent) res.status(500).json({ error: 'Upload failed' });
+        });
+    };
+
+    // minio-js's unknown-size uploadStream/multipart path fails on small
+    // files ("You must specify at least one part" — completes with zero
+    // parts). Buffer up to this threshold and PUT with a known size, which
+    // avoids that path entirely. Larger files fall back to streaming
+    // directly into MinIO (the proven path for big uploads).
+    const SMALL_FILE_THRESHOLD = 16 * 1024 * 1024; // 16 MB
+    const chunks = [];
+    let buffered = 0;
+    let pass = null;
+
+    fileStream.on('data', (chunk) => {
+      if (pass) { pass.write(chunk); return; }
+      chunks.push(chunk);
+      buffered += chunk.length;
+      if (buffered > SMALL_FILE_THRESHOLD) {
+        pass = new PassThrough();
+        for (const c of chunks) pass.write(c);
+        chunks.length = 0;
+        putToStorage(pass, undefined);
+      }
+    });
+
+    fileStream.on('end', () => {
+      if (pass) {
+        pass.end();
+      } else {
+        putToStorage(Buffer.concat(chunks), buffered);
+      }
+    });
   });
 
   bb.on('finish', () => {

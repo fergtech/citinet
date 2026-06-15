@@ -436,6 +436,13 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     } catch { /* ignore */ }
   }, []);
 
+  // Deep-link: open the composer directly (e.g. "Share something" prompt on the Dashboard)
+  useEffect(() => {
+    if (!sessionStorage.getItem('citinet-deeplink-compose')) return;
+    sessionStorage.removeItem('citinet-deeplink-compose');
+    setComposing(true);
+  }, []);
+
   const load = useCallback(async (silent = false) => {
     if (!hubSlug) return;
     if (!silent) setLoading(true);

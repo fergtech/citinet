@@ -642,7 +642,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
+          <div className="flex gap-1 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1 overflow-x-auto no-scrollbar">
             {([
               { id: 'info',     icon: <Settings className="w-4 h-4" />,      label: 'Hub Info' },
               { id: 'featured', icon: <Star className="w-4 h-4" />,          label: 'Featured' },
@@ -654,7 +654,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 md:flex-1 transition-colors ${
                   activeTab === tab.id
                     ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
