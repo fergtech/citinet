@@ -115,6 +115,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [showSupportMenu, setShowSupportMenu] = useState(false);
   const [showHubInfoModal, setShowHubInfoModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  // Mobile "Apps" overlay — quick access to everything not in the bottom dock (mirrors desktop's "More" waffle)
+  const [showMobileAppsMenu, setShowMobileAppsMenu] = useState(false);
 
   // Dashboard search — submits to Discover with the query pre-filled
   const [searchQuery, setSearchQuery] = useState('');
@@ -410,6 +412,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
     : visibleTiles;
 
+  // Excludes DOCK_PRIORITY_SCREENS — those already live in the fixed bottom
+  // dock, so showing them again here would duplicate the nav (mirrors how
+  // desktop's "More" overlay excludes its own pinned sidebar/dock items).
   const mobileLaunchpadItems: typeof APP_TILES = [
     ...mobileLauncherTiles,
     {
@@ -418,7 +423,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       screen: 'suggest',
       gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600',
     },
-  ];
+  ].filter(app => !DOCK_PRIORITY_SCREENS.includes(app.screen));
 
   const mobileLaunchpadPages: typeof mobileLaunchpadItems[] = [];
   for (let i = 0; i < mobileLaunchpadItems.length; i += MOBILE_LAUNCHPAD_PAGE_SIZE) {
@@ -1125,18 +1130,17 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         {/* Mobile Header - System strip + start menu trigger */}
         <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 sticky top-0 z-20">
           <div className="px-4 py-3 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="min-w-0 flex-1 flex items-center gap-2">
-                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
-                <div className="min-w-0">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
-                  <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
+                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
+                  <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+                  <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
                 </div>
               </div>
-
-              <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
-                <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-                <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
               </div>
             </div>
 
@@ -1715,6 +1719,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           })}
 
           <button
+            onClick={() => setShowMobileAppsMenu(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <Grid3x3 className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Apps</span>
+          </button>
+
+          <button
             onClick={() => setShowMobileAccountMenu(true)}
             className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
           >
@@ -2009,16 +2021,16 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         )}
       </AnimatePresence>
 
-      {/* "More" overlay — waffle-style grid of everything not already pinned in the dock/sidebar */}
+      {/* "More"/"Apps" overlay — waffle-style grid of everything not already pinned in the dock/sidebar */}
       <AnimatePresence>
-        {showMoreMenu && (
+        {(showMoreMenu || showMobileAppsMenu) && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
-              onClick={() => setShowMoreMenu(false)}
+              onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
             />
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -2028,9 +2040,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
             >
               <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">More</h3>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">{showMobileAppsMenu ? 'Apps' : 'More'}</h3>
                 <button
-                  onClick={() => setShowMoreMenu(false)}
+                  onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
                   className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
                   aria-label="Close"
                 >
@@ -2038,14 +2050,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 </button>
               </div>
 
-              <div className="p-5 grid grid-cols-4 gap-3">
-                {moreNavItems.map(app => {
+              <div className="p-5 grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto no-scrollbar">
+                {(showMobileAppsMenu ? mobileLaunchpadItems : moreNavItems).map(app => {
                   const isSuggest = app.screen === 'suggest';
                   return (
                     <button
                       key={app.screen}
                       onClick={() => {
                         setShowMoreMenu(false);
+                        setShowMobileAppsMenu(false);
                         if (isSuggest) setShowRequestModal(true);
                         else handleTileNavigate(app.screen, app.notifyFeature);
                       }}
@@ -2053,8 +2066,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         isSuggest ? 'hover:bg-indigo-500/10 dark:hover:bg-indigo-400/10' : 'hover:bg-purple-500/10 dark:hover:bg-purple-400/10'
                       }`}
                     >
-                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white`}>
-                        <app.Icon className="w-6 h-6" />
+                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white overflow-hidden`}>
+                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
+                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          : <app.Icon className="w-6 h-6" />
+                        }
                       </div>
                       <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
                         {app.label}
