@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DotGrid } from './DotGrid';
 import {
   Search, Send, Users, Loader2, AlertCircle,
@@ -9,10 +9,12 @@ import { SupportLauncher } from './SupportLauncher';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
+import { notificationsService } from '../services/notificationsService';
 import type { HubConversation, HubMessage, HubMember } from '../types/hub';
 
 interface MessagesScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
 /** Staged file before sending */
@@ -46,6 +48,25 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+/** Same hash as getAvatarColor so the name label always matches the avatar tint. */
+function getSenderNameColor(name: string): string {
+  const colors = [
+    'text-purple-500 dark:text-purple-400',
+    'text-blue-500 dark:text-blue-400',
+    'text-emerald-500 dark:text-emerald-400',
+    'text-orange-500 dark:text-orange-400',
+    'text-pink-500 dark:text-pink-400',
+    'text-violet-500 dark:text-violet-400',
+    'text-sky-500 dark:text-sky-400',
+    'text-lime-600 dark:text-lime-400',
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 function formatTimestamp(iso?: string): string {
   if (!iso) return '';
   try {
@@ -65,7 +86,32 @@ function formatTimestamp(iso?: string): string {
 
 function formatMessageTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const d = new Date(iso);
+    const now = new Date();
+    const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return timeStr;
+    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return `Yesterday · ${timeStr}`;
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+    if (diffDays < 7) return `${d.toLocaleDateString(undefined, { weekday: 'short' })} · ${timeStr}`;
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${timeStr}`;
+  } catch {
+    return '';
+  }
+}
+
+function formatDateSeparator(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+    if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
+    const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+    if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString(undefined, opts);
   } catch {
     return '';
   }
@@ -221,7 +267,7 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
 
 // ── component ────────────────────────────────────────────
 
-export function MessagesScreen({ onBack }: MessagesScreenProps) {
+export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug || '';
   const myUserId = currentUser?.hubUserId || '';
@@ -246,6 +292,9 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   const [groupName, setGroupName] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // Conversation IDs that have unread notifications — drives the purple dot per row
+  const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -292,6 +341,29 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Fetch unread conversation IDs for per-conversation dot indicators.
+  // Runs on mount so dots appear whether the user tapped the badge or navigated directly.
+  useEffect(() => {
+    if (!slug) return;
+    notificationsService.getUnread(slug).then(notifications => {
+      const convIds = notifications
+        .filter(n => n.type === 'message' && n.ref_id)
+        .map(n => n.ref_id!);
+      setUnreadConvIds(new Set(convIds));
+    }).catch(() => {});
+  }, [slug]);
+
+  // Deep-link: auto-select a specific conversation when arriving from a notification badge tap.
+  useEffect(() => {
+    const convId = sessionStorage.getItem('citinet-deeplink-message-conv');
+    if (!convId || conversations.length === 0 || selectedId) return;
+    sessionStorage.removeItem('citinet-deeplink-message-conv');
+    setSelectedId(convId);
+    // Mark this conversation read immediately — don't wait for getUnread to resolve
+    notificationsService.markReadByRef(slug, convId).catch(() => {});
+    setUnreadConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
+  }, [conversations, selectedId, slug]);
 
   // Poll conversations
   useEffect(() => {
@@ -341,6 +413,15 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // ── select conversation + per-conversation read marking ──
+  const handleSelectConversation = (convId: string) => {
+    setSelectedId(convId);
+    if (unreadConvIds.has(convId)) {
+      setUnreadConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
+      notificationsService.markReadByRef(slug, convId).catch(() => {});
+    }
+  };
 
   // ── send message ──────────────────────────────────────
   const handleSend = async () => {
@@ -801,6 +882,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                 const displayName = convoDisplayName(convo, myUserId);
                 const avatarUserId = convoAvatarUserId(convo, myUserId);
                 const preview = convo.lastMessage?.body;
+                const isUnread = unreadConvIds.has(convo.id);
                 return (
                   <motion.button
                     key={convo.id}
@@ -808,7 +890,7 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    onClick={() => setSelectedId(convo.id)}
+                    onClick={() => handleSelectConversation(convo.id)}
                     className={`w-full p-3.5 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 ${
                       selectedId === convo.id
                         ? 'bg-purple-50 dark:bg-purple-900/20'
@@ -825,12 +907,15 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                         radiusClass="rounded-xl"
                         textClass=""
                       />
+                      {isUnread && (
+                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-purple-500 ring-2 ring-white dark:ring-zinc-900" />
+                      )}
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0 text-left">
                       <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                        <h3 className="font-semibold text-[15px] text-slate-900 dark:text-white truncate">
+                        <h3 className={`font-semibold text-[15px] truncate ${isUnread ? 'text-purple-700 dark:text-purple-300' : 'text-slate-900 dark:text-white'}`}>
                           {displayName}
                         </h3>
                         <span className="text-[11px] text-slate-400 dark:text-slate-500 flex-shrink-0 font-medium">
@@ -939,18 +1024,63 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                 <p className="text-sm text-slate-500 dark:text-slate-400">No messages yet — say hello!</p>
               </div>
             ) : (
-              [...messages]
-                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                .map((msg) => {
+              (() => {
+                const sorted = [...messages].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                let lastDate = '';
+                return sorted.map((msg) => {
                   const isMe = msg.sender_id === myUserId;
+                  const msgDate = new Date(msg.created_at).toDateString();
+                  const showSeparator = msgDate !== lastDate;
+                  lastDate = msgDate;
                   return (
-                    <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                      <div className="max-w-[75%] md:max-w-[60%]">
-                        {/* Sender name in groups */}
+                    <React.Fragment key={msg.id}>
+                      {showSeparator && (
+                        <div className="flex items-center gap-3 my-1 select-none">
+                          <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+                          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 px-1">
+                            {formatDateSeparator(msg.created_at)}
+                          </span>
+                          <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+                        </div>
+                      )}
+                    <div className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      {/* Avatar for all non-me messages — clickable → profile */}
+                      {!isMe && (
+                        <button
+                          className="flex-shrink-0 self-end rounded-lg hover:opacity-80 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          onClick={() => {
+                            if (!msg.sender_id || !onNavigate) return;
+                            // Persist the open conversation so returning from profile restores it
+                            if (selectedId) sessionStorage.setItem('citinet-deeplink-message-conv', selectedId);
+                            onNavigate(`profile/${msg.sender_id}`);
+                          }}
+                          title={`View ${msg.sender_username ?? 'profile'}`}
+                          disabled={!msg.sender_id || !onNavigate}
+                        >
+                          <AvatarBadge
+                            slug={slug}
+                            userId={msg.sender_id}
+                            name={msg.sender_username || '?'}
+                            sizeClass="w-7 h-7"
+                            radiusClass="rounded-lg"
+                            textClass="text-[10px]"
+                          />
+                        </button>
+                      )}
+                      <div className="max-w-[72%] md:max-w-[58%]">
+                        {/* Colored sender name in group chats — clickable → profile */}
                         {!isMe && selectedConvo.kind === 'group' && msg.sender_username && (
-                          <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-0.5 ml-1">
-                            {msg.sender_username}
-                          </p>
+                          <button
+                            className="text-[11px] font-semibold mb-0.5 ml-1 hover:underline focus:outline-none"
+                            onClick={() => {
+                              if (!msg.sender_id || !onNavigate) return;
+                              if (selectedId) sessionStorage.setItem('citinet-deeplink-message-conv', selectedId);
+                              onNavigate(`profile/${msg.sender_id}`);
+                            }}
+                            disabled={!msg.sender_id || !onNavigate}
+                          >
+                            <span className={getSenderNameColor(msg.sender_username)}>{msg.sender_username}</span>
+                          </button>
                         )}
                         <div
                           className={`rounded-2xl px-4 py-2.5 ${
@@ -978,7 +1108,6 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                                     />
                                   );
                                 }
-                                // Other files
                                 return (
                                   <div key={att.id} className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2 py-1 border border-slate-200 dark:border-zinc-700">
                                     <FileIcon className="w-4 h-4 text-slate-400" />
@@ -1001,8 +1130,10 @@ export function MessagesScreen({ onBack }: MessagesScreenProps) {
                         </p>
                       </div>
                     </div>
+                    </React.Fragment>
                   );
-                })
+                });
+              })()
             )}
             <div ref={messagesEndRef} />
           </div>

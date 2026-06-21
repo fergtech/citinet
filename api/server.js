@@ -1520,7 +1520,7 @@ app.post('/api/files', authenticate, (req, res) => {
     fileHandled = true;
     const filename = info.filename || 'upload';
     const mimeType = info.mimeType || 'application/octet-stream';
-    const fileKey = `${req.user.id}/${filename}`;
+    const fileKey = `${req.user.id}/${crypto.randomUUID()}`;
 
     const putToStorage = (body, size) => {
       minioClient.putObject(STORAGE_BUCKET, fileKey, body, size, { 'Content-Type': mimeType })
@@ -1818,6 +1818,25 @@ app.get('/api/notifications/counts', authenticate, async (req, res) => {
   }
 });
 
+// List individual unread notifications (used for deep-linking on badge tap)
+app.get('/api/notifications/unread', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT n.id, n.type, n.actor_id, n.ref_id, n.created_at,
+              u.username AS actor_username
+       FROM hub_notifications n
+       LEFT JOIN hub_users u ON u.id = n.actor_id
+       WHERE n.user_id = $1 AND n.read = false
+       ORDER BY n.created_at DESC
+       LIMIT 50`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
 // Mark all notifications for a feature as read
 app.post('/api/notifications/mark-read', authenticate, async (req, res) => {
   const { feature } = req.body || {};
@@ -1832,6 +1851,22 @@ app.post('/api/notifications/mark-read', authenticate, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to mark notifications read' });
+  }
+});
+
+// Mark notifications for a specific conversation or post as read
+app.post('/api/notifications/mark-read-by-ref', authenticate, async (req, res) => {
+  const { ref_id } = req.body || {};
+  if (!ref_id) return res.status(400).json({ error: 'ref_id required' });
+  try {
+    await pool.query(
+      `UPDATE hub_notifications SET read = true
+       WHERE user_id = $1 AND ref_id = $2 AND read = false`,
+      [req.user.id, String(ref_id)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark notification read' });
   }
 });
 

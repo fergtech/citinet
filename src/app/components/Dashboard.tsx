@@ -88,10 +88,24 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const { items: activityItems, loading: activityLoading, refresh: refreshActivity } = useActivityFeed(hubSlug);
   const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
 
-  function handleTileNavigate(screen: string, notifyFeature?: NotificationFeature) {
+  async function handleTileNavigate(screen: string, notifyFeature?: NotificationFeature) {
     if (notifyFeature && notifCounts[notifyFeature] > 0) {
-      clearBadge(notifyFeature);
-      notificationsService.markRead(hubSlug, notifyFeature).catch(() => {});
+      try {
+        const unread = await notificationsService.getUnread(hubSlug);
+        if (screen === 'messages') {
+          // Deep-link to the most recent unread conversation.
+          // Don't mark all read here — MessagesScreen marks per-conversation
+          // as each one is opened, so the badge decrements as you read them.
+          const msgNotifs = unread.filter(n => n.type === 'message' && n.ref_id);
+          if (msgNotifs[0]?.ref_id) sessionStorage.setItem('citinet-deeplink-message-conv', msgNotifs[0].ref_id);
+        } else if (screen === 'feed') {
+          // Feed is linear — mark all read immediately and deeplink to the triggering post.
+          const hit = unread.find(n => n.type === 'reply' && n.ref_id);
+          if (hit?.ref_id) sessionStorage.setItem('citinet-deeplink-feed-post', hit.ref_id);
+          clearBadge('feed');
+          notificationsService.markRead(hubSlug, 'feed').catch(() => {});
+        }
+      } catch { /* navigation still proceeds even if fetch fails */ }
     }
     onNavigate(screen);
   }
@@ -400,8 +414,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
 
   // Desktop dock/sidebar — primary navigation icons, shared between both layouts
   const desktopNavItems = [
-    { Icon: MessageCircle, label: 'Feed',      screen: 'feed' },
-    { Icon: MessageSquare, label: 'Messages',  screen: 'messages', notifyFeature: 'messages' as const },
+    { Icon: MessageCircle, label: 'Feed',      screen: 'feed',      notifyFeature: 'feed'     as const },
+    { Icon: MessageSquare, label: 'Messages',  screen: 'messages',  notifyFeature: 'messages' as const },
     { Icon: Map,           label: 'Atlas',     screen: 'atlas' },
     { Icon: Store,         label: 'Exchange',  screen: 'marketplace' },
     { Icon: Users,         label: 'Neighbors', screen: 'neighbors' },

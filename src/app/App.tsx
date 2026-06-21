@@ -231,7 +231,7 @@ function HubFilesRoute() {
 
 function HubMessagesRoute() {
   const navigate = useNavigate();
-  return <MessagesScreen onBack={() => navigate(-1)} />;
+  return <MessagesScreen onBack={() => navigate(-1)} onNavigate={(screen) => navigate(`/${screen}`)} />;
 }
 
 function HubNetworkRoute() {
@@ -402,9 +402,12 @@ function HubGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return;
     if (currentHub) {
-      // Hub is known — check if the session is still valid (auth token present).
-      // currentUser is cleared by HubContext on session-expired events (401 responses).
-      if (currentUser === null && hubSlug && hubService.getHubConnection(hubSlug)) {
+      // Hub is known — check if the session is still valid.
+      // currentUser is null after a session-expired event (401 response).
+      // currentUser.authToken may also be missing when the periodic health check
+      // re-populates currentUser from localStorage after the token was cleared.
+      const sessionExpired = currentUser === null || !currentUser.authToken;
+      if (sessionExpired && hubSlug && hubService.getHubConnection(hubSlug)) {
         navigate('/onboard', { replace: true });
       }
       return;

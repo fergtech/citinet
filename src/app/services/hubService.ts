@@ -525,10 +525,10 @@ class HubService {
     return this.getHubConnection(slug);
   }
 
-  /** Check if user has completed registration for a hub */
+  /** Check if user has completed registration for a hub and has a valid session token. */
   isOnboarded(hubSlug: string): boolean {
     const connection = this.getHubConnection(hubSlug);
-    return !!(connection?.user?.username);
+    return !!(connection?.user?.username && connection?.user?.authToken);
   }
 
   /** Get list of all hubs the user has joined */
@@ -1246,6 +1246,7 @@ class HubService {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+    if (!connection.user?.authToken) throw new Error('Session expired — please log in again.');
 
     let uploadFile = file;
 

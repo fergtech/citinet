@@ -6,6 +6,7 @@ import { Plus, Loader2, AlertCircle, RefreshCw, X, Image, Film, Search, ChevronD
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
+import { notificationsService } from '../services/notificationsService';
 import type { HubPost } from '../types/hub';
 
 interface FeedProps {
@@ -421,6 +422,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const touchStartY = useRef(0);
   const scrollDir = useRef<1 | -1>(1);
 
+  // Mark feed notifications read whenever this screen is open (covers direct navigation, not just badge tap)
+  useEffect(() => {
+    if (hubSlug) notificationsService.markRead(hubSlug, 'feed').catch(() => {});
+  }, [hubSlug]);
+
   // Deep-link: open compose with pre-filled welcome message
   useEffect(() => {
     const raw = sessionStorage.getItem('citinet-deeplink-welcome');
@@ -442,6 +448,21 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     sessionStorage.removeItem('citinet-deeplink-compose');
     setComposing(true);
   }, []);
+
+  // Deep-link: open a specific post when arriving from a reply notification badge tap.
+  useEffect(() => {
+    const postId = sessionStorage.getItem('citinet-deeplink-feed-post');
+    if (!postId || selectedPost) return;
+    sessionStorage.removeItem('citinet-deeplink-feed-post');
+    // Check if the post is already in the loaded list
+    const found = posts.find(p => p.id === postId);
+    if (found) {
+      setSelectedPost(found);
+    } else if (!loading && hubSlug) {
+      // Post may not be in the visible page — fetch it directly
+      hubService.getPost(hubSlug, postId).then(setSelectedPost).catch(() => {});
+    }
+  }, [posts, loading, hubSlug, selectedPost]);
 
   const load = useCallback(async (silent = false) => {
     if (!hubSlug) return;
