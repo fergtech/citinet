@@ -666,7 +666,7 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
 
   return (
     // h-screen + overflow-hidden = viewport-locked; each panel scrolls independently
-    <div className="h-screen overflow-hidden bg-white dark:bg-zinc-950 flex">
+    <div className="h-[100dvh] overflow-hidden bg-white dark:bg-zinc-950 flex">
 
       {/* ── List Panel (fixed-height sidebar) ─────────────────────────────── */}
       <div className={`
@@ -801,7 +801,10 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
         </div>
 
         {/* Archive toggle + Support — fixed at bottom */}
-        <div className="flex-shrink-0 border-t border-slate-100 dark:border-zinc-800/60 px-3 py-2">
+        <div
+          className="flex-shrink-0 border-t border-slate-100 dark:border-zinc-800/60 px-3"
+          style={{ paddingTop: '0.5rem', paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+        >
           {showArchive ? (
             <button
               onClick={() => switchView(false)}

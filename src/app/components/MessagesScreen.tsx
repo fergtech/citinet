@@ -642,7 +642,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // ── render: loading ───────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+      <div className="h-[100dvh] bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
           <p className="text-sm text-slate-600 dark:text-slate-400">Loading conversations…</p>
@@ -655,7 +655,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   if (error) {
     const isOffline = error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out');
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
+      <div className="h-[100dvh] bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
           {isOffline ? (
@@ -680,7 +680,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   }
 
   return (
-    <div className="h-screen bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
+    <div className="h-[100dvh] bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
       <DotGrid />
 
       {/* ── Lightbox Overlay ── */}
@@ -949,7 +949,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
         </div>
 
         {/* Support — sticky to sidebar bottom */}
-        <div className="shrink-0 px-3 py-2 border-t border-slate-200/50 dark:border-zinc-800/50">
+        <div
+          className="shrink-0 px-3 border-t border-slate-200/50 dark:border-zinc-800/50"
+          style={{ paddingTop: '0.5rem', paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+        >
           <SupportLauncher variant="sidebar" />
         </div>
       </aside>
@@ -1139,7 +1142,15 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           </div>
 
           {/* Input Area */}
-          <div className="p-4 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-t border-slate-200/50 dark:border-zinc-800/50">
+          <div
+            className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-t border-slate-200/50 dark:border-zinc-800/50"
+            style={{
+              paddingTop: '1rem',
+              paddingLeft: '1rem',
+              paddingRight: '1rem',
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+            }}
+          >
             <div
               className={`flex items-end gap-3 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
               onDragOver={handleDragOver}
