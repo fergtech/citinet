@@ -51,6 +51,10 @@ export default defineConfig({
 
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Default cap is 2 MiB — the main JS chunk has grown past that.
+        // Revisit by code-splitting (manualChunks / dynamic import) rather
+        // than raising this indefinitely.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
 
         runtimeCaching: [
           {
