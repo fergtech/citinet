@@ -882,13 +882,6 @@ app.get('/api/health/detailed', async (_req, res) => {
     services.minio = 'unreachable';
   }
 
-  try {
-    await redisClient.ping();
-    services.redis = 'ok';
-  } catch (err) {
-    services.redis = 'unreachable';
-  }
-
   const allOk = Object.values(services).every((s) => s === 'ok');
 
   res.status(allOk ? 200 : 503).json({
