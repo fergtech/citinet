@@ -164,7 +164,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
   };
 
   return (
-    <div className="h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="h-full bg-slate-50 dark:bg-zinc-950 flex flex-col overflow-hidden">
       <DotGrid />
       {/* Header */}
       <header className="bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800 shrink-0 z-10">

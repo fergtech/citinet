@@ -23,7 +23,7 @@ import { aiService } from '../services/aiService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor } from '../types/hub';
 
-const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
+export const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
   { Icon: Layers,        label: 'Spaces',      screen: 'spaces',      gradient: 'bg-gradient-to-br from-purple-500 to-violet-600' },
   { Icon: MessageCircle, label: 'Feed',        screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
@@ -43,7 +43,7 @@ const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradi
 // Priority-ordered screen IDs for the mobile bottom dock.
 // Derived from visibleTiles so icons, labels, badges, and feature-gating
 // all stay in sync with the launchpad automatically.
-const DOCK_PRIORITY_SCREENS = ['feed', 'atlas', 'messages'];
+export const DOCK_PRIORITY_SCREENS = ['messages', 'feed', 'atlas'];
 
 // Apps enabled on a fresh hub with no admin configuration yet.
 // null enabledApps on the Hub object means "all apps" (backward compat).

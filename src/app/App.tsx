@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
-import { SupportLauncher } from './components/SupportLauncher';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
@@ -35,6 +34,7 @@ import { ShareSpacePage } from './components/ShareSpacePage';
 import { ShareVendorPage } from './components/ShareVendorPage';
 import { PublicProfilePage } from './components/PublicProfilePage';
 import { HubBackground } from './components/HubBackground';
+import { HubLayout } from './components/HubLayout';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
@@ -422,20 +422,6 @@ function HubGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function HubSupportFooter() {
-  const { pathname } = useLocation();
-  // Sidebar screens embed their own support button; dashboard has no need for one
-  const skip = pathname === '/' || pathname.startsWith('/messages') || pathname.startsWith('/notes') || pathname.startsWith('/assistant');
-  if (skip) return null;
-  return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-      <div className="pointer-events-auto">
-        <SupportLauncher variant="pill" align="center" />
-      </div>
-    </div>
-  );
-}
-
 // ──────────────────────────────────────────────
 // Route Trees
 // ──────────────────────────────────────────────
@@ -463,35 +449,37 @@ function HubModeRoutes() {
     <HubBackground />
     <Routes>
       <Route path="/onboard" element={<HubGuard><HubOnboardRoute /></HubGuard>} />
+      {/* Dashboard manages its own chrome */}
       <Route path="/" element={<HubGuard><HubDashboardRoute /></HubGuard>} />
-      <Route path="/feed" element={<HubGuard><HubFeedRoute /></HubGuard>} />
-      <Route path="/neighbors" element={<HubGuard><HubNeighborsRoute /></HubGuard>} />
-      <Route path="/files" element={<HubGuard><HubFilesRoute /></HubGuard>} />
-      <Route path="/messages" element={<HubGuard><HubMessagesRoute /></HubGuard>} />
-      <Route path="/network" element={<HubGuard><HubNetworkRoute /></HubGuard>} />
-      <Route path="/marketplace" element={<HubGuard><HubMarketplaceRoute /></HubGuard>} />
-      <Route path="/vendor/:vendorId" element={<HubGuard><HubVendorProfileRoute /></HubGuard>} />
-      <Route path="/toolkit" element={<HubGuard><HubToolkitRoute /></HubGuard>} />
-      <Route path="/toolkit/my-submissions" element={<HubGuard><HubMySubmissionsRoute /></HubGuard>} />
-      <Route path="/toolkit/moderation" element={<HubGuard><HubModerationQueueRoute /></HubGuard>} />
-      <Route path="/atlas" element={<HubGuard><HubAtlasRoute /></HubGuard>} />
-      <Route path="/initiatives/*" element={<HubGuard><HubInitiativesRoute /></HubGuard>} />
-      <Route path="/settings" element={<HubGuard><HubPlaceholderRoute screen="settings" /></HubGuard>} />
-      <Route path="/post" element={<HubGuard><HubPlaceholderRoute screen="post" /></HubGuard>} />
-      <Route path="/chat" element={<HubGuard><HubPlaceholderRoute screen="chat" /></HubGuard>} />
-      <Route path="/signal" element={<HubGuard><HubPlaceholderRoute screen="signal" /></HubGuard>} />
-      <Route path="/become-sponsor" element={<HubGuard><HubPlaceholderRoute screen="become-sponsor" /></HubGuard>} />
-      <Route path="/account" element={<HubGuard><HubAccountRoute /></HubGuard>} />
-      <Route path="/profile/:userId" element={<HubGuard><HubProfileRoute /></HubGuard>} />
-      <Route path="/hub-management" element={<HubGuard><HubManagementRoute /></HubGuard>} />
-      <Route path="/discover" element={<HubGuard><HubDiscoverRoute /></HubGuard>} />
-      <Route path="/polls" element={<HubGuard><HubPollsRoute /></HubGuard>} />
-      <Route path="/mod-log" element={<HubGuard><HubModLogRoute /></HubGuard>} />
-      <Route path="/spaces" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
-      <Route path="/spaces/:spaceSlug" element={<HubGuard><HubSpacesRoute /></HubGuard>} />
-      <Route path="/notes" element={<HubGuard><HubNotesRoute /></HubGuard>} />
-      <Route path="/notes/:noteId" element={<HubGuard><HubNotesRoute /></HubGuard>} />
-      <Route path="/assistant" element={<HubGuard><HubAssistantRoute /></HubGuard>} />
+      {/* All other hub routes get persistent navigation via HubLayout */}
+      <Route path="/feed" element={<HubGuard><HubLayout><HubFeedRoute /></HubLayout></HubGuard>} />
+      <Route path="/neighbors" element={<HubGuard><HubLayout><HubNeighborsRoute /></HubLayout></HubGuard>} />
+      <Route path="/files" element={<HubGuard><HubLayout><HubFilesRoute /></HubLayout></HubGuard>} />
+      <Route path="/messages" element={<HubGuard><HubLayout><HubMessagesRoute /></HubLayout></HubGuard>} />
+      <Route path="/network" element={<HubGuard><HubLayout><HubNetworkRoute /></HubLayout></HubGuard>} />
+      <Route path="/marketplace" element={<HubGuard><HubLayout><HubMarketplaceRoute /></HubLayout></HubGuard>} />
+      <Route path="/vendor/:vendorId" element={<HubGuard><HubLayout><HubVendorProfileRoute /></HubLayout></HubGuard>} />
+      <Route path="/toolkit" element={<HubGuard><HubLayout><HubToolkitRoute /></HubLayout></HubGuard>} />
+      <Route path="/toolkit/my-submissions" element={<HubGuard><HubLayout><HubMySubmissionsRoute /></HubLayout></HubGuard>} />
+      <Route path="/toolkit/moderation" element={<HubGuard><HubLayout><HubModerationQueueRoute /></HubLayout></HubGuard>} />
+      <Route path="/atlas" element={<HubGuard><HubLayout><HubAtlasRoute /></HubLayout></HubGuard>} />
+      <Route path="/initiatives/*" element={<HubGuard><HubLayout><HubInitiativesRoute /></HubLayout></HubGuard>} />
+      <Route path="/settings" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="settings" /></HubLayout></HubGuard>} />
+      <Route path="/post" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="post" /></HubLayout></HubGuard>} />
+      <Route path="/chat" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="chat" /></HubLayout></HubGuard>} />
+      <Route path="/signal" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="signal" /></HubLayout></HubGuard>} />
+      <Route path="/become-sponsor" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="become-sponsor" /></HubLayout></HubGuard>} />
+      <Route path="/account" element={<HubGuard><HubLayout><HubAccountRoute /></HubLayout></HubGuard>} />
+      <Route path="/profile/:userId" element={<HubGuard><HubLayout><HubProfileRoute /></HubLayout></HubGuard>} />
+      <Route path="/hub-management" element={<HubGuard><HubLayout><HubManagementRoute /></HubLayout></HubGuard>} />
+      <Route path="/discover" element={<HubGuard><HubLayout><HubDiscoverRoute /></HubLayout></HubGuard>} />
+      <Route path="/polls" element={<HubGuard><HubLayout><HubPollsRoute /></HubLayout></HubGuard>} />
+      <Route path="/mod-log" element={<HubGuard><HubLayout><HubModLogRoute /></HubLayout></HubGuard>} />
+      <Route path="/spaces" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
+      <Route path="/spaces/:spaceSlug" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
+      <Route path="/notes" element={<HubGuard><HubLayout><HubNotesRoute /></HubLayout></HubGuard>} />
+      <Route path="/notes/:noteId" element={<HubGuard><HubLayout><HubNotesRoute /></HubLayout></HubGuard>} />
+      <Route path="/assistant" element={<HubGuard><HubLayout><HubAssistantRoute /></HubLayout></HubGuard>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
@@ -531,7 +519,6 @@ function AppInner() {
   return (
     <div className="w-full">
       {subdomain ? <HubModeRoutes /> : <OnboardingModeRoutes />}
-      {subdomain ? <HubSupportFooter /> : null}
     </div>
   );
 }

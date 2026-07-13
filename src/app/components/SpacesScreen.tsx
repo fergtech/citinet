@@ -152,7 +152,7 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
         className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
           <h2 className="text-base font-semibold text-white">Create a Space</h2>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center">
+          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center">
             <X className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
@@ -234,7 +234,7 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
         className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
           <h2 className="text-base font-semibold text-white">Invite Members</h2>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center"><X className="w-4 h-4 text-zinc-400" /></button>
+          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center"><X className="w-4 h-4 text-zinc-400" /></button>
         </div>
         <div className="p-4">
           <div className="relative mb-3">
@@ -325,7 +325,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
       {mediaPreview && (
         <div className="relative rounded-xl overflow-hidden">
           {isVid ? <video src={mediaPreview} controls className="w-full max-h-48 object-contain bg-black" /> : <img src={mediaPreview} alt="Preview" className="w-full max-h-48 object-cover" />}
-          <button type="button" onClick={removeMedia} className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X className="w-3.5 h-3.5" /></button>
+          <button type="button" onClick={removeMedia} title="Remove media" aria-label="Remove media" className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
@@ -777,6 +777,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               <div className="flex flex-wrap gap-2">
                 {BANNER_SOLID_COLORS.map(color => (
                   <button key={color} type="button" onClick={() => saveBannerStyle({ banner_mode: 'solid', banner_color: color })}
+                    title={`Select color ${color}`} aria-label={`Select color ${color}`}
                     className="w-7 h-7 rounded-full border-2 border-zinc-600 hover:scale-110 transition-transform"
                     style={{ backgroundColor: color }} />
                 ))}
@@ -787,6 +788,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               <div className="flex flex-wrap gap-2">
                 {BANNER_GRADIENTS.map((g, i) => (
                   <button key={i} type="button" onClick={() => saveBannerStyle({ banner_mode: 'gradient', banner_gradient_from: g.from, banner_gradient_to: g.to })}
+                    title={`Select gradient ${g.from} to ${g.to}`} aria-label={`Select gradient ${g.from} to ${g.to}`}
                     className="w-14 h-7 rounded-full border-2 border-zinc-600 hover:scale-105 transition-transform"
                     style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }} />
                 ))}
@@ -924,10 +926,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         {isActive && tab === 'members' && (
           <div className="p-5 max-w-2xl">
             {isAdmin && (
-              <button onClick={() => setShowInvite(true)}
-                className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-purple-600 text-sm text-zinc-400 hover:text-purple-400 transition-colors">
-                <UserPlus className="w-4 h-4" /> Invite hub members
-              </button>
+              <button onClick={() => setShowInvite(true)} title="Invite members" aria-label="Invite members"
+                  className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-purple-600 text-sm text-zinc-400 hover:text-purple-400 transition-colors">
+                  <UserPlus className="w-4 h-4" /> Invite hub members
+                </button>
             )}
             {membersLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
             {members.filter(m => m.status === 'pending').length > 0 && (
@@ -940,7 +942,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       <p className="text-sm font-medium text-white truncate">{m.display_name || m.username}</p>
                       <p className="text-xs text-zinc-500">@{m.username}</p>
                     </div>
-                    {isAdmin && <button onClick={() => handleApproveMember(m.user_id)} className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-medium text-white flex items-center gap-1"><Check className="w-3 h-3" /> Approve</button>}
+                    {isAdmin && <button onClick={() => handleApproveMember(m.user_id)} title="Approve member" aria-label={`Approve ${m.display_name || m.username}`} className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-medium text-white flex items-center gap-1"><Check className="w-3 h-3" /> Approve</button>}
                   </div>
                 ))}
               </div>
@@ -956,7 +958,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       <p className="text-xs text-zinc-500 capitalize">{m.role}</p>
                     </div>
                     {isAdmin && m.user_id !== myUserId && m.role !== 'owner' && (
-                      <button onClick={() => handleRemoveMember(m.user_id)} className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-500 hover:text-red-400 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => handleRemoveMember(m.user_id)} title={`Remove ${m.display_name || m.username}`} aria-label={`Remove ${m.display_name || m.username}`} className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-500 hover:text-red-400 transition-colors"><X className="w-3.5 h-3.5" /></button>
                     )}
                   </div>
                 ))}
@@ -1169,13 +1171,13 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const pendingInvites = allSpaces.filter(s => s.my_status === 'invited');
 
   return (
-    <div className="flex h-screen bg-zinc-950 overflow-hidden">
+    <div className="flex h-full bg-zinc-950 overflow-hidden">
       {/* Left panel */}
       <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 border-r border-zinc-800 flex-shrink-0`}>
         <div className="flex items-center gap-3 px-4 py-4 border-b border-zinc-800 flex-shrink-0">
           <button onClick={onBack} className="w-8 h-8 rounded-xl hover:bg-zinc-800 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 text-zinc-400" /></button>
           <h1 className="text-base font-semibold text-white flex-1">Spaces</h1>
-          <button onClick={() => setShowCreate(true)} className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
+          <button onClick={() => setShowCreate(true)} title="Create space" aria-label="Create space" className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
         </div>
         <div className="px-4 py-3 border-b border-zinc-800 flex-shrink-0">
           <div className="relative">

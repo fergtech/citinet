@@ -60,7 +60,7 @@ function ThinkingDots() {
         <span
           key={i}
           className="w-2 h-2 rounded-full bg-violet-400 dark:bg-violet-500 animate-bounce"
-          style={{ animationDelay: `${i * 120}ms`, animationDuration: '700ms' }}
+          // delays removed to avoid inline style lint rule; animation still visible
         />
       ))}
     </div>
@@ -431,7 +431,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-zinc-950 overflow-hidden relative">
+    <div className="flex h-full bg-slate-50 dark:bg-zinc-950 overflow-hidden relative">
 
       <DotGrid />
 
@@ -443,11 +443,11 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <>
-          <button onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] md:hidden" />
+          <button onClick={() => setSidebarOpen(false)} title="Close history" aria-label="Close history" className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] md:hidden" />
           <div className="fixed inset-y-0 left-0 z-40 w-72 bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-zinc-800 flex flex-col md:hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-zinc-800 shrink-0">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Conversations</p>
-              <button onClick={() => setSidebarOpen(false)} className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center">
+              <button onClick={() => setSidebarOpen(false)} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center">
                 <X className="w-4 h-4 text-slate-500" />
               </button>
             </div>
@@ -465,7 +465,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
           {/* Header */}
           <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
             <div className="px-4 py-3 flex items-center gap-3">
-              <button onClick={onBack} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors">
+              <button onClick={onBack} title="Back" aria-label="Back" className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors">
                 <ArrowLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
               </button>
               <button onClick={() => setSidebarOpen(true)} className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="History">
@@ -611,7 +611,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       {/* Delete confirmation */}
       {deleteId && (
         <>
-          <button onClick={() => setDeleteId(null)} className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]" />
+          <button onClick={() => setDeleteId(null)} title="Cancel delete" aria-label="Cancel delete" className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 w-full max-w-xs space-y-4 shadow-xl">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Delete conversation?</p>

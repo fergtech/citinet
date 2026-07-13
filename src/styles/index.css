@@ -1,8 +1,19 @@
 /* Tailwind CSS */
 @import './tailwind.css';
 
+/* ── Prevent horizontal overflow across the whole platform ──────────────────
+   Any element that exceeds the viewport width is clipped, never scrolled.
+   This is the catch-all for long file names, URLs, or dynamic content. */
+html, body, #root {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 /* Theme */
 @import './theme.css';
+
+/* Citinet design system tokens */
+@import './citinet-tokens.css';
 
 /* Slick Carousel */
 @import 'slick-carousel/slick/slick.css';

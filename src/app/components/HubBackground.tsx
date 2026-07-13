@@ -50,16 +50,19 @@ export function HubBackground() {
     );
   }
 
-  // Default: gradient + dot grid
+  // Default: Citinet wallpaper (rich radial gradients on dark, soft purple on light)
   return (
-    <div className="fixed inset-0 -z-10 pointer-events-none bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900">
+    <div
+      className="fixed inset-0 -z-10 pointer-events-none"
+      style={{ background: 'var(--cn-wallpaper)' }}
+    >
       <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="hub-bg-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-500 dark:text-purple-400" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#hub-bg-dots)" opacity="0.07" className="dark:opacity-[0.12]" />
+        <rect width="100%" height="100%" fill="url(#hub-bg-dots)" opacity="0.05" className="dark:opacity-[0.09]" />
       </svg>
     </div>
   );

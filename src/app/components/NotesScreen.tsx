@@ -159,8 +159,8 @@ function FormatToolbar({ editor, hubSlug }: { editor: ReturnType<typeof useEdito
 
   return (
     <>
-      <input ref={fileInputRef}  type="file" accept="image/*"  className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); }} />
-      <input ref={videoInputRef} type="file" accept="video/*"  className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoFile(f); }} />
+      <input ref={fileInputRef}  type="file" accept="image/*"  aria-label="Insert image" title="Insert image" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); }} />
+      <input ref={videoInputRef} type="file" accept="video/*"  aria-label="Upload video" title="Upload video" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoFile(f); }} />
       <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900/50 flex-shrink-0 flex-wrap">
         {btn(editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run(), 'Heading 1', <Heading1 className="w-3.5 h-3.5" />)}
         {btn(editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'Heading 2', <Heading2 className="w-3.5 h-3.5" />)}
@@ -665,8 +665,7 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    // h-screen + overflow-hidden = viewport-locked; each panel scrolls independently
-    <div className="h-[100dvh] overflow-hidden bg-white dark:bg-zinc-950 flex">
+    <div className="h-full overflow-hidden bg-white dark:bg-zinc-950 flex">
 
       {/* ── List Panel (fixed-height sidebar) ─────────────────────────────── */}
       <div className={`

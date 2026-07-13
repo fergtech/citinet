@@ -1,0 +1,55 @@
+/* ============================================================
+   Citinet Design System — CSS tokens
+   Ported from the claude.ai/design project.
+   Dark-first OS chrome aesthetic. Brand accent: purple/violet.
+   ============================================================ */
+
+:root {
+  /* App-tile gradients */
+  --cn-grad-feed:        linear-gradient(135deg, #3b82f6, #2563eb);
+  --cn-grad-spaces:      linear-gradient(135deg, #a855f7, #7c3aed);
+  --cn-grad-atlas:       linear-gradient(135deg, #6366f1, #4f46e5);
+  --cn-grad-exchange:    linear-gradient(135deg, #10b981, #0d9488);
+  --cn-grad-discover:    linear-gradient(135deg, #06b6d4, #0284c7);
+  --cn-grad-messages:    linear-gradient(135deg, #d946ef, #7c3aed);
+  --cn-grad-initiatives: linear-gradient(135deg, #f43f5e, #db2777);
+  --cn-grad-files:       linear-gradient(135deg, #f59e0b, #ea580c);
+  --cn-grad-identity:    linear-gradient(135deg, #2563eb, #9333ea);
+
+  /* Wallpaper — light */
+  --cn-wallpaper:
+    radial-gradient(1200px 800px at 12% -10%, color-mix(in srgb, #e9d5ff 55%, transparent), transparent 60%),
+    radial-gradient(1000px 700px at 100% 10%, color-mix(in srgb, #3b82f6 18%, transparent), transparent 55%),
+    linear-gradient(180deg, #f1f5f9, #e2e8f0);
+
+  /* Motion */
+  --cn-ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
+  --cn-dur-base:   180ms;
+  --cn-dur-slow:   240ms;
+}
+
+/* Dark wallpaper — the signature Citinet "night OS" look */
+.dark {
+  --cn-wallpaper:
+    radial-gradient(1100px 760px at 10% -12%, color-mix(in srgb, #7c3aed 32%, transparent), transparent 58%),
+    radial-gradient(1000px 720px at 105% 8%,  color-mix(in srgb, #1d4ed8 26%, transparent), transparent 55%),
+    linear-gradient(180deg, #0b0b12, #09090b);
+}
+
+/* Utility helpers */
+.cn-mono       { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
+.cn-eyebrow    { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cn-text-3, #64748b); }
+.cn-live-dot   { border-radius: 9999px; background: #34d399; animation: cn-pulse 2s ease-in-out infinite; }
+
+@keyframes cn-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* Glass card surface (dark-only) */
+.cn-glass {
+  background: rgba(9, 9, 11, 0.50);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}

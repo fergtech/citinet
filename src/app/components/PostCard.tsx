@@ -1,6 +1,21 @@
-import { Play, MessageCircle, Calendar, MapPin } from 'lucide-react';
+import { MessageCircle, Megaphone, Target, HelpCircle, Calendar, MapPin, Play, MoreHorizontal, Bookmark, Heart } from 'lucide-react';
 
-interface PostCardProps {
+interface CatConfig {
+  label: string;
+  Icon: React.ElementType;
+  iconColor: string;
+  avatarGrad: string;
+}
+
+const CAT_CONFIG: Record<string, CatConfig> = {
+  DISCUSSION:   { label: 'Discussion',   Icon: MessageCircle, iconColor: 'text-blue-400',    avatarGrad: 'from-blue-500 to-blue-600' },
+  ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     iconColor: 'text-rose-400',    avatarGrad: 'from-rose-500 to-pink-600' },
+  PROJECT:      { label: 'Project',      Icon: Target,        iconColor: 'text-emerald-400', avatarGrad: 'from-emerald-500 to-teal-600' },
+  REQUEST:      { label: 'Request',      Icon: HelpCircle,    iconColor: 'text-orange-400',  avatarGrad: 'from-orange-500 to-amber-600' },
+  EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-purple-400',  avatarGrad: 'from-purple-500 to-violet-600' },
+};
+
+export interface PostCardProps {
   id: string;
   variant: 'image' | 'video' | 'text';
   category: string;
@@ -16,90 +31,112 @@ interface PostCardProps {
   autoPlay?: boolean;
 }
 
-
-export function PostCard({ variant, category, title, author, timestamp, content, mediaUrl, replyCount, eventDate, eventLocation, autoPlay }: PostCardProps) {
-  const isAnnouncement = category === 'ANNOUNCEMENT';
-  const isEvent = category === 'EVENT';
+export function PostCard({
+  variant, category, author, timestamp, content,
+  mediaUrl, replyCount, eventDate, eventLocation, autoPlay,
+}: PostCardProps) {
+  const cat = CAT_CONFIG[category] ?? CAT_CONFIG.DISCUSSION;
+  const { Icon, label, iconColor, avatarGrad } = cat;
 
   return (
-    <div className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border overflow-hidden transition-all duration-200 hover:shadow-xl hover:scale-[1.01] ${
-      isAnnouncement
-        ? 'border-amber-300 dark:border-amber-600/50 hover:border-amber-400 dark:hover:border-amber-500/70'
-        : isEvent
-        ? 'border-purple-300 dark:border-purple-700/50 hover:border-purple-400 dark:hover:border-purple-600/70'
-        : 'border-slate-200 dark:border-zinc-700/60 hover:border-slate-300 dark:hover:border-zinc-600'
-    }`}>
-
-      {/* Accent bar */}
-      {isAnnouncement && (
-        <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-amber-500" />
-      )}
-      {isEvent && (
-        <div className="h-1 w-full bg-gradient-to-r from-purple-500 to-indigo-500" />
-      )}
-
-      {/* Media */}
-      {variant === 'image' && mediaUrl && (
-        <div className="relative w-full aspect-video bg-zinc-900 overflow-hidden">
-          {/* Blurred fill — covers letterbox bars for non-16:9 images */}
-          <div
-            className="absolute inset-0 scale-110 blur-xl opacity-60"
-            style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-          />
-          <img src={mediaUrl} alt={title} className="relative w-full h-full object-contain" />
-        </div>
-      )}
-      {variant === 'video' && mediaUrl && (
-        <div className="relative w-full aspect-video bg-black">
-          <video
-            src={mediaUrl}
-            preload={autoPlay ? 'auto' : 'metadata'}
-            autoPlay={autoPlay}
-            muted={autoPlay}
-            loop={autoPlay}
-            playsInline
-            className="w-full h-full object-contain"
-          />
-          {!autoPlay && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                <Play className="w-7 h-7 text-white fill-white" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Content */}
+    <div className="cn-glass rounded-2xl overflow-hidden hover:border-white/15 transition-all duration-200">
       <div className="p-4">
-        <p className="text-slate-500 dark:text-slate-400 text-xs mb-3">{author} · {timestamp}</p>
-        {isEvent && eventDate && (
+        {/* Header: avatar + author + category + time */}
+        <div className="flex items-start gap-3 mb-3">
+          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white font-semibold text-sm shrink-0 select-none`}>
+            {author.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-white">{author}</span>
+              <span className="cn-mono text-[11px] text-zinc-500">· {timestamp}</span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <Icon className={`w-3 h-3 ${iconColor}`} />
+              <span className="text-[11px] text-zinc-400">{label}</span>
+            </div>
+          </div>
+          <button
+            onClick={e => e.stopPropagation()}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors shrink-0"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Event metadata */}
+        {category === 'EVENT' && eventDate && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 text-[11px] font-medium text-purple-700 dark:text-purple-300">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-[11px] font-medium text-purple-300">
               <Calendar className="w-3 h-3 shrink-0" />
               {new Date(eventDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
               {' · '}
               {new Date(eventDate).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
             </span>
             {eventLocation && (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 text-[11px] font-medium text-purple-700 dark:text-purple-300">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-[11px] font-medium text-purple-300">
                 <MapPin className="w-3 h-3 shrink-0" />
                 {eventLocation}
               </span>
             )}
           </div>
         )}
+
+        {/* Body */}
         {content && (
-          <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed line-clamp-3">{content}</p>
+          <p className="text-sm text-zinc-200 leading-relaxed line-clamp-4">{content}</p>
         )}
-        {typeof replyCount === 'number' && (
-          <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
-            <MessageCircle className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-            <span className="text-xs text-slate-400 dark:text-slate-500">
-              {replyCount === 0 ? 'No replies yet' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
-            </span>
+
+        {/* Media */}
+        {variant === 'image' && mediaUrl && (
+          <div className="mt-3 rounded-xl overflow-hidden aspect-video bg-zinc-900 relative">
+            <div
+              className="absolute inset-0 scale-110 blur-xl opacity-50"
+              style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+            />
+            <img src={mediaUrl} alt="" className="relative w-full h-full object-contain" />
           </div>
         )}
+        {variant === 'video' && mediaUrl && (
+          <div className="mt-3 rounded-xl overflow-hidden aspect-video bg-black relative">
+            <video
+              src={mediaUrl}
+              preload={autoPlay ? 'auto' : 'metadata'}
+              autoPlay={autoPlay}
+              muted={autoPlay}
+              loop={autoPlay}
+              playsInline
+              className="w-full h-full object-contain"
+            />
+            {!autoPlay && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                  <Play className="w-6 h-6 text-white fill-white" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Reaction bar */}
+      <div
+        className="flex items-center gap-1 px-3 pb-3 pt-2 border-t border-white/5"
+        onClick={e => e.stopPropagation()}
+      >
+        <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors text-xs font-semibold">
+          <Heart className="w-3.5 h-3.5" />
+        </button>
+        <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-white/5 transition-colors text-xs font-semibold">
+          <MessageCircle className="w-3.5 h-3.5" />
+          {typeof replyCount === 'number' && replyCount > 0 && (
+            <span className="cn-mono">{replyCount}</span>
+          )}
+        </button>
+        <div className="flex-1" />
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors">
+          <Bookmark className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );

@@ -1,0 +1,1079 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  Hexagon, Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
+  LogOut, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useHub, useHubStatus } from '../context/HubContext';
+import { hubService } from '../services/hubService';
+import { marketplaceService } from '../services/marketplaceService';
+import { aiService } from '../services/aiService';
+import { useNotificationCounts } from '../hooks/useNotificationCounts';
+import { notificationsService } from '../services/notificationsService';
+import type { NotificationFeature } from '../services/notificationsService';
+import { registryService } from '../services/registryService';
+import type { RegistryHub } from '../services/registryService';
+import { FeatureRequestModal } from './FeatureRequestModal';
+import { hubPath, clearSubdomainCache } from '../utils/subdomain';
+import { APP_TILES, DOCK_PRIORITY_SCREENS } from './Dashboard';
+import type { HubVendor } from '../types/hub';
+
+export function HubLayout({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const { currentHub, currentUser, leaveHub, updateTunnelUrl } = useHub();
+  const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
+
+  const hubSlug = currentHub?.slug ?? '';
+  const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
+
+  const showNav = pathname !== '/onboard';
+
+  const [desktopNavLayout, setDesktopNavLayout] = useState<'dock' | 'sidebar'>(() => {
+    if (typeof window === 'undefined') return 'dock';
+    return localStorage.getItem('citinet-desktop-nav-layout') === 'sidebar' ? 'sidebar' : 'dock';
+  });
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showMobileAppsMenu, setShowMobileAppsMenu] = useState(false);
+  const [showSupportMenu, setShowSupportMenu] = useState(false);
+  const [showHubInfoModal, setShowHubInfoModal] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [myVendor, setMyVendor] = useState<HubVendor | null>(null);
+  const [showTunnelInput, setShowTunnelInput] = useState(false);
+  const [tunnelInput, setTunnelInput] = useState('');
+  const [tunnelUpdating, setTunnelUpdating] = useState(false);
+  const [tunnelError, setTunnelError] = useState('');
+  const [tunnelSuccess, setTunnelSuccess] = useState(false);
+  const [showManualUrl, setShowManualUrl] = useState(false);
+  const [registrySearchQuery, setRegistrySearchQuery] = useState('');
+  const [registryHubs, setRegistryHubs] = useState<RegistryHub[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
+
+  const isConnected = connectionStatus === 'connected';
+
+  useEffect(() => {
+    if (!hubSlug) return;
+    marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
+    aiService.getStatus(hubSlug).then(s => setAiEnabled(s.enabled)).catch(() => {});
+  }, [hubSlug, isConnected]);
+
+  useEffect(() => {
+    if (!showTunnelInput && connectionStatus !== 'unreachable') return;
+    if (registryHubs.length > 0) return;
+    setRegistryLoading(true);
+    registryService.getHubs().then(setRegistryHubs).catch(() => {}).finally(() => setRegistryLoading(false));
+  }, [showTunnelInput, connectionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredRegistryHubs = registrySearchQuery.trim()
+    ? registryHubs.filter(h =>
+        h.name.toLowerCase().includes(registrySearchQuery.toLowerCase()) ||
+        h.slug.toLowerCase().includes(registrySearchQuery.toLowerCase())
+      )
+    : registryHubs;
+
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+  const displayName = currentUser?.displayName || currentUser?.username || 'Neighbor';
+  const nodeName = currentHub?.name || hubSlug || 'Community Hub';
+  const resolvedAvatarUrl = (currentHub?.slug && currentUser?.hubUserId)
+    ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)
+    : (currentUser?.avatarUrl ?? null);
+  const vendorLogoUrl = myVendor?.logo_file_name
+    ? marketplaceService.getVendorLogoUrl(hubSlug, myVendor.logo_file_name)
+    : null;
+  const nodeStatus = {
+    activeMembers: currentHub?.meta?.activeMembers ?? 0,
+    onlineNow: currentHub?.meta?.onlineNow ?? 0,
+  };
+
+  const enabledSet = currentHub?.enabledApps ?? null;
+  const AI_TILE = { Icon: Sparkles, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600', notifyFeature: undefined as NotificationFeature | undefined };
+  const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
+  const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
+
+  const dockItems = DOCK_PRIORITY_SCREENS
+    .map(screen => visibleTiles.find(t => t.screen === screen))
+    .filter(Boolean) as typeof APP_TILES;
+
+  const desktopNavItems = visibleTiles.filter(t =>
+    ['feed', 'messages', 'atlas', 'marketplace', 'neighbors', 'toolkit'].includes(t.screen)
+  );
+
+  const pinnedScreens = new Set(desktopNavItems.map(i => i.screen));
+  const moreNavItems = [
+    ...visibleTiles.filter(app => !pinnedScreens.has(app.screen) && !app.screen.startsWith('vendor/')),
+    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600', notifyFeature: undefined as NotificationFeature | undefined },
+  ];
+
+  const mobileLaunchpadItems = [
+    ...visibleTiles,
+    ...(myVendor ? [{ Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600', notifyFeature: undefined as NotificationFeature | undefined }] : []),
+    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600', notifyFeature: undefined as NotificationFeature | undefined },
+  ].filter(app => !DOCK_PRIORITY_SCREENS.includes(app.screen));
+
+  // Navigation with deeplink/badge clearing
+  const handleNavigate = async (screen: string, notifyFeature?: NotificationFeature) => {
+    setShowMoreMenu(false);
+    setShowMobileAppsMenu(false);
+    if (notifyFeature && notifCounts[notifyFeature] > 0) {
+      try {
+        const unread = await notificationsService.getUnread(hubSlug);
+        if (screen === 'messages') {
+          const msgNotifs = unread.filter(n => n.type === 'message' && n.ref_id);
+          if (msgNotifs[0]?.ref_id) sessionStorage.setItem('citinet-deeplink-message-conv', msgNotifs[0].ref_id);
+        } else if (screen === 'feed') {
+          const hit = unread.find(n => n.type === 'reply' && n.ref_id);
+          if (hit?.ref_id) sessionStorage.setItem('citinet-deeplink-feed-post', hit.ref_id);
+          clearBadge('feed');
+          notificationsService.markRead(hubSlug, 'feed').catch(() => {});
+        }
+      } catch { /* navigation proceeds even if fetch fails */ }
+    }
+    navigate(hubPath(`/${screen}`));
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    sessionStorage.setItem('citinet-deeplink-search', q);
+    setSearchQuery('');
+    navigate(hubPath('/discover'));
+  };
+
+  const handleLogout = () => {
+    const slug = currentHub?.slug || hubSlug;
+    if (slug) leaveHub(slug);
+    clearSubdomainCache();
+    window.location.href = window.location.origin + '/';
+  };
+
+  const autoRegisterHub = (url: string) => {
+    if (!currentHub) return;
+    registryService.registerHub({
+      id: currentHub.slug, name: currentHub.name, slug: currentHub.slug,
+      location: currentHub.location ?? '', description: currentHub.description ?? '',
+      tunnel_url: url, member_count: currentHub.meta?.activeMembers ?? 0, online: true,
+    }).catch(() => {});
+  };
+
+  const handleTunnelReconnect = async () => {
+    if (!tunnelInput.trim()) return;
+    setTunnelUpdating(true);
+    setTunnelError('');
+    setTunnelSuccess(false);
+    const result = await updateTunnelUrl(tunnelInput.trim());
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      setTunnelInput('');
+      autoRegisterHub(tunnelInput.trim());
+      setTimeout(() => { setShowTunnelInput(false); setTunnelSuccess(false); }, 1500);
+    } else {
+      setTunnelError(result.error || 'Could not reach hub');
+    }
+  };
+
+  const handleForceUpdateUrl = async () => {
+    if (!tunnelInput.trim()) return;
+    setTunnelUpdating(true);
+    setTunnelError('');
+    setTunnelSuccess(false);
+    const result = await updateTunnelUrl(tunnelInput.trim(), true);
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      setTunnelInput('');
+      autoRegisterHub(tunnelInput.trim());
+      setTimeout(() => { setShowTunnelInput(false); setTunnelSuccess(false); }, 1500);
+    }
+  };
+
+  const handleRegistryReconnect = async (url: string) => {
+    setTunnelUpdating(true);
+    setTunnelError('');
+    const result = await updateTunnelUrl(url);
+    setTunnelUpdating(false);
+    if (result.ok) {
+      setTunnelSuccess(true);
+      autoRegisterHub(url);
+      setTimeout(() => { setShowTunnelInput(false); setTunnelSuccess(false); }, 1500);
+    } else {
+      setTunnelError(result.error || 'Could not reach hub');
+    }
+  };
+
+  const toggleDesktopNavLayout = () => {
+    setDesktopNavLayout(prev => {
+      const next = prev === 'dock' ? 'sidebar' : 'dock';
+      localStorage.setItem('citinet-desktop-nav-layout', next);
+      return next;
+    });
+  };
+
+  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
+  const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw) ? projectInfoUrlRaw : `https://${projectInfoUrlRaw}`;
+  const githubIssueBaseUrl = 'https://github.com/fergtech/citinet/issues/new';
+  const buildSupportUrl = (kind: 'help' | 'bug' | 'feature') => {
+    const params = new URLSearchParams();
+    if (kind === 'help') params.set('template', 'help.md');
+    else if (kind === 'bug') params.set('template', 'bug_report.md');
+    else params.set('template', 'feature_request.md');
+    return `${githubIssueBaseUrl}?${params.toString()}`;
+  };
+  const openProjectInfo = () => window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
+  const openSupportLink = (kind: 'help' | 'bug' | 'feature') => {
+    window.open(buildSupportUrl(kind), '_blank', 'noopener,noreferrer');
+    setShowSupportMenu(false);
+  };
+
+  if (!showNav) return <>{children}</>;
+
+  return (
+    <div className="h-[100dvh]">
+
+      {/* ═══ DESKTOP TOP MENUBAR ═══ */}
+      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-slate-950/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-800/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
+        <button
+          onClick={() => setShowHubInfoModal(true)}
+          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-white/10 transition-colors shrink-0"
+          title="About this hub"
+        >
+          <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+          <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
+        </button>
+        <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search posts, people, files…"
+              className="w-full h-6 pl-7 pr-2 rounded-md bg-white/5 border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 hover:bg-white/10 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
+            />
+          </div>
+        </form>
+        <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+        <span className="text-xs text-slate-300">{statusLabel}</span>
+        {nodeStatus.onlineNow > 0 && (
+          <>
+            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
+            <span className="text-xs text-slate-300">{nodeStatus.onlineNow} online</span>
+          </>
+        )}
+        <button
+          onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
+          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+          title="Update tunnel URL"
+        >
+          <Link2 className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+        </button>
+      </div>
+
+      {/* ═══ DESKTOP RECONNECT PANEL ═══ */}
+      {showTunnelInput && (
+        <div className="hidden md:block fixed top-10 right-4 z-40 w-72 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-900 dark:text-white">Find your hub</p>
+            {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
+            {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
+          </div>
+          <div className="space-y-1.5">
+            <input
+              type="text"
+              value={registrySearchQuery}
+              onChange={e => setRegistrySearchQuery(e.target.value)}
+              placeholder="Search hub by name…"
+              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+            />
+            {registrySearchQuery.trim() && (
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {filteredRegistryHubs.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 px-1">No hubs found.</p>
+                ) : filteredRegistryHubs.map(hub => (
+                  <button
+                    key={hub.id}
+                    onClick={() => handleRegistryReconnect(hub.tunnel_url)}
+                    disabled={tunnelUpdating}
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
+                  >
+                    <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">{hub.location}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 underline hover:no-underline">
+              {showManualUrl ? 'Hide' : 'Enter URL manually'}
+            </button>
+            {showManualUrl && (
+              <div className="mt-1.5 space-y-1.5">
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    value={tunnelInput}
+                    onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
+                    placeholder="https://…"
+                    className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                    disabled={tunnelUpdating}
+                  />
+                  <button
+                    onClick={handleTunnelReconnect}
+                    disabled={tunnelUpdating || !tunnelInput.trim()}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center shrink-0"
+                  >
+                    {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  </button>
+                </div>
+                {tunnelError && (
+                  <div className="flex items-center gap-2">
+                    <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
+                    {tunnelInput.trim() && (
+                      <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ DESKTOP ACCOUNT MENU PANEL ═══ */}
+      <AnimatePresence>
+        {showAccountMenu && (
+          <>
+            <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setShowAccountMenu(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.97 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              className={`hidden md:block fixed z-50 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden ${desktopNavLayout === 'sidebar' ? 'left-[4.5rem] bottom-12' : 'bottom-16 right-4'}`}
+            >
+              <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-slate-200 dark:border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shrink-0">
+                    {resolvedAvatarUrl
+                      ? <img src={resolvedAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : displayName.charAt(0).toUpperCase()
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
+                      {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{nodeName}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-2 space-y-0.5">
+                {currentUser?.hubUserId && (
+                  <button
+                    onClick={() => { setShowAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                  >
+                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">View Profile</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowAccountMenu(false); navigate(hubPath('/account')); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
+                </button>
+                <button
+                  onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Help & Support</span>
+                </button>
+              </div>
+              <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+              <div className="p-2">
+                <button
+                  onClick={() => { setShowAccountMenu(false); handleLogout(); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
+                >
+                  <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                  <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ DESKTOP BOTTOM DOCK or SIDEBAR ═══ */}
+      {desktopNavLayout === 'dock' ? (
+        <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60 items-center px-4 gap-1">
+          <button
+            onClick={() => navigate(hubPath('/'))}
+            title="Home"
+            className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+          >
+            <Home className="w-5 h-5" />
+          </button>
+          {desktopNavItems.map(app => {
+            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+            return (
+              <button
+                key={app.screen}
+                onClick={() => handleNavigate(app.screen, app.notifyFeature)}
+                title={app.label}
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+              >
+                <app.Icon className="w-5 h-5" />
+                {badge > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
+          <button
+            onClick={() => setShowMoreMenu(true)}
+            title="More"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+          >
+            <Grid3x3 className="w-5 h-5" />
+          </button>
+          {myVendor && (
+            <>
+              <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
+              <button
+                onClick={() => handleNavigate(`vendor/${myVendor.id}`)}
+                title={myVendor.name}
+                className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all overflow-hidden"
+              >
+                {vendorLogoUrl
+                  ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  : myVendor.name.charAt(0).toUpperCase()
+                }
+              </button>
+            </>
+          )}
+          <div className="flex-1" />
+          {isAdmin && (
+            <button
+              onClick={() => handleNavigate('hub-management')}
+              title="Hub Admin"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+            >
+              <Shield className="w-5 h-5" />
+            </button>
+          )}
+          <button
+            onClick={openProjectInfo}
+            title="About citinet"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+          >
+            <CircleAlert className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setShowAccountMenu(v => !v)}
+            title="Account"
+            aria-label="Open account menu"
+            className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm active:scale-95 ml-1 shrink-0 hover:ring-2 hover:ring-purple-400 transition-all"
+          >
+            {resolvedAvatarUrl
+              ? <img src={resolvedAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              : displayName.charAt(0).toUpperCase()
+            }
+          </button>
+          <button
+            onClick={toggleDesktopNavLayout}
+            title="Switch to sidebar layout"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0 ml-1"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-r border-slate-700/60 dark:border-zinc-800/60 group">
+          <button
+            onClick={() => navigate(hubPath('/'))}
+            title="Home"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0">
+              <Home className="w-5 h-5" />
+            </span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Home</span>
+          </button>
+          {desktopNavItems.map(app => {
+            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+            return (
+              <button
+                key={app.screen}
+                onClick={() => handleNavigate(app.screen, app.notifyFeature)}
+                title={app.label}
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+              >
+                <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
+                  <app.Icon className="w-5 h-5" />
+                  {badge > 0 && (
+                    <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </span>
+                <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">{app.label}</span>
+              </button>
+            );
+          })}
+          <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+          <button
+            onClick={() => setShowMoreMenu(true)}
+            title="More"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0"><Grid3x3 className="w-5 h-5" /></span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
+          </button>
+          {myVendor && (
+            <>
+              <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+              <button
+                onClick={() => handleNavigate(`vendor/${myVendor.id}`)}
+                title={myVendor.name}
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+              >
+                <span className="w-16 h-12 flex items-center justify-center shrink-0">
+                  <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold overflow-hidden">
+                    {vendorLogoUrl
+                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : myVendor.name.charAt(0).toUpperCase()
+                    }
+                  </span>
+                </span>
+                <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{myVendor.name}</span>
+              </button>
+            </>
+          )}
+          <div className="flex-1" />
+          {isAdmin && (
+            <button
+              onClick={() => handleNavigate('hub-management')}
+              title="Hub Admin"
+              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            >
+              <span className="w-16 h-12 flex items-center justify-center shrink-0"><Shield className="w-5 h-5" /></span>
+              <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Hub Admin</span>
+            </button>
+          )}
+          <button
+            onClick={openProjectInfo}
+            title="About citinet"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0"><CircleAlert className="w-5 h-5" /></span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">About citinet</span>
+          </button>
+          <button
+            onClick={() => setShowAccountMenu(v => !v)}
+            title="Account"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0">
+              <span className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
+                {resolvedAvatarUrl
+                  ? <img src={resolvedAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  : displayName.charAt(0).toUpperCase()
+                }
+              </span>
+            </span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{displayName}</span>
+          </button>
+          <button
+            onClick={toggleDesktopNavLayout}
+            title="Switch to bottom dock"
+            className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+          >
+            <span className="w-16 h-12 flex items-center justify-center shrink-0"><PanelBottom className="w-5 h-5" /></span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Bottom dock</span>
+          </button>
+        </div>
+      )}
+
+      {/* ═══ MAIN CONTENT AREA ═══ */}
+      <div className={`h-full flex flex-col relative z-10 ${desktopNavLayout === 'sidebar' ? 'md:pl-16 md:pt-9' : 'md:pt-9 md:pb-14'}`}>
+
+        {/* Mobile Header */}
+        <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 shrink-0 z-20">
+          <div className="px-4 py-3 space-y-3">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
+                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
+                  <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+                  <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
+              </div>
+            </div>
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search posts, people, files…"
+                className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 border border-transparent text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-purple-400/40 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
+              />
+            </form>
+            {connectionStatus === 'unreachable' && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <WifiOff className="w-4 h-4 text-orange-500 shrink-0" />
+                  <span className="text-xs font-medium text-orange-700 dark:text-orange-300 flex-1">Hub unreachable</span>
+                  {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
+                  {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Search for your hub by name:</p>
+                  <input
+                    type="text"
+                    value={registrySearchQuery}
+                    onChange={e => setRegistrySearchQuery(e.target.value)}
+                    placeholder="Hub name…"
+                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                  />
+                  {registrySearchQuery.trim() && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {filteredRegistryHubs.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No hubs found — try the URL option below.</p>
+                      ) : filteredRegistryHubs.map(hub => (
+                        <button
+                          key={hub.id}
+                          onClick={() => handleRegistryReconnect(hub.tunnel_url)}
+                          disabled={tunnelUpdating}
+                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
+                        >
+                          <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{hub.location}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 dark:text-slate-500 underline hover:no-underline">
+                    {showManualUrl ? 'Hide' : 'Enter URL manually'}
+                  </button>
+                  {showManualUrl && (
+                    <div className="mt-1.5 space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <input
+                          type="url"
+                          value={tunnelInput}
+                          onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
+                          onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
+                          placeholder="https://…"
+                          className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                          disabled={tunnelUpdating}
+                        />
+                        <button
+                          onClick={handleTunnelReconnect}
+                          disabled={tunnelUpdating || !tunnelInput.trim()}
+                          className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
+                        >
+                          {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        </button>
+                      </div>
+                      {tunnelError && (
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
+                          {tunnelInput.trim() && (
+                            <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Scrollable content zone — fills remaining height after mobile header */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar pb-16 md:pb-0">
+          {children}
+        </div>
+      </div>
+
+      {/* ═══ MOBILE BOTTOM DOCK ═══ */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
+        <div className="flex items-stretch h-16 px-1">
+          {/* Home */}
+          <button
+            onClick={() => navigate(hubPath('/'))}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Home</span>
+          </button>
+          {/* Messages · Feed · Atlas (from DOCK_PRIORITY_SCREENS) */}
+          {dockItems.map(app => {
+            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
+            return (
+              <button
+                key={app.screen}
+                onClick={() => handleNavigate(app.screen, app.notifyFeature)}
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+              >
+                <div className="relative">
+                  <app.Icon className="w-5 h-5" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] font-medium leading-none">{app.label}</span>
+              </button>
+            );
+          })}
+          {/* Apps waffle */}
+          <button
+            onClick={() => setShowMobileAppsMenu(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <Grid3x3 className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Apps</span>
+          </button>
+          {/* Profile */}
+          <button
+            onClick={() => setShowMobileAccountMenu(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+          >
+            <div className="w-5 h-5 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-[10px]">
+              {resolvedAvatarUrl
+                ? <img src={resolvedAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : displayName.charAt(0).toUpperCase()
+              }
+            </div>
+            <span className="text-[10px] font-medium leading-none">Profile</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* ═══ MOBILE ACCOUNT SHEET ═══ */}
+      <AnimatePresence>
+        {showMobileAccountMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm md:hidden"
+              onClick={() => setShowMobileAccountMenu(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 28 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 28 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 360 }}
+              className="fixed inset-x-0 bottom-0 z-50 md:hidden rounded-t-3xl border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl max-h-[80vh] overflow-y-auto"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold shrink-0">
+                      {resolvedAvatarUrl
+                        ? <img src={resolvedAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        : displayName.charAt(0).toUpperCase()
+                      }
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
+                        {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowMobileAccountMenu(false)}
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  </button>
+                </div>
+              </div>
+              <div className="p-3 space-y-1">
+                {currentUser?.hubUserId && (
+                  <button
+                    onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                  >
+                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm text-slate-800 dark:text-slate-200">View Profile</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/account')); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
+                </button>
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Help & Support</span>
+                </button>
+              </div>
+              <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+              <div className="p-3 space-y-1">
+                {isAdmin && (
+                  <button
+                    onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/hub-management')); }}
+                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                  >
+                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm text-slate-800 dark:text-slate-200">Hub Admin</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); openProjectInfo(); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
+                </button>
+              </div>
+              <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
+              <div className="p-3">
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); handleLogout(); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
+                >
+                  <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
+                  <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ FEATURE REQUEST MODAL ═══ */}
+      {showRequestModal && (
+        <FeatureRequestModal hubSlug={hubSlug} onClose={() => setShowRequestModal(false)} />
+      )}
+
+      {/* ═══ SUPPORT OPTIONS MODAL ═══ */}
+      <AnimatePresence>
+        {showSupportMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => setShowSupportMenu(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Support</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Choose a GitHub form to open in a new tab</p>
+                </div>
+                <button
+                  onClick={() => setShowSupportMenu(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+              <div className="p-2">
+                <button onClick={() => openSupportLink('help')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left">
+                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Get Help</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Troubleshooting or support questions</p>
+                  </div>
+                </button>
+                <button onClick={() => openSupportLink('bug')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left">
+                  <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Report a Bug</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Something is broken or not working right</p>
+                  </div>
+                </button>
+                <button onClick={() => openSupportLink('feature')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left">
+                  <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">Request a Feature</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Suggest a new feature or enhancement</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ HUB INFO MODAL ═══ */}
+      <AnimatePresence>
+        {showHubInfoModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => setShowHubInfoModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center shrink-0">
+                    <Hexagon className="w-5 h-5 text-purple-500 dark:text-purple-400" fill="currentColor" strokeWidth={0} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Hub</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHubInfoModal(false)}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                {currentHub?.description ? (
+                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{currentHub.description}</p>
+                ) : (
+                  <p className="text-sm italic text-slate-400 dark:text-slate-500">
+                    {isAdmin ? 'No description yet — tell your neighbors what this hub is about.' : "This hub hasn't added a description yet."}
+                  </p>
+                )}
+                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                  {currentHub?.location && (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{currentHub.location}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{nodeStatus.activeMembers} {nodeStatus.activeMembers === 1 ? 'member' : 'members'}</span>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setShowHubInfoModal(false); navigate(hubPath('/hub-management')); }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    {currentHub?.description ? 'Edit hub info' : 'Add a description'}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ MORE / APPS OVERLAY ═══ */}
+      <AnimatePresence>
+        {(showMoreMenu || showMobileAppsMenu) && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
+              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">{showMobileAppsMenu ? 'Apps' : 'More'}</h3>
+                <button
+                  onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
+                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                >
+                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                </button>
+              </div>
+              <div className="p-5 grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto no-scrollbar">
+                {(showMobileAppsMenu ? mobileLaunchpadItems : moreNavItems).map(app => {
+                  const isSuggest = app.screen === 'suggest';
+                  return (
+                    <button
+                      key={app.screen}
+                      onClick={() => {
+                        setShowMoreMenu(false);
+                        setShowMobileAppsMenu(false);
+                        if (isSuggest) setShowRequestModal(true);
+                        else handleNavigate(app.screen, app.notifyFeature);
+                      }}
+                      className={`flex flex-col items-center gap-2 p-2 rounded-2xl transition-all group active:scale-95 ${
+                        isSuggest ? 'hover:bg-indigo-500/10 dark:hover:bg-indigo-400/10' : 'hover:bg-purple-500/10 dark:hover:bg-purple-400/10'
+                      }`}
+                    >
+                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white overflow-hidden`}>
+                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
+                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          : <app.Icon className="w-6 h-6" />
+                        }
+                      </div>
+                      <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {app.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

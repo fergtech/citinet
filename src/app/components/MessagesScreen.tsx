@@ -642,7 +642,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // ── render: loading ───────────────────────────────────
   if (loading) {
     return (
-      <div className="h-[100dvh] bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+      <div className="h-full bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
           <p className="text-sm text-slate-600 dark:text-slate-400">Loading conversations…</p>
@@ -655,7 +655,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   if (error) {
     const isOffline = error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out');
     return (
-      <div className="h-[100dvh] bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
+      <div className="h-full bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
           {isOffline ? (
@@ -680,7 +680,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   }
 
   return (
-    <div className="h-[100dvh] bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
+    <div className="h-full bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
       <DotGrid />
 
       {/* ── Lightbox Overlay ── */}
