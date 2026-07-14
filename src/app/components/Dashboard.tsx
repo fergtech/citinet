@@ -1,6 +1,6 @@
 import {
   Users, MessageCircle, Radio, Store,
-  Calendar, Lightbulb, Activity, MapPin, Clock, LogOut, FolderOpen,
+  Calendar, Lightbulb, Activity, MapPin, LogOut, FolderOpen,
   RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
   X, ChevronRight, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug, Search,
   Grid3x3, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Package, Bot,
@@ -264,6 +264,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+  const tunnelHost = !isLocalHub
+    ? (() => { try { return new URL(tunnelUrl).host; } catch { return currentHub?.slug ?? 'local'; } })()
+    : (currentHub?.slug ?? 'local');
   const resolvedCurrentUserAvatarUrl = currentHub?.slug && currentUser?.hubUserId
     ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)
     : (currentUser?.avatarUrl ?? null);
@@ -274,46 +277,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const nodeStatus = {
     activeMembers: currentHub?.meta?.activeMembers ?? 0,
     onlineNow: currentHub?.meta?.onlineNow ?? 0,
-    signalStrength: currentHub?.connectionStatus === 'connected' ? 'Strong' : currentHub?.connectionStatus === 'connecting' ? 'Weak' : 'Offline'
   };
-
-  const [showNodeStatus, setShowNodeStatus] = useState(false);
-
-  // ── Hub app: initiatives ────────────────────────────────
-  interface AppInfo { name: string; faviconUrl?: string; logoUrl?: string }
-  interface LiveInitiative { id: string | number; title: string; progress: number; status: string; imageUrl?: string | null; members?: { id: string }[] }
-  const [liveInitiatives, setLiveInitiatives] = useState<LiveInitiative[] | null>(null);
-  const [initiativesAppInfo, setInitiativesAppInfo] = useState<AppInfo | null>(null);
-
-  useEffect(() => {
-    if (!currentHub?.tunnelUrl) return;
-    const base = currentHub.tunnelUrl;
-    const token = currentUser?.authToken;
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-    // Fetch app info (no auth needed — public endpoint)
-    fetch(`${base}/api/initiatives/app-info`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setInitiativesAppInfo(d))
-      .catch(() => {});
-
-    // Fetch live initiatives
-    fetch(`${base}/api/initiatives`, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        setLiveInitiatives(d?.initiatives ? d.initiatives.slice(0, 3) : []);
-      })
-      .catch(() => { setLiveInitiatives([]); });
-  }, [currentHub?.tunnelUrl, currentUser?.authToken]);
-
-  // activeInitiatives: live data when available, empty otherwise (no mock fallback)
-  const activeInitiatives: LiveInitiative[] = liveInitiatives ?? [];
 
   // ── Live events ─────────────────────────────────────────
   const [upcomingEvents, setUpcomingEvents] = useState<HubPost[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<HubPost | null>(null);
-  const [selectedInitiative] = useState<null>(null);
 
   useEffect(() => {
     if (!hubSlug || !isConnected) return;
@@ -489,9 +458,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     if (!page) return;
     el.scrollTo({ left: page.offsetLeft, behavior: 'smooth' });
   };
-
-
-  const sectionLinkClass = 'inline-flex items-center rounded-md px-2 py-1 font-semibold bg-slate-950/65 text-slate-400 border border-slate-600/30 backdrop-blur-sm shadow-sm hover:bg-slate-950/80 hover:text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40';
 
   return (
     <div className="min-h-screen flex relative">
@@ -1265,7 +1231,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             />
           </div>
           {/* Activity + sidebar two-column layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] gap-8 items-start">
             {/* Left: Recent Activity */}
             <div>
             {/* Quick post prompt */}
@@ -1415,68 +1381,59 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             })()}
             </div>
 
-            {/* Right: Initiatives + Events */}
+            {/* Right: Events + Node Status */}
             <div className="flex flex-col gap-6">
               {/* Upcoming Events */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Upcoming Events</h2>
-              <button onClick={() => onNavigate('feed')} className={`${sectionLinkClass} text-sm`}>
-                See all →
+          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-base font-semibold text-white tracking-tight">Upcoming events</h2>
+              <button onClick={() => onNavigate('feed')} className="text-xs font-semibold text-purple-300 hover:text-purple-200 transition-colors">
+                See all
               </button>
             </div>
 
             {eventsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Loading…</span>
               </div>
             ) : upcomingEvents.length === 0 ? (
-              <div className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 p-5 text-center text-white">
-                <Calendar className="w-7 h-7 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming events yet</p>
+              <div className="text-center py-3">
+                <Calendar className="w-7 h-7 text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-slate-400">No upcoming events yet</p>
                 <button
                   onClick={() => onNavigate('feed')}
-                  className="mt-2 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+                  className="mt-2 text-xs font-semibold text-purple-300 hover:underline"
                 >
                   Post one in the Feed →
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {upcomingEvents.map(event => {
                   const d = event.event_date ? new Date(event.event_date) : null;
-                  const dateStr = d ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : null;
+                  const weekdayStr = d ? d.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase() : '—';
+                  const dayOfMonth = d ? d.getDate() : '–';
                   const timeStr = d ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : null;
                   return (
                     <button
                       key={event.id}
                       onClick={() => setSelectedEvent(event)}
-                      className="w-full text-left relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group"
+                      className="w-full text-left flex gap-3 items-center rounded-xl p-1.5 -mx-1.5 hover:bg-white/5 transition-colors group"
                     >
-                      <div className="flex gap-3 items-center">
-                        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                          <Calendar className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-1 truncate">{event.title}</h3>
-                          <div className="space-y-0.5 text-xs text-slate-600 dark:text-slate-400">
-                            {dateStr && (
-                              <div className="flex items-center gap-1.5">
-                                <Clock className="w-3 h-3" />
-                                <span>{dateStr}{timeStr ? ` · ${timeStr}` : ''}</span>
-                              </div>
-                            )}
-                            {event.event_location && (
-                              <div className="flex items-center gap-1.5">
-                                <MapPin className="w-3 h-3" />
-                                <span className="truncate">{event.event_location}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
+                      <div className="w-11 text-center rounded-lg bg-slate-800/70 border border-slate-600/60 py-1.5 shrink-0">
+                        <div className="text-[9px] font-bold tracking-wider text-purple-300">{weekdayStr}</div>
+                        <div className="font-mono text-lg font-bold leading-tight">{dayOfMonth}</div>
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm text-white truncate">{event.title}</h3>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
+                          {timeStr && <span>{timeStr}</span>}
+                          {timeStr && event.event_location && <span>·</span>}
+                          {event.event_location && <span className="truncate">{event.event_location}</span>}
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
                     </button>
                   );
                 })}
@@ -1484,119 +1441,29 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             )}
           </div>
 
-          {/* Community Initiatives — compact list */}
-          {(liveInitiatives === null || activeInitiatives.length > 0) && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Initiatives</h2>
-                  {initiativesAppInfo && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-                      {initiativesAppInfo.faviconUrl
-                        ? <img src={initiativesAppInfo.faviconUrl} className="w-3.5 h-3.5 rounded-sm" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        : <Lightbulb className="w-3 h-3 text-purple-400" />
-                      }
-                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-none">{initiativesAppInfo.name}</span>
-                    </div>
-                  )}
-                </div>
-                {activeInitiatives.length > 0 && (
-                  <button onClick={() => onNavigate('initiatives')} className={`${sectionLinkClass} text-xs`}>
-                    See all →
-                  </button>
-                )}
-              </div>
-
-              {liveInitiatives === null ? (
-                <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Loading…</span>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {activeInitiatives.map(initiative => {
-                    const memberCount = initiative.members?.length ?? 0;
-                    const iLabel = initiative.status === 'active' ? 'In Progress' : initiative.status === 'completed' ? 'Completed' : 'Planning';
-                    const iStyle = initiative.status === 'active'
-                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                      : initiative.status === 'completed'
-                      ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
-                      : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
-                    const iGradient = initiative.status === 'active'
-                      ? 'from-emerald-500/25 to-teal-500/20 dark:from-emerald-900/50 dark:to-teal-900/40'
-                      : initiative.status === 'completed'
-                      ? 'from-slate-300/60 to-slate-400/40 dark:from-zinc-700 dark:to-zinc-800'
-                      : 'from-amber-400/25 to-orange-400/20 dark:from-amber-900/50 dark:to-orange-900/40';
-                    return (
-                      <button
-                        key={initiative.id}
-                        onClick={() => onNavigate(`initiatives/${initiative.id}`)}
-                        className="w-full text-left relative overflow-hidden rounded-2xl p-3.5 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-md hover:border-purple-200 dark:hover:border-purple-800/50 transition-all group flex gap-3 items-start"
-                      >
-                        <div className={`w-12 h-12 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${!initiative.imageUrl ? `bg-gradient-to-br ${iGradient}` : ''}`}>
-                          {initiative.imageUrl
-                            ? <img src={initiative.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            : <Lightbulb className="w-5 h-5 text-white/60" />
-                          }
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <h3 className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-1 leading-tight flex-1">{initiative.title}</h3>
-                            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full shrink-0 ${iStyle}`}>{iLabel}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <Users className="w-3 h-3 text-slate-400" />
-                            <span className="text-xs text-slate-500 dark:text-slate-400">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
-                            <span className="font-mono text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto">{initiative.progress}%</span>
-                          </div>
-                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-zinc-700 overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500" style={{ width: `${initiative.progress}%` }} />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          
-
           {/* Node Status */}
           <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <Activity className="w-4 h-4 text-slate-200 shrink-0" />
-                <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-100 truncate">Node Status</h2>
-              </div>
-              <button
-                onClick={() => setShowNodeStatus(v => !v)}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
-              >
-                {showNodeStatus ? 'Hide' : 'Show'}
-              </button>
+            <div className="flex items-center gap-2 mb-3.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <h2 className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Node status</h2>
             </div>
 
-            {showNodeStatus && (
-              <>
-                <div className="mt-3 h-px bg-slate-600/70" />
-                <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-4">
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.activeMembers}</div>
-                    <div className="text-xs text-slate-200">Active Members</div>
-                  </div>
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-2xl sm:text-3xl font-semibold mb-1">{nodeStatus.onlineNow}</div>
-                    <div className="text-xs text-slate-200">Online Now</div>
-                  </div>
-                  <div className="bg-slate-800/70 rounded-lg p-2 sm:p-4 border border-slate-600/60">
-                    <div className="text-base font-semibold mb-1">{nodeStatus.signalStrength}</div>
-                    <div className="text-xs text-slate-200">Signal</div>
-                  </div>
-                </div>
-              </>
-            )}
+            <div className="grid grid-cols-2 gap-3.5">
+              <div>
+                <div className="text-[11px] text-slate-400 mb-0.5">Active members</div>
+                <div className="font-mono text-2xl font-bold text-white">{nodeStatus.activeMembers}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-400 mb-0.5">Online now</div>
+                <div className="font-mono text-2xl font-bold text-white">{nodeStatus.onlineNow}</div>
+              </div>
+            </div>
+
+            <div className="mt-3.5 h-px bg-slate-600/70" />
+            <div className="mt-3.5 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">Tunnel</span>
+              <span className="font-mono text-[11px] text-slate-200 truncate">{tunnelHost}</span>
+            </div>
           </div>
             </div>
           </div>
@@ -2114,11 +1981,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           onNavigateToProfile={(userId) => { setSelectedEvent(null); onNavigate(`profile/${userId}`); }}
         />
       )}
-
-      {/* ── Initiative Detail Modal ── */}
-      <AnimatePresence>
-        {selectedInitiative && null /* initiative cards now deep-link directly */}
-      </AnimatePresence>
     </div>
   );
 }
@@ -2203,6 +2065,11 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
             </div>
           )}
         </div>
+
+        {/* Type icon */}
+        <span className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center text-white shrink-0`}>
+          <cfg.Icon className="w-4 h-4" />
+        </span>
 
         {/* Chevron */}
         <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />

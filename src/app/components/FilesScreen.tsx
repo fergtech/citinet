@@ -164,8 +164,12 @@ function StorageCard({ files }: { files: HubFile[] }) {
   );
 }
 
-function RecentUploadsCard({ files }: { files: HubFile[] }) {
-  const recent = [...files].sort((a, b) =>
+function RecentUploadsCard({ files, myUserId }: { files: HubFile[]; myUserId: string }) {
+  // Defense in depth: only ever show a file here if it's visible to everyone
+  // (hub-public or web-public) or it's mine. Never show another member's
+  // private upload, even if this component is ever fed an unfiltered list.
+  const visible = files.filter(f => f.is_public || f.web_public || f.owner_id === myUserId);
+  const recent = [...visible].sort((a, b) =>
     new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime()
   ).slice(0, 3);
   if (recent.length === 0) return null;
@@ -503,124 +507,118 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     >
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} title="Select file" />
 
-      {/* ── Chrome header ── */}
-      <div className="sticky top-0 z-30 bg-black/60 backdrop-blur-xl border-b border-zinc-800/60">
-        <div className="max-w-5xl mx-auto px-4 sm:px-8 py-5">
-          <div className="flex items-start gap-4">
-            {/* Back */}
-            <button
-              onClick={onBack}
-              className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors mt-1 shrink-0"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
-            </button>
-
-            {/* Title */}
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shrink-0">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                </svg>
-              </span>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Files</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Shared community files · members only</p>
-              </div>
-            </div>
-
-            {/* Upload + Refresh */}
-            <div className="flex items-center gap-2 shrink-0">
-              {uploading && (
-                <div className="flex items-center gap-2 bg-zinc-800 rounded-lg px-3 py-1.5">
-                  <Loader2 className="w-3.5 h-3.5 text-purple-400 animate-spin" />
-                  <div className="w-16 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 w-7">{uploadProgress}%</span>
-                </div>
-              )}
-              <div className="relative">
-                <button
-                  onClick={() => setShowUploadMenu(!showUploadMenu)}
-                  disabled={uploading}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
-                >
-                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Upload</span>
-                </button>
-                <AnimatePresence>
-                  {showUploadMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95, y: -4 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                      className="absolute right-0 top-11 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden"
-                    >
-                      <button onClick={() => triggerUpload(false)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
-                        <Lock className="w-4 h-4 text-blue-400" />
-                        <div><p className="text-sm font-medium text-white">Private</p><p className="text-[11px] text-slate-400">Only you can see this</p></div>
-                      </button>
-                      <div className="border-t border-zinc-800" />
-                      <button onClick={() => triggerUpload(true)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
-                        <Users className="w-4 h-4 text-amber-400" />
-                        <div><p className="text-sm font-medium text-white">Hub members</p><p className="text-[11px] text-slate-400">Visible to hub members</p></div>
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <button
-                onClick={() => fetchFiles(true)}
-                disabled={refreshing}
-                className="w-9 h-9 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors disabled:opacity-50"
-                title="Refresh"
-              >
-                <RefreshCw className={`w-4 h-4 text-slate-300 ${refreshing ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-8 flex gap-0 overflow-x-auto no-scrollbar">
-          {TABS.map(t => {
-            const active = tab === t.key;
-            const count = tabCounts[t.key];
-            return (
-              <button
-                key={t.key}
-                onClick={() => { setTab(t.key); setSearch(''); }}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap relative transition-colors ${
-                  active ? 'text-white' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {t.label}
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                  active ? 'bg-amber-500/20 text-amber-300' : 'bg-zinc-800 text-slate-500'
-                }`}>{count}</span>
-                {active && (
-                  <motion.div
-                    layoutId="files-tab-bar"
-                    className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Click-away overlays */}
       {showUploadMenu && <div className="fixed inset-0 z-20" onClick={() => setShowUploadMenu(false)} />}
       {showSortMenu && <div className="fixed inset-0 z-20" onClick={() => setShowSortMenu(false)} />}
-      {visPopoverId && <div className="fixed inset-0 z-40" onClick={() => setVisPopoverId(null)} />}
+      {visPopoverId && <div className="fixed inset-0 z-10" onClick={() => setVisPopoverId(null)} />}
 
       {/* ── Main content ── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-8 py-7">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-7 items-start">
 
-          {/* Left: file list */}
+          {/* Left: header + tabs + file list */}
           <div>
+            {/* Back */}
+            <button
+              onClick={onBack}
+              className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors shrink-0 mb-4"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
+            </button>
+
+            {/* Title + Upload/Refresh — same row */}
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-5">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shrink-0">
+                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </span>
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Files</h1>
+                  <p className="text-sm text-slate-400 mt-0.5">Shared community files · members only</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {uploading && (
+                  <div className="flex items-center gap-2 bg-zinc-800 rounded-lg px-3 py-1.5">
+                    <Loader2 className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                    <div className="w-16 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 w-7">{uploadProgress}%</span>
+                  </div>
+                )}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUploadMenu(!showUploadMenu)}
+                    disabled={uploading}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
+                  >
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    <span className="hidden sm:inline">Upload</span>
+                  </button>
+                  <AnimatePresence>
+                    {showUploadMenu && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                        className="absolute right-0 top-11 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden"
+                      >
+                        <button onClick={() => triggerUpload(false)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
+                          <Lock className="w-4 h-4 text-blue-400" />
+                          <div><p className="text-sm font-medium text-white">Private</p><p className="text-[11px] text-slate-400">Only you can see this</p></div>
+                        </button>
+                        <div className="border-t border-zinc-800" />
+                        <button onClick={() => triggerUpload(true)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
+                          <Users className="w-4 h-4 text-amber-400" />
+                          <div><p className="text-sm font-medium text-white">Hub members</p><p className="text-[11px] text-slate-400">Visible to hub members</p></div>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+                <button
+                  onClick={() => fetchFiles(true)}
+                  disabled={refreshing}
+                  className="w-9 h-9 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors disabled:opacity-50"
+                  title="Refresh"
+                >
+                  <RefreshCw className={`w-4 h-4 text-slate-300 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-0 overflow-x-auto no-scrollbar mb-5 border-b border-zinc-800/60">
+              {TABS.map(t => {
+                const active = tab === t.key;
+                const count = tabCounts[t.key];
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => { setTab(t.key); setSearch(''); }}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap relative transition-colors ${
+                      active ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    {t.label}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      active ? 'bg-amber-500/20 text-amber-300' : 'bg-zinc-800 text-slate-500'
+                    }`}>{count}</span>
+                    {active && (
+                      <motion.div
+                        layoutId="files-tab-bar"
+                        className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Upload error */}
             {uploadError && (
               <div className="mb-4 bg-red-900/20 border border-red-800 rounded-xl p-3 flex items-center gap-3">
@@ -785,7 +783,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ delay: index * 0.025 }}
-                        className="group w-full overflow-hidden flex items-center gap-3 p-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900/80 backdrop-blur-sm transition-all cursor-pointer"
+                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900/80 backdrop-blur-sm transition-all cursor-pointer ${isVisOpen ? 'z-20' : 'z-0'}`}
                         onClick={() => openPreview(file)}
                       >
                         <FileKindBadge file={file} size={42} />
@@ -951,9 +949,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           </div>
 
           {/* ── Right rail (desktop only) ── */}
-          <div className="hidden lg:flex flex-col gap-4 sticky top-[120px]">
+          <div className="hidden lg:flex flex-col gap-4 sticky top-7">
             <StorageCard files={allFiles} />
-            <RecentUploadsCard files={allFiles} />
+            <RecentUploadsCard files={allFiles} myUserId={myUserId} />
             <TypeBreakdownCard files={allFiles} />
           </div>
         </div>

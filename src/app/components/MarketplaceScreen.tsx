@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { DotGrid } from './DotGrid';
-import { Search, Grid3x3, List, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Package, Pencil, MoveVertical, ImagePlus, Check } from 'lucide-react';
+import {
+  Search, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Pencil, MoveVertical, ImagePlus, Check,
+  Package, HandHelping, Apple, Cpu, CalendarDays, Palette, Sparkles, Bookmark,
+  TrendingUp, ShieldCheck, Gift, Repeat, ChevronLeft,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { marketplaceService } from '../services/marketplaceService';
 import type { MarketplaceBannerConfig } from '../services/marketplaceService';
@@ -8,23 +11,52 @@ import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { CreateVendorModal } from './CreateVendorModal';
 import { AddListingModal } from './AddListingModal';
-import { MarketItemDetailModal } from './MarketItemDetailModal';
+import { ExchangeListingDetail } from './ExchangeListingDetail';
 import type { HubListing, HubVendor } from '../types/hub';
 
 interface MarketplaceScreenProps {
   onBack: () => void;
+  onNavigate?: (screen: string) => void;
   onVendorClick?: (vendorId: string) => void;
 }
 
-const CATEGORIES = ['All', 'Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts & Crafts', 'Other'];
+const CATEGORIES = ['All', 'Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts & Crafts', 'Other'] as const;
+
+const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string }> = {
+  'All':           { Icon: Store,        gradient: 'from-emerald-500 to-teal-600' },
+  'Goods':         { Icon: Package,      gradient: 'from-blue-500 to-indigo-600' },
+  'Services':      { Icon: HandHelping,  gradient: 'from-violet-500 to-purple-600' },
+  'Food':          { Icon: Apple,        gradient: 'from-rose-500 to-pink-600' },
+  'Electronics':   { Icon: Cpu,          gradient: 'from-cyan-500 to-sky-600' },
+  'Events':        { Icon: CalendarDays, gradient: 'from-amber-500 to-orange-600' },
+  'Arts & Crafts': { Icon: Palette,      gradient: 'from-fuchsia-500 to-pink-600' },
+  'Other':         { Icon: Sparkles,     gradient: 'from-slate-500 to-zinc-600' },
+};
+
+export const KIND_META: Record<HubListing['price_type'], { label: string; classes: string }> = {
+  fixed:      { label: 'For sale',   classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
+  negotiable: { label: 'Negotiable', classes: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  free:       { label: 'Free',       classes: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+  hourly:     { label: 'Hourly',     classes: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
+  contact:    { label: 'Contact',    classes: 'bg-slate-500/20 text-slate-300 border-slate-500/30' },
+};
+
+const TABS: { key: 'all' | HubListing['price_type']; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'fixed', label: 'For sale' },
+  { key: 'negotiable', label: 'Negotiable' },
+  { key: 'free', label: 'Free' },
+  { key: 'hourly', label: 'Hourly' },
+  { key: 'contact', label: 'Contact' },
+];
 
 const SORT_OPTIONS = [
-  { value: 'newest', label: 'Newest First' },
+  { value: 'newest', label: 'Newest' },
   { value: 'price-low', label: 'Price: Low to High' },
   { value: 'price-high', label: 'Price: High to Low' },
 ] as const;
 
-function formatPrice(listing: HubListing): string {
+export function formatPrice(listing: HubListing): string {
   if (listing.price_type === 'free') return 'Free';
   if (listing.price_type === 'contact') return 'Contact';
   if (listing.price == null) return 'Contact';
@@ -34,35 +66,91 @@ function formatPrice(listing: HubListing): string {
   return formatted;
 }
 
-function formatRelative(iso: string): string {
+export function formatRelative(iso: string): string {
   try {
     const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (diff < 86400) return 'Today';
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return new Date(iso).toLocaleDateString();
   } catch { return ''; }
 }
 
-function getTags(listing: HubListing): { label: string; color: string }[] {
-  const tags: { label: string; color: string }[] = [];
-
-  // Negotiable tag
-  if (listing.price_type === 'negotiable') {
-    tags.push({ label: 'Negotiable', color: 'bg-amber-500/90 text-white' });
-  }
-
-  // Recently listed tag (within 2 days)
-  try {
-    const diff = Math.floor((Date.now() - new Date(listing.created_at).getTime()) / 1000);
-    if (diff < 172800) { // 2 days
-      tags.push({ label: 'New', color: 'bg-green-500/90 text-white' });
-    }
-  } catch { /* silent */ }
-
-  return tags;
+function isFresh(iso: string): boolean {
+  try { return Date.now() - new Date(iso).getTime() < 3_600_000; } catch { return false; }
 }
 
-export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenProps) {
+/** A single listing card — reused in the main grid and in "more from this seller." */
+export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
+  listing: HubListing;
+  hubSlug: string;
+  onOpen: () => void;
+  onVendorClick?: (vendorId: string) => void;
+}) {
+  const meta = CATEGORY_META[listing.category] ?? CATEGORY_META.Other;
+  const kind = KIND_META[listing.price_type] ?? KIND_META.fixed;
+  const imageUrl = listing.image_file_name ? marketplaceService.getListingImageUrl(hubSlug, listing.image_file_name) : null;
+  const vendorLogoUrl = listing.vendor_logo_file_name ? marketplaceService.getVendorLogoUrl(hubSlug, listing.vendor_logo_file_name) : null;
+  const [saved, setSaved] = useState(() => {
+    const ids = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('saved_listings') || '[]') : [];
+    return ids.includes(listing.id);
+  });
+
+  const toggleSave = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ids: string[] = JSON.parse(localStorage.getItem('saved_listings') || '[]');
+    const idx = ids.indexOf(listing.id);
+    if (idx !== -1) ids.splice(idx, 1); else ids.push(listing.id);
+    localStorage.setItem('saved_listings', JSON.stringify(ids));
+    setSaved(!saved);
+  };
+
+  return (
+    <button
+      onClick={onOpen}
+      className="text-left flex flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900 transition-all group"
+    >
+      <div className={`relative h-26 flex items-center justify-center bg-gradient-to-br ${meta.gradient}`} style={{ height: 104 }}>
+        {imageUrl
+          ? <img src={imageUrl} alt={listing.title} className="absolute inset-0 w-full h-full object-cover" />
+          : <meta.Icon className="w-9 h-9 text-white/90" />
+        }
+        <span className={`absolute top-2.5 left-2.5 px-2 py-0.5 rounded-full text-[10px] font-bold border backdrop-blur-sm ${kind.classes}`}>{kind.label}</span>
+        <button
+          onClick={toggleSave}
+          title="Save"
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center hover:bg-black/65 transition-colors"
+        >
+          <Bookmark className={`w-3.5 h-3.5 text-white ${saved ? 'fill-white' : ''}`} />
+        </button>
+        {isFresh(listing.created_at) && <span className="absolute bottom-2.5 right-3 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+      </div>
+      <div className="p-3 flex flex-col gap-2 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="flex-1 text-sm font-semibold text-white leading-snug line-clamp-1">{listing.title}</span>
+          <span className={`font-mono text-sm font-bold whitespace-nowrap ${listing.price_type === 'fixed' ? 'text-emerald-300' : 'text-slate-300'}`}>{formatPrice(listing)}</span>
+        </div>
+        {listing.description && <p className="text-xs text-slate-400 leading-snug line-clamp-2">{listing.description}</p>}
+        <div className="flex items-center gap-2 mt-auto pt-1">
+          {vendorLogoUrl
+            ? <img src={vendorLogoUrl} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
+            : <span className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
+          }
+          <button
+            onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
+            className="text-[11px] text-slate-300 hover:text-purple-300 transition-colors truncate flex-1 text-left"
+          >
+            {listing.vendor_name}
+          </button>
+          <span className="text-[10px] text-slate-500 whitespace-nowrap font-mono">{formatRelative(listing.created_at)}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: MarketplaceScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug ?? '';
 
@@ -77,9 +165,9 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
   const [error, setError] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [activeTab, setActiveTab] = useState<typeof TABS[number]['key']>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'price-low' | 'price-high'>('newest');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const [selectedListing, setSelectedListing] = useState<HubListing | null>(null);
   const [showCreateVendor, setShowCreateVendor] = useState(false);
@@ -205,23 +293,22 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
   const handleBannerPointerMove = (e: React.PointerEvent) => {
     if (!isRepositioning || !dragRef.current) return;
     const delta = e.clientY - dragRef.current.startY;
-    // Drag down → show more of top (decrease Y); drag up → show more of bottom (increase Y)
     setBannerY(Math.max(0, Math.min(100, dragRef.current.startPos - delta * 0.4)));
   };
   const handleBannerPointerUp = () => { dragRef.current = null; };
 
-  // ── Resolved banner image URL ────────────────────────────
   const bannerImageUrl = bannerPreviewUrl
     ?? (pendingBannerFile ? hubService.getPublicFileUrl(slug, pendingBannerFile) : null)
     ?? (bannerConfig.marketplace_banner_image ? hubService.getPublicFileUrl(slug, bannerConfig.marketplace_banner_image) : null);
 
-  const bannerTitle = (showBannerEdit ? editTitle : bannerConfig.marketplace_banner_title) || 'Buy, sell & trade with your neighbors';
-  const bannerSubtitle = (showBannerEdit ? editSubtitle : bannerConfig.marketplace_banner_subtitle) || 'Everything local, right here.';
-
+  // ── Filtering / sorting ───────────────────────────────────
   const filtered = useMemo(() => {
     let items = listings;
     if (activeCategory !== 'All') {
       items = items.filter(l => l.category.toLowerCase() === activeCategory.toLowerCase());
+    }
+    if (activeTab !== 'all') {
+      items = items.filter(l => l.price_type === activeTab);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -236,11 +323,31 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
       if (sortBy === 'price-high') return (b.price ?? -Infinity) - (a.price ?? -Infinity);
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [listings, activeCategory, searchQuery, sortBy]);
+  }, [listings, activeCategory, activeTab, searchQuery, sortBy]);
+
+  // ── Right rail — real data derived from loaded listings ───
+  const stats = useMemo(() => {
+    const now = new Date();
+    const freeThisMonth = listings.filter(l => l.price_type === 'free' && (() => {
+      const d = new Date(l.created_at);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    })()).length;
+    const vendorIds = new Set(listings.map(l => l.vendor_id));
+    return { active: listings.length, freeThisMonth, vendorCount: vendorIds.size };
+  }, [listings]);
+
+  const topVendors = useMemo(() => {
+    const byVendor = new Map<string, { vendor_id: string; vendor_name: string; vendor_logo_file_name?: string; count: number }>();
+    for (const l of listings) {
+      const existing = byVendor.get(l.vendor_id);
+      if (existing) existing.count++;
+      else byVendor.set(l.vendor_id, { vendor_id: l.vendor_id, vendor_name: l.vendor_name ?? 'Vendor', vendor_logo_file_name: l.vendor_logo_file_name, count: 1 });
+    }
+    return Array.from(byVendor.values()).sort((a, b) => b.count - a.count).slice(0, 3);
+  }, [listings]);
 
   const handleVendorCreated = (vendor: HubVendor) => {
     setMyVendor(vendor);
-    // Take the owner straight to their new vendor page
     onVendorClick?.(vendor.id);
   };
 
@@ -248,557 +355,410 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
     setListings(prev => [listing, ...prev]);
   };
 
-  const selectedImageUrl = selectedListing?.image_file_name
-    ? marketplaceService.getListingImageUrl(slug, selectedListing.image_file_name)
-    : null;
-  const selectedVendorLogoUrl = selectedListing?.vendor_logo_file_name
-    ? marketplaceService.getVendorLogoUrl(slug, selectedListing.vendor_logo_file_name)
-    : null;
+  const handlePostListing = () => {
+    if (myVendor) setShowAddListing(true);
+    else setShowCreateVendor(true);
+  };
+
+  // ── Inline detail view ─────────────────────────────────────
+  if (selectedListing) {
+    return (
+      <ExchangeListingDetail
+        listing={selectedListing}
+        hubSlug={slug}
+        allListings={listings}
+        onBack={() => setSelectedListing(null)}
+        onOpenListing={setSelectedListing}
+        onVendorClick={onVendorClick}
+        onNavigate={onNavigate}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col">
-      <DotGrid />
-      {/* Header */}
-      <div className="sticky top-0 bg-white dark:bg-zinc-900 z-20 border-b border-slate-200 dark:border-zinc-800">
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-3">
-            {/* Left: title */}
-            <div className="shrink-0">
-              <h2 className="text-slate-900 dark:text-white text-xl font-bold leading-tight">Exchange</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{listings.length} listings</p>
-            </div>
+    <div className="min-h-screen bg-zinc-950">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-7 items-start">
 
-            {/* Center: search bar */}
-            <div className="flex-1 flex justify-center px-2">
-              <div className="relative w-full max-w-[700px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search listings…"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-                />
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Right: view toggle + sell button + close */}
-            <div className="flex items-center gap-2 shrink-0">
-              <div className="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-zinc-800 rounded-lg p-1">
-                <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
-                  <Grid3x3 className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                </button>
-                <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-zinc-700 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-zinc-700'}`}>
-                  <List className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                </button>
-              </div>
-
-              {myVendor ? (
-                <button
-                  onClick={() => setShowAddListing(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity shadow-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Add Listing</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => setShowCreateVendor(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors border border-slate-200 dark:border-zinc-700"
-                >
-                  <Store className="w-4 h-4" />
-                  <span className="hidden sm:inline">Start Selling</span>
-                </button>
-              )}
-              <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 px-4 py-4 max-w-5xl mx-auto w-full">
-
-        {/* Hero Banner */}
-        <div
-          className={`relative overflow-hidden ${showBannerEdit ? 'rounded-t-2xl rounded-b-none mb-0' : 'rounded-2xl mb-5'} ${isRepositioning ? 'cursor-grab active:cursor-grabbing select-none' : ''}`}
-          style={{ minHeight: 180 }}
-          onPointerDown={handleBannerPointerDown}
-          onPointerMove={handleBannerPointerMove}
-          onPointerUp={handleBannerPointerUp}
-        >
-          {/* Background — custom image or CSS gradient */}
-          {bannerImageUrl ? (
-            <>
-              <img
-                src={bannerImageUrl}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                style={{ objectPosition: `center ${bannerY}%` }}
-                draggable={false}
-              />
-              {/* Dark overlay so text stays readable regardless of image */}
-              <div className="absolute inset-0 bg-gradient-to-r from-zinc-900/90 via-zinc-900/60 to-zinc-900/30" />
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-900/60 via-purple-900/30 to-transparent" />
-            </>
-          ) : (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-purple-600 to-purple-700" />
-              <div className="absolute -right-10 -top-10 w-48 h-48 rounded-full bg-white/10" />
-              <div className="absolute right-12 -bottom-8 w-28 h-28 rounded-full bg-purple-400/20" />
-              <div className="absolute -right-4 top-4 w-20 h-20 rounded-full bg-blue-400/15" />
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 opacity-[0.12]">
-                <Store className="w-28 h-28 text-white" />
-              </div>
-            </>
-          )}
-
-          {/* Reposition drag indicator */}
-          {isRepositioning && (
-            <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
-              <div className="bg-black/60 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2 text-white text-sm font-semibold">
-                <MoveVertical className="w-4 h-4" />
-                Drag up or down to reposition
-              </div>
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="relative z-10 px-5 py-5 pr-14">
-            <p className="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1.5">Local Exchange</p>
-            <h2 className="text-xl font-bold text-white leading-snug">{bannerTitle}</h2>
-            <p className="text-sm text-blue-100/70 mt-1.5">{bannerSubtitle}</p>
-          </div>
-
-          {/* Admin: edit/close button */}
-          {isAdmin && !isRepositioning && (
+          {/* ── Left: header + filters + grid ── */}
+          <div className="flex flex-col gap-5 min-w-0">
+            {/* Back */}
             <button
-              onClick={showBannerEdit ? handleCancelBannerEdit : handleOpenBannerEdit}
-              className="absolute top-3 right-3 z-20 p-2 rounded-lg bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-colors"
-              title={showBannerEdit ? 'Close editor' : 'Customize banner'}
+              onClick={onBack}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors self-start"
             >
-              {showBannerEdit ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
             </button>
-          )}
-        </div>
 
-        {/* Banner edit panel — admin only */}
-        <AnimatePresence>
-          {isAdmin && showBannerEdit && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
-              className="bg-zinc-900 border border-zinc-800 border-t-0 rounded-b-2xl px-4 py-4 mb-5 space-y-4"
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shrink-0">
+                <Store className="w-6 h-6 text-white" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Exchange</h1>
+                <p className="text-sm text-slate-400 mt-0.5">Buy, sell, lend & give — between neighbors</p>
+              </div>
+              <button
+                onClick={handlePostListing}
+                className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors shadow-sm shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                {myVendor ? 'Post a listing' : 'Start selling'}
+              </button>
+            </div>
+            <button
+              onClick={handlePostListing}
+              className="sm:hidden w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
             >
-              {/* Image upload row */}
-              <div className="flex items-start gap-3">
-                <div
-                  onClick={() => !uploadingBannerImage && bannerFileRef.current?.click()}
-                  className="relative w-28 h-16 rounded-xl bg-zinc-800 border-2 border-dashed border-zinc-700 hover:border-purple-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
-                >
-                  {bannerImageUrl ? (
-                    <img src={bannerImageUrl} alt="" className="w-full h-full object-cover" style={{ objectPosition: `center ${bannerY}%` }} />
-                  ) : (
-                    <div className="flex flex-col items-center gap-1 text-zinc-500">
-                      <ImagePlus className="w-5 h-5" />
-                      <span className="text-[10px]">Upload</span>
-                    </div>
-                  )}
-                  {uploadingBannerImage && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                      <Loader2 className="w-4 h-4 text-white animate-spin" />
-                    </div>
-                  )}
-                </div>
-                <input ref={bannerFileRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
-                <div className="flex-1 space-y-1.5">
-                  <p className="text-xs font-semibold text-zinc-300">Cover Image</p>
-                  <p className="text-[11px] text-zinc-500 leading-snug">Any image works — wide/landscape photos fill best. Tap the preview to change.</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {bannerImageUrl && (
-                      <button
-                        onClick={() => setIsRepositioning(r => !r)}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
-                      >
-                        <MoveVertical className="w-3 h-3" />
-                        {isRepositioning ? 'Done' : 'Reposition'}
-                      </button>
-                    )}
-                    {bannerConfig.marketplace_banner_image && !pendingBannerFile && (
-                      <button onClick={handleRemoveBannerImage} disabled={savingBanner} className="text-[11px] text-red-400 hover:text-red-300 transition-colors">
-                        Remove image
-                      </button>
-                    )}
+              <Plus className="w-4 h-4" />
+              {myVendor ? 'Post a listing' : 'Start selling'}
+            </button>
+
+            {/* Hero banner — admin-configurable, real feature */}
+            <div
+              className={`relative overflow-hidden ${showBannerEdit ? 'rounded-t-2xl rounded-b-none mb-0' : 'rounded-2xl'} ${isRepositioning ? 'cursor-grab active:cursor-grabbing select-none' : ''}`}
+              style={{ minHeight: 120 }}
+              onPointerDown={handleBannerPointerDown}
+              onPointerMove={handleBannerPointerMove}
+              onPointerUp={handleBannerPointerUp}
+            >
+              {bannerImageUrl ? (
+                <>
+                  <img
+                    src={bannerImageUrl}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    style={{ objectPosition: `center ${bannerY}%` }}
+                    draggable={false}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/90 via-zinc-950/60 to-zinc-950/30" />
+                </>
+              ) : (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/40 via-zinc-900 to-zinc-950" />
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2 opacity-[0.12]">
+                    <Store className="w-24 h-24 text-white" />
+                  </div>
+                </>
+              )}
+
+              {isRepositioning && (
+                <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center">
+                  <div className="bg-black/60 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2 text-white text-sm font-semibold">
+                    <MoveVertical className="w-4 h-4" />
+                    Drag up or down to reposition
                   </div>
                 </div>
+              )}
+
+              <div className="relative z-10 px-5 py-5 pr-14">
+                <p className="text-[11px] font-bold text-emerald-300 uppercase tracking-widest mb-1.5">Local Exchange</p>
+                <h2 className="text-lg font-bold text-white leading-snug">{(showBannerEdit ? editTitle : bannerConfig.marketplace_banner_title) || 'Everything local, right here'}</h2>
+                <p className="text-sm text-slate-300 mt-1">{(showBannerEdit ? editSubtitle : bannerConfig.marketplace_banner_subtitle) || ''}</p>
               </div>
 
-              {/* Text fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Heading</label>
-                  <input
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    placeholder="Buy, sell & trade with your neighbors"
-                    maxLength={80}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Subtext</label>
-                  <input
-                    value={editSubtitle}
-                    onChange={e => setEditSubtitle(e.target.value)}
-                    placeholder="Everything local, right here."
-                    maxLength={100}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-                  />
-                </div>
-              </div>
-
-              {bannerError && <p className="text-xs text-red-400">{bannerError}</p>}
-
-              {/* Actions */}
-              <div className="flex items-center gap-3">
+              {isAdmin && !isRepositioning && (
                 <button
-                  onClick={handleSaveBanner}
-                  disabled={savingBanner || uploadingBannerImage}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity"
+                  onClick={showBannerEdit ? handleCancelBannerEdit : handleOpenBannerEdit}
+                  className="absolute top-3 right-3 z-20 p-2 rounded-lg bg-black/40 backdrop-blur-sm text-white/80 hover:text-white hover:bg-black/60 transition-colors"
+                  title={showBannerEdit ? 'Close editor' : 'Customize banner'}
                 >
-                  {savingBanner ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Save
+                  {showBannerEdit ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                 </button>
-                <button
-                  onClick={handleCancelBannerEdit}
-                  className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Category filter chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none mb-4 -mx-1 px-1">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`px-3 py-1.5 rounded-full whitespace-nowrap text-xs font-semibold transition-all ${
-                activeCategory === cat
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-500'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* Sort + count row */}
-        {!loading && listings.length > 0 && (
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {filtered.length} {filtered.length === 1 ? 'listing' : 'listings'}
-              {activeCategory !== 'All' && ` in ${activeCategory}`}
-            </p>
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as typeof sortBy)}
-              className="text-xs bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
-            >
-              {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-        )}
-
-        {/* Loading */}
-        {loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin mb-3" />
-            <p className="text-sm">Loading marketplace…</p>
-          </div>
-        )}
-
-        {/* Error */}
-        {!loading && error && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-            <AlertCircle className="w-8 h-8 text-red-400" />
-            <p className="text-sm text-red-400">{error}</p>
-            <button onClick={load} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors">
-              <RefreshCw className="w-4 h-4" /> Retry
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && !error && listings.length === 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 60, damping: 20 }}
-            className="flex flex-col items-center justify-center py-12 text-center"
-          >
-            <div className="w-44 h-44 rounded-2xl overflow-hidden mb-6 shadow-md ring-1 ring-black/5">
-              <img
-                src="/mohamed_hassan-store-4315394_1920.jpg"
-                alt="Local Exchange"
-                className="w-full h-full object-cover object-center"
-              />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Nothing listed yet</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 max-w-xs mb-6">
-              Be the first to list something! Here's what neighbors are looking for:
-            </p>
-
-            {/* Category suggestions */}
-            <div className="flex flex-wrap gap-2 justify-center mb-8">
-              {CATEGORIES.slice(1, 5).map(cat => (
-                <motion.button
-                  key={cat}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ type: 'spring', stiffness: 150, damping: 12 }}
-                  whileHover={{ scale: 1.08 }}
-                  onClick={() => setActiveCategory(cat)}
-                  className="px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-100 to-blue-100 dark:from-purple-900/40 dark:to-blue-900/40 text-purple-700 dark:text-purple-300 text-sm font-semibold border border-purple-200 dark:border-purple-700/50 hover:shadow-md transition-shadow"
-                >
-                  {cat}
-                </motion.button>
-              ))}
+              )}
             </div>
 
-            {myVendor ? (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowAddListing(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:shadow-lg transition-shadow"
-              >
-                <Plus className="w-4 h-4" /> Add Your First Listing
-              </motion.button>
-            ) : (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setShowCreateVendor(true)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-sm hover:shadow-lg transition-shadow"
-              >
-                <Store className="w-4 h-4" /> Create a Vendor Page
-              </motion.button>
-            )}
-          </motion.div>
-        )}
-
-        {/* No results (filtered) */}
-        {!loading && !error && listings.length > 0 && filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Search className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm font-medium">No listings match your filters</p>
-            <button onClick={() => { setSearchQuery(''); setActiveCategory('All'); }} className="mt-2 text-xs text-purple-600 hover:underline">
-              Clear filters
-            </button>
-          </div>
-        )}
-
-        {/* Listing grid */}
-        {!loading && !error && filtered.length > 0 && (
-          <AnimatePresence mode="popLayout">
-            {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {filtered.map((listing, i) => {
-                  const imageUrl = listing.image_file_name
-                    ? marketplaceService.getListingImageUrl(slug, listing.image_file_name)
-                    : null;
-                  const vendorLogoUrl = listing.vendor_logo_file_name
-                    ? marketplaceService.getVendorLogoUrl(slug, listing.vendor_logo_file_name)
-                    : null;
-                  const tags = getTags(listing);
-                  return (
-                    <motion.div
-                      key={listing.id}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: i * 0.02, type: 'spring', stiffness: 100, damping: 12 }}
-                      onClick={() => setSelectedListing(listing)}
-                      className="bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 hover:shadow-lg hover:border-purple-300 dark:hover:border-purple-700 transition-all cursor-pointer group"
+            <AnimatePresence>
+              {isAdmin && showBannerEdit && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="bg-zinc-900 border border-zinc-800 border-t-0 rounded-b-2xl px-4 py-4 -mt-5 space-y-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      onClick={() => !uploadingBannerImage && bannerFileRef.current?.click()}
+                      className="relative w-28 h-16 rounded-xl bg-zinc-800 border-2 border-dashed border-zinc-700 hover:border-purple-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
                     >
-                      <div className="relative aspect-square bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 overflow-hidden">
-                        {imageUrl ? (
-                          <motion.img
-                            src={imageUrl}
-                            alt={listing.title}
-                            className="w-full h-full object-cover"
-                            whileHover={{ scale: 1.08 }}
-                            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Package className="w-10 h-10 text-purple-300 dark:text-purple-700" />
-                          </div>
-                        )}
-
-                        {/* Tags overlay (top-left) */}
-                        {tags.length > 0 && (
-                          <div className="absolute top-2 left-2 flex flex-col gap-1">
-                            {tags.map((tag, idx) => (
-                              <motion.span
-                                key={idx}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: i * 0.02 + 0.1 }}
-                                className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase backdrop-blur-sm ${tag.color}`}
-                              >
-                                {tag.label}
-                              </motion.span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Vendor avatar overlay (bottom-right) */}
-                        <motion.div
-                          className="absolute bottom-2 right-2 flex items-center gap-2"
-                          whileHover={{ scale: 1.1 }}
-                          transition={{ type: 'spring', stiffness: 300, damping: 10 }}
-                        >
-                          {vendorLogoUrl ? (
-                            <img
-                              src={vendorLogoUrl}
-                              alt={listing.vendor_name}
-                              className="w-7 h-7 rounded-full object-cover border border-white dark:border-zinc-800 shadow-sm"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold border border-white dark:border-zinc-800 shadow-sm">
-                              {(listing.vendor_name ?? '?').charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-purple-600/90 backdrop-blur-sm text-white">
-                            {listing.category}
-                          </span>
-                        </motion.div>
-                      </div>
-                      <div className="p-3">
-                        <p className="text-xs font-bold text-slate-900 dark:text-white line-clamp-2 mb-1 leading-tight">{listing.title}</p>
-                        <p className="text-purple-600 dark:text-purple-400 font-bold text-sm mb-1.5">{formatPrice(listing)}</p>
-                        <div className="flex items-center justify-between">
+                      {bannerImageUrl ? (
+                        <img src={bannerImageUrl} alt="" className="w-full h-full object-cover" style={{ objectPosition: `center ${bannerY}%` }} />
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-zinc-500">
+                          <ImagePlus className="w-5 h-5" />
+                          <span className="text-[10px]">Upload</span>
+                        </div>
+                      )}
+                      {uploadingBannerImage && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 text-white animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    <input ref={bannerFileRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
+                    <div className="flex-1 space-y-1.5">
+                      <p className="text-xs font-semibold text-zinc-300">Cover Image</p>
+                      <p className="text-[11px] text-zinc-500 leading-snug">Any image works — wide/landscape photos fill best. Tap the preview to change.</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {bannerImageUrl && (
                           <button
-                            onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
-                            className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors truncate max-w-[60%]"
+                            onClick={() => setIsRepositioning(r => !r)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
                           >
-                            {listing.vendor_name}
+                            <MoveVertical className="w-3 h-3" />
+                            {isRepositioning ? 'Done' : 'Reposition'}
                           </button>
-                          <span className="text-[9px] text-slate-400 dark:text-slate-500 whitespace-nowrap ml-1">
-                            {formatRelative(listing.created_at)}
-                          </span>
-                        </div>
+                        )}
+                        {bannerConfig.marketplace_banner_image && !pendingBannerFile && (
+                          <button onClick={handleRemoveBannerImage} disabled={savingBanner} className="text-[11px] text-red-400 hover:text-red-300 transition-colors">
+                            Remove image
+                          </button>
+                        )}
                       </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filtered.map((listing, i) => {
-                  const imageUrl = listing.image_file_name
-                    ? marketplaceService.getListingImageUrl(slug, listing.image_file_name)
-                    : null;
-                  const tags = getTags(listing);
-                  return (
-                    <motion.div
-                      key={listing.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.02, type: 'spring', stiffness: 80, damping: 12 }}
-                      onClick={() => setSelectedListing(listing)}
-                      className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all cursor-pointer flex gap-4 p-4 group"
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Heading</label>
+                      <input
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        placeholder="Everything local, right here"
+                        maxLength={80}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Subtext</label>
+                      <input
+                        value={editSubtitle}
+                        onChange={e => setEditSubtitle(e.target.value)}
+                        placeholder="Buy, sell & trade with your neighbors"
+                        maxLength={100}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                      />
+                    </div>
+                  </div>
+
+                  {bannerError && <p className="text-xs text-red-400">{bannerError}</p>}
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleSaveBanner}
+                      disabled={savingBanner || uploadingBannerImage}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-purple-500 transition-colors"
                     >
-                      <motion.div
-                        className="w-24 h-24 rounded-xl bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 flex-shrink-0 overflow-hidden relative"
-                        whileHover={{ scale: 1.05 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 10 }}
-                      >
-                        {imageUrl
-                          ? <img src={imageUrl} alt={listing.title} className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center"><Package className="w-8 h-8 text-purple-300 dark:text-purple-700" /></div>
-                        }
-                        {/* Tags overlay on list image */}
-                        {tags.length > 0 && (
-                          <div className="absolute top-1 left-1 flex flex-wrap gap-1 max-w-[88px]">
-                            {tags.slice(0, 1).map((tag, idx) => (
-                              <span
-                                key={idx}
-                                className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase backdrop-blur-sm ${tag.color}`}
-                              >
-                                {tag.label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white leading-tight">{listing.title}</p>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold uppercase bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 whitespace-nowrap">{listing.category}</span>
-                        </div>
-                        <p className="text-purple-600 dark:text-purple-400 font-bold text-base mb-2">{formatPrice(listing)}</p>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
-                          <motion.button
-                            onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
-                            className="flex items-center gap-1.5 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                            whileHover={{ scale: 1.05 }}
-                          >
-                            {listing.vendor_logo_file_name
-                              ? <img src={marketplaceService.getVendorLogoUrl(slug, listing.vendor_logo_file_name) ?? undefined} alt="" className="w-4 h-4 rounded-full object-cover" />
-                              : <span className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
-                            }
-                            <span className="font-medium">{listing.vendor_name}</span>
-                          </motion.button>
-                          <span>·</span>
-                          <motion.span
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ delay: i * 0.02 + 0.05 }}
-                          >
-                            {formatRelative(listing.created_at)}
-                          </motion.span>
-                          {listing.condition && <><span>·</span><span className="capitalize">{listing.condition.replace('-', ' ')}</span></>}
-                        </div>
-                        {listing.description && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 line-clamp-2">{listing.description}</p>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                      {savingBanner ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      Save
+                    </button>
+                    <button
+                      onClick={handleCancelBannerEdit}
+                      className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Search */}
+            <div className="flex items-center gap-2.5 px-3.5 h-11 rounded-xl border border-zinc-800 bg-zinc-900/60">
+              <Search className="w-4 h-4 text-slate-500 shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search the Exchange…"
+                className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-slate-500"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-slate-300">
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Category chips */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+              {CATEGORIES.map(cat => {
+                const meta = CATEGORY_META[cat];
+                const active = activeCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
+                      active ? 'bg-purple-600 border-transparent text-white' : 'bg-zinc-900 border-zinc-800 text-slate-300 hover:border-zinc-700'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-white/20' : `bg-gradient-to-br ${meta.gradient}`}`}>
+                      <meta.Icon className="w-3 h-3 text-white" />
+                    </span>
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Tabs + sort */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex gap-1 p-1 rounded-full bg-zinc-900 border border-zinc-800 overflow-x-auto no-scrollbar">
+                {TABS.map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setActiveTab(t.key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                      activeTab === t.key ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {!loading && listings.length > 0 && (
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                  className="text-xs bg-zinc-900 border border-zinc-800 text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                >
+                  {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              )}
+            </div>
+
+            {!loading && !error && (
+              <p className="text-sm text-slate-400 -mt-2">
+                <b className="font-mono text-white">{filtered.length}</b> {filtered.length === 1 ? 'listing' : 'listings'}
+              </p>
+            )}
+
+            {/* Loading */}
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+                <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                <p className="text-sm">Loading marketplace…</p>
               </div>
             )}
-          </AnimatePresence>
-        )}
 
-        {/* Start selling CTA (if has listings but no vendor page) */}
-        {!loading && !error && listings.length > 0 && !myVendor && (
-          <div className="mt-8 bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-2xl p-5 border border-blue-200/50 dark:border-blue-700/30 text-center">
-            <Store className="w-8 h-8 text-purple-600 dark:text-purple-400 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1">Have something to sell?</p>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">Create a vendor page and list your products or services for the community.</p>
-            <button
-              onClick={() => setShowCreateVendor(true)}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              Start Selling
-            </button>
+            {/* Error */}
+            {!loading && error && (
+              <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
+                <AlertCircle className="w-8 h-8 text-red-400" />
+                <p className="text-sm text-red-400">{error}</p>
+                <button onClick={load} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-slate-300 hover:bg-zinc-800 transition-colors">
+                  <RefreshCw className="w-4 h-4" /> Retry
+                </button>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!loading && !error && listings.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-14 text-center rounded-2xl border border-zinc-800 bg-zinc-900/40">
+                <Store className="w-9 h-9 text-zinc-700 mb-3" />
+                <h3 className="text-base font-semibold text-white mb-1">Nothing listed yet</h3>
+                <p className="text-sm text-slate-400 max-w-xs mb-5">Be the first to list something for the neighborhood.</p>
+                <button
+                  onClick={handlePostListing}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-500 transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> {myVendor ? 'Add your first listing' : 'Create a vendor page'}
+                </button>
+              </div>
+            )}
+
+            {/* No results after filtering */}
+            {!loading && !error && listings.length > 0 && filtered.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-14 text-slate-500">
+                <Search className="w-9 h-9 mb-3 opacity-30" />
+                <p className="text-sm font-medium">No listings match your filters</p>
+                <button
+                  onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveTab('all'); }}
+                  className="mt-2 text-xs text-purple-300 hover:underline"
+                >
+                  Clear filters
+                </button>
+              </div>
+            )}
+
+            {/* Grid */}
+            {!loading && !error && filtered.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                {filtered.map(listing => (
+                  <ListingCard
+                    key={listing.id}
+                    listing={listing}
+                    hubSlug={slug}
+                    onOpen={() => setSelectedListing(listing)}
+                    onVendorClick={onVendorClick}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        )}
 
-        <div className="h-8" />
+          {/* ── Right rail ── */}
+          <div className="hidden lg:flex flex-col gap-4 sticky top-7">
+            <div className="rounded-2xl p-4 border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950">
+              <div className="flex items-center gap-2 mb-3.5">
+                <TrendingUp className="w-4 h-4 text-emerald-300" />
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">This hub</span>
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3.5 h-3.5 text-slate-500 shrink-0"><Store className="w-3.5 h-3.5" /></span>
+                  <span className="flex-1 text-xs text-slate-300">Active listings</span>
+                  <span className="font-mono text-sm font-bold text-white">{stats.active}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Gift className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="flex-1 text-xs text-slate-300">Given free this month</span>
+                  <span className="font-mono text-sm font-bold text-white">{stats.freeThisMonth}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Repeat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="flex-1 text-xs text-slate-300">Vendors on Exchange</span>
+                  <span className="font-mono text-sm font-bold text-white">{stats.vendorCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {topVendors.length > 0 && (
+              <div className="rounded-2xl p-4 border border-zinc-800 bg-zinc-900/60">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Community vendors</span>
+                <div className="flex flex-col gap-1 mt-3">
+                  {topVendors.map(v => (
+                    <button
+                      key={v.vendor_id}
+                      onClick={() => onVendorClick?.(v.vendor_id)}
+                      className="flex items-center gap-2.5 py-1.5 -mx-1 px-1 rounded-lg hover:bg-white/5 transition-colors text-left"
+                    >
+                      {v.vendor_logo_file_name
+                        ? <img src={marketplaceService.getVendorLogoUrl(slug, v.vendor_logo_file_name) ?? undefined} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                        : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">{v.vendor_name.charAt(0).toUpperCase()}</span>
+                      }
+                      <span className="flex-1 min-w-0 text-sm font-semibold text-white truncate">{v.vendor_name}</span>
+                      <span className="font-mono text-xs text-slate-500">{v.count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl p-4 border border-zinc-800 bg-zinc-900/60">
+              <div className="flex gap-2.5">
+                <ShieldCheck className="w-4.5 h-4.5 text-purple-300 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
+                <div>
+                  <div className="text-sm font-semibold text-white">Neighbors only</div>
+                  <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">Every seller is a verified member of this hub. Meet in public, pay in person.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Modals */}
@@ -814,16 +774,6 @@ export function MarketplaceScreen({ onBack, onVendorClick }: MarketplaceScreenPr
         hubSlug={slug}
         onClose={() => setShowAddListing(false)}
         onCreated={handleListingCreated}
-      />
-
-      <MarketItemDetailModal
-        item={selectedListing}
-        imageUrl={selectedImageUrl ?? undefined}
-        vendorLogoUrl={selectedVendorLogoUrl ?? undefined}
-        onClose={() => setSelectedListing(null)}
-        onVendorClick={onVendorClick}
-        allListings={listings}
-        hubSlug={slug}
       />
     </div>
   );

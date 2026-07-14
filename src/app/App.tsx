@@ -265,6 +265,7 @@ function HubMarketplaceRoute() {
   return (
     <MarketplaceScreen
       onBack={() => navigate(-1)}
+      onNavigate={screen => navigate(hubPath(`/${screen}`))}
       onVendorClick={id => navigate(hubPath(`/vendor/${id}`))}
     />
   );
