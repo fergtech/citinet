@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ThemeProvider } from 'next-themes';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
@@ -525,27 +526,13 @@ function AppInner() {
 }
 
 export default function App() {
-  useEffect(() => {
-    const applyTheme = (isDark: boolean) => {
-      if (isDark) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-    };
-
-    const matchMedia = window.matchMedia('(prefers-color-scheme: dark)');
-    applyTheme(matchMedia.matches);
-    const listener = (e: MediaQueryListEvent) => applyTheme(e.matches);
-    matchMedia.addEventListener('change', listener);
-    return () => matchMedia.removeEventListener('change', listener);
-  }, []);
-
   return (
-    <BrowserRouter>
-      <HubProvider>
-        <AppInner />
-      </HubProvider>
-    </BrowserRouter>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="citinet-theme">
+      <BrowserRouter>
+        <HubProvider>
+          <AppInner />
+        </HubProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

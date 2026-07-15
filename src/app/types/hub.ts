@@ -272,6 +272,10 @@ export interface HubPost {
   updated_at: string;
   event_date?: string | null;
   event_location?: string | null;
+  /** Real coordinates for event_location, captured via the same location search Atlas uses — only
+   * present when the author picked a search result rather than typing free text. */
+  event_lat?: number | null;
+  event_lng?: number | null;
   /** Who can see this post: 'inherit' (follow profile) | 'hub' (members only) | 'private' (author only) */
   visibility?: 'inherit' | 'hub' | 'private';
 }

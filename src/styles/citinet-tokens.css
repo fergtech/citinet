@@ -1,11 +1,12 @@
 /* ============================================================
    Citinet Design System — CSS tokens
    Ported from the claude.ai/design project.
-   Dark-first OS chrome aesthetic. Brand accent: purple/violet.
+   Brand accent: purple/violet (fixed across themes). Structural
+   chrome (surfaces/text/borders/glass) is theme-aware below.
    ============================================================ */
 
 :root {
-  /* App-tile gradients */
+  /* App-tile gradients (fixed across themes) */
   --cn-grad-feed:        linear-gradient(135deg, #3b82f6, #2563eb);
   --cn-grad-spaces:      linear-gradient(135deg, #a855f7, #7c3aed);
   --cn-grad-atlas:       linear-gradient(135deg, #6366f1, #4f46e5);
@@ -22,34 +23,67 @@
     radial-gradient(1000px 700px at 100% 10%, color-mix(in srgb, #3b82f6 18%, transparent), transparent 55%),
     linear-gradient(180deg, #f1f5f9, #e2e8f0);
 
+  /* Structural chrome — light */
+  --cn-surface:        #ffffff;
+  --cn-surface-2:      #f8fafc;
+  --cn-surface-3:      #f1f5f9;
+  --cn-text-1:         #0f172a;
+  --cn-text-2:         #475569;
+  --cn-text-3:         #64748b;
+  --cn-text-4:         #94a3b8;
+  --cn-border:         rgba(15, 23, 42, 0.08);
+  --cn-border-strong:  rgba(15, 23, 42, 0.14);
+  --cn-glass-bg:       rgba(255, 255, 255, 0.65);
+  --cn-glass-border:   rgba(15, 23, 42, 0.06);
+
   /* Motion */
   --cn-ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
   --cn-dur-base:   180ms;
   --cn-dur-slow:   240ms;
 }
 
-/* Dark wallpaper — the signature Citinet "night OS" look */
+/* Dark chrome — the signature Citinet "night OS" look */
 .dark {
   --cn-wallpaper:
     radial-gradient(1100px 760px at 10% -12%, color-mix(in srgb, #7c3aed 32%, transparent), transparent 58%),
     radial-gradient(1000px 720px at 105% 8%,  color-mix(in srgb, #1d4ed8 26%, transparent), transparent 55%),
     linear-gradient(180deg, #0b0b12, #09090b);
+
+  --cn-surface:        #18181b;
+  --cn-surface-2:      #09090b;
+  --cn-surface-3:      #27272a;
+  --cn-text-1:         #ffffff;
+  --cn-text-2:         #d4d4d8;
+  --cn-text-3:         #a1a1aa;
+  --cn-text-4:         #71717a;
+  --cn-border:         rgba(255, 255, 255, 0.08);
+  --cn-border-strong:  rgba(255, 255, 255, 0.14);
+  --cn-glass-bg:       rgba(9, 9, 11, 0.50);
+  --cn-glass-border:   rgba(255, 255, 255, 0.08);
 }
 
 /* Utility helpers */
 .cn-mono       { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
-.cn-eyebrow    { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cn-text-3, #64748b); }
+.cn-eyebrow    { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--cn-text-3); }
 .cn-live-dot   { border-radius: 9999px; background: #34d399; animation: cn-pulse 2s ease-in-out infinite; }
+
+.cn-surface    { background: var(--cn-surface); }
+.cn-surface-2  { background: var(--cn-surface-2); }
+.cn-text-1     { color: var(--cn-text-1); }
+.cn-text-2     { color: var(--cn-text-2); }
+.cn-text-3     { color: var(--cn-text-3); }
+.cn-text-4     { color: var(--cn-text-4); }
+.cn-border     { border-color: var(--cn-border); }
 
 @keyframes cn-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.45; }
 }
 
-/* Glass card surface (dark-only) */
+/* Glass card surface — theme-aware */
 .cn-glass {
-  background: rgba(9, 9, 11, 0.50);
+  background: var(--cn-glass-bg);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--cn-glass-border);
 }

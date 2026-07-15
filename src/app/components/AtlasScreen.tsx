@@ -1,32 +1,42 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { DotGrid } from './DotGrid';
-import { Plus, Search, X, Trash2, MapPin, Filter, Clock } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  ChevronLeft, ChevronRight, Plus, X, Search, Trash2, MapPin,
+  Navigation, Bookmark, Share2, Check, Map as MapIcon,
+} from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useHub } from '../context/HubContext';
 import { atlasService } from '../services/atlasService';
 import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
-import { AddPinModal } from './AddPinModal';
+import { LocationSearchInput } from './LocationSearchInput';
+import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
 
 // ── Icon factory (cached) ──────────────────────────────────────────────────
+// Teardrop-from-rotated-square marker matching the design system: a category-
+// gradient diamond with the counter-rotated lucide icon centered inside it.
 
 const _iconCache = new Map<string, L.DivIcon>();
 
 function getPinIcon(category: AtlasPinCategory, selected: boolean): L.DivIcon {
   const key = `${category}-${selected}`;
   if (_iconCache.has(key)) return _iconCache.get(key)!;
-  const { markerColor, emoji } = ATLAS_CATEGORIES[category];
-  const s = selected ? 36 : 28;
-  const shadow = selected
-    ? `box-shadow:0 0 0 3px white,0 0 0 6px ${markerColor};`
-    : 'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+  const cat = ATLAS_CATEGORIES[category];
+  const s = selected ? 34 : 28;
+  const iconPx = selected ? 16 : 13;
+  const svg = renderToStaticMarkup(<cat.Icon size={iconPx} color="#fff" strokeWidth={2.5} />);
+  const ring = selected
+    ? 'box-shadow:0 0 0 3px #fff,0 3px 10px rgba(0,0,0,0.4);'
+    : 'box-shadow:0 2px 8px rgba(0,0,0,0.35);';
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:${s}px;height:${s}px;border-radius:50%;background:${markerColor};border:2.5px solid white;${shadow}display:flex;align-items:center;justify-content:center;font-size:${selected ? 17 : 14}px;cursor:pointer;">${emoji}</div>`,
+    html: `<div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;background:${cat.gradientCss};transform:rotate(45deg);${ring}border:2px solid rgba(255,255,255,${selected ? '1' : '0.55'});display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
+      `<span style="transform:rotate(-45deg);display:flex">${svg}</span></div>`,
     iconSize: [s, s],
-    iconAnchor: [s / 2, s / 2],
-    popupAnchor: [0, -(s / 2) - 4],
+    iconAnchor: [s / 2, s],
+    popupAnchor: [0, -s - 4],
   });
   _iconCache.set(key, icon);
   return icon;
@@ -55,62 +65,6 @@ function MapCenterTracker({ active, onCenterChange }: { active: boolean; onCente
   return null;
 }
 
-// ── Geocoding ──────────────────────────────────────────────────────────────
-
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-}
-
-interface SearchHistoryItem {
-  displayName: string;
-  lat: number;
-  lng: number;
-}
-
-async function geocodeLocation(location: string): Promise<[number, number] | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`,
-      { headers: { 'Accept-Language': 'en' } }
-    );
-    const data = await res.json();
-    if (data.length > 0) return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  } catch {}
-  return null;
-}
-
-// ~100 km radius box around hub center; bounded=1 keeps results local
-async function searchGeocode(query: string, hubCenter?: [number, number]): Promise<NominatimResult[]> {
-  try {
-    let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`;
-    if (hubCenter) {
-      const [lat, lng] = hubCenter;
-      const d = 1.0; // ~100 km in mid-latitudes
-      url += `&viewbox=${lng - d},${lat + d},${lng + d},${lat - d}&bounded=1`;
-    }
-    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    return await res.json();
-  } catch { return []; }
-}
-
-async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`,
-      { headers: { 'Accept-Language': 'en' } }
-    );
-    const data = await res.json();
-    if (data.name && !/^\d/.test(data.name as string)) return data.name as string;
-    const a = data.address as Record<string, string> | undefined;
-    return a?.road || a?.suburb || a?.neighbourhood || a?.city
-      || (data.display_name as string | undefined)?.split(',')[0]
-      || null;
-  } catch { return null; }
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function formatRelativeTime(isoDate: string): string {
@@ -125,8 +79,369 @@ function formatRelativeTime(isoDate: string): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(isoDate));
 }
 
+function formatDistanceMiles(meters: number): string {
+  const mi = meters / 1609.34;
+  if (mi < 0.1) return `${Math.round(meters * 3.28084)} ft`;
+  return `${mi.toFixed(1)} mi`;
+}
+
 const DEFAULT_CENTER: [number, number] = [39.8283, -98.5795];
 const SEARCH_HISTORY_KEY = 'citinet-atlas-search-history';
+const SAVED_PINS_KEY = 'citinet-saved-atlas-pins';
+
+// ── Place row (list) ────────────────────────────────────────────────────────
+
+function PlaceRow({ pin, distanceLabel, canDelete, onSelect, onDelete }: {
+  pin: AtlasPin;
+  distanceLabel: string | null;
+  canDelete: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const cat = ATLAS_CATEGORIES[pin.category];
+  return (
+    <div
+      onClick={onSelect}
+      className="group flex items-center gap-3 p-3 rounded-xl border cn-border cn-glass hover:border-black/15 dark:hover:border-white/15 cursor-pointer transition-all"
+    >
+      <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
+        <cat.Icon className="w-4 h-4 text-white" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold cn-text-1 truncate">{pin.title}</div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/5 dark:bg-white/8 cn-text-2">{cat.label}</span>
+          {distanceLabel && <span className="cn-mono text-[11px] cn-text-4">{distanceLabel}</span>}
+        </div>
+      </div>
+      {canDelete && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          aria-label="Delete pin"
+          className="opacity-0 group-hover:opacity-100 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )}
+      <ChevronRight className="w-4 h-4 cn-text-4 shrink-0" />
+    </div>
+  );
+}
+
+// ── Place detail panel ───────────────────────────────────────────────────────
+
+function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
+  pin: AtlasPin;
+  distanceLabel: string | null;
+  canDelete: boolean;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
+  const cat = ATLAS_CATEGORIES[pin.category];
+  const [saved, setSaved] = useState(() => {
+    try { return (JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]') as string[]).includes(pin.id); } catch { return false; }
+  });
+  const [copied, setCopied] = useState(false);
+
+  const toggleSave = () => {
+    let ids: string[] = [];
+    try { ids = JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]'); } catch {}
+    const idx = ids.indexOf(pin.id);
+    if (idx !== -1) ids.splice(idx, 1); else ids.push(pin.id);
+    localStorage.setItem(SAVED_PINS_KEY, JSON.stringify(ids));
+    setSaved(!saved);
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.href.split('?')[0]}?pin=${pin.id}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDirections = () => {
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${pin.latitude},${pin.longitude}`, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start">
+        <ChevronLeft className="w-3.5 h-3.5" />All places
+      </button>
+
+      <div className={`h-32 sm:h-36 rounded-2xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-md`}>
+        <cat.Icon className="w-10 h-10 text-white" />
+      </div>
+
+      <div>
+        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30 mb-2">
+          {cat.label}
+        </span>
+        <h1 className="text-xl font-bold cn-text-1 tracking-tight">{pin.title}</h1>
+        <div className="text-xs cn-text-3 mt-1.5">
+          {distanceLabel ? `${distanceLabel} away · ` : ''}pinned {formatRelativeTime(pin.createdAt)}
+        </div>
+      </div>
+
+      {pin.description && (
+        <p className="text-sm leading-relaxed cn-text-2">{pin.description}</p>
+      )}
+
+      <div className="cn-glass rounded-xl p-3 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-xs shrink-0">
+          {pin.authorUsername.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-semibold cn-text-1 truncate">@{pin.authorUsername}</div>
+          <div className="text-[11px] cn-text-4">Added this pin</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleDirections}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+        >
+          <Navigation className="w-3.5 h-3.5" />
+          Directions
+        </button>
+        <button
+          onClick={toggleSave}
+          title={saved ? 'Remove from saved' : 'Save'}
+          className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
+        >
+          <Bookmark className={`w-4 h-4 ${saved ? 'fill-purple-300 text-purple-300' : ''}`} />
+        </button>
+        <button
+          onClick={handleShare}
+          title={copied ? 'Copied!' : 'Share'}
+          className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
+        >
+          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+        </button>
+        {canDelete && (
+          <button
+            onClick={onDelete}
+            title="Remove pin"
+            className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-3 hover:text-red-400 transition-colors shrink-0"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Create-pin flow (details → review → success) ────────────────────────────
+// Location is chosen beforehand via the real map's drop-here mode, so unlike the
+// design mock this panel skips straight to details — no separate location step.
+
+const CATEGORY_KEYWORDS: Record<AtlasPinCategory, string[]> = {
+  meetup:         ['meet', 'meetup', 'hangout', 'gathering', 'bench', 'plaza', 'square', 'spot'],
+  safety:         ['warning', 'alert', 'caution', 'flood', 'hazard', 'unsafe', 'broken', 'incident', 'crime', 'accident'],
+  avoid:          ['avoid', 'danger', 'closed', 'blocked', 'abandoned', 'sketchy', 'stay away'],
+  infrastructure: ['community center', 'hall', 'library', 'school', 'church', 'facility', 'clinic', 'station'],
+  poi:            ['coffee', 'cafe', 'café', 'restaurant', 'food', 'shop', 'store', 'market', 'bar',
+                   'trail', 'fountain', 'museum', 'gallery', 'starbucks', 'landmark', 'monument'],
+  aid:            ['fridge', 'pantry', 'food bank', 'free food', 'mutual aid', 'donation', 'giveaway', 'tool library', 'clothing swap'],
+  green:          ['garden', 'park', 'green space', 'community garden', 'orchard', 'planter', 'meadow', 'trees'],
+};
+
+function suggestCategory(title: string): AtlasPinCategory | null {
+  if (!title.trim()) return null;
+  const lower = title.toLowerCase();
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as [AtlasPinCategory, string[]][]) {
+    if (keywords.some(kw => lower.includes(kw))) return cat;
+  }
+  return null;
+}
+
+type CreateStep = 'details' | 'review' | 'success';
+
+function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, onPublish, onCancel, onDone }: {
+  position: [number, number];
+  suggestedTitle: string | null;
+  category: AtlasPinCategory;
+  onCategoryChange: (c: AtlasPinCategory) => void;
+  onPublish: (data: { title: string; description?: string; category: AtlasPinCategory }) => Promise<AtlasPin>;
+  onCancel: () => void;
+  onDone: (pin: AtlasPin) => void;
+}) {
+  const [step, setStep] = useState<CreateStep>('details');
+  const [title, setTitle] = useState(suggestedTitle ?? '');
+  const [description, setDescription] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [publishedPin, setPublishedPin] = useState<AtlasPin | null>(null);
+
+  const cat = ATLAS_CATEGORIES[category];
+  const categorySuggestion = useMemo(() => suggestCategory(title), [title]);
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    setError(null);
+    try {
+      const pin = await onPublish({ title: title.trim(), description: description.trim() || undefined, category });
+      setPublishedPin(pin);
+      setStep('success');
+    } catch {
+      setError('Something went wrong — try again.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onCancel}
+          className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors"
+        >
+          {step === 'success' ? <X className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+          {step === 'success' ? 'Close' : 'Cancel'}
+        </button>
+        {step !== 'success' && (
+          <div className="flex items-center gap-1.5">
+            <span className={`h-1.5 rounded-full transition-all ${step === 'details' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
+            <span className={`h-1.5 rounded-full transition-all ${step === 'review' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
+          </div>
+        )}
+      </div>
+
+      {step === 'details' && (
+        <>
+          <div>
+            <h2 className="text-lg font-bold cn-text-1">Add details</h2>
+            <p className="text-xs cn-text-3 mt-1">Your pin will be placed exactly where you positioned it on the map.</p>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">Name</label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Free Little Library"
+              autoFocus
+              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-semibold cn-text-3">Category</label>
+              {categorySuggestion && categorySuggestion !== category && (
+                <button
+                  type="button"
+                  onClick={() => onCategoryChange(categorySuggestion)}
+                  className="text-[11px] text-purple-400 hover:text-purple-300 transition-colors"
+                >
+                  Suggested: {ATLAS_CATEGORIES[categorySuggestion].label}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, c]) => (
+                <button
+                  key={key}
+                  onClick={() => onCategoryChange(key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                    category === key
+                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                      : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                  }`}
+                >
+                  <c.Icon className="w-3 h-3" />
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
+              Description <span className="font-normal cn-text-4">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={4}
+              placeholder="What should neighbors know about this place?"
+              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+            />
+          </div>
+          <button
+            onClick={() => setStep('review')}
+            disabled={!title.trim()}
+            className="w-full px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+          >
+            Review pin
+          </button>
+        </>
+      )}
+
+      {step === 'review' && (
+        <>
+          <h2 className="text-lg font-bold cn-text-1">Review &amp; publish</h2>
+          <div className="cn-glass rounded-xl p-3.5 flex flex-col gap-2.5">
+            <div className="flex items-center gap-3">
+              <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
+                <cat.Icon className="w-4 h-4 text-white" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold cn-text-1 truncate">{title.trim() || 'Untitled place'}</div>
+                <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/5 dark:bg-white/8 cn-text-2">{cat.label}</span>
+              </div>
+            </div>
+            {description.trim() && <p className="text-xs leading-relaxed cn-text-3">{description.trim()}</p>}
+            <p className="cn-mono text-[10px] cn-text-4">{position[0].toFixed(4)}, {position[1].toFixed(4)}</p>
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setStep('details')}
+              className="flex-1 px-4 py-2.5 rounded-xl border cn-border text-sm font-medium cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              Back
+            </button>
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+            >
+              {publishing ? 'Publishing…' : 'Publish pin'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 'success' && publishedPin && (
+        <>
+          <div className="flex flex-col items-center text-center gap-2 py-2">
+            <span className="w-[52px] h-[52px] rounded-full bg-emerald-500 flex items-center justify-center shadow-md">
+              <Check className="w-6 h-6 text-white" />
+            </span>
+            <h2 className="text-lg font-bold cn-text-1">Pin published</h2>
+            <p className="text-xs cn-text-3">Neighbors nearby can see it on Atlas now.</p>
+          </div>
+          <div className="cn-glass rounded-xl p-3 flex items-center gap-3">
+            <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
+              <cat.Icon className="w-4 h-4 text-white" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold cn-text-1 truncate">{publishedPin.title}</div>
+              <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/5 dark:bg-white/8 cn-text-2">{cat.label}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => onDone(publishedPin)}
+            className="w-full px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+          >
+            Done
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ── Main screen ────────────────────────────────────────────────────────────
 
@@ -137,13 +452,13 @@ interface AtlasScreenProps {
 export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  const { resolvedTheme } = useTheme();
 
   const [pins, setPins] = useState<AtlasPin[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
   const [geocoded, setGeocoded] = useState(false);
   const [hubGeoCenter, setHubGeoCenter] = useState<[number, number] | null>(null);
-  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
 
   // Drop-here placement mode
   const [placingPin, setPlacingPin] = useState(false);
@@ -151,25 +466,18 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const [dropHereCenter, setDropHereCenter] = useState<[number, number] | null>(null);
   const [nearbyPlace, setNearbyPlace] = useState<string | null>(null);
   const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
+  const [createCategory, setCreateCategory] = useState<AtlasPinCategory>('poi');
 
-  // Location search
+  // Location search — dropdown/results/history are owned by <LocationSearchInput>
   const [locationQuery, setLocationQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>(() => {
-    try { return JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) ?? '[]'); } catch { return []; }
-  });
+
+  // A location referenced elsewhere (e.g. an EVENT post) with no nearby pin yet
+  const [unregisteredLocation, setUnregisteredLocation] = useState<{ lat: number; lng: number; label: string } | null>(null);
 
   // Pin list filters
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
-  const [showFilters, setShowFilters] = useState(false);
 
-  const listRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const searchContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reverseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadPins = useCallback(async () => {
@@ -198,13 +506,26 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins]);
 
+  // A post (or other feature) linked to raw coordinates, not an existing pin id.
+  // If something's already pinned nearby, treat it the same as a real pin deep-link;
+  // otherwise center the map there and offer to add a pin — never create one silently.
   useEffect(() => {
-    const observer = new MutationObserver(() =>
-      setIsDark(document.documentElement.classList.contains('dark'))
-    );
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
+    if (pins.length === 0) return;
+    const raw = sessionStorage.getItem('citinet-deeplink-coords');
+    if (!raw) return;
+    sessionStorage.removeItem('citinet-deeplink-coords');
+    try {
+      const { lat, lng, label } = JSON.parse(raw) as { lat: number; lng: number; label: string };
+      const nearby = pins.find(p => distanceMeters(lat, lng, p.latitude, p.longitude) <= 100);
+      if (nearby) {
+        handlePinSelect(nearby);
+      } else {
+        setMapCenter([lat, lng]);
+        setUnregisteredLocation({ lat, lng, label });
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins]);
 
   useEffect(() => {
     if (!currentHub) return;
@@ -227,23 +548,6 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     });
   }, [currentHub?.lat, currentHub?.lng, currentHub?.location]);
 
-  useEffect(() => {
-    if (!selectedPinId) return;
-    const el = itemRefs.current[selectedPinId];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selectedPinId]);
-
-  // Close search dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        setShowSearchDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   const handlePinSelect = (pin: AtlasPin) => {
     setSelectedPinId(pin.id);
     setMapCenter([pin.latitude, pin.longitude]);
@@ -253,6 +557,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   const enterPlacingMode = () => {
     cancelPlacement();
+    setUnregisteredLocation(null);
     setPlacingPin(true);
     setDropHereCenter(mapCenter);
     reverseGeocode(mapCenter[0], mapCenter[1]).then(n => setNearbyPlace(n));
@@ -271,6 +576,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     if (!dropHereCenter) return;
     setPendingPosition(dropHereCenter);
     setSuggestedTitle(nearbyPlace);
+    setCreateCategory('poi');
     setPlacingPin(false);
     if (reverseTimerRef.current) clearTimeout(reverseTimerRef.current);
   };
@@ -285,69 +591,40 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   // ── Location search ──────────────────────────────────────────────────────
 
-  const handleSearchInput = (value: string) => {
-    setLocationQuery(value);
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!value.trim()) {
-      setSearchResults([]);
-      setShowSearchDropdown(searchHistory.length > 0);
-      return;
-    }
-    setShowSearchDropdown(true);
-    searchTimerRef.current = setTimeout(async () => {
-      setSearchLoading(true);
-      const results = await searchGeocode(value, hubGeoCenter ?? undefined);
-      setSearchResults(results);
-      setSearchLoading(false);
-    }, 400);
-  };
-
-  const saveToHistory = (item: SearchHistoryItem) => {
-    const updated = [item, ...searchHistory.filter(h => h.displayName !== item.displayName)].slice(0, 5);
-    setSearchHistory(updated);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(updated));
-  };
-
-  const handleSearchResultClick = (result: NominatimResult) => {
-    const lat = parseFloat(result.lat);
-    const lng = parseFloat(result.lon);
-    const name = result.display_name.split(',')[0].trim();
-    setMapCenter([lat, lng]);
-    setShowSearchDropdown(false);
+  const handleLocationSelect = (result: { lat: number; lng: number; label: string }) => {
+    setMapCenter([result.lat, result.lng]);
     setLocationQuery('');
-    setSearchResults([]);
-    saveToHistory({ displayName: name, lat, lng });
-    setPendingPosition([lat, lng]);
-    setSuggestedTitle(name);
-  };
-
-  const handleHistoryClick = (item: SearchHistoryItem) => {
-    setMapCenter([item.lat, item.lng]);
-    setShowSearchDropdown(false);
-    setPendingPosition([item.lat, item.lng]);
-    setSuggestedTitle(item.displayName);
+    setUnregisteredLocation(null);
+    setPendingPosition([result.lat, result.lng]);
+    setSuggestedTitle(result.label);
+    setCreateCategory('poi');
   };
 
   // ── Pin CRUD ─────────────────────────────────────────────────────────────
 
-  const handleSavePin = async (data: { title: string; description?: string; category: AtlasPinCategory }) => {
-    if (!pendingPosition || !hubSlug || !currentUser?.username) return;
-    try {
-      const pin = await atlasService.addPin(hubSlug, currentUser.username, {
-        latitude: pendingPosition[0],
-        longitude: pendingPosition[1],
-        ...data,
-      });
-      setPendingPosition(null);
-      setSuggestedTitle(null);
-      await loadPins();
-      setSelectedPinId(pin.id);
-      setMapCenter([pin.latitude, pin.longitude]);
-    } catch (err) {
-      console.error('Failed to save pin:', err);
-      setPendingPosition(null);
-      setSuggestedTitle(null);
-    }
+  /** Creates the pin but leaves the create-flow panel open — it advances to its
+   * own 'success' step and the panel calls `finishCreate` once the user is done. */
+  const publishPin = async (data: { title: string; description?: string; category: AtlasPinCategory }): Promise<AtlasPin> => {
+    if (!pendingPosition || !hubSlug || !currentUser?.username) throw new Error('Not ready to publish');
+    const pin = await atlasService.addPin(hubSlug, currentUser.username, {
+      latitude: pendingPosition[0],
+      longitude: pendingPosition[1],
+      ...data,
+    });
+    await loadPins();
+    return pin;
+  };
+
+  const finishCreate = (pin: AtlasPin) => {
+    setPendingPosition(null);
+    setSuggestedTitle(null);
+    setSelectedPinId(pin.id);
+    setMapCenter([pin.latitude, pin.longitude]);
+  };
+
+  const cancelCreate = () => {
+    setPendingPosition(null);
+    setSuggestedTitle(null);
   };
 
   const handleDeletePin = async (pinId: string) => {
@@ -359,391 +636,313 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
+  const selectedPin = selectedPinId ? pins.find(p => p.id === selectedPinId) ?? null : null;
+  const rightPanelActive = !!selectedPin || !!pendingPosition;
+
   const filteredPins = pins
     .filter(p => categoryFilter === 'all' || p.category === categoryFilter)
     .filter(p => !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const tileUrl = isDark
+  const distanceTo = (pin: AtlasPin) =>
+    hubGeoCenter ? formatDistanceMiles(distanceMeters(hubGeoCenter[0], hubGeoCenter[1], pin.latitude, pin.longitude)) : null;
+
+  const canDeletePin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername || !!currentUser?.isAdmin;
+
+  const tileUrl = resolvedTheme === 'dark'
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
     : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-zinc-950">
-      <DotGrid />
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-7 items-start">
 
-      {/* Header */}
-      <div className="sticky top-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10 flex-shrink-0">
-        <div className="max-w-5xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-slate-900 dark:text-white text-2xl font-semibold tracking-tight">Atlas</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 font-light">
-              {pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+          {/* ── Left: back + header + search + map ── */}
+          <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0' : 'flex flex-col gap-5 min-w-0'}>
+            <button
+              onClick={onBack}
+              className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name ?? 'Hub'}
+            </button>
+
+            <div className="flex items-center gap-3">
+              <span
+                className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md shrink-0"
+                style={{ background: 'var(--cn-grad-atlas)' }}
+              >
+                <MapIcon className="w-6 h-6 text-white" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
+                <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
+              </div>
+              <button
+                onClick={placingPin ? cancelPlacement : enterPlacingMode}
+                className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
+                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                {placingPin ? 'Placing…' : 'Drop a pin'}
+              </button>
+            </div>
             <button
               onClick={placingPin ? cancelPlacement : enterPlacingMode}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                placingPin
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+              className={`sm:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
               }`}
             >
               <Plus className="w-4 h-4" />
-              {placingPin ? 'Placing…' : 'Add Pin'}
+              {placingPin ? 'Placing…' : 'Drop a pin'}
             </button>
-            <button
-              onClick={onBack}
-              className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4 text-white" />
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Location search bar */}
-      <div
-        ref={searchContainerRef}
-        className="relative bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 flex-shrink-0"
-        style={{ zIndex: 15 }}
-      >
-        <div className="max-w-5xl mx-auto px-4 md:px-8 py-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            {searchLoading ? (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : locationQuery ? (
-              <button
-                onClick={() => { setLocationQuery(''); setSearchResults([]); setShowSearchDropdown(false); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-              >
-                <X className="w-4 h-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" />
-              </button>
-            ) : null}
-            <input
-              type="text"
+            {/* Location search */}
+            <LocationSearchInput
               value={locationQuery}
-              onChange={e => handleSearchInput(e.target.value)}
-              onFocus={() => {
-                if (searchHistory.length > 0 || searchResults.length > 0) setShowSearchDropdown(true);
-              }}
-              placeholder="Search for a place, address, or landmark…"
-              className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              onChange={setLocationQuery}
+              onSelect={handleLocationSelect}
+              hubCenter={hubGeoCenter}
+              historyKey={SEARCH_HISTORY_KEY}
+              inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
-          </div>
 
-          {/* Search dropdown */}
-          {showSearchDropdown && (
-            <div className="absolute left-4 right-4 md:left-8 md:right-8 mt-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden" style={{ zIndex: 1100 }}>
-              {/* Recent history */}
-              {!locationQuery && searchHistory.length > 0 && (
-                <>
-                  <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
-                    <Clock className="w-3 h-3" /> Recent
-                  </div>
-                  {searchHistory.map((item, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleHistoryClick(item)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 text-left transition-colors"
-                    >
-                      <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      </div>
-                      <span className="text-sm text-slate-700 dark:text-slate-300 truncate">{item.displayName}</span>
-                    </button>
+            {/* Map */}
+            <div className="relative rounded-2xl overflow-hidden border cn-border h-[260px] lg:h-[560px]">
+              <div className="w-full h-full isolate">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={14}
+                  style={{ width: '100%', height: '100%' }}
+                  zoomControl={!placingPin}
+                  attributionControl
+                >
+                  <TileLayer
+                    url={tileUrl}
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  />
+                  <MapCenterController center={mapCenter} />
+                  <MapCenterTracker active={placingPin} onCenterChange={handleDropHereCenterChange} />
+
+                  {pins.map(pin => (
+                    <Marker
+                      key={pin.id}
+                      position={[pin.latitude, pin.longitude]}
+                      icon={getPinIcon(pin.category, selectedPinId === pin.id)}
+                      eventHandlers={{ click: () => handlePinSelect(pin) }}
+                    />
                   ))}
+
+                  {pendingPosition && (
+                    <Marker position={pendingPosition} icon={getPinIcon(createCategory, true)} />
+                  )}
+                </MapContainer>
+              </div>
+
+              {/* Drop-here overlay */}
+              {placingPin && (
+                <>
+                  <div
+                    className="absolute left-1/2 top-1/2 z-[1000] pointer-events-none"
+                    style={{ transform: 'translate(-50%, -100%)' }}
+                  >
+                    <div style={{
+                      width: 36, height: 36, borderRadius: '50%',
+                      background: '#7c3aed', border: '3px solid white',
+                      boxShadow: '0 0 0 4px rgba(124,58,237,0.25), 0 4px 14px rgba(0,0,0,0.35)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+                    }}>📍</div>
+                    <div className="w-0.5 h-3 bg-purple-600 mx-auto opacity-70" />
+                  </div>
+
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] max-w-[280px]">
+                    <div className="px-3 py-1.5 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-full shadow-lg border cn-border text-xs font-medium cn-text-2 truncate">
+                      {nearbyPlace ? `Near: ${nearbyPlace}` : 'Pan the map to position your pin'}
+                    </div>
+                  </div>
+
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2.5">
+                    <button
+                      onClick={cancelPlacement}
+                      className="px-4 py-2.5 rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border cn-border text-sm font-medium cn-text-2 shadow-lg hover:bg-white dark:hover:bg-zinc-900 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDropHereConfirm}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg transition-colors"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Place pin here
+                    </button>
+                  </div>
                 </>
               )}
 
-              {/* Geocode results */}
-              {locationQuery && searchResults.length > 0 && searchResults.map(result => (
-                <button
-                  key={result.place_id}
-                  onClick={() => handleSearchResultClick(result)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 text-left transition-colors border-b border-slate-100 dark:border-zinc-800/50 last:border-0"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+              {/* Referenced location with no nearby pin yet — offer to add one, never automatic */}
+              {unregisteredLocation && !placingPin && (
+                <>
+                  <div
+                    className="absolute left-1/2 top-1/2 z-[1000] pointer-events-none"
+                    style={{ transform: 'translate(-50%, -100%)' }}
+                  >
+                    <div style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      background: 'rgba(113,113,122,0.85)', border: '2.5px dashed white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15,
+                    }}>📍</div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                      {result.display_name.split(',')[0]}
-                    </p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 truncate">
-                      {result.display_name.split(',').slice(1, 3).join(', ').trim()}
-                    </p>
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] max-w-[280px]">
+                    <div className="px-3 py-1.5 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-full shadow-lg border cn-border text-xs font-medium cn-text-2 truncate">
+                      {unregisteredLocation.label} · nothing pinned here yet
+                    </div>
                   </div>
-                </button>
-              ))}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2.5">
+                    <button
+                      onClick={() => setUnregisteredLocation(null)}
+                      className="px-4 py-2.5 rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border cn-border text-sm font-medium cn-text-2 shadow-lg hover:bg-white dark:hover:bg-zinc-900 transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPendingPosition([unregisteredLocation.lat, unregisteredLocation.lng]);
+                        setSuggestedTitle(unregisteredLocation.label);
+                        setCreateCategory('poi');
+                        setUnregisteredLocation(null);
+                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg transition-colors"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Add pin here
+                    </button>
+                  </div>
+                </>
+              )}
 
-              {locationQuery && !searchLoading && searchResults.length === 0 && (
-                <div className="px-3 py-6 text-center text-sm text-slate-400 dark:text-slate-500">
-                  No places found
+              {/* Hub geocoding overlays */}
+              {!geocoded && currentHub?.location && (
+                <div className="absolute inset-0 z-[999] flex items-center justify-center bg-white/40 dark:bg-zinc-900/40 backdrop-blur-sm pointer-events-none">
+                  <p className="text-xs cn-text-3">Locating hub…</p>
+                </div>
+              )}
+              {!currentHub?.location && (
+                <div className="absolute inset-0 z-[999] flex items-center justify-center pointer-events-none">
+                  <p className="text-sm cn-text-3">Set a hub location to center the map</p>
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Map */}
-      <div className="relative flex-shrink-0 h-[45vh] min-h-[300px]">
-        <div className="w-full h-full isolate">
-          <MapContainer
-            center={mapCenter}
-            zoom={14}
-            style={{ width: '100%', height: '100%' }}
-            zoomControl={!placingPin}
-            attributionControl
-          >
-            <TileLayer
-              url={tileUrl}
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            />
-            <MapCenterController center={mapCenter} />
-            <MapCenterTracker active={placingPin} onCenterChange={handleDropHereCenterChange} />
-
-            {pins.map(pin => {
-              const canDeletePopup = currentUser?.username === pin.authorUsername || currentUser?.isAdmin;
-              return (
-                <Marker
-                  key={pin.id}
-                  position={[pin.latitude, pin.longitude]}
-                  icon={getPinIcon(pin.category, selectedPinId === pin.id)}
-                  eventHandlers={{ click: () => handlePinSelect(pin) }}
-                >
-                  <Popup>
-                    <div className="text-sm min-w-[160px]">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span>{ATLAS_CATEGORIES[pin.category].emoji}</span>
-                        <strong className="text-slate-900">{pin.title}</strong>
-                      </div>
-                      {pin.description && (
-                        <p className="text-slate-600 mb-1.5">{pin.description}</p>
-                      )}
-                      <p className="text-xs text-slate-400">
-                        @{pin.authorUsername} · {formatRelativeTime(pin.createdAt)}
-                      </p>
-                      {canDeletePopup && (
-                        <button
-                          onClick={() => handleDeletePin(pin.id)}
-                          className="mt-2 flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Remove pin
-                        </button>
-                      )}
-                    </div>
-                  </Popup>
-                </Marker>
-              );
-            })}
-          </MapContainer>
-        </div>
-
-        {/* Drop-here overlay */}
-        {placingPin && (
-          <>
-            {/* Centered crosshair pin */}
-            <div
-              className="absolute left-1/2 top-1/2 z-[1000] pointer-events-none"
-              style={{ transform: 'translate(-50%, -100%)' }}
-            >
-              <div style={{
-                width: 36, height: 36, borderRadius: '50%',
-                background: '#7c3aed', border: '3px solid white',
-                boxShadow: '0 0 0 4px rgba(124,58,237,0.25), 0 4px 14px rgba(0,0,0,0.35)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-              }}>📍</div>
-              <div className="w-0.5 h-3 bg-purple-600 mx-auto opacity-70" />
-            </div>
-
-            {/* Nearby place badge */}
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] max-w-[280px]">
-              <div className="px-3 py-1.5 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm rounded-full shadow-lg border border-slate-200/70 dark:border-zinc-700/70 text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
-                {nearbyPlace ? `Near: ${nearbyPlace}` : 'Pan the map to position your pin'}
-              </div>
-            </div>
-
-            {/* Action bar */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2.5">
-              <button
-                onClick={cancelPlacement}
-                className="px-4 py-2.5 rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-lg hover:bg-white dark:hover:bg-zinc-900 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDropHereConfirm}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg transition-colors"
-              >
-                <MapPin className="w-4 h-4" />
-                Place pin here
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Hub geocoding overlays */}
-        {!geocoded && currentHub?.location && (
-          <div className="absolute inset-0 z-[999] flex items-center justify-center bg-white/40 dark:bg-zinc-900/40 backdrop-blur-sm pointer-events-none">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Locating hub…</p>
           </div>
-        )}
-        {!currentHub?.location && (
-          <div className="absolute inset-0 z-[999] flex items-center justify-center pointer-events-none">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Set a hub location to center the map</p>
-          </div>
-        )}
-      </div>
 
-      {/* Pin list */}
-      <div className="flex-1 flex flex-col overflow-hidden max-w-5xl mx-auto w-full px-4 md:px-8">
-        {/* Filter bar */}
-        <div className="py-3 flex items-center gap-2 flex-shrink-0">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search pins…"
-              className="w-full pl-9 pr-8 py-2 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                <X className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" />
-              </button>
-            )}
-          </div>
-          <button
-            onClick={() => setShowFilters(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
-              categoryFilter !== 'all'
-                ? 'border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20'
-                : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-zinc-600'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            {categoryFilter === 'all' ? 'All' : ATLAS_CATEGORIES[categoryFilter].label}
-          </button>
-        </div>
-
-        {/* Category chips */}
-        {showFilters && (
-          <div className="flex flex-wrap gap-2 pb-3 flex-shrink-0">
-            <button
-              onClick={() => { setCategoryFilter('all'); setShowFilters(false); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                categoryFilter === 'all'
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent'
-                  : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
-              }`}
-            >
-              All
-            </button>
-            {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
-              <button
-                key={key}
-                onClick={() => { setCategoryFilter(key); setShowFilters(false); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                  categoryFilter === key
-                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent'
-                    : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
-                }`}
-              >
-                {cat.emoji} {cat.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Pin cards */}
-        <div ref={listRef} className="flex-1 overflow-y-auto pb-6 space-y-2">
-          {filteredPins.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
-                <MapPin className="w-8 h-8 text-slate-400 dark:text-slate-500" />
-              </div>
-              {pins.length === 0 ? (
-                <>
-                  <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">No pins yet</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Search for a place above or click <strong>Add Pin</strong> to mark a spot
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-slate-500 dark:text-slate-400">No pins match your filter</p>
-              )}
-            </div>
-          ) : (
-            filteredPins.map(pin => {
-              const cat = ATLAS_CATEGORIES[pin.category];
-              const isSelected = selectedPinId === pin.id;
-              const canDelete = currentUser?.username === pin.authorUsername || currentUser?.isAdmin;
-
-              return (
-                <div
-                  key={pin.id}
-                  ref={el => { itemRefs.current[pin.id] = el; }}
-                  onClick={() => handlePinSelect(pin)}
-                  className={`group flex items-start gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                    isSelected
-                      ? 'border-purple-400 dark:border-purple-600 bg-purple-50/60 dark:bg-purple-900/20 shadow-sm'
-                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm'
-                  }`}
-                >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                    style={{ background: `${cat.markerColor}20` }}
-                  >
-                    {cat.emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2 mb-0.5">
-                      <h4 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{pin.title}</h4>
-                      <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${cat.badgeClass}`}>
-                        {cat.label}
-                      </span>
-                    </div>
-                    {pin.description && (
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1 line-clamp-2">{pin.description}</p>
-                    )}
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      @{pin.authorUsername} · {formatRelativeTime(pin.createdAt)}
-                    </p>
-                  </div>
-                  {canDelete && (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDeletePin(pin.id); }}
-                      aria-label="Delete pin"
-                      className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-300 dark:text-zinc-600 hover:text-red-600 dark:hover:text-red-400"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
+          {/* ── Right: pin list or place detail ── */}
+          {/* Bounded to the viewport + sticky on desktop so a long pin list scrolls
+              internally instead of pushing the whole page; mobile keeps normal flow. */}
+          <div className="lg:sticky lg:top-7 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto lg:pr-1 no-scrollbar">
+            {pendingPosition ? (
+              <CreatePinPanel
+                position={pendingPosition}
+                suggestedTitle={suggestedTitle}
+                category={createCategory}
+                onCategoryChange={setCreateCategory}
+                onPublish={publishPin}
+                onCancel={cancelCreate}
+                onDone={finishCreate}
+              />
+            ) : selectedPin ? (
+              <PlaceDetailPanel
+                pin={selectedPin}
+                distanceLabel={distanceTo(selectedPin)}
+                canDelete={canDeletePin(selectedPin)}
+                onBack={() => setSelectedPinId(null)}
+                onDelete={() => handleDeletePin(selectedPin.id)}
+              />
+            ) : (
+              <div className="flex flex-col gap-4">
+                {/* Search pins */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Search pins…"
+                    className="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                      <X className="w-3.5 h-3.5 cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300" />
                     </button>
                   )}
                 </div>
-              );
-            })
-          )}
+
+                {/* Category chips */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  <button
+                    onClick={() => setCategoryFilter('all')}
+                    className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                      categoryFilter === 'all'
+                        ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                        : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                    }`}
+                  >
+                    All places
+                  </button>
+                  {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
+                    <button
+                      key={key}
+                      onClick={() => setCategoryFilter(key)}
+                      className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                        categoryFilter === key
+                          ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                          : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="text-xs cn-text-3">
+                  <b className="cn-mono cn-text-1">{filteredPins.length}</b> {filteredPins.length === 1 ? 'place' : 'places'} pinned
+                </span>
+
+                {/* Place cards */}
+                <div className="flex flex-col gap-2">
+                  {filteredPins.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <div className="w-16 h-16 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+                        <MapPin className="w-8 h-8 cn-text-4" />
+                      </div>
+                      {pins.length === 0 ? (
+                        <>
+                          <p className="text-sm font-medium cn-text-2 mb-1">No pins yet</p>
+                          <p className="text-xs cn-text-4">
+                            Search for a place above or click <strong>Drop a pin</strong> to mark a spot
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm cn-text-3">No pins match your filter</p>
+                      )}
+                    </div>
+                  ) : (
+                    filteredPins.map(pin => (
+                      <PlaceRow
+                        key={pin.id}
+                        pin={pin}
+                        distanceLabel={distanceTo(pin)}
+                        canDelete={canDeletePin(pin)}
+                        onSelect={() => handlePinSelect(pin)}
+                        onDelete={() => handleDeletePin(pin.id)}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Add Pin modal */}
-      {pendingPosition && (
-        <AddPinModal
-          position={pendingPosition}
-          suggestedTitle={suggestedTitle}
-          onSave={handleSavePin}
-          onClose={() => { setPendingPosition(null); setSuggestedTitle(null); }}
-        />
-      )}
     </div>
   );
 }

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTheme } from 'next-themes';
 import {
   Hexagon, Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
-  Sparkles, Store, Bug, Lightbulb, MapPin, Users,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub, useHubStatus } from '../context/HubContext';
@@ -25,6 +26,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const { currentHub, currentUser, leaveHub, updateTunnelUrl } = useHub();
   const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
+  const toggleTheme = () => setTheme(isDarkMode ? 'light' : 'dark');
 
   const hubSlug = currentHub?.slug ?? '';
   const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
@@ -395,6 +399,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 >
                   <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                   <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  {isDarkMode
+                    ? <Moon className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    : <Sun className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />}
+                  <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">Dark Mode</span>
+                  <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </span>
                 </button>
                 <button
                   onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
@@ -839,6 +855,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 >
                   <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  {isDarkMode
+                    ? <Moon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    : <Sun className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+                  <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">Dark Mode</span>
+                  <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </span>
                 </button>
                 <button
                   onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}

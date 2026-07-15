@@ -489,6 +489,8 @@ async function initDb() {
     await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS shared_to_feed     BOOLEAN DEFAULT FALSE`);
     await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_date         TIMESTAMPTZ`);
     await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_location     VARCHAR(300)`);
+    await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_lat          DOUBLE PRECISION`);
+    await client.query(`ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_lng          DOUBLE PRECISION`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_hub_posts_space_id ON hub_posts(space_id)`);
     await client.query(`ALTER TABLE hub_files  ADD COLUMN IF NOT EXISTS space_id           UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`);
     await client.query(`ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_mode        TEXT`);
@@ -2052,7 +2054,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
-              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.visibility,
+              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               s.name AS space_name, s.slug AS space_slug,
@@ -2075,7 +2077,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
 
 // Create a post (with optional image upload)
 app.post('/api/posts', authenticate, upload.single('media'), async (req, res) => {
-  const { category, title, body, event_date, event_location, visibility } = req.body || {};
+  const { category, title, body, event_date, event_location, event_lat, event_lng, visibility } = req.body || {};
   const cat = (category || '').toUpperCase();
   const VALID_VIS = ['inherit', 'hub', 'private'];
   const vis = VALID_VIS.includes(visibility) ? visibility : 'inherit';
@@ -2111,12 +2113,15 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
 
     const eventDateVal = (cat === 'EVENT' && event_date) ? new Date(event_date) : null;
     const eventLocVal  = (cat === 'EVENT' && event_location?.trim()) ? event_location.trim() : null;
+    // Coordinates are only meaningful alongside a location — never store one without the other.
+    const eventLatVal = (cat === 'EVENT' && eventLocVal && event_lat !== undefined && !isNaN(parseFloat(event_lat))) ? parseFloat(event_lat) : null;
+    const eventLngVal = (cat === 'EVENT' && eventLocVal && event_lng !== undefined && !isNaN(parseFloat(event_lng))) ? parseFloat(event_lng) : null;
 
     const result = await pool.query(
-      `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, visibility)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility`,
-      [cat, title.trim(), body?.trim() || '', req.user.id, mediaFileId, eventDateVal, eventLocVal, vis]
+      `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, event_lat, event_lng, visibility)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, event_lat, event_lng, visibility`,
+      [cat, title.trim(), body?.trim() || '', req.user.id, mediaFileId, eventDateVal, eventLocVal, eventLatVal, eventLngVal, vis]
     );
 
     // Ensure post-attached media is always publicly readable
@@ -2142,7 +2147,7 @@ app.post('/api/posts', authenticate, upload.single('media'), async (req, res) =>
 
 // Update a post (author or admin)
 app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, res) => {
-  const { title, body, event_date, event_location, remove_media, visibility } = req.body || {};
+  const { title, body, event_date, event_location, event_lat, event_lng, remove_media, visibility } = req.body || {};
   // title is only required when content fields are being updated
   const updatingContent = title !== undefined || body !== undefined;
   if (updatingContent && !title?.trim()) return res.status(400).json({ error: 'Title is required' });
@@ -2186,8 +2191,16 @@ app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, re
     if (existing.category === 'EVENT') {
       params.push(event_date ? new Date(event_date) : null);
       sets.push(`event_date = $${params.length}`);
-      params.push(event_location?.trim() || null);
+      const eventLocVal = event_location?.trim() || null;
+      params.push(eventLocVal);
       sets.push(`event_location = $${params.length}`);
+      // Coordinates are only meaningful alongside a location — never store one without the other.
+      const eventLatVal = (eventLocVal && event_lat !== undefined && !isNaN(parseFloat(event_lat))) ? parseFloat(event_lat) : null;
+      const eventLngVal = (eventLocVal && event_lng !== undefined && !isNaN(parseFloat(event_lng))) ? parseFloat(event_lng) : null;
+      params.push(eventLatVal);
+      sets.push(`event_lat = $${params.length}`);
+      params.push(eventLngVal);
+      sets.push(`event_lng = $${params.length}`);
     }
     if (visibility && VALID_VIS.includes(visibility)) {
       params.push(visibility);
@@ -2197,7 +2210,7 @@ app.patch('/api/posts/:id', authenticate, upload.single('media'), async (req, re
 
     const result = await pool.query(
       `UPDATE hub_posts SET ${sets.join(', ')} WHERE id = $${params.length}
-       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at, visibility`,
+       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, event_lat, event_lng, created_at, updated_at, visibility`,
       params
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
@@ -2252,7 +2265,7 @@ app.get('/api/events/upcoming', authenticate, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 5, 20);
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.category, p.title, p.body, p.event_date, p.event_location,
+      `SELECT p.id, p.category, p.title, p.body, p.event_date, p.event_location, p.event_lat, p.event_lng,
               p.created_at, p.updated_at,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
@@ -2355,6 +2368,7 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+              p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
@@ -3322,7 +3336,7 @@ app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
 
 // ── Atlas pin routes ───────────────────────────────────────
 
-const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi'];
+const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 'aid', 'green'];
 
 // List all pins
 app.get('/api/atlas/pins', authenticate, async (_req, res) => {

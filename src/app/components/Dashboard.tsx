@@ -1237,7 +1237,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             {/* Quick post prompt */}
             <button
               onClick={() => { sessionStorage.setItem('citinet-deeplink-compose', '1'); onNavigate('feed'); }}
-              className="w-full flex items-center gap-3 mb-4 rounded-2xl p-3 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md hover:shadow-md hover:-translate-y-0.5 transition-all text-left group"
+              className="w-full flex items-center gap-3 mb-4 rounded-2xl p-3 cn-glass hover:shadow-md hover:-translate-y-0.5 transition-all text-left group"
             >
               <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
                 {resolvedCurrentUserAvatarUrl
@@ -1245,7 +1245,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                   : displayName.charAt(0).toUpperCase()
                 }
               </div>
-              <span className="text-sm text-slate-300 flex-1">Share something with your neighbors…</span>
+              <span className="text-sm cn-text-3 flex-1">Share something with your neighbors…</span>
               <span className="w-8 h-8 rounded-xl flex items-center justify-center text-purple-300 group-hover:bg-purple-500/15 group-hover:text-purple-200 transition-colors shrink-0">
                 <Plus className="w-4 h-4" />
               </span>
@@ -1318,7 +1318,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             {activityLoading ? (
               <div className="space-y-3">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 overflow-hidden">
+                  <div key={i} className="cn-glass rounded-2xl overflow-hidden">
                     <div className="p-4 space-y-2">
                       <div className="h-3 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-1/3" />
                       <div className="h-4 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse w-2/3" />
@@ -1328,9 +1328,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                 ))}
               </div>
             ) : activityItems.length === 0 ? (
-              <div className="bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md rounded-2xl border border-slate-300/50 dark:border-zinc-700/70 p-8 text-center text-white">
-                <Activity className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">No activity yet — be the first to post!</p>
+              <div className="cn-glass rounded-2xl p-8 text-center">
+                <Activity className="w-8 h-8 cn-text-4 mx-auto mb-2" />
+                <p className="text-sm cn-text-3">No activity yet — be the first to post!</p>
               </div>
             ) : (() => {
               const PAGE = 6;
@@ -1384,23 +1384,23 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
             {/* Right: Events + Node Status */}
             <div className="flex flex-col gap-6">
               {/* Upcoming Events */}
-          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
+          <div className="relative overflow-hidden rounded-2xl p-4 cn-glass">
             <div className="flex items-center justify-between mb-3.5">
-              <h2 className="text-base font-semibold text-white tracking-tight">Upcoming events</h2>
+              <h2 className="text-base font-semibold cn-text-1 tracking-tight">Upcoming events</h2>
               <button onClick={() => onNavigate('feed')} className="text-xs font-semibold text-purple-300 hover:text-purple-200 transition-colors">
                 See all
               </button>
             </div>
 
             {eventsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400 py-2">
+              <div className="flex items-center gap-2 text-sm cn-text-3 py-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Loading…</span>
               </div>
             ) : upcomingEvents.length === 0 ? (
               <div className="text-center py-3">
-                <Calendar className="w-7 h-7 text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">No upcoming events yet</p>
+                <Calendar className="w-7 h-7 cn-text-4 mx-auto mb-2" />
+                <p className="text-sm cn-text-3">No upcoming events yet</p>
                 <button
                   onClick={() => onNavigate('feed')}
                   className="mt-2 text-xs font-semibold text-purple-300 hover:underline"
@@ -1419,21 +1419,21 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                     <button
                       key={event.id}
                       onClick={() => setSelectedEvent(event)}
-                      className="w-full text-left flex gap-3 items-center rounded-xl p-1.5 -mx-1.5 hover:bg-white/5 transition-colors group"
+                      className="w-full text-left flex gap-3 items-center rounded-xl p-1.5 -mx-1.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
                     >
-                      <div className="w-11 text-center rounded-lg bg-slate-800/70 border border-slate-600/60 py-1.5 shrink-0">
-                        <div className="text-[9px] font-bold tracking-wider text-purple-300">{weekdayStr}</div>
-                        <div className="font-mono text-lg font-bold leading-tight">{dayOfMonth}</div>
+                      <div className="w-11 text-center rounded-lg cn-surface-2 border cn-border py-1.5 shrink-0">
+                        <div className="text-[9px] font-bold tracking-wider text-purple-400">{weekdayStr}</div>
+                        <div className="font-mono text-lg font-bold leading-tight cn-text-1">{dayOfMonth}</div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm text-white truncate">{event.title}</h3>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400 truncate">
+                        <h3 className="font-semibold text-sm cn-text-1 truncate">{event.title}</h3>
+                        <div className="flex items-center gap-1.5 text-xs cn-text-3 truncate">
                           {timeStr && <span>{timeStr}</span>}
                           {timeStr && event.event_location && <span>·</span>}
                           {event.event_location && <span className="truncate">{event.event_location}</span>}
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0" />
+                      <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-purple-400 transition-colors shrink-0" />
                     </button>
                   );
                 })}
@@ -1442,27 +1442,27 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div>
 
           {/* Node Status */}
-          <div className="relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white">
+          <div className="relative overflow-hidden rounded-2xl p-4 cn-glass">
             <div className="flex items-center gap-2 mb-3.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <h2 className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Node status</h2>
+              <h2 className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Node status</h2>
             </div>
 
             <div className="grid grid-cols-2 gap-3.5">
               <div>
-                <div className="text-[11px] text-slate-400 mb-0.5">Active members</div>
-                <div className="font-mono text-2xl font-bold text-white">{nodeStatus.activeMembers}</div>
+                <div className="text-[11px] cn-text-3 mb-0.5">Active members</div>
+                <div className="font-mono text-2xl font-bold cn-text-1">{nodeStatus.activeMembers}</div>
               </div>
               <div>
-                <div className="text-[11px] text-slate-400 mb-0.5">Online now</div>
-                <div className="font-mono text-2xl font-bold text-white">{nodeStatus.onlineNow}</div>
+                <div className="text-[11px] cn-text-3 mb-0.5">Online now</div>
+                <div className="font-mono text-2xl font-bold cn-text-1">{nodeStatus.onlineNow}</div>
               </div>
             </div>
 
-            <div className="mt-3.5 h-px bg-slate-600/70" />
+            <div className="mt-3.5 h-px cn-border border-t" />
             <div className="mt-3.5 flex items-center justify-between">
-              <span className="text-[11px] text-slate-400">Tunnel</span>
-              <span className="font-mono text-[11px] text-slate-200 truncate">{tunnelHost}</span>
+              <span className="text-[11px] cn-text-3">Tunnel</span>
+              <span className="font-mono text-[11px] cn-text-2 truncate">{tunnelHost}</span>
             </div>
           </div>
             </div>
@@ -1487,10 +1487,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                         <button
                           key={`${pageIdx}-${app.screen}`}
                           onClick={() => isSuggest ? setShowRequestModal(true) : handleTileNavigate(app.screen, app.notifyFeature)}
-                          className={`w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 border shadow-sm active:scale-95 transition-transform ${
+                          className={`w-full max-w-[72px] flex flex-col items-center gap-1.5 rounded-2xl p-2.5 shadow-sm active:scale-95 transition-transform ${
                             isSuggest
-                              ? 'bg-indigo-950/60 border-indigo-500/30'
-                              : 'bg-slate-900/75 dark:bg-black/60 border-slate-700'
+                              ? 'bg-indigo-950/60 border border-indigo-500/30'
+                              : 'cn-glass'
                           }`}
                         >
                           <div className="relative">
@@ -1506,7 +1506,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
                               </span>
                             )}
                           </div>
-                          <span className={`text-[10px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-300' : 'text-slate-200'}`}>
+                          <span className={`text-[10px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-300' : 'cn-text-2'}`}>
                             {app.label}
                           </span>
                         </button>
@@ -2021,7 +2021,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className="w-full relative overflow-hidden rounded-2xl p-4 border border-slate-300/50 dark:border-zinc-700/70 bg-slate-900/45 dark:bg-zinc-900/45 backdrop-blur-md text-white hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
+      className="w-full relative overflow-hidden rounded-2xl p-4 cn-glass hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
     >
       {/* Left accent bar removed — type is already communicated via verb text color */}
 
