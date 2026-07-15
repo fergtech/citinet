@@ -109,7 +109,7 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
   return (
     <button
       onClick={onOpen}
-      className="text-left flex flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900 transition-all group"
+      className="text-left flex flex-col overflow-hidden rounded-2xl border cn-border cn-surface hover:shadow-md transition-all group"
     >
       <div className={`relative h-26 flex items-center justify-center bg-gradient-to-br ${meta.gradient}`} style={{ height: 104 }}>
         {imageUrl
@@ -128,10 +128,10 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
       </div>
       <div className="p-3 flex flex-col gap-2 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="flex-1 text-sm font-semibold text-white leading-snug line-clamp-1">{listing.title}</span>
-          <span className={`font-mono text-sm font-bold whitespace-nowrap ${listing.price_type === 'fixed' ? 'text-emerald-300' : 'text-slate-300'}`}>{formatPrice(listing)}</span>
+          <span className="flex-1 text-sm font-semibold cn-text-1 leading-snug line-clamp-1">{listing.title}</span>
+          <span className={`font-mono text-sm font-bold whitespace-nowrap ${listing.price_type === 'fixed' ? 'text-emerald-500 dark:text-emerald-300' : 'cn-text-2'}`}>{formatPrice(listing)}</span>
         </div>
-        {listing.description && <p className="text-xs text-slate-400 leading-snug line-clamp-2">{listing.description}</p>}
+        {listing.description && <p className="text-xs cn-text-3 leading-snug line-clamp-2">{listing.description}</p>}
         <div className="flex items-center gap-2 mt-auto pt-1">
           {vendorLogoUrl
             ? <img src={vendorLogoUrl} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
@@ -139,11 +139,11 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
           }
           <button
             onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
-            className="text-[11px] text-slate-300 hover:text-purple-300 transition-colors truncate flex-1 text-left"
+            className="text-[11px] cn-text-2 hover:text-purple-500 dark:hover:text-purple-300 transition-colors truncate flex-1 text-left"
           >
             {listing.vendor_name}
           </button>
-          <span className="text-[10px] text-slate-500 whitespace-nowrap font-mono">{formatRelative(listing.created_at)}</span>
+          <span className="text-[10px] cn-text-4 whitespace-nowrap font-mono">{formatRelative(listing.created_at)}</span>
         </div>
       </div>
     </button>
@@ -376,7 +376,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-7 items-start">
 
@@ -385,7 +385,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             {/* Back */}
             <button
               onClick={onBack}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors self-start"
+              className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors self-start"
             >
               <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
             </button>
@@ -396,8 +396,8 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 <Store className="w-6 h-6 text-white" />
               </span>
               <div className="flex-1 min-w-0">
-                <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Exchange</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Buy, sell, lend & give — between neighbors</p>
+                <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Exchange</h1>
+                <p className="text-sm cn-text-3 mt-0.5">Buy, sell, lend & give — between neighbors</p>
               </div>
               <button
                 onClick={handlePostListing}
@@ -476,17 +476,17 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15 }}
-                  className="bg-zinc-900 border border-zinc-800 border-t-0 rounded-b-2xl px-4 py-4 -mt-5 space-y-4"
+                  className="cn-surface border cn-border border-t-0 rounded-b-2xl px-4 py-4 -mt-5 space-y-4"
                 >
                   <div className="flex items-start gap-3">
                     <div
                       onClick={() => !uploadingBannerImage && bannerFileRef.current?.click()}
-                      className="relative w-28 h-16 rounded-xl bg-zinc-800 border-2 border-dashed border-zinc-700 hover:border-purple-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
+                      className="relative w-28 h-16 rounded-xl cn-surface-2 border-2 border-dashed cn-border hover:border-purple-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
                     >
                       {bannerImageUrl ? (
                         <img src={bannerImageUrl} alt="" className="w-full h-full object-cover" style={{ objectPosition: `center ${bannerY}%` }} />
                       ) : (
-                        <div className="flex flex-col items-center gap-1 text-zinc-500">
+                        <div className="flex flex-col items-center gap-1 cn-text-4">
                           <ImagePlus className="w-5 h-5" />
                           <span className="text-[10px]">Upload</span>
                         </div>
@@ -499,13 +499,13 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     </div>
                     <input ref={bannerFileRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
                     <div className="flex-1 space-y-1.5">
-                      <p className="text-xs font-semibold text-zinc-300">Cover Image</p>
-                      <p className="text-[11px] text-zinc-500 leading-snug">Any image works — wide/landscape photos fill best. Tap the preview to change.</p>
+                      <p className="text-xs font-semibold cn-text-2">Cover Image</p>
+                      <p className="text-[11px] cn-text-4 leading-snug">Any image works — wide/landscape photos fill best. Tap the preview to change.</p>
                       <div className="flex items-center gap-2 flex-wrap">
                         {bannerImageUrl && (
                           <button
                             onClick={() => setIsRepositioning(r => !r)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'}`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-purple-600 text-white' : 'cn-surface-3 cn-text-2 hover:bg-black/10 dark:hover:bg-white/10'}`}
                           >
                             <MoveVertical className="w-3 h-3" />
                             {isRepositioning ? 'Done' : 'Reposition'}
@@ -522,23 +522,23 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Heading</label>
+                      <label className="block text-[11px] font-semibold cn-text-3 mb-1">Heading</label>
                       <input
                         value={editTitle}
                         onChange={e => setEditTitle(e.target.value)}
                         placeholder="Everything local, right here"
                         maxLength={80}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-semibold text-zinc-400 mb-1">Subtext</label>
+                      <label className="block text-[11px] font-semibold cn-text-3 mb-1">Subtext</label>
                       <input
                         value={editSubtitle}
                         onChange={e => setEditSubtitle(e.target.value)}
                         placeholder="Buy, sell & trade with your neighbors"
                         maxLength={100}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
                       />
                     </div>
                   </div>
@@ -556,7 +556,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     </button>
                     <button
                       onClick={handleCancelBannerEdit}
-                      className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-800 transition-colors"
+                      className="px-4 py-2 rounded-xl border cn-border cn-text-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                     >
                       Cancel
                     </button>
@@ -566,17 +566,17 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             </AnimatePresence>
 
             {/* Search */}
-            <div className="flex items-center gap-2.5 px-3.5 h-11 rounded-xl border border-zinc-800 bg-zinc-900/60">
-              <Search className="w-4 h-4 text-slate-500 shrink-0" />
+            <div className="flex items-center gap-2.5 px-3.5 h-11 rounded-xl border cn-border cn-surface">
+              <Search className="w-4 h-4 cn-text-4 shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search the Exchange…"
-                className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-slate-500"
+                className="flex-1 bg-transparent outline-none text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500"
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-slate-300">
+                <button onClick={() => setSearchQuery('')} className="cn-text-4 hover:text-slate-700 dark:hover:text-slate-300">
                   <X className="w-4 h-4" />
                 </button>
               )}
@@ -592,7 +592,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     key={cat}
                     onClick={() => setActiveCategory(cat)}
                     className={`inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
-                      active ? 'bg-purple-600 border-transparent text-white' : 'bg-zinc-900 border-zinc-800 text-slate-300 hover:border-zinc-700'
+                      active ? 'bg-purple-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
                     }`}
                   >
                     <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-white/20' : `bg-gradient-to-br ${meta.gradient}`}`}>
@@ -606,13 +606,13 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Tabs + sort */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex gap-1 p-1 rounded-full bg-zinc-900 border border-zinc-800 overflow-x-auto no-scrollbar">
+              <div className="flex gap-1 p-1 rounded-full cn-surface border cn-border overflow-x-auto no-scrollbar">
                 {TABS.map(t => (
                   <button
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === t.key ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                      activeTab === t.key ? 'bg-purple-600 text-white' : 'cn-text-3 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                   >
                     {t.label}
@@ -623,7 +623,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 <select
                   value={sortBy}
                   onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                  className="text-xs bg-zinc-900 border border-zinc-800 text-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                  className="text-xs cn-surface border cn-border cn-text-2 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
                 >
                   {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -631,14 +631,14 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             </div>
 
             {!loading && !error && (
-              <p className="text-sm text-slate-400 -mt-2">
-                <b className="font-mono text-white">{filtered.length}</b> {filtered.length === 1 ? 'listing' : 'listings'}
+              <p className="text-sm cn-text-3 -mt-2">
+                <b className="font-mono cn-text-1">{filtered.length}</b> {filtered.length === 1 ? 'listing' : 'listings'}
               </p>
             )}
 
             {/* Loading */}
             {loading && (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-20 cn-text-4">
                 <Loader2 className="w-8 h-8 animate-spin mb-3" />
                 <p className="text-sm">Loading marketplace…</p>
               </div>
@@ -646,10 +646,10 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Error */}
             {!loading && error && (
-              <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-20 gap-3 cn-text-4">
                 <AlertCircle className="w-8 h-8 text-red-400" />
                 <p className="text-sm text-red-400">{error}</p>
-                <button onClick={load} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-slate-300 hover:bg-zinc-800 transition-colors">
+                <button onClick={load} className="flex items-center gap-2 px-4 py-2 rounded-xl cn-surface border cn-border text-sm cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                   <RefreshCw className="w-4 h-4" /> Retry
                 </button>
               </div>
@@ -657,10 +657,10 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Empty state */}
             {!loading && !error && listings.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-14 text-center rounded-2xl border border-zinc-800 bg-zinc-900/40">
-                <Store className="w-9 h-9 text-zinc-700 mb-3" />
-                <h3 className="text-base font-semibold text-white mb-1">Nothing listed yet</h3>
-                <p className="text-sm text-slate-400 max-w-xs mb-5">Be the first to list something for the neighborhood.</p>
+              <div className="flex flex-col items-center justify-center py-14 text-center rounded-2xl border cn-border cn-surface">
+                <Store className="w-9 h-9 cn-text-4 mb-3" />
+                <h3 className="text-base font-semibold cn-text-1 mb-1">Nothing listed yet</h3>
+                <p className="text-sm cn-text-3 max-w-xs mb-5">Be the first to list something for the neighborhood.</p>
                 <button
                   onClick={handlePostListing}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-500 transition-colors"
@@ -672,7 +672,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* No results after filtering */}
             {!loading && !error && listings.length > 0 && filtered.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-14 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-14 cn-text-4">
                 <Search className="w-9 h-9 mb-3 opacity-30" />
                 <p className="text-sm font-medium">No listings match your filters</p>
                 <button
@@ -702,58 +702,58 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
           {/* ── Right rail ── */}
           <div className="hidden lg:flex flex-col gap-4 sticky top-7">
-            <div className="rounded-2xl p-4 border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950">
+            <div className="rounded-2xl p-4 border cn-border cn-surface">
               <div className="flex items-center gap-2 mb-3.5">
-                <TrendingUp className="w-4 h-4 text-emerald-300" />
-                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">This hub</span>
+                <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-300" />
+                <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">This hub</span>
               </div>
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2.5">
-                  <span className="w-3.5 h-3.5 text-slate-500 shrink-0"><Store className="w-3.5 h-3.5" /></span>
-                  <span className="flex-1 text-xs text-slate-300">Active listings</span>
-                  <span className="font-mono text-sm font-bold text-white">{stats.active}</span>
+                  <span className="w-3.5 h-3.5 cn-text-4 shrink-0"><Store className="w-3.5 h-3.5" /></span>
+                  <span className="flex-1 text-xs cn-text-2">Active listings</span>
+                  <span className="font-mono text-sm font-bold cn-text-1">{stats.active}</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <Gift className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span className="flex-1 text-xs text-slate-300">Given free this month</span>
-                  <span className="font-mono text-sm font-bold text-white">{stats.freeThisMonth}</span>
+                  <Gift className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+                  <span className="flex-1 text-xs cn-text-2">Given free this month</span>
+                  <span className="font-mono text-sm font-bold cn-text-1">{stats.freeThisMonth}</span>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <Repeat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span className="flex-1 text-xs text-slate-300">Vendors on Exchange</span>
-                  <span className="font-mono text-sm font-bold text-white">{stats.vendorCount}</span>
+                  <Repeat className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+                  <span className="flex-1 text-xs cn-text-2">Vendors on Exchange</span>
+                  <span className="font-mono text-sm font-bold cn-text-1">{stats.vendorCount}</span>
                 </div>
               </div>
             </div>
 
             {topVendors.length > 0 && (
-              <div className="rounded-2xl p-4 border border-zinc-800 bg-zinc-900/60">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Community vendors</span>
+              <div className="rounded-2xl p-4 border cn-border cn-surface">
+                <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Community vendors</span>
                 <div className="flex flex-col gap-1 mt-3">
                   {topVendors.map(v => (
                     <button
                       key={v.vendor_id}
                       onClick={() => onVendorClick?.(v.vendor_id)}
-                      className="flex items-center gap-2.5 py-1.5 -mx-1 px-1 rounded-lg hover:bg-white/5 transition-colors text-left"
+                      className="flex items-center gap-2.5 py-1.5 -mx-1 px-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
                     >
                       {v.vendor_logo_file_name
                         ? <img src={marketplaceService.getVendorLogoUrl(slug, v.vendor_logo_file_name) ?? undefined} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
                         : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">{v.vendor_name.charAt(0).toUpperCase()}</span>
                       }
-                      <span className="flex-1 min-w-0 text-sm font-semibold text-white truncate">{v.vendor_name}</span>
-                      <span className="font-mono text-xs text-slate-500">{v.count}</span>
+                      <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{v.vendor_name}</span>
+                      <span className="font-mono text-xs cn-text-4">{v.count}</span>
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="rounded-2xl p-4 border border-zinc-800 bg-zinc-900/60">
+            <div className="rounded-2xl p-4 border cn-border cn-surface">
               <div className="flex gap-2.5">
-                <ShieldCheck className="w-4.5 h-4.5 text-purple-300 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
+                <ShieldCheck className="w-4.5 h-4.5 text-purple-500 dark:text-purple-300 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
                 <div>
-                  <div className="text-sm font-semibold text-white">Neighbors only</div>
-                  <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">Every seller is a verified member of this hub. Meet in public, pay in person.</p>
+                  <div className="text-sm font-semibold cn-text-1">Neighbors only</div>
+                  <p className="mt-1 text-[11px] cn-text-3 leading-relaxed">Every seller is a verified member of this hub. Meet in public, pay in person.</p>
                 </div>
               </div>
             </div>

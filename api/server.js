@@ -2549,7 +2549,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
-              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.visibility,
+              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               s.name AS space_name, s.slug AS space_slug,
@@ -2841,7 +2841,7 @@ app.get('/api/events/upcoming', authenticate, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 5, 20);
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.category, p.title, p.body, p.event_date, p.event_location,
+      `SELECT p.id, p.category, p.title, p.body, p.event_date, p.event_location, p.event_lat, p.event_lng,
               p.created_at, p.updated_at,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
@@ -2966,6 +2966,7 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+              p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
@@ -4242,7 +4243,7 @@ app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
 
 // ── Atlas pin routes ───────────────────────────────────────
 
-const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi'];
+const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 'aid', 'green'];
 
 // List all pins
 app.get('/api/atlas/pins', authenticate, async (_req, res) => {

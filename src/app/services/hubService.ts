@@ -1529,7 +1529,7 @@ class HubService {
   /** Create a new post. Optionally attach an image file. */
   async createPost(
     hubSlug: string,
-    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string; visibility?: 'inherit' | 'hub' | 'private' }
+    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string; eventLat?: number; eventLng?: number; visibility?: 'inherit' | 'hub' | 'private' }
   ): Promise<HubPost> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection?.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
@@ -1541,6 +1541,8 @@ class HubService {
     if (post.mediaFile) formData.append('media', post.mediaFile);
     if (post.eventDate) formData.append('event_date', post.eventDate);
     if (post.eventLocation) formData.append('event_location', post.eventLocation);
+    if (post.eventLat !== undefined) formData.append('event_lat', String(post.eventLat));
+    if (post.eventLng !== undefined) formData.append('event_lng', String(post.eventLng));
     if (post.visibility && post.visibility !== 'inherit') formData.append('visibility', post.visibility);
 
     const headers: Record<string, string> = {};

@@ -1,16 +1,38 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { PostCard } from './PostCard';
+import { LocationSearchInput } from './LocationSearchInput';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
   MessageCircle, ShieldCheck, ChevronLeft, Send, BarChart2,
-  MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark,
+  MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
+import { geocodeLocation } from '../utils/geocoding';
 import type { HubPost, HubPostReply } from '../types/hub';
+
+/** Deep-links a post's location into Atlas — reuses real coordinates captured at
+ * compose time when available, falling back to a one-off geocode for older posts
+ * that only ever had free text. Atlas resolves this to a nearby pin if one exists,
+ * or offers to add one if not — nothing is created here. */
+async function openPostLocationInAtlas(
+  eventLocation: string,
+  eventLat: number | null | undefined,
+  eventLng: number | null | undefined,
+  onNavigate?: (screen: string) => void,
+) {
+  let lat = eventLat, lng = eventLng;
+  if (lat == null || lng == null) {
+    const coords = await geocodeLocation(eventLocation);
+    if (!coords) return;
+    [lat, lng] = coords;
+  }
+  sessionStorage.setItem('citinet-deeplink-coords', JSON.stringify({ lat, lng, label: eventLocation }));
+  onNavigate?.('atlas');
+}
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,7 +111,7 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
           <span className="cn-live-dot w-1.5 h-1.5 shrink-0" />
           <span className="cn-eyebrow">{hubName}</span>
         </div>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+        <p className="text-xs cn-text-3 leading-relaxed">
           Posts are visible to verified members of this hub only. No algorithms — nothing ranked or hidden.
         </p>
       </div>
@@ -101,10 +123,10 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
           <div className="flex flex-col gap-2">
             {breakdown.map(([cat, count]) => (
               <div key={cat} className="flex items-center justify-between">
-                <span className={`text-sm ${RAIL_CAT_COLORS[cat] ?? 'text-zinc-400'}`}>
+                <span className={`text-sm ${RAIL_CAT_COLORS[cat] ?? 'cn-text-3'}`}>
                   {RAIL_CAT_LABELS[cat] ?? cat}
                 </span>
-                <span className="cn-mono text-xs text-zinc-500">{count}</span>
+                <span className="cn-mono text-xs cn-text-4">{count}</span>
               </div>
             ))}
           </div>
@@ -115,9 +137,9 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
       <div className="cn-glass rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-2">
           <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-          <span className="text-sm font-semibold text-white">Community guidelines</span>
+          <span className="text-sm font-semibold cn-text-1">Community guidelines</span>
         </div>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+        <p className="text-xs cn-text-3 leading-relaxed">
           Be kind, keep it local, and assume good intent. Flag anything that feels off.
         </p>
       </div>
@@ -207,9 +229,10 @@ interface PostDetailViewProps {
   onBack: () => void;
   onDeleted: (postId: string) => void;
   onNavigateToProfile?: (userId: string) => void;
+  onNavigate?: (screen: string) => void;
 }
 
-function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onNavigateToProfile }: PostDetailViewProps) {
+function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onNavigateToProfile, onNavigate }: PostDetailViewProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
   const [replyText, setReplyText] = useState('');
@@ -353,7 +376,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-5">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-zinc-700 hover:border-zinc-500 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border cn-border hover:border-zinc-500 text-sm cn-text-3 hover:text-zinc-200 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
           Back to Feed
@@ -368,7 +391,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
 
           {/* Media */}
           {!isEditing && variant === 'image' && mediaUrl && (
-            <div className="relative w-full aspect-video bg-zinc-900 overflow-hidden">
+            <div className="relative w-full aspect-video cn-surface overflow-hidden">
               <div className="absolute inset-0 scale-110 blur-xl opacity-60" style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
               <img src={mediaUrl} alt={post.title} className="relative w-full h-full object-contain" />
             </div>
@@ -384,17 +407,17 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
               /* ── Edit mode ── */
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-zinc-400 mb-1 block">Caption</label>
+                  <label className="text-xs font-medium cn-text-3 mb-1 block">Caption</label>
                   <textarea
                     value={editBody}
                     onChange={e => setEditBody(e.target.value)}
                     rows={4}
-                    className="w-full bg-zinc-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
                     placeholder="Caption (optional)"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-zinc-400 mb-1 block">Media</label>
+                  <label className="text-xs font-medium cn-text-3 mb-1 block">Media</label>
                   {(() => {
                     const showCurrent = mediaUrl && !editRemoveMedia && !editMediaPreview;
                     const showNew = !!editMediaPreview;
@@ -417,7 +440,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       );
                     }
                     return (
-                      <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-white/15 cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm text-zinc-500">
+                      <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
                         <Image className="w-4 h-4" /><Film className="w-4 h-4" />
                         <span>Add an image or video</span>
                         <input type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleEditFileChange(e.target.files[0]); }} />
@@ -429,30 +452,30 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                   <div className="space-y-3 p-4 rounded-xl bg-purple-500/8 border border-purple-500/20">
                     <div>
                       <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-400">*</span></label>
-                      <input type="datetime-local" value={editEventDate} onChange={e => setEditEventDate(e.target.value)} className="w-full bg-zinc-800 border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                      <input type="datetime-local" value={editEventDate} onChange={e => setEditEventDate(e.target.value)} className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location <span className="text-zinc-500">(optional)</span></label>
-                      <input type="text" value={editEventLocation} onChange={e => setEditEventLocation(e.target.value)} placeholder="e.g. Community Center…" className="w-full bg-zinc-800 border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                      <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location <span className="cn-text-4">(optional)</span></label>
+                      <input type="text" value={editEventLocation} onChange={e => setEditEventLocation(e.target.value)} placeholder="e.g. Community Center…" className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
                     </div>
                   </div>
                 )}
                 <div>
-                  <label className="text-xs font-medium text-zinc-400 mb-1.5 block">Visibility</label>
+                  <label className="text-xs font-medium cn-text-3 mb-1.5 block">Visibility</label>
                   <div className="relative inline-block">
                     <button type="button" onClick={() => setVisibilityOpen(v => !v)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-zinc-300 hover:bg-white/10 transition-all">
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 cn-text-2 hover:bg-black/5 dark:hover:bg-white/10 transition-all">
                       {PDV_VIS_OPTIONS.find(o => o.value === editVisibility)?.icon}
                       {PDV_VIS_OPTIONS.find(o => o.value === editVisibility)?.label}
                       <ChevronDown className={`w-3 h-3 transition-transform ${visibilityOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {visibilityOpen && (
-                      <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl bg-zinc-800 border border-white/10 shadow-xl w-56">
+                      <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl cn-surface-2 border cn-border shadow-xl w-56">
                         {PDV_VIS_OPTIONS.map(opt => (
                           <button key={opt.value} type="button" onClick={() => { setEditVisibility(opt.value); setVisibilityOpen(false); }}
-                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'text-zinc-300 hover:bg-white/5'}`}>
+                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'}`}>
                             <span className="mt-0.5 shrink-0">{opt.icon}</span>
-                            <span><span className="block text-xs font-medium">{opt.label}</span><span className="block text-[10px] text-zinc-500 mt-0.5">{opt.desc}</span></span>
+                            <span><span className="block text-xs font-medium">{opt.label}</span><span className="block text-[10px] cn-text-4 mt-0.5">{opt.desc}</span></span>
                           </button>
                         ))}
                       </div>
@@ -460,7 +483,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                   </div>
                 </div>
                 <div className="flex items-center gap-2 justify-end">
-                  <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-zinc-400 hover:bg-white/5 rounded-lg transition-colors">Cancel</button>
+                  <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">Cancel</button>
                   <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg hover:opacity-90 disabled:opacity-40 flex items-center gap-2">
                     {saving ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving…</span></> : <><Check className="w-4 h-4" /><span>Save</span></>}
                   </button>
@@ -472,7 +495,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                 {/* Author row */}
                 <div className="flex items-center gap-3 mb-4">
                   {externalPost ? (
-                    <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center shrink-0 text-xs font-bold text-zinc-300">
+                    <div className="w-8 h-8 rounded-full cn-surface-3 flex items-center justify-center shrink-0 text-xs font-bold cn-text-2">
                       {(sourceBrand.name ?? 'S').charAt(0).toUpperCase()}
                     </div>
                   ) : (
@@ -489,12 +512,12 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       <button
                         onClick={() => onNavigateToProfile && post.author_id && onNavigateToProfile(post.author_id)}
                         disabled={!onNavigateToProfile || !post.author_id || externalPost}
-                        className="text-sm font-semibold text-white truncate hover:text-purple-300 transition-colors disabled:pointer-events-none"
+                        className="text-sm font-semibold cn-text-1 truncate hover:text-purple-300 transition-colors disabled:pointer-events-none"
                       >
                         {externalPost ? sourceBrand.name : post.author_username}
                       </button>
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-zinc-500 mt-0.5">
+                    <div className="flex items-center gap-1 text-xs cn-text-4 mt-0.5">
                       <Clock className="w-3 h-3 shrink-0" />
                       <span>{formatTimestamp(post.created_at)}</span>
                     </div>
@@ -502,8 +525,8 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                   {(canEdit || canDelete) && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <button title="Post actions" aria-label="Post actions" className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors shrink-0">
-                          <MoreVertical className="w-4 h-4 text-zinc-400" />
+                        <button title="Post actions" aria-label="Post actions" className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors shrink-0">
+                          <MoreVertical className="w-4 h-4 cn-text-3" />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-36">
@@ -521,16 +544,16 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
 
                 {/* Category badge */}
                 {post.category && (
-                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ring-1 mb-3 ${categoryColors[post.category] ?? 'bg-zinc-800 text-zinc-400 ring-zinc-700'}`}>
+                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ring-1 mb-3 ${categoryColors[post.category] ?? 'cn-surface-2 cn-text-3 ring-zinc-700'}`}>
                     {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
                   </span>
                 )}
 
                 {/* Title */}
-                {post.title && <h2 className="text-lg font-bold text-white mb-2 leading-snug">{post.title}</h2>}
+                {post.title && <h2 className="text-lg font-bold cn-text-1 mb-2 leading-snug">{post.title}</h2>}
 
                 {/* Body */}
-                {post.body && <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{linkifyText(post.body)}</p>}
+                {post.body && <p className="cn-text-2 text-sm leading-relaxed whitespace-pre-wrap">{linkifyText(post.body)}</p>}
 
                 {/* Event metadata */}
                 {post.category === 'EVENT' && post.event_date && (
@@ -543,28 +566,39 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                         {new Date(post.event_date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                       </span>
                     </div>
-                    {post.event_location && (
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/20 text-xs font-medium text-purple-300">
-                        <MapPin className="w-3.5 h-3.5 shrink-0" />
-                        <span>{post.event_location}</span>
-                      </div>
-                    )}
                   </div>
                 )}
 
+                {/* Referenced location — always clickable when present, whether or not a pin exists yet */}
+                {post.event_location && (
+                  <button
+                    onClick={() => openPostLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate)}
+                    className="mt-3 w-full flex items-center gap-3 p-3 rounded-xl border cn-border bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left"
+                  >
+                    <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">
+                      <MapPin className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+                    </span>
+                    <span className="flex-1 min-w-0 text-sm font-medium cn-text-2 truncate">{post.event_location}</span>
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-black/5 dark:bg-white/5 text-xs font-semibold cn-text-2 shrink-0">
+                      Open in Atlas
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                )}
+
                 {/* Engagement row */}
-                <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/8">
-                  <button title="Like" aria-label="Like post" className="flex items-center gap-1.5 text-zinc-500 hover:text-rose-400 transition-colors text-sm">
+                <div className="flex items-center gap-4 mt-4 pt-4 border-t cn-border">
+                  <button title="Like" aria-label="Like post" className="flex items-center gap-1.5 cn-text-4 hover:text-rose-400 transition-colors text-sm">
                     <Heart className="w-4 h-4" /><span>0</span>
                   </button>
-                  <button title="Comment" aria-label={`Comment, ${post.reply_count} comments`} className="flex items-center gap-1.5 text-zinc-500 hover:text-blue-400 transition-colors text-sm" onClick={() => textareaRef.current?.focus()}>
+                  <button title="Comment" aria-label={`Comment, ${post.reply_count} comments`} className="flex items-center gap-1.5 cn-text-4 hover:text-blue-400 transition-colors text-sm" onClick={() => textareaRef.current?.focus()}>
                     <MessageCircle className="w-4 h-4" /><span>{post.reply_count}</span>
                   </button>
-                  <button title="Share" aria-label="Share post" className="flex items-center gap-1.5 text-zinc-500 hover:text-emerald-400 transition-colors text-sm">
+                  <button title="Share" aria-label="Share post" className="flex items-center gap-1.5 cn-text-4 hover:text-emerald-400 transition-colors text-sm">
                     <Share2 className="w-4 h-4" /><span>Share</span>
                   </button>
                   <div className="flex-1" />
-                  <button title="Bookmark" aria-label="Bookmark post" className="text-zinc-500 hover:text-purple-400 transition-colors">
+                  <button title="Bookmark" aria-label="Bookmark post" className="cn-text-4 hover:text-purple-400 transition-colors">
                     <Bookmark className="w-4 h-4" />
                   </button>
                 </div>
@@ -576,24 +610,24 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
         {/* Comments section */}
         <div className="cn-glass rounded-2xl overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/8">
+          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b cn-border">
             <div className="flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-zinc-500" />
-              <span className="text-sm font-semibold text-white">
+              <MessageCircle className="w-4 h-4 cn-text-4" />
+              <span className="text-sm font-semibold cn-text-1">
                 {loadingReplies ? 'Comments' : replies.length === 0 ? 'No comments yet' : `${replies.length} Comment${replies.length === 1 ? '' : 's'}`}
               </span>
             </div>
           </div>
 
           {/* Reply input */}
-          <div className="px-5 py-4 border-b border-white/8">
+          <div className="px-5 py-4 border-b cn-border">
             {replyingTo && (
               <div className="flex items-center gap-2 mb-2">
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/20 text-xs text-blue-400">
                   <CornerDownRight className="w-3 h-3 shrink-0" />
                   <span>Replying to <span className="font-semibold">@{replyingTo.username}</span></span>
                 </div>
-                <button type="button" onClick={() => setReplyingTo(null)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                <button type="button" onClick={() => setReplyingTo(null)} className="cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -607,7 +641,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                 placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment… (Enter to send)'}
                 rows={2}
-                className="flex-1 bg-zinc-800 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
               />
               <button type="submit" disabled={sending || !replyText.trim()}
                 className="w-10 h-10 self-end rounded-xl bg-purple-600 hover:bg-purple-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
@@ -618,9 +652,9 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
 
           {/* Comment list */}
           <div className="px-5 py-4 flex flex-col gap-4">
-            {loadingReplies && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-zinc-500" /></div>}
+            {loadingReplies && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin cn-text-4" /></div>}
             {!loadingReplies && replies.length === 0 && (
-              <p className="text-center text-sm text-zinc-500 py-4">Be the first to comment!</p>
+              <p className="text-center text-sm cn-text-4 py-4">Be the first to comment!</p>
             )}
             {!loadingReplies && replies.map(reply => (
               <div
@@ -637,8 +671,8 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-sm font-semibold text-white">{reply.author_username}</span>
-                    <span className="text-xs text-zinc-500">{formatTimestamp(reply.created_at)}</span>
+                    <span className="text-sm font-semibold cn-text-1">{reply.author_username}</span>
+                    <span className="text-xs cn-text-4">{formatTimestamp(reply.created_at)}</span>
                   </div>
                   {reply.reply_to_username && reply.reply_to_reply_id && (
                     <button type="button" onClick={() => scrollToReply(reply.reply_to_reply_id!)}
@@ -647,9 +681,9 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       @{reply.reply_to_username}
                     </button>
                   )}
-                  <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
+                  <p className="text-sm cn-text-2 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
                   <button type="button" onClick={() => handleClickReply(reply)}
-                    className="mt-1.5 flex items-center gap-1 text-xs text-zinc-500 hover:text-blue-400 transition-colors">
+                    className="mt-1.5 flex items-center gap-1 text-xs cn-text-4 hover:text-blue-400 transition-colors">
                     <CornerDownRight className="w-3 h-3" /> Reply
                   </button>
                 </div>
@@ -667,6 +701,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
 
 interface ComposeModalProps {
   hubSlug: string;
+  hubCenter?: [number, number];
   onClose: () => void;
   onCreated: (post: HubPost) => void;
   initialTitle?: string;
@@ -681,7 +716,7 @@ const VISIBILITY_OPTIONS: { value: PostVisibility; label: string; icon: ReactNod
   { value: 'private', label: 'Only me',  icon: <Lock   className="w-3.5 h-3.5" />, desc: 'Visible only to you' },
 ];
 
-function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
+function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
   const [category, setCategory] = useState('DISCUSSION');
   const [labelOpen, setLabelOpen] = useState(false);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
@@ -693,6 +728,8 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
   const [error, setError] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventLocation, setEventLocation] = useState('');
+  // Real coordinates, only set when the location was picked from search — not typed free text.
+  const [eventCoords, setEventCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -731,6 +768,8 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
         mediaFile: mediaFile ?? undefined,
         eventDate: category === 'EVENT' && eventDate ? new Date(eventDate).toISOString() : undefined,
         eventLocation: category === 'EVENT' ? eventLocation : undefined,
+        eventLat: category === 'EVENT' && eventCoords ? eventCoords.lat : undefined,
+        eventLng: category === 'EVENT' && eventCoords ? eventCoords.lng : undefined,
         visibility,
       });
       onCreated(post);
@@ -756,12 +795,12 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           onClick={e => e.stopPropagation()}
-          className="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl pointer-events-auto flex flex-col overflow-hidden"
+          className="cn-surface border cn-border rounded-2xl shadow-2xl w-full max-w-2xl pointer-events-auto flex flex-col overflow-hidden"
         >
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/8">
-            <h2 className="text-white font-semibold text-lg">New Post</h2>
-            <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-              <X className="w-4 h-4 text-zinc-400" />
+          <div className="flex items-center justify-between px-6 py-4 border-b cn-border">
+            <h2 className="cn-text-1 font-semibold text-lg">New Post</h2>
+            <button onClick={onClose} className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
+              <X className="w-4 h-4 cn-text-3" />
             </button>
           </div>
 
@@ -771,7 +810,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
               value={body}
               onChange={e => setBody(e.target.value)}
               rows={5}
-              className="w-full bg-zinc-800 border border-white/8 rounded-xl px-4 py-3 text-white placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+              className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
             />
 
             {mediaPreview ? (
@@ -784,7 +823,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
                 </button>
               </div>
             ) : (
-              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-white/15 cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm text-zinc-500">
+              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
                 <Image className="w-4 h-4" /><Film className="w-4 h-4" />
                 <span>Attach an image or video (optional)</span>
                 <input type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
@@ -798,14 +837,24 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
                     <Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-400">*</span>
                   </label>
                   <input type="datetime-local" value={eventDate} onChange={e => setEventDate(e.target.value)} min={new Date().toISOString().slice(0, 16)}
-                    className="w-full bg-zinc-800 border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                    className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5" /> Location <span className="text-zinc-500">(optional)</span>
+                    <MapPin className="w-3.5 h-3.5" /> Location <span className="cn-text-4">(optional)</span>
                   </label>
-                  <input type="text" value={eventLocation} onChange={e => setEventLocation(e.target.value)} placeholder="e.g. Community Center…"
-                    className="w-full bg-zinc-800 border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                  <LocationSearchInput
+                    value={eventLocation}
+                    onChange={v => { setEventLocation(v); setEventCoords(null); }}
+                    onSelect={r => { setEventLocation(r.label); setEventCoords({ lat: r.lat, lng: r.lng }); }}
+                    hubCenter={hubCenter}
+                    historyKey="citinet-feed-event-location-history"
+                    placeholder="e.g. Community Center…"
+                    inputClassName="w-full pl-9 pr-8 py-2 cn-surface-2 border border-purple-500/30 rounded-lg text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  />
+                  {eventCoords && (
+                    <p className="mt-1 text-[11px] text-emerald-400">Linked to Atlas — this exact spot will be clickable on the post.</p>
+                  )}
                 </div>
               </div>
             )}
@@ -813,11 +862,11 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
             {error && <p className="text-sm text-rose-400">{error}</p>}
           </form>
 
-          <div className="px-6 py-4 border-t border-white/8 space-y-3">
+          <div className="px-6 py-4 border-t cn-border space-y-3">
             <div className="flex items-start gap-2 flex-wrap">
               <div>
                 <button type="button" onClick={() => { setLabelOpen(v => !v); setVisibilityOpen(false); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-zinc-400 hover:bg-white/10 transition-all">
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10 transition-all">
                   {category.charAt(0) + category.slice(1).toLowerCase()}
                   <ChevronDown className={`w-3 h-3 transition-transform ${labelOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -826,7 +875,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
                     {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'].map(cat => (
                       <button key={cat} type="button" onClick={() => { setCategory(cat); setLabelOpen(false); }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          category === cat ? 'bg-purple-600 text-white' : 'bg-white/5 text-zinc-400 hover:bg-white/10'
+                          category === cat ? 'bg-purple-600 text-white' : 'bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10'
                         }`}>
                         {cat.charAt(0) + cat.slice(1).toLowerCase()}
                       </button>
@@ -837,22 +886,22 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
 
               <div>
                 <button type="button" onClick={() => { setVisibilityOpen(v => !v); setLabelOpen(false); }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-zinc-400 hover:bg-white/10 transition-all">
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10 transition-all">
                   {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.icon}
                   {VISIBILITY_OPTIONS.find(o => o.value === visibility)?.label}
                   <ChevronDown className={`w-3 h-3 transition-transform ${visibilityOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {visibilityOpen && (
-                  <div className="flex flex-col gap-1 mt-2 p-1.5 rounded-xl bg-zinc-800 border border-white/10 shadow-xl w-56">
+                  <div className="flex flex-col gap-1 mt-2 p-1.5 rounded-xl cn-surface-2 border cn-border shadow-xl w-56">
                     {VISIBILITY_OPTIONS.map(opt => (
                       <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setVisibilityOpen(false); }}
                         className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                          visibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'text-zinc-300 hover:bg-white/5'
+                          visibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
                         }`}>
                         <span className="mt-0.5 shrink-0">{opt.icon}</span>
                         <span>
                           <span className="block text-xs font-medium">{opt.label}</span>
-                          <span className="block text-[10px] text-zinc-500 mt-0.5">{opt.desc}</span>
+                          <span className="block text-[10px] cn-text-4 mt-0.5">{opt.desc}</span>
                         </span>
                       </button>
                     ))}
@@ -862,7 +911,7 @@ function ComposeModal({ hubSlug, onClose, onCreated, initialBody = '' }: Compose
             </div>
 
             <div className="flex justify-end gap-3">
-              <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-zinc-400 hover:bg-white/5 transition-colors">
+              <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 Cancel
               </button>
               <button onClick={handleSubmit} disabled={submitting || (!body.trim() && !mediaFile)}
@@ -977,6 +1026,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           onBack={() => setSelectedPost(null)}
           onDeleted={handlePostDeleted}
           onNavigateToProfile={onNavigate ? (userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); } : undefined}
+          onNavigate={onNavigate}
         />
       ) : (
       <>
@@ -996,13 +1046,13 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               <MessageCircle className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight leading-none">Feed</h1>
-              <p className="text-sm text-zinc-400 mt-0.5">Community posts · members only</p>
+              <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Feed</h1>
+              <p className="text-sm cn-text-3 mt-0.5">Community posts · members only</p>
             </div>
           </div>
 
           {/* Category tabs */}
-          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar -mx-1 px-1 border-b border-white/8">
+          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar -mx-1 px-1 border-b cn-border">
             {CAT_TABS.map(({ value, label }) => {
               const count = value ? posts.filter(p => p.category === value).length : 0;
               return (
@@ -1011,14 +1061,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   onClick={() => setActiveFilter(value)}
                   className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
                     activeFilter === value
-                      ? 'text-white border-purple-500'
-                      : 'text-zinc-500 border-transparent hover:text-zinc-300 hover:border-zinc-700'
+                      ? 'cn-text-1 border-purple-500'
+                      : 'cn-text-4 border-transparent hover:text-slate-700 dark:hover:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
                   }`}
                 >
                   {label}
                   {count > 0 && (
                     <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
-                      activeFilter === value ? 'bg-purple-500/25 text-purple-200' : 'bg-zinc-800 text-zinc-400'
+                      activeFilter === value ? 'bg-purple-500/25 text-purple-200' : 'cn-surface-2 cn-text-3'
                     }`}>
                       {count}
                     </span>
@@ -1039,14 +1089,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               <div className="cn-glass rounded-2xl overflow-hidden">
                 <button
                   onClick={() => setComposing(true)}
-                  className="w-full flex items-center gap-3 px-4 pt-3.5 pb-3 hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center gap-3 px-4 pt-3.5 pb-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 >
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
                     {currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
                   </div>
-                  <span className="flex-1 text-left text-sm text-zinc-500">Share something with your neighbors…</span>
+                  <span className="flex-1 text-left text-sm cn-text-4">Share something with your neighbors…</span>
                 </button>
-                <div className="border-t border-white/6 px-3 py-2 flex items-center gap-0.5">
+                <div className="border-t cn-border px-3 py-2 flex items-center gap-0.5">
                   {([
                     { icon: <Image className="w-3.5 h-3.5" />, label: 'Photo' },
                     { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Event' },
@@ -1056,7 +1106,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                     <button
                       key={label}
                       onClick={() => setComposing(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                     >
                       {icon}{label}
                     </button>
@@ -1082,8 +1132,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {!loading && error && (
                 <div className="flex flex-col items-center gap-3 py-12 text-center">
                   <AlertCircle className="w-8 h-8 text-rose-400" />
-                  <p className="text-zinc-400 text-sm">{error}</p>
-                  <button onClick={() => load()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 text-sm text-zinc-300 hover:bg-white/10 transition-colors">
+                  <p className="cn-text-3 text-sm">{error}</p>
+                  <button onClick={() => load()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/5 dark:bg-white/5 text-sm cn-text-2 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                     <RefreshCw className="w-4 h-4" /> Try again
                   </button>
                 </div>
@@ -1092,7 +1142,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {/* Empty */}
               {!loading && !error && filteredPosts.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center cn-glass rounded-2xl">
-                  <p className="text-zinc-400 text-sm mb-3">
+                  <p className="cn-text-3 text-sm mb-3">
                     {activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
                   </p>
                   <button onClick={() => setComposing(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
@@ -1125,6 +1175,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       categoryColors={CATEGORY_COLORS}
                       eventDate={post.event_date}
                       eventLocation={post.event_location}
+                      onOpenInAtlas={post.event_location ? () => openPostLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate) : undefined}
                       autoPlay={false}
                     />
                   </div>
@@ -1148,6 +1199,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
       {composing && (
         <ComposeModal
           hubSlug={hubSlug}
+          hubCenter={currentHub?.lat && currentHub?.lng ? [currentHub.lat, currentHub.lng] : undefined}
           onClose={() => { setComposing(false); setComposeInitial(null); }}
           onCreated={handleCreated}
           initialTitle={composeInitial?.title}
