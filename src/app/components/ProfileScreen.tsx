@@ -177,8 +177,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   };
 
   const handleMessage = () => {
-    sessionStorage.setItem('citinet-dm-userId', userId);
-    sessionStorage.setItem('citinet-dm-username', member?.username ?? '');
+    sessionStorage.setItem('citinet-deeplink-message-peer', JSON.stringify({ userId, username: member?.username ?? '' }));
     onNavigate('messages');
   };
 

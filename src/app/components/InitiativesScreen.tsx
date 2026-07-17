@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { DotGrid } from './DotGrid';
 import { useHub } from '../context/HubContext';
 import {
-  Target, Plus, Users, CheckCircle2, Circle, Clock,
+  Plus, Users, CheckCircle2, Circle, Clock,
   Lightbulb, X, MessageSquare, TrendingUp, UserPlus, Calendar,
-  ChevronRight, CheckCheck, AlertCircle, Zap,
+  ChevronLeft, CheckCheck, AlertCircle, Zap, Hammer, Share2, Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -64,6 +63,7 @@ const STATUS_BADGE = {
   planning:  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
   completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
 };
+const STATUS_LABEL = { active: 'In progress', planning: 'Planning', completed: 'Completed' };
 
 // ── Mock data (fallback / offline) ────────────────────────
 
@@ -210,6 +210,145 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
+function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
+  const shown = names.slice(0, max);
+  const extra = names.length - shown.length;
+  return (
+    <div className="flex items-center">
+      {shown.map((n, i) => (
+        <span key={n + i} className={`${i === 0 ? '' : '-ml-2'} rounded-full ring-2 ring-white dark:ring-zinc-950`}>
+          <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(n)} flex items-center justify-center text-white text-[9.5px] font-bold`}>
+            {initials(n)}
+          </span>
+        </span>
+      ))}
+      {extra > 0 && (
+        <span className="-ml-2 w-6 h-6 rounded-full cn-surface-3 ring-2 ring-white dark:ring-zinc-950 flex items-center justify-center text-[9.5px] font-bold cn-text-2">
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ProgressBar({ done, total, pct, tone }: { done: number; total: number; pct: number; tone: 'ok' | 'brand' }) {
+  return (
+    <div>
+      <div className="h-1.5 rounded-full cn-surface-3 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${tone === 'ok' ? 'bg-emerald-500' : 'bg-gradient-to-r from-rose-500 to-pink-600'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-1.5">
+        <span className="cn-mono text-[11px] cn-text-3">{done}/{total} tasks done</span>
+        <span className="cn-mono text-[11px] cn-text-4">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Overlay (shared shell for New / Share modals) ───────────
+
+function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="cn-surface border cn-border rounded-2xl w-full max-w-[420px] max-h-[85vh] overflow-y-auto shadow-2xl p-5 flex flex-col gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-bold cn-text-1">{title}</h3>
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors shrink-0">
+            <X className="w-4 h-4 cn-text-3" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const fieldLabelClass = 'text-[11.5px] font-semibold cn-text-3 block mb-1.5';
+const fieldClass = 'w-full px-3 py-2.5 rounded-lg border cn-border cn-surface-2 text-[13.5px] cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/40';
+
+function NewInitiativeModal({ onClose, onSubmit }: {
+  onClose: () => void;
+  onSubmit: (title: string, goal: string, color: Initiative['color']) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [goal, setGoal] = useState('');
+  const [color, setColor] = useState<Initiative['color']>('purple');
+  return (
+    <Overlay title="Start a project" onClose={onClose}>
+      <div>
+        <label className={fieldLabelClass}>Title</label>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Repaint the community mural" className={fieldClass} />
+      </div>
+      <div>
+        <label className={fieldLabelClass}>What is this project about?</label>
+        <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={3} placeholder="Describe the goal…" className={`${fieldClass} resize-none`} />
+      </div>
+      <div>
+        <label className={fieldLabelClass}>Color</label>
+        <div className="flex gap-2">
+          {(Object.keys(COLOR) as Initiative['color'][]).map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setColor(c)}
+              aria-label={c}
+              className={`w-8 h-8 rounded-full bg-gradient-to-br ${COLOR[c].gradient} transition-transform ${color === c ? 'ring-2 ring-offset-2 ring-purple-500 dark:ring-offset-zinc-900 scale-105' : 'opacity-70 hover:opacity-100'}`}
+            />
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={() => { if (title.trim()) { onSubmit(title.trim(), goal.trim(), color); onClose(); } }}
+        disabled={!title.trim()}
+        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Create project
+      </button>
+    </Overlay>
+  );
+}
+
+function ShareModal({ item, onClose }: { item: Initiative; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const link = window.location.href;
+  const c = COLOR[item.color];
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard not available */ }
+  };
+  return (
+    <Overlay title="Share this project" onClose={onClose}>
+      <div className="rounded-xl cn-surface-2 border cn-border p-3 flex items-center gap-2.5">
+        <span className={`w-8 h-8 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0`}>
+          <Lightbulb className="w-4 h-4 text-white" />
+        </span>
+        <span className="text-[13px] font-semibold cn-text-1 truncate">{item.title}</span>
+      </div>
+      <div>
+        <label className={fieldLabelClass}>Link</label>
+        <div className="flex gap-2">
+          <input readOnly value={link} className={`${fieldClass} cn-text-3 truncate`} />
+          <button
+            onClick={handleCopy}
+            className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+          >
+            {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────
 
 interface InitiativesScreenProps {
@@ -220,18 +359,24 @@ interface InitiativesScreenProps {
 }
 
 type TabId = 'overview' | 'tasks' | 'members' | 'updates';
-type FilterId = 'all' | 'active' | 'planning' | 'joined';
+type StatusFilter = 'all' | 'planning' | 'active' | 'completed';
 
 export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToList }: InitiativesScreenProps) {
   const { currentHub, currentUser } = useHub();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
-  const [filter, setFilter] = useState<FilterId>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [joinedOnly, setJoinedOnly] = useState(false);
 
   // Remote data
   const [remoteInitiatives, setRemoteInitiatives] = useState<Initiative[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+
+  // Locally created initiatives (optimistic, best-effort persisted)
+  const [localInitiatives, setLocalInitiatives] = useState<Initiative[]>([]);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Participation state
   const [joinedIds, setJoinedIds] = useState<string[]>([]);
@@ -284,7 +429,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
       setSelectedId(null);
       return;
     }
-    const source = remoteInitiatives ?? SEED_INITIATIVES;
+    const source = [...localInitiatives, ...(remoteInitiatives ?? SEED_INITIATIVES)];
     const found = source.find(i => String(i.id) === String(initialId));
     if (found) {
       setSelectedId(String(found.id));
@@ -293,11 +438,11 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
       setShowJoinPanel(false);
       setShowAddTask(false);
     }
-  }, [initialId, remoteInitiatives]);
+  }, [initialId, remoteInitiatives, localInitiatives]);
 
   const baseInitiatives = !loadError && remoteInitiatives !== null ? remoteInitiatives : SEED_INITIATIVES;
 
-  const initiatives = baseInitiatives.map(ini => ({
+  const initiatives = [...localInitiatives, ...baseInitiatives].map(ini => ({
     ...ini,
     tasks: [...ini.tasks, ...(localTasks[ini.id] ?? [])],
     updates: [...(localUpdates[ini.id] ?? []), ...ini.updates],
@@ -305,25 +450,22 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
 
   const current = initiatives.find(i => i.id === selectedId) ?? null;
 
+  const isJoined = (id: string) => joinedIds.includes(id);
+
   const filtered = initiatives.filter(ini => {
-    if (filter === 'joined') return joinedIds.includes(ini.id);
-    if (filter === 'active')   return ini.status === 'active';
-    if (filter === 'planning') return ini.status === 'planning';
+    if (joinedOnly && !isJoined(ini.id)) return false;
+    if (statusFilter !== 'all' && ini.status !== statusFilter) return false;
     return true;
   });
 
   // ── navigation ─────────────────────────────────────────
 
-  const handleBack = () => {
-    if (view === 'detail') {
-      setView('list');
-      setSelectedId(null);
-      setShowJoinPanel(false);
-      setShowAddTask(false);
-      onBackToList ? onBackToList() : onBack();
-    } else {
-      onBack();
-    }
+  const backToList = () => {
+    setView('list');
+    setSelectedId(null);
+    setShowJoinPanel(false);
+    setShowAddTask(false);
+    onBackToList ? onBackToList() : onBack();
   };
 
   const openDetail = (id: string) => {
@@ -337,9 +479,34 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
     onOpenDetail?.(id);
   };
 
-  // ── join / leave ────────────────────────────────────────
+  // ── create ──────────────────────────────────────────────
 
-  const isJoined = (id: string) => joinedIds.includes(id);
+  const handleCreateInitiative = (title: string, goal: string, color: Initiative['color']) => {
+    const tempId = `local-${Date.now()}`;
+    const item: Initiative = {
+      id: tempId, title, category: '', status: 'planning', color,
+      goal: goal || 'New community project — details coming soon.',
+      description: '', progress: 0, imageUrl: null,
+      createdBy: 'You', createdAt: new Date().toISOString(),
+      tasks: [], members: [], updates: [],
+    };
+    setLocalInitiatives(prev => [item, ...prev]);
+    openDetail(tempId);
+    if (apiBase) {
+      fetch(`${apiBase}/api/initiatives`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ title, goal }),
+      }).then(r => {
+        if (r.ok) {
+          setLocalInitiatives(prev => prev.filter(i => i.id !== tempId));
+          fetchInitiatives();
+        }
+      }).catch(() => {});
+    }
+  };
+
+  // ── join / leave ────────────────────────────────────────
 
   const handleJoinConfirm = () => {
     if (!selectedId || !joinRole.trim()) return;
@@ -439,570 +606,561 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
   // Render
   // ──────────────────────────────────────────────────────────
 
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-
-      <DotGrid />
-
-      {/* ── Sticky header ── */}
-      <div className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            {view === 'list' ? (
-              <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Initiatives</h1>
-            ) : (
-              <p className="text-base font-semibold text-slate-900 dark:text-white truncate">{current?.title}</p>
-            )}
-          </div>
-
-          {view === 'list' && (
-            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium transition-all shadow-sm">
-              <Plus className="w-3.5 h-3.5" />
-              New
-            </button>
-          )}
-
-          {view === 'detail' && current && (
+  const listPane = (
+    <div className="flex flex-col gap-3.5">
+      {/* Status tabs */}
+      <div className="flex overflow-x-auto no-scrollbar border-b cn-border">
+        {([
+          { value: 'all',       label: 'All' },
+          { value: 'planning',  label: 'Planning' },
+          { value: 'active',    label: 'In progress' },
+          { value: 'completed', label: 'Completed' },
+        ] as { value: StatusFilter; label: string }[]).map(t => {
+          const active = statusFilter === t.value;
+          return (
             <button
-              onClick={() => isJoined(current.id) ? handleLeave() : setShowJoinPanel(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                isJoined(current.id)
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400'
-                  : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-sm'
+              key={t.value}
+              onClick={() => setStatusFilter(t.value)}
+              className={`shrink-0 relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'
               }`}
             >
-              {isJoined(current.id) ? <CheckCheck className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-              {isJoined(current.id) ? 'Joined' : 'Join'}
+              {t.label}
+              {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
             </button>
-          )}
-          <button onClick={handleBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
-        </div>
+          );
+        })}
       </div>
 
-      {/* ══════════════════════════════════════════════════════
-          LIST VIEW
-      ══════════════════════════════════════════════════════ */}
-      {view === 'list' && (
-        <div className="max-w-4xl mx-auto px-4 py-6">
+      {/* Joined filter */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setJoinedOnly(v => !v)}
+          className={`inline-flex items-center gap-1.5 shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+            joinedOnly
+              ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent'
+              : 'cn-surface-2 cn-text-2 cn-border'
+          }`}
+        >
+          <CheckCheck className="w-3 h-3" /> Joined ({joinedIds.length})
+        </button>
+      </div>
 
-          {/* Filter chips */}
-          <div className="flex gap-2 mb-6 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {(['all', 'active', 'planning', 'joined'] as FilterId[]).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors capitalize ${
-                  filter === f
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'bg-white dark:bg-zinc-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-700'
-                }`}
+      {/* Cards */}
+      {filtered.length === 0 ? (
+        <div className="cn-glass rounded-2xl px-6 py-14 text-center cn-text-3 text-sm">
+          No projects match this filter.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+          {filtered.map((ini, idx) => {
+            const c = COLOR[ini.color];
+            const tc = taskCount(ini);
+            return (
+              <motion.button
+                key={ini.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                onClick={() => openDetail(ini.id)}
+                className="cn-glass rounded-2xl p-4 flex flex-col gap-3 text-left hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
               >
-                {f === 'all' ? `All (${initiatives.length})` : f === 'joined' ? `Joined (${joinedIds.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {/* Cards */}
-          <div className="space-y-3">
-            {filtered.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-400 dark:text-slate-500">
-                <Target className="w-10 h-10 mb-3 opacity-40" />
-                <p className="text-sm font-medium">No initiatives here yet</p>
-              </div>
-            )}
-            {filtered.map((ini, idx) => {
-              const c = COLOR[ini.color];
-              const tc = taskCount(ini);
-              return (
-                <motion.button
-                  key={ini.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                  onClick={() => openDetail(ini.id)}
-                  className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-purple-200 dark:hover:border-purple-800/50 hover:shadow-md transition-all group overflow-hidden"
-                >
-                  {/* Top accent strip */}
-                  <div className={`h-1 w-full bg-gradient-to-r ${c.gradient}`} />
-                  <div className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-10 h-10 rounded-lg ${c.icon} flex items-center justify-center shrink-0 mt-0.5 overflow-hidden`}>
-                        {ini.imageUrl
-                          ? <img src={ini.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          : <Lightbulb className="w-5 h-5" />
-                        }
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <h3 className="font-semibold text-sm text-slate-900 dark:text-white">{ini.title}</h3>
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[ini.status]}`}>
-                            {ini.status.charAt(0).toUpperCase() + ini.status.slice(1)}
-                          </span>
-                          {isJoined(ini.id) && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">You're in</span>
-                          )}
-                        </div>
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full mb-2 inline-block ${c.badge}`}>{ini.category}</span>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1">{ini.description}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-1" />
-                    </div>
-
-                    {/* Progress + meta */}
-                    <div className="mt-4 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                        <span>{tc.done}/{tc.total} tasks done</span>
-                        <span>{ini.progress}% complete</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full bg-gradient-to-r ${c.bar} transition-all`}
-                          style={{ width: `${ini.progress}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{ini.members.length + (isJoined(ini.id) ? 1 : 0)} participants</span>
-                        <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{ini.updates.length} updates</span>
-                        <span className="ml-auto">by {ini.createdBy}</span>
-                      </div>
+                <div className="flex items-start gap-2.5">
+                  <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0 overflow-hidden`}>
+                    {ini.imageUrl
+                      ? <img src={ini.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : <Lightbulb className="w-4 h-4 text-white" />
+                    }
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold cn-text-1 leading-tight">{ini.title}</div>
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[ini.status]}`}>{STATUS_LABEL[ini.status]}</span>
+                      {isJoined(ini.id) && (
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">You're in</span>
+                      )}
                     </div>
                   </div>
-                </motion.button>
+                </div>
+
+                <p className="text-[12.5px] leading-relaxed cn-text-3 line-clamp-2">{ini.goal}</p>
+
+                <ProgressBar {...tc} pct={ini.progress} tone={ini.status === 'completed' ? 'ok' : 'brand'} />
+
+                <div className="flex items-center justify-between">
+                  <AvatarStack names={ini.members.map(m => m.name)} />
+                  <span className="text-[11px] cn-text-4">by {ini.createdBy}</span>
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const mainColumn = current
+    ? (() => {
+      const tc = taskCount(current);
+      const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
+        { id: 'overview', label: 'Overview',  icon: TrendingUp },
+        { id: 'tasks',    label: `Tasks (${tc.total})`, icon: CheckCircle2 },
+        { id: 'members',  label: `Members (${current.members.length + (isJoined(current.id) ? 1 : 0)})`, icon: Users },
+        { id: 'updates',  label: `Updates (${current.updates.length})`, icon: MessageSquare },
+      ];
+
+      const groupedTasks = {
+        'in-progress': current.tasks.filter(t => getTaskStatus(t) === 'in-progress'),
+        'todo':        current.tasks.filter(t => getTaskStatus(t) === 'todo'),
+        'done':        current.tasks.filter(t => getTaskStatus(t) === 'done'),
+      };
+
+      return (
+        <div className="flex flex-col gap-4">
+          {/* Back + share */}
+          <div className="flex items-center justify-between">
+            <button onClick={backToList} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 transition-colors">
+              <ChevronLeft className="w-3.5 h-3.5" /> All projects
+            </button>
+            <button onClick={() => setShowShareModal(true)} title="Share this project" className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors">
+              <Share2 className="w-4 h-4 cn-text-3" />
+            </button>
+          </div>
+
+          {/* Title block */}
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[current.status]}`}>{STATUS_LABEL[current.status]}</span>
+            </div>
+            <h1 className="text-xl md:text-[22px] font-bold cn-text-1 leading-tight tracking-tight">{current.title}</h1>
+            <div className="flex items-center gap-2.5 mt-2 flex-wrap">
+              <span className="flex items-center gap-1.5">
+                <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(current.createdBy)} flex items-center justify-center text-white text-[9.5px] font-bold shrink-0`}>
+                  {initials(current.createdBy)}
+                </span>
+                <span className="text-[12.5px] cn-text-3">Led by <b className="cn-text-1 font-semibold">{current.createdBy}</b></span>
+              </span>
+              <AvatarStack names={current.members.map(m => m.name)} />
+            </div>
+          </div>
+
+          {/* Progress card */}
+          <div className="cn-glass rounded-2xl p-4">
+            <ProgressBar {...tc} pct={current.progress} tone={current.status === 'completed' ? 'ok' : 'brand'} />
+          </div>
+
+          {/* Join panel */}
+          <AnimatePresence>
+            {showJoinPanel && !isJoined(current.id) && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="cn-surface border border-purple-200 dark:border-purple-800/50 rounded-2xl p-5 shadow-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold cn-text-1 text-sm">Join this initiative</h3>
+                    <button onClick={() => setShowJoinPanel(false)} className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                      <X className="w-4 h-4 cn-text-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className={fieldLabelClass}>Your role <span className="text-red-400">*</span></label>
+                      <input
+                        type="text"
+                        value={joinRole}
+                        onChange={e => setJoinRole(e.target.value)}
+                        placeholder="e.g. Volunteer, Coordinator, Advisor…"
+                        className={fieldClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabelClass}>How you'll contribute</label>
+                      <textarea
+                        value={joinContribution}
+                        onChange={e => setJoinContribution(e.target.value)}
+                        placeholder="Briefly describe what you'll bring to this effort…"
+                        rows={2}
+                        className={`${fieldClass} resize-none`}
+                      />
+                    </div>
+                    <button
+                      onClick={handleJoinConfirm}
+                      disabled={!joinRole.trim()}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Confirm — Join Initiative
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!isJoined(current.id) && !showJoinPanel && (
+            <button
+              onClick={() => setShowJoinPanel(true)}
+              className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all"
+            >
+              <UserPlus className="w-3.5 h-3.5" /> Join
+            </button>
+          )}
+          {isJoined(current.id) && (
+            <button
+              onClick={handleLeave}
+              className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg cn-surface-2 cn-text-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 text-sm font-semibold transition-colors"
+            >
+              <CheckCheck className="w-3.5 h-3.5" /> Joined
+            </button>
+          )}
+
+          {/* Tab strip */}
+          <div className="flex overflow-x-auto no-scrollbar border-b cn-border -mb-1">
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+                    active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                  {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
+                </button>
               );
             })}
           </div>
-        </div>
-      )}
 
-      {/* ══════════════════════════════════════════════════════
-          DETAIL VIEW
-      ══════════════════════════════════════════════════════ */}
-      {view === 'detail' && current && (() => {
-        const c = COLOR[current.color];
-        const tc = taskCount(current);
-        const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
-          { id: 'overview', label: 'Overview',  icon: TrendingUp },
-          { id: 'tasks',    label: `Tasks (${tc.total})`, icon: CheckCircle2 },
-          { id: 'members',  label: `Members (${current.members.length + (isJoined(current.id) ? 1 : 0)})`, icon: Users },
-          { id: 'updates',  label: `Updates (${current.updates.length})`, icon: MessageSquare },
-        ];
+          {/* Tab content */}
+          <div className="pt-1">
 
-        const groupedTasks = {
-          'in-progress': current.tasks.filter(t => getTaskStatus(t) === 'in-progress'),
-          'todo':        current.tasks.filter(t => getTaskStatus(t) === 'todo'),
-          'done':        current.tasks.filter(t => getTaskStatus(t) === 'done'),
-        };
-
-        return (
-          <div>
-            {/* Hero banner */}
-            <div className={`relative bg-gradient-to-br ${c.gradient} px-5 pt-5 pb-10`}>
-              {current.imageUrl && (
-                <div className="absolute inset-0 overflow-hidden rounded-none">
-                  <img
-                    src={current.imageUrl}
-                    alt=""
-                    className="w-full h-full object-cover opacity-30"
-                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                </div>
-              )}
-              <div className="max-w-4xl mx-auto">
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center shrink-0">
-                    <Lightbulb className="w-7 h-7 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white/20 text-white">{current.category}</span>
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white/20 text-white capitalize">{current.status}</span>
-                    </div>
-                    <h2 className="text-xl font-bold text-white leading-tight">{current.title}</h2>
-                    <p className="text-sm text-white/70 mt-1">Started by {current.createdBy}</p>
-                  </div>
+            {/* ── OVERVIEW ── */}
+            {activeTab === 'overview' && (
+              <div className="space-y-3.5">
+                <div className="cn-glass rounded-2xl p-4">
+                  <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2">Goal</h3>
+                  <p className="text-sm cn-text-1 leading-relaxed font-medium">{current.goal}</p>
                 </div>
 
-                {/* Progress bar */}
-                <div className="mt-5">
-                  <div className="flex justify-between text-xs text-white/80 mb-1.5">
-                    <span>{tc.done} of {tc.total} tasks complete</span>
-                    <span className="font-semibold">{current.progress}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-white/20 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${current.progress}%` }}
-                      transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
-                      className="h-full rounded-full bg-white/80"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Join panel (slides in below hero) */}
-            <AnimatePresence>
-              {showJoinPanel && !isJoined(current.id) && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="max-w-4xl mx-auto px-4 pt-4 pb-2">
-                    <div className="bg-white dark:bg-zinc-900 border border-purple-200 dark:border-purple-800/50 rounded-2xl p-5 shadow-lg">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-slate-900 dark:text-white text-sm">Join this initiative</h3>
-                        <button onClick={() => setShowJoinPanel(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
-                          <X className="w-4 h-4 text-slate-400" />
-                        </button>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 block">Your role <span className="text-red-400">*</span></label>
-                          <input
-                            type="text"
-                            value={joinRole}
-                            onChange={e => setJoinRole(e.target.value)}
-                            placeholder="e.g. Volunteer, Coordinator, Advisor…"
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 block">How you'll contribute</label>
-                          <textarea
-                            value={joinContribution}
-                            onChange={e => setJoinContribution(e.target.value)}
-                            placeholder="Briefly describe what you'll bring to this effort…"
-                            rows={2}
-                            className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none resize-none"
-                          />
-                        </div>
-                        <button
-                          onClick={handleJoinConfirm}
-                          disabled={!joinRole.trim()}
-                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Confirm — Join Initiative
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Tab bar */}
-            <div className="sticky top-[57px] z-20 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800 -mt-5">
-              <div className="max-w-4xl mx-auto px-4">
-                <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                  {tabs.map(tab => {
-                    const Icon = tab.icon;
-                    const active = activeTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`shrink-0 flex items-center gap-1.5 px-4 py-3 text-sm font-medium transition-colors relative whitespace-nowrap ${
-                          active
-                            ? 'text-purple-700 dark:text-purple-300'
-                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        {tab.label}
-                        {active && (
-                          <motion.div
-                            layoutId="initiatives-tab-indicator"
-                            className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full"
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Tab content */}
-            <div className="max-w-4xl mx-auto px-4 py-6">
-
-              {/* ── OVERVIEW ── */}
-              {activeTab === 'overview' && (
-                <div className="space-y-5">
-                  {/* Goal */}
-                  <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
-                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Goal</h3>
-                    <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">{current.goal}</p>
-                  </div>
-
-                  {/* Description */}
-                  <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-5">
-                    <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">What's happening</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{current.description}</p>
-                  </div>
-
-                  {/* Stats row */}
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      { label: 'Participants', value: current.members.length + (isJoined(current.id) ? 1 : 0), icon: Users },
-                      { label: 'Tasks',        value: `${tc.done}/${tc.total}`, icon: CheckCircle2 },
-                      { label: 'Updates',      value: current.updates.length, icon: MessageSquare },
-                    ].map(stat => (
-                      <div key={stat.label} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4 flex flex-col items-center gap-1">
-                        <stat.icon className="w-4 h-4 text-purple-500" />
-                        <span className="text-lg font-bold text-slate-900 dark:text-white">{stat.value}</span>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{stat.label}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Your contribution (if joined) */}
-                  {isJoined(current.id) && memberRoles[current.id] && (
-                    <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-xl p-4">
-                      <h3 className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">Your contribution</h3>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{memberRoles[current.id].role}</p>
-                      {memberRoles[current.id].contribution && (
-                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{memberRoles[current.id].contribution}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Latest update preview */}
-                  {current.updates[0] && (
-                    <div
-                      className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4 cursor-pointer hover:border-purple-200 dark:hover:border-purple-800/50 transition-colors"
-                      onClick={() => setActiveTab('updates')}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Latest Update</h3>
-                        <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">See all →</span>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(current.updates[0].author)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                          {initials(current.updates[0].author)}
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">{current.updates[0].author} · <span className="font-normal text-slate-400">{timeAgo(current.updates[0].timestamp)}</span></p>
-                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">{current.updates[0].content}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── TASKS ── */}
-              {activeTab === 'tasks' && (
-                <div className="space-y-5">
-                  {(['in-progress', 'todo', 'done'] as const).map(status => {
-                    const group = groupedTasks[status];
-                    if (group.length === 0) return null;
-                    const labels = { 'in-progress': 'In Progress', todo: 'To Do', done: 'Done' };
-                    return (
-                      <div key={status}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{labels[status]}</h3>
-                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">{group.length}</span>
-                        </div>
-                        <div className="space-y-2">
-                          {group.map(task => {
-                            const ts = getTaskStatus(task);
-                            return (
-                              <div
-                                key={task.id}
-                                className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 flex items-center gap-3 group"
-                              >
-                                <button
-                                  onClick={() => cycleTask(task)}
-                                  className="shrink-0 w-5 h-5 flex items-center justify-center transition-transform hover:scale-110"
-                                  aria-label="Toggle task status"
-                                >
-                                  {ts === 'done'        && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
-                                  {ts === 'in-progress' && <Clock className="w-5 h-5 text-amber-500" />}
-                                  {ts === 'todo'        && <Circle className="w-5 h-5 text-slate-300 dark:text-zinc-600" />}
-                                </button>
-                                <div className="flex-1 min-w-0">
-                                  <p className={`text-sm font-medium ${ts === 'done' ? 'line-through text-slate-400 dark:text-zinc-500' : 'text-slate-900 dark:text-white'}`}>
-                                    {task.title}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    {task.assignee && <span className="text-xs text-slate-500 dark:text-slate-400">{task.assignee}</span>}
-                                    {task.dueDate && (
-                                      <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500">
-                                        <Calendar className="w-3 h-3" />{task.dueDate}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Add task */}
-                  <AnimatePresence>
-                    {showAddTask ? (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="overflow-hidden"
-                      >
-                        <div className="bg-white dark:bg-zinc-900 rounded-xl border border-purple-200 dark:border-purple-800/50 p-4 flex gap-2">
-                          <input
-                            autoFocus
-                            type="text"
-                            value={newTaskText}
-                            onChange={e => setNewTaskText(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); if (e.key === 'Escape') setShowAddTask(false); }}
-                            placeholder="Describe the task…"
-                            className="flex-1 text-sm bg-transparent text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
-                          />
-                          <button onClick={handleAddTask} disabled={!newTaskText.trim()} className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors">Add</button>
-                          <button onClick={() => setShowAddTask(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"><X className="w-4 h-4 text-slate-400" /></button>
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <button
-                        onClick={() => setShowAddTask(true)}
-                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-slate-200 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                      >
-                        <Plus className="w-4 h-4" /> Add task
-                      </button>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* ── MEMBERS ── */}
-              {activeTab === 'members' && (
-                <div className="space-y-3">
-                  {/* You (if joined) */}
-                  {isJoined(current.id) && memberRoles[current.id] && (
-                    <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 rounded-xl p-4 flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0`}>
-                        You
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">You</p>
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">You</span>
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mt-0.5">{memberRoles[current.id].role}</p>
-                        {memberRoles[current.id].contribution && (
-                          <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 line-clamp-1">{memberRoles[current.id].contribution}</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Existing members */}
-                  {current.members.map(member => (
-                    <div key={member.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4 flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${avatarColor(member.name)} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
-                        {initials(member.name)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{member.name}</p>
-                          {member.id === 'm1' && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Lead</span>
-                          )}
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mt-0.5">{member.role}</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 line-clamp-1">{member.contribution}</p>
-                      </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { label: 'Participants', value: current.members.length + (isJoined(current.id) ? 1 : 0), icon: Users },
+                    { label: 'Tasks',        value: `${tc.done}/${tc.total}`, icon: CheckCircle2 },
+                    { label: 'Updates',      value: current.updates.length, icon: MessageSquare },
+                  ].map(stat => (
+                    <div key={stat.label} className="cn-glass rounded-2xl p-3.5 flex flex-col items-center gap-1">
+                      <stat.icon className="w-4 h-4 text-purple-500 dark:text-purple-400" />
+                      <span className="text-lg font-bold cn-text-1">{stat.value}</span>
+                      <span className="text-[11px] cn-text-3">{stat.label}</span>
                     </div>
                   ))}
-
-                  {/* Not joined CTA */}
-                  {!isJoined(current.id) && (
-                    <button
-                      onClick={() => setShowJoinPanel(true)}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-slate-200 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                    >
-                      <UserPlus className="w-4 h-4" /> Join to add yourself
-                    </button>
-                  )}
                 </div>
-              )}
 
-              {/* ── UPDATES ── */}
-              {activeTab === 'updates' && (
-                <div className="space-y-4">
-                  {/* Post update (if joined) */}
-                  {isJoined(current.id) && (
-                    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4">
-                      <textarea
-                        value={newUpdateText}
-                        onChange={e => setNewUpdateText(e.target.value)}
-                        placeholder="Share a progress update with the team…"
-                        rows={3}
-                        className="w-full text-sm bg-transparent text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none resize-none"
-                      />
-                      <div className="flex justify-end mt-2">
-                        <button
-                          onClick={handlePostUpdate}
-                          disabled={!newUpdateText.trim()}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <Zap className="w-3.5 h-3.5" /> Post Update
-                        </button>
+                {isJoined(current.id) && memberRoles[current.id] && (
+                  <div className="rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 p-4">
+                    <h3 className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">Your contribution</h3>
+                    <p className="text-sm font-semibold cn-text-1">{memberRoles[current.id].role}</p>
+                    {memberRoles[current.id].contribution && (
+                      <p className="text-xs cn-text-3 mt-1">{memberRoles[current.id].contribution}</p>
+                    )}
+                  </div>
+                )}
+
+                {current.updates[0] && (
+                  <div
+                    className="cn-glass rounded-2xl p-4 cursor-pointer hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+                    onClick={() => setActiveTab('updates')}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Latest update</h3>
+                      <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">See all →</span>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(current.updates[0].author)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+                        {initials(current.updates[0].author)}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold cn-text-2">{current.updates[0].author} · <span className="font-normal cn-text-4">{timeAgo(current.updates[0].timestamp)}</span></p>
+                        <p className="text-sm cn-text-3 mt-0.5 line-clamp-2">{current.updates[0].content}</p>
                       </div>
                     </div>
-                  )}
-
-                  {/* Update feed */}
-                  {current.updates.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500">
-                      <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
-                      <p className="text-sm">No updates yet — be the first to post one.</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {current.updates.map((update, idx) => (
-                      <motion.div
-                        key={update.id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.04 }}
-                        className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 p-4"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColor(update.author)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
-                            {update.author === 'You' ? 'You' : initials(update.author)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm font-semibold text-slate-900 dark:text-white">{update.author}</span>
-                              <span className="text-xs text-slate-400 dark:text-zinc-500">{timeAgo(update.timestamp)}</span>
-                            </div>
-                            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{update.content}</p>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Not joined nudge */}
-                  {!isJoined(current.id) && (
-                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-3">
-                      <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
-                      <p className="text-xs text-slate-500 dark:text-slate-400 flex-1">Join this initiative to post updates.</p>
-                      <button onClick={() => setShowJoinPanel(true)} className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline shrink-0">Join →</button>
+            {/* ── TASKS ── */}
+            {activeTab === 'tasks' && (
+              <div className="space-y-5">
+                {(['in-progress', 'todo', 'done'] as const).map(status => {
+                  const group = groupedTasks[status];
+                  if (group.length === 0) return null;
+                  const labels = { 'in-progress': 'In Progress', todo: 'To Do', done: 'Done' };
+                  return (
+                    <div key={status}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">{labels[status]}</h3>
+                        <span className="text-xs px-1.5 py-0.5 rounded-full cn-surface-2 cn-text-3">{group.length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {group.map(task => {
+                          const ts = getTaskStatus(task);
+                          return (
+                            <div key={task.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+                              <button
+                                onClick={() => cycleTask(task)}
+                                className="shrink-0 w-5 h-5 flex items-center justify-center transition-transform hover:scale-110"
+                                aria-label="Toggle task status"
+                              >
+                                {ts === 'done'        && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                                {ts === 'in-progress' && <Clock className="w-5 h-5 text-amber-500" />}
+                                {ts === 'todo'        && <Circle className="w-5 h-5 cn-text-4" />}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium ${ts === 'done' ? 'line-through cn-text-4' : 'cn-text-1'}`}>
+                                  {task.title}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {task.assignee && <span className="text-xs cn-text-3">{task.assignee}</span>}
+                                  {task.dueDate && (
+                                    <span className="flex items-center gap-1 text-xs cn-text-4">
+                                      <Calendar className="w-3 h-3" />{task.dueDate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
+                  );
+                })}
+
+                {/* Add task */}
+                <AnimatePresence>
+                  {showAddTask ? (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="cn-surface border border-purple-200 dark:border-purple-800/50 rounded-xl p-4 flex gap-2">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={newTaskText}
+                          onChange={e => setNewTaskText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); if (e.key === 'Escape') setShowAddTask(false); }}
+                          placeholder="Describe the task…"
+                          className="flex-1 text-sm bg-transparent cn-text-1 placeholder:cn-text-4 focus:outline-none"
+                        />
+                        <button onClick={handleAddTask} disabled={!newTaskText.trim()} className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors">Add</button>
+                        <button onClick={() => setShowAddTask(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X className="w-4 h-4 cn-text-4" /></button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <button
+                      onClick={() => setShowAddTask(true)}
+                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> Add task
+                    </button>
                   )}
+                </AnimatePresence>
+              </div>
+            )}
+
+            {/* ── MEMBERS ── */}
+            {activeTab === 'members' && (
+              <div className="space-y-2.5">
+                {isJoined(current.id) && memberRoles[current.id] && (
+                  <div className="rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                      You
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold cn-text-1">You</p>
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">You</span>
+                      </div>
+                      <p className="text-xs font-medium cn-text-3 mt-0.5">{memberRoles[current.id].role}</p>
+                      {memberRoles[current.id].contribution && (
+                        <p className="text-xs cn-text-4 mt-0.5 line-clamp-1">{memberRoles[current.id].contribution}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {current.members.map(member => (
+                  <div key={member.id} className="cn-glass rounded-2xl p-4 flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${avatarColor(member.name)} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
+                      {initials(member.name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold cn-text-1">{member.name}</p>
+                        {member.id === 'm1' && (
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Lead</span>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium cn-text-3 mt-0.5">{member.role}</p>
+                      <p className="text-xs cn-text-4 mt-0.5 line-clamp-1">{member.contribution}</p>
+                    </div>
+                  </div>
+                ))}
+
+                {!isJoined(current.id) && (
+                  <button
+                    onClick={() => setShowJoinPanel(true)}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                  >
+                    <UserPlus className="w-4 h-4" /> Join to add yourself
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ── UPDATES ── */}
+            {activeTab === 'updates' && (
+              <div className="space-y-3.5">
+                {isJoined(current.id) && (
+                  <div className="cn-glass rounded-2xl p-4">
+                    <textarea
+                      value={newUpdateText}
+                      onChange={e => setNewUpdateText(e.target.value)}
+                      placeholder="Share a progress update with the team…"
+                      rows={3}
+                      className="w-full text-sm bg-transparent cn-text-1 placeholder:cn-text-4 focus:outline-none resize-none"
+                    />
+                    <div className="flex justify-end mt-2">
+                      <button
+                        onClick={handlePostUpdate}
+                        disabled={!newUpdateText.trim()}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Zap className="w-3.5 h-3.5" /> Post Update
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {current.updates.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 cn-text-4">
+                    <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
+                    <p className="text-sm">No updates yet — be the first to post one.</p>
+                  </div>
+                )}
+
+                <div className="space-y-2.5">
+                  {current.updates.map((update, idx) => (
+                    <motion.div
+                      key={update.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      className="cn-glass rounded-2xl p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColor(update.author)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                          {update.author === 'You' ? 'You' : initials(update.author)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-semibold cn-text-1">{update.author}</span>
+                            <span className="text-xs cn-text-4">{timeAgo(update.timestamp)}</span>
+                          </div>
+                          <p className="text-sm cn-text-3 leading-relaxed">{update.content}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
                 </div>
-              )}
+
+                {!isJoined(current.id) && (
+                  <div className="flex items-center gap-3 cn-surface-2 border cn-border rounded-xl px-4 py-3">
+                    <AlertCircle className="w-4 h-4 cn-text-4 shrink-0" />
+                    <p className="text-xs cn-text-3 flex-1">Join this initiative to post updates.</p>
+                    <button onClick={() => setShowJoinPanel(true)} className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline shrink-0">Join →</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })()
+    : listPane;
+
+  return (
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-7">
+        <div className="md:grid md:grid-cols-[1fr_300px] md:gap-7 md:items-start">
+          <div className="flex flex-col gap-4 md:gap-5 min-w-0">
+            {view === 'list' && (
+              <div>
+                <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors">
+                  <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
+                </button>
+                <div className="flex items-center gap-3">
+                  <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm" style={{ background: 'var(--cn-grad-initiatives)' }}>
+                    <Hammer className="w-[22px] h-[22px] text-white" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Initiatives</h1>
+                    <p className="text-[13px] cn-text-3 mt-0.5">Community projects residents are building together</p>
+                  </div>
+                  <button
+                    onClick={() => setShowNewModal(true)}
+                    className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all shrink-0"
+                  >
+                    <Plus className="w-4 h-4" /> Start a project
+                  </button>
+                  <button
+                    onClick={() => setShowNewModal(true)}
+                    title="Start a project"
+                    className="md:hidden w-9 h-9 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 flex items-center justify-center text-white shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            {mainColumn}
+          </div>
+
+          {/* Summary rail */}
+          <div className="hidden md:block mt-1">
+            <div className="cn-glass rounded-2xl p-4 flex flex-col gap-3 sticky top-4">
+              <span className="text-xs font-semibold cn-text-3">Overview</span>
+              <div className="flex justify-between">
+                <div>
+                  <div className="cn-mono text-[22px] font-bold cn-text-1">{initiatives.filter(i => i.status === 'active').length}</div>
+                  <div className="text-[11.5px] cn-text-4">In progress</div>
+                </div>
+                <div>
+                  <div className="cn-mono text-[22px] font-bold text-emerald-500">{initiatives.filter(i => i.status === 'completed').length}</div>
+                  <div className="text-[11.5px] cn-text-4">Completed</div>
+                </div>
+                <div>
+                  <div className="cn-mono text-[22px] font-bold text-amber-500">{initiatives.filter(i => i.status === 'planning').length}</div>
+                  <div className="text-[11.5px] cn-text-4">Planning</div>
+                </div>
+              </div>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      </div>
+
+      {showNewModal && <NewInitiativeModal onClose={() => setShowNewModal(false)} onSubmit={handleCreateInitiative} />}
+      {showShareModal && current && <ShareModal item={current} onClose={() => setShowShareModal(false)} />}
     </div>
   );
 }

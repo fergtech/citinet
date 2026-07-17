@@ -24,7 +24,6 @@ import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
-import { PollsScreen } from './components/PollsScreen';
 import { ModLogScreen } from './components/ModLogScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
@@ -161,7 +160,7 @@ function HubOnboardRoute() {
 
 function HubDashboardRoute() {
   const navigate = useNavigate();
-  const { currentHub, currentUser, leaveHub, loading } = useHub();
+  const { currentHub, currentUser, loading } = useHub();
   const hubSlug = getSubdomain() ?? '';
 
   // Redirect to onboard if user hasn't completed registration for this hub
@@ -176,13 +175,6 @@ function HubDashboardRoute() {
     navigate(hubPath(`/${screen}`));
   };
 
-  const handleLogout = () => {
-    const slug = currentHub?.slug || hubSlug;
-    if (slug) leaveHub(slug);
-    clearSubdomainCache(); // ensure hub slug is always cleared regardless of leaveHub result
-    window.location.href = window.location.origin + '/';
-  };
-
   const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
   const nodeName = currentHub?.name || hubSlug || 'Community Hub';
 
@@ -190,7 +182,7 @@ function HubDashboardRoute() {
     sessionStorage.setItem('citinet-node-name', nodeName);
   }
 
-  return <Dashboard userName={userName} onNavigate={handleNavigate} onLogout={handleLogout} />;
+  return <Dashboard userName={userName} onNavigate={handleNavigate} />;
 }
 
 function HubFeedRoute() {
@@ -238,11 +230,6 @@ function HubMessagesRoute() {
 function HubNetworkRoute() {
   const navigate = useNavigate();
   return <NetworkScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
-}
-
-function HubPollsRoute() {
-  const navigate = useNavigate();
-  return <PollsScreen onBack={() => navigate(-1)} />;
 }
 
 function HubModLogRoute() {
@@ -307,7 +294,11 @@ function HubVendorProfileRoute() {
       listings={data.listings}
       hubSlug={slug}
       onBack={() => navigate(-1)}
-      onItemClick={() => navigate(-1)}
+      onItemClick={(listingId) => {
+        sessionStorage.setItem('citinet-deeplink-listing', listingId);
+        navigate(hubPath('/marketplace'));
+      }}
+      onNavigate={screen => navigate(hubPath(`/${screen}`))}
     />
   );
 }
@@ -451,10 +442,9 @@ function HubModeRoutes() {
     <HubBackground />
     <Routes>
       <Route path="/onboard" element={<HubGuard><HubOnboardRoute /></HubGuard>} />
-      {/* Dashboard manages its own chrome */}
-      <Route path="/" element={<HubGuard><HubDashboardRoute /></HubGuard>} />
-      {/* All other hub routes get persistent navigation via HubLayout */}
+      <Route path="/" element={<HubGuard><HubLayout><HubDashboardRoute /></HubLayout></HubGuard>} />
       <Route path="/feed" element={<HubGuard><HubLayout><HubFeedRoute /></HubLayout></HubGuard>} />
+      <Route path="/feed/:postId" element={<HubGuard><HubLayout><HubFeedRoute /></HubLayout></HubGuard>} />
       <Route path="/neighbors" element={<HubGuard><HubLayout><HubNeighborsRoute /></HubLayout></HubGuard>} />
       <Route path="/files" element={<HubGuard><HubLayout><HubFilesRoute /></HubLayout></HubGuard>} />
       <Route path="/messages" element={<HubGuard><HubLayout><HubMessagesRoute /></HubLayout></HubGuard>} />
@@ -475,7 +465,6 @@ function HubModeRoutes() {
       <Route path="/profile/:userId" element={<HubGuard><HubLayout><HubProfileRoute /></HubLayout></HubGuard>} />
       <Route path="/hub-management" element={<HubGuard><HubLayout><HubManagementRoute /></HubLayout></HubGuard>} />
       <Route path="/discover" element={<HubGuard><HubLayout><HubDiscoverRoute /></HubLayout></HubGuard>} />
-      <Route path="/polls" element={<HubGuard><HubLayout><HubPollsRoute /></HubLayout></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubLayout><HubModLogRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces/:spaceSlug" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />

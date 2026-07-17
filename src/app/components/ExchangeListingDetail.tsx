@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Bookmark, Share2, MessageCircle, Check, Loader2, Clock, Store } from 'lucide-react';
+import { ArrowLeft, Bookmark, Share2, MessageCircle, Check, Loader2, Clock, Store, BadgeCheck } from 'lucide-react';
 import { marketplaceService } from '../services/marketplaceService';
-import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
 import type { HubListing, HubVendor } from '../types/hub';
 import { formatPrice, formatRelative, ListingCard, KIND_META } from './MarketplaceScreen';
@@ -39,8 +38,6 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
     return ids.includes(listing.id);
   });
   const [copied, setCopied] = useState(false);
-  const [messaging, setMessaging] = useState(false);
-  const [messageError, setMessageError] = useState('');
 
   const toggleSave = () => {
     const ids: string[] = JSON.parse(localStorage.getItem('saved_listings') || '[]');
@@ -57,19 +54,16 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleMessageSeller = async () => {
-    if (!vendor?.owner_user_id || messaging) return;
-    setMessaging(true);
-    setMessageError('');
-    try {
-      const convo = await hubService.createConversation(hubSlug, 'dm', [vendor.owner_user_id]);
-      sessionStorage.setItem('citinet-deeplink-message-conv', convo.id);
-      onNavigate?.('messages');
-    } catch (err: any) {
-      setMessageError(err.message || 'Could not start conversation');
-    } finally {
-      setMessaging(false);
-    }
+  // Doesn't create a conversation here — just hands off who to message. MessagesScreen
+  // reuses an existing DM with this seller if one exists, or opens a draft that only
+  // becomes a real conversation once a message is actually sent.
+  const handleMessageSeller = () => {
+    if (!vendor?.owner_user_id) return;
+    sessionStorage.setItem('citinet-deeplink-message-peer', JSON.stringify({
+      userId: vendor.owner_user_id,
+      username: vendor.name || listing.vendor_name || 'Seller',
+    }));
+    onNavigate?.('messages');
   };
 
   const moreFromSeller = useMemo(
@@ -138,7 +132,7 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
             )}
 
             {/* Seller card */}
-            <div className="rounded-xl border cn-border cn-surface p-4">
+            <div className="rounded-xl cn-glass p-4">
               {vendorLoading ? (
                 <div className="flex items-center gap-2 text-sm cn-text-4 py-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading seller…</div>
               ) : (
@@ -149,7 +143,10 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
                       : <span className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
                     }
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold cn-text-1 truncate">{listing.vendor_name ?? 'Unknown seller'}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold cn-text-1 truncate">{listing.vendor_name ?? 'Unknown seller'}</span>
+                        <BadgeCheck className="w-3.5 h-3.5 text-purple-500 dark:text-purple-300 shrink-0" />
+                      </div>
                       <div className="text-xs cn-text-3 truncate">
                         {vendor?.category ? vendor.category : 'Hub member'}
                         {vendor?.created_at && ` · member since ${new Date(vendor.created_at).getFullYear()}`}
@@ -185,15 +182,14 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
             {!isOwnListing && (
               <button
                 onClick={handleMessageSeller}
-                disabled={messaging || vendorLoading || !vendor?.owner_user_id}
+                disabled={vendorLoading || !vendor?.owner_user_id}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
               >
-                {messaging ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
+                <MessageCircle className="w-4 h-4" />
                 Message seller
               </button>
             )}
           </div>
-          {messageError && <p className="text-xs text-red-400 mt-2">{messageError}</p>}
         </div>
       </div>
     </div>

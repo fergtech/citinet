@@ -1,13 +1,11 @@
 import {
   Users, MessageCircle, Radio, Store,
-  Calendar, Lightbulb, Activity, MapPin, LogOut, FolderOpen,
-  RefreshCw, Loader2, Check, WifiOff, Link2, User, Shield, Map,
-  X, ChevronRight, Target, UserCircle, Compass, HelpCircle, CircleAlert, Bug, Search,
-  Grid3x3, Plus, Sparkles, Vote, ScrollText, Layers, NotebookPen, Package, Bot,
-  PanelLeft, PanelBottom, Hexagon, Pencil, MessageSquare,
+  Calendar, Lightbulb, Activity, MapPin, FolderOpen,
+  RefreshCw, Loader2, Plus, Layers, Bot, ChevronRight,
+  X, Clock, Share2, Check,
 } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailModal } from './PostDetailModal';
 import { useHub, useHubStatus } from '../context/HubContext';
@@ -18,52 +16,240 @@ import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
-import { registryService } from '../services/registryService';
 import { aiService } from '../services/aiService';
+import { openLocationInAtlas } from '../utils/geocoding';
 import type { FeaturedItem } from '../types/featured';
-import type { HubPost, HubVendor } from '../types/hub';
-
-export const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
-  { Icon: Layers,        label: 'Spaces',      screen: 'spaces',      gradient: 'bg-gradient-to-br from-purple-500 to-violet-600' },
-  { Icon: MessageCircle, label: 'Feed',        screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
-  { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
-  { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
-  { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
-  { Icon: Users,         label: 'Neighbors',   screen: 'neighbors',   gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' },
-  { Icon: FolderOpen,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
-  { Icon: Target,        label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
-  { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
-  { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
-  { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
-  { Icon: Vote,          label: 'Polls',       screen: 'polls',       gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600' },
-  { Icon: ScrollText,    label: 'Mod Log',     screen: 'mod-log',     gradient: 'bg-gradient-to-br from-slate-600 to-slate-700' },
-  { Icon: NotebookPen,   label: 'Notes',       screen: 'notes',       gradient: 'bg-gradient-to-br from-amber-500 to-yellow-500' },
-];
-
-// Priority-ordered screen IDs for the mobile bottom dock.
-// Derived from visibleTiles so icons, labels, badges, and feature-gating
-// all stay in sync with the launchpad automatically.
-export const DOCK_PRIORITY_SCREENS = ['messages', 'feed', 'atlas'];
-
-// Apps enabled on a fresh hub with no admin configuration yet.
-// null enabledApps on the Hub object means "all apps" (backward compat).
-export const DEFAULT_ENABLED_APPS: string[] = [
-  'feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls',
-];
+import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
+import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
 
 const MOBILE_LAUNCHPAD_COLUMNS = 5;
 const MOBILE_LAUNCHPAD_ROWS = 2;
 const MOBILE_LAUNCHPAD_PAGE_SIZE = MOBILE_LAUNCHPAD_COLUMNS * MOBILE_LAUNCHPAD_ROWS;
 
+// Hidden (not removed) — superseded by HubLayout's mobile bottom-dock "Apps" button,
+// which now reveals the same app grid. Flip back to true to restore this section.
+const SHOW_MOBILE_LAUNCHPAD = false;
+
 interface DashboardProps {
   userName?: string;
   onNavigate: (screen: string) => void;
-  onLogout?: () => void;
 }
 
-export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: DashboardProps) {
-  const { currentHub, currentUser, updateTunnelUrl } = useHub();
-  const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
+function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
+const ATTENDEE_AVATAR_COLORS = [
+  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
+  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
+  'from-pink-500 to-rose-500',
+];
+function attendeeAvatarColor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return ATTENDEE_AVATAR_COLORS[Math.abs(h) % ATTENDEE_AVATAR_COLORS.length];
+}
+
+function AttendeeAvatar({ userId, username, hubSlug, onClick }: { userId: string; username: string; hubSlug: string; onClick: () => void }) {
+  const [failed, setFailed] = useState(false);
+  const url = hubService.getAvatarUrl(hubSlug, userId);
+  return (
+    <button
+      onClick={onClick}
+      title={username}
+      className="w-7 h-7 rounded-full ring-2 ring-white dark:ring-zinc-900 overflow-hidden shrink-0 hover:z-10 hover:scale-110 transition-transform"
+    >
+      {url && !failed
+        ? <img src={url} alt={username} className="w-full h-full object-cover" onError={() => setFailed(true)} />
+        : <div className={`w-full h-full bg-gradient-to-br ${attendeeAvatarColor(username)} flex items-center justify-center text-white text-[9px] font-semibold`}>{getInitials(username)}</div>
+      }
+    </button>
+  );
+}
+
+// ── Event Detail Modal ───────────────────────────────────
+// Compact RSVP-focused overlay for a quick glance at an upcoming event, opened
+// from the dashboard's "Upcoming events" list. RSVP is real and shared (hub_event_rsvps),
+// with a clickable attendee avatar stack. "View full post" deep-links into Feed and
+// opens the exact same post detail view you'd get by clicking the event there.
+function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubPost; hubSlug: string; onClose: () => void; onNavigate: (screen: string) => void }) {
+  const { currentHub } = useHub();
+  const d = event.event_date ? new Date(event.event_date) : null;
+  const weekdayStr = d ? d.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase() : '—';
+  const dayOfMonth = d ? d.getDate() : '–';
+  const timeStr = d ? `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : null;
+
+  const [going, setGoing] = useState(event.my_rsvp ?? false);
+  const [count, setCount] = useState(event.rsvp_count ?? 0);
+  const [attendees, setAttendees] = useState<HubEventAttendee[]>([]);
+  const [attendeesLoading, setAttendeesLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAttendeesLoading(true);
+    hubService.listRsvps(hubSlug, event.id)
+      .then(data => {
+        if (cancelled) return;
+        setAttendees(data.attendees);
+        setCount(data.count);
+        setGoing(data.going);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAttendeesLoading(false); });
+    return () => { cancelled = true; };
+  }, [hubSlug, event.id]);
+
+  const toggleGoing = async () => {
+    if (toggling) return;
+    setToggling(true);
+    const wasGoing = going;
+    setGoing(!wasGoing);
+    setCount(c => wasGoing ? Math.max(0, c - 1) : c + 1);
+    try {
+      const result = await hubService.toggleRsvp(hubSlug, event.id);
+      setGoing(result.going);
+      setCount(result.count);
+      const data = await hubService.listRsvps(hubSlug, event.id);
+      setAttendees(data.attendees);
+    } catch {
+      setGoing(wasGoing);
+      setCount(c => wasGoing ? c + 1 : Math.max(0, c - 1));
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const handleShare = () => {
+    const parts = [event.title];
+    if (timeStr) parts.push(timeStr);
+    if (event.event_location) parts.push(event.event_location);
+    navigator.clipboard.writeText(parts.join(' — '));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="backdrop"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50"
+      />
+      <div key="panel-wrap" className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          onClick={e => e.stopPropagation()}
+          className="cn-surface border cn-border rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden"
+        >
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold cn-text-3 uppercase tracking-wide">Event</span>
+              <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors">
+                <X className="w-4 h-4 cn-text-3" />
+              </button>
+            </div>
+
+            <div className="flex items-start gap-3.5">
+              <div className="w-14 text-center rounded-xl cn-surface-2 border cn-border py-2 shrink-0">
+                <div className="text-[10px] font-bold tracking-wider text-purple-400">{weekdayStr}</div>
+                <div className="font-mono text-xl font-bold leading-tight cn-text-1">{dayOfMonth}</div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold cn-text-1 leading-snug">{event.title}</h2>
+                <div className="flex flex-col gap-1 mt-1.5 text-xs cn-text-3">
+                  {timeStr && <span className="flex items-center gap-1.5"><Clock className="w-3 h-3 shrink-0" />{timeStr}</span>}
+                </div>
+              </div>
+            </div>
+
+            {event.body && <p className="text-sm cn-text-2 leading-relaxed">{event.body}</p>}
+
+            {/* Referenced location — clickable into Atlas, resolving to a real pin if one
+                exists nearby or offering to add one if not (mirrors Feed's post locations). */}
+            {event.event_location && (
+              <button
+                onClick={() => openLocationInAtlas(event.event_location!, event.event_lat, event.event_lng, onNavigate, currentHub?.location)}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl border cn-border bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left"
+              >
+                <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">
+                  <MapPin className="w-4 h-4 text-white" />
+                </span>
+                <span className="flex-1 min-w-0 text-sm font-medium cn-text-2 truncate">{event.event_location}</span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/5 dark:bg-white/5 text-[11px] font-semibold cn-text-2 shrink-0">
+                  Open in Atlas
+                </span>
+              </button>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs cn-text-3">Hosted by <span className="font-semibold cn-text-1">{event.author_username}</span></span>
+              {event.reply_count > 0 && (
+                <span className="text-xs cn-text-4">{event.reply_count} comment{event.reply_count === 1 ? '' : 's'}</span>
+              )}
+            </div>
+
+            {/* Attendees — real, shared RSVPs; click an avatar to open that person's profile */}
+            {(attendeesLoading || count > 0) && (
+              <div className="flex items-center gap-2.5">
+                {attendeesLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin cn-text-4" />
+                ) : (
+                  <div className="flex -space-x-2">
+                    {attendees.slice(0, 6).map(a => (
+                      <AttendeeAvatar
+                        key={a.user_id}
+                        userId={a.user_id}
+                        username={a.display_name || a.username}
+                        hubSlug={hubSlug}
+                        onClick={() => { onClose(); onNavigate(`profile/${a.user_id}`); }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {!attendeesLoading && (
+                  <span className="text-xs cn-text-3">
+                    {count} going{attendees.length > 6 ? ` · +${count - 6} more` : ''}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={toggleGoing}
+                disabled={toggling}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+              >
+                {going ? "You're going" : "I'm going"}
+              </button>
+              <button
+                onClick={handleShare}
+                title={copied ? 'Copied!' : 'Copy event details'}
+                className="px-4 py-2.5 rounded-xl cn-surface-2 border cn-border cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 text-sm font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-500 dark:text-emerald-400" /> : <Share2 className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <button
+              onClick={() => { onClose(); onNavigate(`feed/${event.id}`); }}
+              className="w-full text-center text-xs font-medium text-purple-500 dark:text-purple-400 hover:text-purple-400 dark:hover:text-purple-300 transition-colors"
+            >
+              View full post &amp; comments →
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
+export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps) {
+  const { currentHub, currentUser } = useHub();
+  const { status: connectionStatus } = useHubStatus();
 
   // Featured
   const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
@@ -89,6 +275,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
 
   async function handleTileNavigate(screen: string, notifyFeature?: NotificationFeature) {
+    let target = screen;
     if (notifyFeature && notifCounts[notifyFeature] > 0) {
       try {
         const unread = await notificationsService.getUnread(hubSlug);
@@ -99,15 +286,15 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           const msgNotifs = unread.filter(n => n.type === 'message' && n.ref_id);
           if (msgNotifs[0]?.ref_id) sessionStorage.setItem('citinet-deeplink-message-conv', msgNotifs[0].ref_id);
         } else if (screen === 'feed') {
-          // Feed is linear — mark all read immediately and deeplink to the triggering post.
+          // Feed is linear — mark all read immediately and route straight to the triggering post.
           const hit = unread.find(n => n.type === 'reply' && n.ref_id);
-          if (hit?.ref_id) sessionStorage.setItem('citinet-deeplink-feed-post', hit.ref_id);
+          if (hit?.ref_id) target = `feed/${hit.ref_id}`;
           clearBadge('feed');
           notificationsService.markRead(hubSlug, 'feed').catch(() => {});
         }
       } catch { /* navigation still proceeds even if fetch fails */ }
     }
-    onNavigate(screen);
+    onNavigate(target);
   }
 
   async function handleFeaturedPostClick(postId: string) {
@@ -119,145 +306,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
     }
   }
 
-  // Feature request modal
+  // Feature request modal — triggered from the mobile launchpad's "Suggest" tile
   const [showRequestModal, setShowRequestModal] = useState(false);
 
-  // Mobile account menu (mirrors desktop's Account Menu Panel)
-  const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
-  // Desktop account menu
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
-  const [showSupportMenu, setShowSupportMenu] = useState(false);
-  const [showHubInfoModal, setShowHubInfoModal] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  // Mobile "Apps" overlay — quick access to everything not in the bottom dock (mirrors desktop's "More" waffle)
-  const [showMobileAppsMenu, setShowMobileAppsMenu] = useState(false);
-
-  // Dashboard search — submits to Discover with the query pre-filled
-  const [searchQuery, setSearchQuery] = useState('');
-  function handleSearchSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const q = searchQuery.trim();
-    if (!q) return;
-    sessionStorage.setItem('citinet-deeplink-search', q);
-    setSearchQuery('');
-    onNavigate('discover');
-  }
-
-  // Desktop nav layout: bottom dock (default) or left sidebar
-  const [desktopNavLayout, setDesktopNavLayout] = useState<'dock' | 'sidebar'>(() => {
-    if (typeof window === 'undefined') return 'dock';
-    return localStorage.getItem('citinet-desktop-nav-layout') === 'sidebar' ? 'sidebar' : 'dock';
-  });
-  const toggleDesktopNavLayout = () => {
-    setDesktopNavLayout(prev => {
-      const next = prev === 'dock' ? 'sidebar' : 'dock';
-      localStorage.setItem('citinet-desktop-nav-layout', next);
-      return next;
-    });
-  };
-
-  // Tunnel reconnect state
-  const [showTunnelInput, setShowTunnelInput] = useState(false);
-  const [tunnelInput, setTunnelInput] = useState('');
-  const [tunnelUpdating, setTunnelUpdating] = useState(false);
-  const [tunnelError, setTunnelError] = useState('');
-  const [tunnelSuccess, setTunnelSuccess] = useState(false);
-
-  // Registry-based reconnect
-  const [registrySearchQuery, setRegistrySearchQuery] = useState('');
-  const [registryHubs, setRegistryHubs] = useState<import('../services/registryService').RegistryHub[]>([]);
-  const [registryLoading, setRegistryLoading] = useState(false);
-  const [showManualUrl, setShowManualUrl] = useState(false);
-
-  const autoRegisterHub = (tunnelUrl: string) => {
-    if (!currentHub) return;
-    // Fire-and-forget — failure is silent, doesn't affect the user's flow
-    registryService.registerHub({
-      id:           currentHub.slug,
-      name:         currentHub.name,
-      slug:         currentHub.slug,
-      location:     currentHub.location ?? '',
-      description:  currentHub.description ?? '',
-      tunnel_url:   tunnelUrl,
-      member_count: currentHub.meta?.activeMembers ?? 0,
-      online:       true,
-    }).catch(() => {});
-  };
-
-  const handleTunnelReconnect = async () => {
-    if (!tunnelInput.trim()) return;
-    setTunnelUpdating(true);
-    setTunnelError('');
-    setTunnelSuccess(false);
-    const result = await updateTunnelUrl(tunnelInput.trim());
-    setTunnelUpdating(false);
-    if (result.ok) {
-      setTunnelSuccess(true);
-      setTunnelInput('');
-      autoRegisterHub(tunnelInput.trim());
-      setTimeout(() => {
-        setShowTunnelInput(false);
-        setTunnelSuccess(false);
-      }, 1500);
-    } else {
-      setTunnelError(result.error || 'Could not reach hub');
-    }
-  };
-
-  const handleForceUpdateUrl = async () => {
-    if (!tunnelInput.trim()) return;
-    setTunnelUpdating(true);
-    setTunnelError('');
-    setTunnelSuccess(false);
-    const result = await updateTunnelUrl(tunnelInput.trim(), true);
-    setTunnelUpdating(false);
-    if (result.ok) {
-      setTunnelSuccess(true);
-      setTunnelInput('');
-      autoRegisterHub(tunnelInput.trim());
-      setTimeout(() => {
-        setShowTunnelInput(false);
-        setTunnelSuccess(false);
-      }, 1500);
-    }
-  };
-
-  // Load registry whenever the panel opens or hub goes unreachable
-  useEffect(() => {
-    if (!showTunnelInput && connectionStatus !== 'unreachable') return;
-    if (registryHubs.length > 0) return;
-    setRegistryLoading(true);
-    registryService.getHubs()
-      .then(hubs => setRegistryHubs(hubs))
-      .catch(() => {})
-      .finally(() => setRegistryLoading(false));
-  }, [showTunnelInput, connectionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const filteredRegistryHubs = registrySearchQuery.trim()
-    ? registryHubs.filter(h =>
-        h.name.toLowerCase().includes(registrySearchQuery.toLowerCase()) ||
-        h.slug.toLowerCase().includes(registrySearchQuery.toLowerCase())
-      )
-    : registryHubs;
-
-  const handleRegistryReconnect = async (tunnelUrl: string) => {
-    setTunnelUpdating(true);
-    setTunnelError('');
-    // probe=false (default) — actually verify the hub is reachable before claiming success
-    const result = await updateTunnelUrl(tunnelUrl);
-    setTunnelUpdating(false);
-    if (result.ok) {
-      setTunnelSuccess(true);
-      setRegistrySearchQuery('');
-      setShowTunnelInput(false);
-      setTimeout(() => setTunnelSuccess(false), 2000);
-    } else {
-      setTunnelError('Hub not reachable at that address. It may be offline.');
-    }
-  };
-
   // Use hub context for real data, fall back to props/defaults
-  const nodeName = currentHub?.name || 'Community';
   const displayName = currentUser?.displayName || userName;
   // isAdmin: explicit flag (new sessions) OR effectively-local hub (Mission 1).
   // 'https://' is the malformed URL stored by the old empty-URL bug; treat it as local too.
@@ -292,104 +344,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
       .finally(() => setEventsLoading(false));
   }, [hubSlug, isConnected]);
 
-  const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
-  const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
-    ? projectInfoUrlRaw
-    : `https://${projectInfoUrlRaw}`;
-  const githubIssueBaseUrl = 'https://github.com/fergtech/citinet/issues/new';
-
-  const getCurrentFeatureContext = () => {
-    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-    const cleanPath = path.toLowerCase();
-    const firstSegment = cleanPath.split('/').filter(Boolean)[0] ?? '';
-
-    const labelMap: Record<string, string> = {
-      '': 'Dashboard',
-      feed: 'Feed',
-      discover: 'Discover',
-      atlas: 'Atlas',
-      marketplace: 'Exchange',
-      neighbors: 'Neighbors',
-      files: 'Files',
-      initiatives: 'Initiatives',
-      toolkit: 'Resources',
-      network: 'Network',
-      messages: 'Messages',
-      account: 'Account',
-      profile: 'Profile',
-      settings: 'Settings',
-      'hub-management': 'Hub Management',
-      vendor: 'Vendor Profile',
-    };
-
-    const featureName = labelMap[firstSegment] ?? (firstSegment ? `${firstSegment.charAt(0).toUpperCase()}${firstSegment.slice(1)}` : 'Dashboard');
-    return { featureName, path };
-  };
-
-  const buildSupportUrl = (kind: 'help' | 'bug' | 'feature') => {
-    const { featureName, path } = getCurrentFeatureContext();
-    const params = new URLSearchParams();
-    const contextText = [
-      `Feature/Screen: ${featureName}`,
-      `Route: ${path}`,
-      `Hub: ${nodeName}`,
-    ].join('\n');
-
-    if (kind === 'help') {
-      params.set('template', 'help.yml');
-      params.set('title', `[Help] ${featureName}: `);
-      params.set('question-summary', `Need help with ${featureName}`);
-      params.set('additional-info', contextText);
-    }
-
-    if (kind === 'bug') {
-      params.set('template', 'bug_report.yml');
-      params.set('title', `[Bug] ${featureName}: `);
-      params.set('what-happened', `Issue encountered in ${featureName}.`);
-      params.set('steps-to-reproduce', `1. Open ${featureName}\n2. ...\n3. Observe issue`);
-      params.set('additional-info', contextText);
-    }
-
-    if (kind === 'feature') {
-      params.set('template', 'feature_request.yml');
-      params.set('title', `[Feature] ${featureName}: `);
-      params.set('feature-summary', `Enhance ${featureName}`);
-      params.set('use-case', `While using ${featureName}, it would help if ...`);
-      params.set('additional-info', contextText);
-    }
-
-    return `${githubIssueBaseUrl}?${params.toString()}`;
-  };
-
-  const openProjectInfo = () => {
-    window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const openSupportLink = (kind: 'help' | 'bug' | 'feature') => {
-    window.open(buildSupportUrl(kind), '_blank', 'noopener,noreferrer');
-    setShowSupportMenu(false);
-  };
-
   // enabledApps: null = all enabled (existing hubs), array = restrict to those IDs
   const enabledSet = currentHub?.enabledApps ?? null;
   const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' };
   const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
   const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
-
-  // Bottom dock — priority screens resolved from visibleTiles so icons/labels/badges/gating stay in sync
-  const dockItems = DOCK_PRIORITY_SCREENS
-    .map(screen => visibleTiles.find(t => t.screen === screen))
-    .filter((t): t is typeof APP_TILES[number] => !!t);
-
-  // Desktop dock/sidebar — primary navigation icons, shared between both layouts
-  const desktopNavItems = [
-    { Icon: MessageCircle, label: 'Feed',      screen: 'feed',      notifyFeature: 'feed'     as const },
-    { Icon: MessageSquare, label: 'Messages',  screen: 'messages',  notifyFeature: 'messages' as const },
-    { Icon: Map,           label: 'Atlas',     screen: 'atlas' },
-    { Icon: Store,         label: 'Exchange',  screen: 'marketplace' },
-    { Icon: Users,         label: 'Neighbors', screen: 'neighbors' },
-    { Icon: Package,       label: 'Resources', screen: 'toolkit' },
-  ].filter(app => !enabledSet || enabledSet.includes(app.screen));
 
   const mobileLauncherTiles: typeof APP_TILES = myVendor
     ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
@@ -417,24 +376,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   const [mobileLaunchpadPage, setMobileLaunchpadPage] = useState(0);
   const [activityExpanded, setActivityExpanded] = useState(false);
 
-  const desktopAppItems: typeof APP_TILES = myVendor
-    ? [...visibleTiles, { Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
-    : visibleTiles;
-
-  const desktopAppItemsWithSuggest: typeof APP_TILES = [
-    ...desktopAppItems,
-    {
-      Icon: Sparkles,
-      label: 'Suggest',
-      screen: 'suggest',
-      gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600',
-    },
-  ];
-
-  // "More" overlay — everything not already pinned in the dock/sidebar (or shown as the vendor tile)
-  const pinnedScreens = new Set(desktopNavItems.map(item => item.screen));
-  const moreNavItems = desktopAppItemsWithSuggest.filter(app => !pinnedScreens.has(app.screen) && !app.screen.startsWith('vendor/'));
-
   useEffect(() => {
     setMobileLaunchpadPage(prev => Math.min(prev, Math.max(0, mobileLaunchpadPages.length - 1)));
   }, [mobileLaunchpadPages.length]);
@@ -460,764 +401,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
   };
 
   return (
-    <div className="min-h-screen flex relative">
-
-      {/* ═══ DESKTOP OS UI (hidden on mobile) ═══ */}
-
-      {/* Desktop Top Menubar */}
-      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-slate-950/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-800/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
-        <button
-          onClick={() => setShowHubInfoModal(true)}
-          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-white/10 transition-colors shrink-0"
-          title="About this hub"
-        >
-          <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
-          <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
-        </button>
-        <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search posts, people, files…"
-              className="w-full h-6 pl-7 pr-2 rounded-md bg-white/5 border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 hover:bg-white/10 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
-            />
-          </div>
-        </form>
-        <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-        <span className="text-xs text-slate-300">{statusLabel}</span>
-        {nodeStatus.onlineNow > 0 && (
-          <>
-            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
-            <span className="text-xs text-slate-300">{nodeStatus.onlineNow} online</span>
-          </>
-        )}
-        <button
-          onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
-          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-          title="Update tunnel URL"
-          aria-label="Update tunnel URL"
-        >
-          <Link2 className="w-3 h-3 text-slate-400 dark:text-slate-500" />
-        </button>
-      </div>
-
-      {/* Desktop Reconnect Panel */}
-      {showTunnelInput && (
-        <div className="hidden md:block fixed top-10 right-4 z-40 w-72 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold text-slate-900 dark:text-white">Find your hub</p>
-            {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
-            {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
-          </div>
-
-          {/* Name search */}
-          <div className="space-y-1.5">
-            <input
-              type="text"
-              value={registrySearchQuery}
-              onChange={e => setRegistrySearchQuery(e.target.value)}
-              placeholder="Search hub by name…"
-              className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
-            />
-            {registrySearchQuery.trim() && (
-              <div className="space-y-1 max-h-36 overflow-y-auto">
-                {filteredRegistryHubs.length === 0 ? (
-                  <p className="text-[10px] text-slate-400 px-1">No hubs found.</p>
-                ) : filteredRegistryHubs.map(hub => (
-                  <button
-                    key={hub.id}
-                    onClick={() => handleRegistryReconnect(hub.tunnel_url)}
-                    disabled={tunnelUpdating}
-                    className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
-                  >
-                    <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
-                    <span className="text-[10px] text-slate-400 shrink-0">{hub.location}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Manual URL fallback */}
-          <div>
-            <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 underline hover:no-underline">
-              {showManualUrl ? 'Hide' : 'Enter URL manually'}
-            </button>
-            {showManualUrl && (
-              <div className="mt-1.5 space-y-1.5">
-                <div className="flex gap-1.5">
-                  <input
-                    type="url"
-                    value={tunnelInput}
-                    onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
-                    onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
-                    placeholder="https://…"
-                    className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                    disabled={tunnelUpdating}
-                  />
-                  <button
-                    onClick={handleTunnelReconnect}
-                    disabled={tunnelUpdating || !tunnelInput.trim()}
-                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center shrink-0"
-                  >
-                    {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                  </button>
-                </div>
-                {tunnelError && (
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
-                    {tunnelInput.trim() && (
-                      <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Desktop Account Menu Panel */}
-      <AnimatePresence>
-        {showAccountMenu && (
-          <>
-            <div className="fixed inset-0 z-40 hidden md:block" onClick={() => setShowAccountMenu(false)} />
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.97 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
-              className={`hidden md:block fixed z-50 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden ${desktopNavLayout === 'sidebar' ? 'left-[4.5rem] bottom-12' : 'bottom-16 right-4'}`}
-            >
-              <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-800 dark:to-zinc-900 border-b border-slate-200 dark:border-zinc-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-base shrink-0">
-                    {resolvedCurrentUserAvatarUrl
-                      ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : displayName.charAt(0).toUpperCase()
-                    }
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
-                      {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
-                    </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{nodeName}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="p-2 space-y-0.5">
-                {currentUser?.hubUserId && (
-                  <button
-                    onClick={() => { setShowAccountMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                  >
-                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">View Profile</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => { setShowAccountMenu(false); onNavigate('account'); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
-                </button>
-                <button
-                  onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Help & Support</span>
-                </button>
-              </div>
-              {onLogout && (
-                <>
-                  <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
-                  <div className="p-2">
-                    <button
-                      onClick={() => { setShowAccountMenu(false); onLogout(); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
-                    >
-                      <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
-                      <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Desktop Bottom Dock */}
-      {desktopNavLayout === 'dock' ? (
-      <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60 items-center px-4 gap-1">
-        {desktopNavItems.map(app => {
-          const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-          return (
-            <button
-              key={app.screen}
-              onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-              title={app.label}
-              className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
-            >
-              <app.Icon className="w-5 h-5" />
-              {badge > 0 && (
-                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
-                  {badge > 9 ? '9+' : badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-        <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
-        <button
-          onClick={() => setShowMoreMenu(true)}
-          title="More"
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
-        >
-          <Grid3x3 className="w-5 h-5" />
-        </button>
-        {myVendor && (
-          <>
-            <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
-            <button
-              onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-              title={myVendor.name}
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold active:scale-95 shrink-0 hover:from-blue-700 hover:to-purple-700 transition-all overflow-hidden"
-            >
-              {vendorLogoUrl
-                ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                : myVendor.name.charAt(0).toUpperCase()
-              }
-            </button>
-          </>
-        )}
-        <div className="flex-1" />
-        {isAdmin && (
-          <button
-            onClick={() => onNavigate('hub-management')}
-            title="Hub Admin"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
-          >
-            <Shield className="w-5 h-5" />
-          </button>
-        )}
-        <button
-          onClick={openProjectInfo}
-          title="About citinet"
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
-        >
-          <CircleAlert className="w-5 h-5" />
-        </button>
-        <button
-          onClick={() => setShowAccountMenu(v => !v)}
-          title="Account"
-          aria-label="Open account menu"
-          className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm active:scale-95 ml-1 shrink-0 hover:ring-2 hover:ring-purple-400 transition-all"
-        >
-          {resolvedCurrentUserAvatarUrl
-            ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            : displayName.charAt(0).toUpperCase()
-          }
-        </button>
-        <button
-          onClick={toggleDesktopNavLayout}
-          title="Switch to sidebar layout"
-          aria-label="Switch to sidebar layout"
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0 ml-1"
-        >
-          <PanelLeft className="w-4 h-4" />
-        </button>
-      </div>
-      ) : (
-      <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-r border-slate-700/60 dark:border-zinc-800/60 group">
-        {desktopNavItems.map(app => {
-          const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-          return (
-            <button
-              key={app.screen}
-              onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-              title={app.label}
-              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-            >
-              <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
-                <app.Icon className="w-5 h-5" />
-                {badge > 0 && (
-                  <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
-                    {badge > 9 ? '9+' : badge}
-                  </span>
-                )}
-              </span>
-              <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">{app.label}</span>
-            </button>
-          );
-        })}
-
-        <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
-
-        <button
-          onClick={() => setShowMoreMenu(true)}
-          title="More"
-          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-        >
-          <span className="w-16 h-12 flex items-center justify-center shrink-0">
-            <Grid3x3 className="w-5 h-5" />
-          </span>
-          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
-        </button>
-
-        {myVendor && (
-          <>
-            <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
-            <button
-              onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-              title={myVendor.name}
-              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-            >
-              <span className="w-16 h-12 flex items-center justify-center shrink-0">
-                <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold overflow-hidden">
-                  {vendorLogoUrl
-                    ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                    : myVendor.name.charAt(0).toUpperCase()
-                  }
-                </span>
-              </span>
-              <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{myVendor.name}</span>
-            </button>
-          </>
-        )}
-
-        <div className="flex-1" />
-
-        {isAdmin && (
-          <button
-            onClick={() => onNavigate('hub-management')}
-            title="Hub Admin"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-          >
-            <span className="w-16 h-12 flex items-center justify-center shrink-0">
-              <Shield className="w-5 h-5" />
-            </span>
-            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Hub Admin</span>
-          </button>
-        )}
-        <button
-          onClick={openProjectInfo}
-          title="About citinet"
-          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-        >
-          <span className="w-16 h-12 flex items-center justify-center shrink-0">
-            <CircleAlert className="w-5 h-5" />
-          </span>
-          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">About citinet</span>
-        </button>
-        <button
-          onClick={() => setShowAccountMenu(v => !v)}
-          title="Account"
-          aria-label="Open account menu"
-          className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-        >
-          <span className="w-16 h-12 flex items-center justify-center shrink-0">
-            <span className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
-              {resolvedCurrentUserAvatarUrl
-                ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                : displayName.charAt(0).toUpperCase()
-              }
-            </span>
-          </span>
-          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150 truncate">{displayName}</span>
-        </button>
-        <button
-          onClick={toggleDesktopNavLayout}
-          title="Switch to bottom dock"
-          aria-label="Switch to bottom dock"
-          className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
-        >
-          <span className="w-16 h-12 flex items-center justify-center shrink-0">
-            <PanelBottom className="w-5 h-5" />
-          </span>
-          <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Bottom dock</span>
-        </button>
-      </div>
-      )}
-
-      {/* Desktop Sidebar - Hidden; replaced by OS dock + launcher */}
-      <aside className="hidden">
-        {/* User Identity */}
-        <div className="p-6 border-b border-slate-200/50 dark:border-zinc-800/50">
-          <div className="flex items-center gap-3 mb-2">
-            {resolvedCurrentUserAvatarUrl
-              ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-12 h-12 rounded-xl object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              : <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-lg shrink-0">
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
-            }
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white truncate">{displayName}</h2>
-                {isAdmin && (
-                  <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>
-                )}
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 truncate">{nodeName}</p>
-              {currentUser?.hubUserId && (
-                <button
-                  onClick={() => onNavigate(`profile/${currentUser.hubUserId}`)}
-                  className="text-xs text-purple-600 dark:text-purple-400 hover:underline mt-0.5"
-                >
-                  View my profile
-                </button>
-              )}
-            </div>
-          </div>
-          {/* Connection status + reconnect */}
-          <div className="mt-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${dotColor} ${currentHub?.connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-              <span className="text-xs text-slate-600 dark:text-slate-400 flex-1">{statusLabel}</span>
-              <button
-                onClick={() => { setShowTunnelInput(!showTunnelInput); setTunnelError(''); setTunnelSuccess(false); }}
-                className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                title="Update tunnel URL"
-                aria-label="Update tunnel URL"
-              >
-                <Link2 className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-              </button>
-            </div>
-
-            {/* Tunnel URL input */}
-            {showTunnelInput && (
-              <div className="space-y-2 pt-1">
-                {currentHub?.tunnelUrl && (
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate font-mono">
-                    {currentHub.tunnelUrl}
-                  </p>
-                )}
-                <div className="flex gap-1.5">
-                  <input
-                    type="url"
-                    value={tunnelInput}
-                    onChange={(e) => { setTunnelInput(e.target.value); setTunnelError(''); }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleTunnelReconnect()}
-                    placeholder="New tunnel URL..."
-                    className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:border-transparent focus:outline-none"
-                    disabled={tunnelUpdating}
-                  />
-                  <button
-                    onClick={handleTunnelReconnect}
-                    disabled={tunnelUpdating || !tunnelInput.trim()}
-                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
-                  >
-                    {tunnelUpdating ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : tunnelSuccess ? (
-                      <Check className="w-3 h-3" />
-                    ) : (
-                      <RefreshCw className="w-3 h-3" />
-                    )}
-                  </button>
-                </div>
-                {tunnelError && (
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
-                    {tunnelInput.trim() && (
-                      <button
-                        onClick={handleForceUpdateUrl}
-                        className="text-[10px] text-purple-500 dark:text-purple-400 underline hover:no-underline shrink-0"
-                      >
-                        Save anyway
-                      </button>
-                    )}
-                  </div>
-                )}
-                {tunnelSuccess && (
-                  <p className="text-[10px] text-green-500 dark:text-green-400">Reconnected!</p>
-                )}
-                {connectionStatus === 'unreachable' && !tunnelInput && (
-                  <p className="text-[10px] text-orange-500 dark:text-orange-400">Hub unreachable — auto-retrying. Enter a new URL only if the address changed.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Primary Navigation */}
-        <nav className="flex-1 p-4">
-          <div className="space-y-1">
-            <button
-              onClick={() => onNavigate('feed')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <MessageCircle className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Feed</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('atlas')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Map className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Atlas</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('marketplace')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Store className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Local Exchange</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('neighbors')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Users className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Neighbors</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('files')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <FolderOpen className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Files</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('initiatives')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Target className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Initiatives</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('discover')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Compass className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Discover</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('toolkit')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Package className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Resources</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('network')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <Radio className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Network</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('messages')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-            >
-              <MessageCircle className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Messages</span>
-            </button>
-
-            {/* My Store — only visible to users who have a vendor page */}
-            {myVendor && (
-              <>
-                <div className="my-2 border-t border-slate-200 dark:border-zinc-800" />
-                <button
-                  onClick={() => onNavigate(`vendor/${myVendor.id}`)}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors text-left group"
-                >
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0 overflow-hidden">
-                    {vendorLogoUrl
-                      ? <img src={vendorLogoUrl} alt={myVendor.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : myVendor.name.charAt(0).toUpperCase()
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-semibold text-purple-700 dark:text-purple-400 truncate block">{myVendor.name}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-500 leading-none">My Store</span>
-                  </div>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Node Status - Simplified
-          <div className="mt-6 relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-950 rounded-xl p-4 border border-slate-800/50">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Live Status</span>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <div className="text-xs text-slate-500 mb-1">Active Members</div>
-                <div className="text-2xl font-bold text-white tabular-nums">{nodeStatus.activeMembers}</div>
-              </div>
-
-              <div className="h-px bg-slate-800"/>
-
-              <div>
-                <div className="text-xs text-slate-500 mb-1">Online Now</div>
-                <div className="text-2xl font-bold text-white tabular-nums">{nodeStatus.onlineNow}</div>
-              </div>
-            </div>
-          </div> */}
-        </nav>
-
-        {/* Bottom nav: Account, Hub Admin, Leave */}
-        <div className="p-4 border-t border-slate-200/50 dark:border-zinc-800/50 space-y-1">
-          <button
-            onClick={() => onNavigate('account')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors text-left group"
-          >
-            <User className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-            <span className="text-sm font-medium text-slate-900 dark:text-white">My Account</span>
-          </button>
-          {isAdmin && (
-            <button
-              onClick={() => onNavigate('hub-management')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left group"
-            >
-              <Shield className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-purple-600 dark:group-hover:text-purple-400" />
-              <span className="text-sm font-medium text-slate-900 dark:text-white">Hub Admin</span>
-            </button>
-          )}
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left group"
-            >
-              <LogOut className="w-5 h-5 text-slate-500 dark:text-slate-400 group-hover:text-red-500 dark:group-hover:text-red-400" />
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-red-600 dark:group-hover:text-red-400">Leave Hub</span>
-            </button>
-          )}
-        </div>
-      </aside>
-
-      {/* Main Content Area */}
-      <div className={`flex-1 pb-24 md:pt-9 overflow-x-hidden relative z-10 ${desktopNavLayout === 'sidebar' ? 'md:pl-16' : 'md:pb-16'}`}>
-        {/* Mobile Header - System strip + start menu trigger */}
-        <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 sticky top-0 z-20">
-          <div className="px-4 py-3 space-y-3">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
-                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
-                  <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-                  <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 min-w-0">
-                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
-                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
-              </div>
-            </div>
-
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search posts, people, files…"
-                className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 border border-transparent text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-purple-400/40 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
-              />
-            </form>
-
-            {connectionStatus === 'unreachable' && (
-              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <WifiOff className="w-4 h-4 text-orange-500 shrink-0" />
-                  <span className="text-xs font-medium text-orange-700 dark:text-orange-300 flex-1">Hub unreachable</span>
-                  {tunnelSuccess && <span className="text-[10px] text-green-500 font-medium">Reconnected!</span>}
-                  {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
-                </div>
-
-                {/* Registry search — friendly first */}
-                <div className="space-y-1.5">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Search for your hub by name:</p>
-                  <input
-                    type="text"
-                    value={registrySearchQuery}
-                    onChange={e => setRegistrySearchQuery(e.target.value)}
-                    placeholder="Hub name…"
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                  />
-                  {registrySearchQuery.trim() && (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {filteredRegistryHubs.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No hubs found — try the URL option below.</p>
-                      ) : filteredRegistryHubs.map(hub => (
-                        <button
-                          key={hub.id}
-                          onClick={() => handleRegistryReconnect(hub.tunnel_url)}
-                          disabled={tunnelUpdating}
-                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-left disabled:opacity-50"
-                        >
-                          <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{hub.location}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Manual URL — power-user fallback */}
-                <div>
-                  <button
-                    onClick={() => setShowManualUrl(v => !v)}
-                    className="text-[10px] text-slate-400 dark:text-slate-500 underline hover:no-underline"
-                  >
-                    {showManualUrl ? 'Hide' : 'Enter URL manually'}
-                  </button>
-                  {showManualUrl && (
-                    <div className="mt-1.5 space-y-1.5">
-                      <div className="flex gap-1.5">
-                        <input
-                          type="url"
-                          value={tunnelInput}
-                          onChange={e => { setTunnelInput(e.target.value); setTunnelError(''); }}
-                          onKeyDown={e => e.key === 'Enter' && handleTunnelReconnect()}
-                          placeholder="https://…"
-                          className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                          disabled={tunnelUpdating}
-                        />
-                        <button
-                          onClick={handleTunnelReconnect}
-                          disabled={tunnelUpdating || !tunnelInput.trim()}
-                          className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1 shrink-0"
-                        >
-                          {tunnelUpdating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                        </button>
-                      </div>
-                      {tunnelError && (
-                        <div className="flex items-center gap-2">
-                          <p className="text-[10px] text-red-500 flex-1">{tunnelError}</p>
-                          {tunnelInput.trim() && (
-                            <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8 overflow-x-hidden">
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-8 overflow-x-hidden">
           {/* Featured Content - Curated by Admins/Mods */}
           <div className="max-w-full overflow-hidden">
             <div className="flex items-center justify-between mb-4">
@@ -1387,7 +572,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           <div className="relative overflow-hidden rounded-2xl p-4 cn-glass">
             <div className="flex items-center justify-between mb-3.5">
               <h2 className="text-base font-semibold cn-text-1 tracking-tight">Upcoming events</h2>
-              <button onClick={() => onNavigate('feed')} className="text-xs font-semibold text-purple-300 hover:text-purple-200 transition-colors">
+              <button
+                onClick={() => { sessionStorage.setItem('citinet-deeplink-feed-category', 'EVENT'); onNavigate('feed'); }}
+                className="text-xs font-semibold text-purple-300 hover:text-purple-200 transition-colors"
+              >
                 See all
               </button>
             </div>
@@ -1469,6 +657,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
           </div>
 
           {/* Mobile launcher — apps after community content */}
+          {SHOW_MOBILE_LAUNCHPAD && (
           <div className="md:hidden space-y-3">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
             <div
@@ -1540,197 +729,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
               <p className="text-[11px] text-slate-500 dark:text-slate-400">Swipe left for more apps</p>
             )}
           </div>
+          )}
 
         {/* Bottom padding so last content clears the tab bar */}
         <div className="md:hidden h-20" />
         </div>
-      </div>
-
-      {/* Mobile Bottom Dock */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
-        <div className="flex items-stretch h-16 px-1">
-          {dockItems.slice(0, 2).map(app => {
-            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-            return (
-              <button
-                key={app.screen}
-                onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-              >
-                <div className="relative">
-                  <app.Icon className="w-5 h-5" />
-                  {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
-                      {badge > 9 ? '9+' : badge}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-medium leading-none">{app.label}</span>
-              </button>
-            );
-          })}
-
-          <button
-            onClick={() => onNavigate('discover')}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-          >
-            <Search className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-none">Search</span>
-          </button>
-
-          {dockItems.slice(2).map(app => {
-            const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-            return (
-              <button
-                key={app.screen}
-                onClick={() => handleTileNavigate(app.screen, app.notifyFeature)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-              >
-                <div className="relative">
-                  <app.Icon className="w-5 h-5" />
-                  {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
-                      {badge > 9 ? '9+' : badge}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-medium leading-none">{app.label}</span>
-              </button>
-            );
-          })}
-
-          <button
-            onClick={() => setShowMobileAppsMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-          >
-            <Grid3x3 className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-none">Apps</span>
-          </button>
-
-          <button
-            onClick={() => setShowMobileAccountMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
-          >
-            <div className="w-5 h-5 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-[10px]">
-              {resolvedCurrentUserAvatarUrl
-                ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                : displayName.charAt(0).toUpperCase()
-              }
-            </div>
-            <span className="text-[10px] font-medium leading-none">Profile</span>
-          </button>
-        </div>
-      </nav>
-
-      {/* Mobile Account Menu Sheet — mirrors the desktop Account Menu Panel, plus Hub Admin/About (no dedicated icons on mobile) */}
-      <AnimatePresence>
-        {showMobileAccountMenu && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm md:hidden"
-              onClick={() => setShowMobileAccountMenu(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 28 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 28 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 360 }}
-              className="fixed inset-x-0 bottom-0 z-50 md:hidden rounded-t-3xl border-t border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl max-h-[80vh] overflow-y-auto"
-            >
-              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold shrink-0">
-                      {resolvedCurrentUserAvatarUrl
-                        ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        : displayName.charAt(0).toUpperCase()
-                      }
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
-                        {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
-                      </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowMobileAccountMenu(false)}
-                    className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
-                    aria-label="Close menu"
-                  >
-                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 space-y-1">
-                {currentUser?.hubUserId && (
-                  <button
-                    onClick={() => { setShowMobileAccountMenu(false); onNavigate(`profile/${currentUser.hubUserId}`); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                  >
-                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    <span className="text-sm text-slate-800 dark:text-slate-200">View Profile</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => { setShowMobileAccountMenu(false); onNavigate('account'); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                >
-                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
-                </button>
-                <button
-                  onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Help & Support</span>
-                </button>
-              </div>
-
-              <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
-              <div className="p-3 space-y-1">
-                {isAdmin && (
-                  <button
-                    onClick={() => { setShowMobileAccountMenu(false); onNavigate('hub-management'); }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                  >
-                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    <span className="text-sm text-slate-800 dark:text-slate-200">Hub Admin</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => { setShowMobileAccountMenu(false); openProjectInfo(); }}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
-                >
-                  <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
-                </button>
-              </div>
-
-              {onLogout && (
-                <>
-                  <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
-                  <div className="p-3">
-                    <button
-                      onClick={() => { setShowMobileAccountMenu(false); onLogout(); }}
-                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
-                    >
-                      <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
-                      <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       {/* Feature request modal */}
       {showRequestModal && (
@@ -1757,228 +760,13 @@ export function Dashboard({ userName = "Neighbor", onNavigate, onLogout }: Dashb
         />
       )}
 
-      {/* Support options modal */}
-      <AnimatePresence>
-        {showSupportMenu && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
-              onClick={() => setShowSupportMenu(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
-            >
-              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">Support</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Choose a GitHub form to open in a new tab</p>
-                </div>
-                <button
-                  onClick={() => setShowSupportMenu(false)}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
-                  aria-label="Close support options"
-                >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                </button>
-              </div>
-
-              <div className="p-2">
-                <button
-                  onClick={() => openSupportLink('help')}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Get Help</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Troubleshooting or support questions</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => openSupportLink('bug')}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Report a Bug</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Something is broken or not working right</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => openSupportLink('feature')}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
-                >
-                  <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Request a Feature</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Suggest a new feature or enhancement</p>
-                  </div>
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* About this hub modal */}
-      <AnimatePresence>
-        {showHubInfoModal && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
-              onClick={() => setShowHubInfoModal(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-md rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
-            >
-              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center shrink-0">
-                    <Hexagon className="w-5 h-5 text-purple-500 dark:text-purple-400" fill="currentColor" strokeWidth={0} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Hub</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowHubInfoModal(false)}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4">
-                {currentHub?.description ? (
-                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{currentHub.description}</p>
-                ) : (
-                  <p className="text-sm italic text-slate-400 dark:text-slate-500">
-                    {isAdmin ? 'No description yet — tell your neighbors what this hub is about.' : "This hub hasn't added a description yet."}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  {currentHub?.location && (
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <MapPin className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{currentHub.location}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Users className="w-3.5 h-3.5" />
-                    <span>{nodeStatus.activeMembers} {nodeStatus.activeMembers === 1 ? 'member' : 'members'}</span>
-                  </div>
-                </div>
-
-                {isAdmin && (
-                  <button
-                    onClick={() => { setShowHubInfoModal(false); onNavigate('hub-management'); }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    {currentHub?.description ? 'Edit hub info' : 'Add a description'}
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* "More"/"Apps" overlay — waffle-style grid of everything not already pinned in the dock/sidebar */}
-      <AnimatePresence>
-        {(showMoreMenu || showMobileAppsMenu) && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
-              onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
-            >
-              <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">{showMobileAppsMenu ? 'Apps' : 'More'}</h3>
-                <button
-                  onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                </button>
-              </div>
-
-              <div className="p-5 grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto no-scrollbar">
-                {(showMobileAppsMenu ? mobileLaunchpadItems : moreNavItems).map(app => {
-                  const isSuggest = app.screen === 'suggest';
-                  return (
-                    <button
-                      key={app.screen}
-                      onClick={() => {
-                        setShowMoreMenu(false);
-                        setShowMobileAppsMenu(false);
-                        if (isSuggest) setShowRequestModal(true);
-                        else handleTileNavigate(app.screen, app.notifyFeature);
-                      }}
-                      className={`flex flex-col items-center gap-2 p-2 rounded-2xl transition-all group active:scale-95 ${
-                        isSuggest ? 'hover:bg-indigo-500/10 dark:hover:bg-indigo-400/10' : 'hover:bg-purple-500/10 dark:hover:bg-purple-400/10'
-                      }`}
-                    >
-                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white overflow-hidden`}>
-                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
-                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          : <app.Icon className="w-6 h-6" />
-                        }
-                      </div>
-                      <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
-                        {app.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ── Event Detail Modal (reuses PostDetailModal — events are posts) ── */}
+      {/* ── Event Detail — compact RSVP overlay; "View full post" deep-links into Feed's own post view ── */}
       {selectedEvent && (
-        <PostDetailModal
-          isOpen
-          onClose={() => setSelectedEvent(null)}
-          post={selectedEvent}
+        <EventDetailModal
+          event={selectedEvent}
           hubSlug={hubSlug}
-          currentUserId={currentUser?.hubUserId}
-          currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
-          isAdmin={isAdmin}
-          categoryColors={CATEGORY_COLORS}
-          publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
-          onDeleted={(postId) => { setUpcomingEvents(prev => prev.filter(e => e.id !== postId)); setSelectedEvent(null); }}
-          onNavigateToProfile={(userId) => { setSelectedEvent(null); onNavigate(`profile/${userId}`); }}
+          onClose={() => setSelectedEvent(null)}
+          onNavigate={onNavigate}
         />
       )}
     </div>
@@ -2040,8 +828,8 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
             </div>
             <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{item.actor}</span>
             <span className={`text-xs font-medium ${cfg.verbColor}`}>{item.summary}</span>
-            {location && <><span className="text-xs text-slate-300 dark:text-zinc-600">·</span><span className="text-xs text-slate-500 dark:text-slate-400">{location}</span></>}
-            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
+            {location && <><span className="text-xs cn-text-4">·</span><span className="text-xs cn-text-3">{location}</span></>}
+            <span className="text-xs cn-text-4">·</span>
             <span className="font-mono text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
               {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
               {timeAgo(item.timestamp)}
@@ -2072,7 +860,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
         </span>
 
         {/* Chevron */}
-        <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />
+        <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />
       </div>
     </button>
   );

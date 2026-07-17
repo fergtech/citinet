@@ -174,7 +174,7 @@ function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
       </div>
 
       <div>
-        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30 mb-2">
+        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30 mb-2">
           {cat.label}
         </span>
         <h1 className="text-xl font-bold cn-text-1 tracking-tight">{pin.title}</h1>
@@ -346,7 +346,7 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
                   onClick={() => onCategoryChange(key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                     category === key
-                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                      ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
                       : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                   }`}
                 >
@@ -526,6 +526,16 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins]);
+
+  // A location we couldn't auto-geocode (e.g. a generic venue name with no city/state
+  // context) — pre-fill the search box so the user can pick the right result themselves
+  // instead of the "view in Atlas" link just doing nothing.
+  useEffect(() => {
+    const q = sessionStorage.getItem('citinet-deeplink-atlas-search');
+    if (!q) return;
+    sessionStorage.removeItem('citinet-deeplink-atlas-search');
+    setLocationQuery(q);
+  }, []);
 
   useEffect(() => {
     if (!currentHub) return;
@@ -882,7 +892,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                     onClick={() => setCategoryFilter('all')}
                     className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                       categoryFilter === 'all'
-                        ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                        ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
                         : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                     }`}
                   >
@@ -894,7 +904,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                       onClick={() => setCategoryFilter(key)}
                       className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                         categoryFilter === key
-                          ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                          ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
                           : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                       }`}
                     >

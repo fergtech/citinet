@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DotGrid } from './DotGrid';
-import { QRCodeSVG } from 'qrcode.react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ClipboardList, ChevronRight, QrCode, Copy, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -10,8 +8,9 @@ import { requestsService, type HubRequest, type RequestStatus, type RequestType 
 import type { HubMember, HubPost } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
-import { DEFAULT_ENABLED_APPS } from './Dashboard';
+import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import { registryService } from '../services/registryService';
+import { JoinQrCard } from './JoinQrCard';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -612,10 +611,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
-        <div className="text-center px-6">
-          <Shield className="w-12 h-12 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Admin access required</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="cn-glass rounded-2xl p-8 text-center max-w-xs mx-4">
+          <span className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center mx-auto mb-3">
+            <Shield className="w-6 h-6 text-white" />
+          </span>
+          <p className="text-sm cn-text-2 mb-4">Admin access required</p>
           <button
             onClick={onBack}
             className="text-sm text-purple-600 dark:text-purple-400 underline"
@@ -628,51 +629,66 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-      <DotGrid />
-      {/* Header */}
-      <div className="bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex-1">
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Hub Management</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{currentHub?.name}</p>
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-7 flex flex-col gap-4 md:gap-5">
+        {/* Header — scrolls with the page, not pinned */}
+        <div>
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="w-11 h-11 rounded-xl cn-surface-2 border cn-border flex items-center justify-center shrink-0">
+              <Shield className="w-[21px] h-[21px] text-purple-500 dark:text-purple-300" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Hub management</h1>
+              <p className="text-[13px] cn-text-3 mt-0.5">Admin tools for {currentHub?.name}</p>
             </div>
-            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold shrink-0">
+              <Crown className="w-3 h-3" /> Admin
+            </span>
           </div>
+        </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1 overflow-x-auto no-scrollbar">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+        {/* Tab rail — vertical sidebar on desktop, horizontal pill-scroll on mobile. Only this
+            stays put on scroll (via align-items:flex-start on the row it shares with the panel) —
+            the header above scrolls away like everything else, same as the design system source. */}
+        <nav className="w-full md:w-[210px] shrink-0 md:sticky md:top-4">
+          <div className="flex md:flex-col gap-2 md:gap-[3px] overflow-x-auto md:overflow-visible no-scrollbar">
             {([
-              { id: 'info',     icon: <Settings className="w-4 h-4" />,      label: 'Hub Info' },
-              { id: 'featured', icon: <Star className="w-4 h-4" />,          label: 'Featured' },
-              { id: 'members',  icon: <Users className="w-4 h-4" />,         label: 'Members' },
-              { id: 'apps',     icon: <LayoutGrid className="w-4 h-4" />,    label: 'Apps' },
-              { id: 'requests', icon: <ClipboardList className="w-4 h-4" />, label: 'Requests' },
-              { id: 'ai',       icon: <Bot className="w-4 h-4" />,           label: 'AI' },
+              { id: 'info',     icon: <Settings className="w-[15px] h-[15px] md:w-4 md:h-4" />,      label: 'Hub Info' },
+              { id: 'featured', icon: <Star className="w-[15px] h-[15px] md:w-4 md:h-4" />,          label: 'Featured' },
+              { id: 'members',  icon: <Users className="w-[15px] h-[15px] md:w-4 md:h-4" />,         label: 'Members' },
+              { id: 'apps',     icon: <LayoutGrid className="w-[15px] h-[15px] md:w-4 md:h-4" />,    label: 'Apps' },
+              { id: 'requests', icon: <ClipboardList className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Requests' },
+              { id: 'ai',       icon: <Bot className="w-[15px] h-[15px] md:w-4 md:h-4" />,           label: 'AI' },
             ] as const).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 md:flex-1 transition-colors ${
+                className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3.5 md:px-3 py-1.5 md:py-2.5 rounded-full md:rounded-lg text-xs md:text-[13px] font-semibold whitespace-nowrap shrink-0 md:shrink md:w-full text-left border md:border-0 transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-white dark:bg-zinc-900 text-slate-900 dark:text-white shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent md:bg-black/[0.04] md:dark:bg-white/[0.06] md:text-slate-900 md:dark:text-white'
+                    : 'cn-surface-2 cn-text-2 cn-border md:bg-transparent md:border-0 md:cn-text-3 md:hover:bg-black/5 md:dark:hover:bg-white/5'
                 }`}
               >
-                {tab.icon}
+                <span className={activeTab === tab.id ? 'text-purple-500 dark:text-purple-300 shrink-0' : 'cn-text-4 shrink-0'}>{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
           </div>
-        </div>
-      </div>
+        </nav>
 
-      <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Panel */}
+        <div className="flex-1 min-w-0 w-full">
         {/* ─── Hub Info Tab ─── */}
         {activeTab === 'info' && (
           <div className="space-y-4">
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6 space-y-5">
+            <div className="cn-glass rounded-2xl p-6 space-y-5">
               {/* Hub Name — editable */}
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -839,7 +855,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <InfoRow label="Hub API" value={currentHub?.tunnelUrl || undefined} placeholder="Not configured" mono small />
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+            <div className="cn-glass rounded-2xl p-6">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Hub Stats</h3>
               <div className="grid grid-cols-2 gap-3">
                 <StatCard label="Members" value={currentHub?.meta?.activeMembers ?? '—'} />
@@ -848,7 +864,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             </div>
 
             {/* ── Registry ── */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+            <div className="cn-glass rounded-2xl p-6">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -913,7 +929,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {activeTab === 'featured' && (
           <div className="space-y-4">
             {/* Current featured items */}
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+            <div className="cn-glass rounded-2xl overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
                 <span className="text-sm font-medium text-slate-900 dark:text-white">
                   {featuredLoading ? 'Loading…' : `${featuredItems.length} / 5 featured`}
@@ -1114,7 +1130,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
             {/* Pin a post */}
             {featuredItems.length < 5 && (
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+              <div className="cn-glass rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
                   <p className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-2">
                     <Link className="w-4 h-4 text-purple-500" />
@@ -1164,7 +1180,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
             {/* Add custom card */}
             {featuredItems.length < 5 && (
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+              <div className="cn-glass rounded-2xl overflow-hidden">
                 <button
                   onClick={() => setShowCustomForm(v => !v)}
                   className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors"
@@ -1281,7 +1297,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
         {/* ─── Members Tab ─── */}
         {activeTab === 'members' && (
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+          <div className="cn-glass rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
               <span className="text-sm font-medium text-slate-900 dark:text-white">
                 {membersLoading ? 'Loading...' : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
@@ -1399,7 +1415,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   Choose which built-in features are visible on this hub's dashboard.
                 </p>
               </div>
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 space-y-4">
+              <div className="cn-glass rounded-2xl p-5 space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
                     { screen: 'feed',        label: 'Feed',         emoji: '💬' },
@@ -1407,7 +1423,6 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
                     { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },
                     { screen: 'notes',       label: 'Notes',        emoji: '📓' },
-                    { screen: 'polls',       label: 'Polls',        emoji: '🗳️' },
                     { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
                     { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
                     { screen: 'files',       label: 'Files',        emoji: '📁' },
@@ -1469,7 +1484,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 const connectedApp = appsStatus.find(a => a.appUrl);
                 const appDisplayName = connectedApp?.appName ?? 'Hub App';
                 return (
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+              <div className="cn-glass rounded-2xl overflow-hidden">
                 {/* Card header */}
                 <div className="flex items-start gap-3 px-5 pt-5 pb-4">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40 flex items-center justify-center shrink-0">
@@ -1705,7 +1720,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <span className="text-sm">Loading requests…</span>
               </div>
             ) : hubRequests.length === 0 ? (
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-8 text-center">
+              <div className="cn-glass rounded-2xl p-8 text-center">
                 <ClipboardList className="w-8 h-8 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
                 <p className="text-sm text-slate-400 dark:text-zinc-500">No requests yet</p>
                 <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">Members can submit help requests, bug reports, and feature suggestions via the Support button</p>
@@ -1744,7 +1759,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     declined:            'Declined',
                   };
                   return (
-                    <div key={req.id} className="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                    <div key={req.id} className="cn-glass rounded-xl overflow-hidden">
                       <button
                         onClick={() => setExpandedRequest(isExpanded ? null : req.id)}
                         className="w-full flex items-start gap-3 p-4 text-left hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors"
@@ -1885,7 +1900,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             ) : (
               <div className="space-y-3">
                 {/* Ollama status */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 flex items-center gap-3">
+                <div className="cn-glass rounded-2xl p-4 flex items-center gap-3">
                   {aiStatus?.ollamaReady ? (
                     <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
                       <Wifi className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
@@ -1908,7 +1923,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
 
                 {/* Enable / disable toggle */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 flex items-center gap-3">
+                <div className="cn-glass rounded-2xl p-4 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
                     <Bot className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                   </div>
@@ -1932,7 +1947,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
 
                 {/* Chat model picker */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Chat Model</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Powers all AI responses — click a model to make it active</p>
@@ -1967,7 +1982,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
 
                 {/* Smart context (RAG) status */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Smart Context (RAG)</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Retrieves posts relevant to each question instead of always injecting the most recent ones</p>
@@ -2038,7 +2053,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
 
                 {/* Download a model */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-4 space-y-3">
+                <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Add a Chat Model</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a model to download, then click Pull. Once downloaded it appears above.</p>
@@ -2106,100 +2121,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function JoinQrCard({ hubSlug, tunnelUrl }: { hubSlug: string; tunnelUrl: string }) {
-  const frontendPort = window.location.port || '3001';
-  const storageKey = `citinet-lan-ip-${hubSlug}`;
-
-  // Priority: 1) saved in localStorage, 2) real IP from tunnelUrl, 3) page host if LAN, 4) blank
-  const deriveDefault = () => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) return saved;
-    try {
-      const apiHost = tunnelUrl ? new URL(tunnelUrl).hostname : '';
-      const isLocal = !apiHost || apiHost === 'localhost' || apiHost === '127.0.0.1';
-      if (!isLocal) return apiHost;
-    } catch { /* ignore */ }
-    const pageHost = window.location.hostname;
-    if (pageHost !== 'localhost' && pageHost !== '127.0.0.1') return pageHost;
-    return '';
-  };
-
-  const [lanIp, setLanIp] = useState(deriveDefault);
-
-  const handleIpChange = (val: string) => {
-    setLanIp(val);
-    if (val.trim()) {
-      localStorage.setItem(storageKey, val.trim());
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-  };
-  const joinUrl = lanIp.trim() ? `http://${lanIp.trim()}:${frontendPort}?hub=${hubSlug}` : '';
-
-  return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
-      <div className="flex items-center gap-2 mb-1">
-        <QrCode className="w-4 h-4 text-purple-600" />
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Member Join QR Code</h3>
-      </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-        Anyone on the same Wi-Fi can scan this to join the hub instantly.
-      </p>
-
-      {/* IP input — always visible so admin can correct it */}
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-          Hub machine's LAN IP
-        </label>
-        <input
-          type="text"
-          value={lanIp}
-          onChange={e => handleIpChange(e.target.value)}
-          placeholder="e.g. 10.0.0.139"
-          className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800
-            text-sm text-slate-900 dark:text-white font-mono focus:border-purple-500 focus:outline-none transition-colors"
-        />
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-          Run <code className="bg-slate-100 dark:bg-zinc-800 px-1 rounded">ipconfig</code> and look for your Ethernet/Wi-Fi IPv4 address.
-        </p>
-      </div>
-
-      {joinUrl ? (
-        <div className="flex flex-col items-center gap-4">
-          <div className="p-3 bg-white rounded-xl shadow-sm border border-slate-100 dark:border-zinc-700">
-            <QRCodeSVG
-              value={joinUrl}
-              size={180}
-              bgColor="#ffffff"
-              fgColor="#18181b"
-              level="M"
-              includeMargin={false}
-            />
-          </div>
-          <div className="w-full">
-            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-2">Scan with any camera app or browser</p>
-            <div className="flex items-center gap-2 bg-slate-50 dark:bg-zinc-800 rounded-lg px-3 py-2">
-              <code className="text-xs text-slate-700 dark:text-slate-300 flex-1 truncate">{joinUrl}</code>
-              <button
-                onClick={() => navigator.clipboard.writeText(joinUrl)}
-                className="shrink-0 p-1 rounded hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-                title="Copy link"
-              >
-                <Copy className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-              </button>
-            </div>
-          </div>
         </div>
-      ) : (
-        <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-4">
-          Enter the LAN IP above to generate the QR code.
-        </p>
-      )}
+      </div>
+      </div>
     </div>
   );
 }

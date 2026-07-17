@@ -48,6 +48,38 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
   } catch { return null; }
 }
 
+/** Deep-links a location into Atlas — reuses real coordinates captured at compose
+ * time when available, falling back to a one-off geocode for older posts/events
+ * that only ever had free text. Atlas resolves this to a nearby pin if one exists,
+ * or offers to add one if not — nothing is created here.
+ *
+ * Free-text locations without a city/state (e.g. "Forest Hill Middle School") often
+ * fail to geocode on their own, so a second attempt appends the hub's own location
+ * as context. If both attempts fail we still navigate to Atlas rather than leaving
+ * the button a dead click — Atlas opens with its own search box pre-filled so the
+ * user can pick the right result themselves. */
+export async function openLocationInAtlas(
+  location: string,
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  onNavigate?: (screen: string) => void,
+  hubLocationHint?: string,
+) {
+  let resolvedLat = lat, resolvedLng = lng;
+  if (resolvedLat == null || resolvedLng == null) {
+    let coords = await geocodeLocation(location);
+    if (!coords && hubLocationHint) coords = await geocodeLocation(`${location}, ${hubLocationHint}`);
+    if (!coords) {
+      sessionStorage.setItem('citinet-deeplink-atlas-search', location);
+      onNavigate?.('atlas');
+      return;
+    }
+    [resolvedLat, resolvedLng] = coords;
+  }
+  sessionStorage.setItem('citinet-deeplink-coords', JSON.stringify({ lat: resolvedLat, lng: resolvedLng, label: location }));
+  onNavigate?.('atlas');
+}
+
 /** Great-circle distance in meters between two lat/lng points (haversine). */
 export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;

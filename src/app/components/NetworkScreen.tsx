@@ -1,6 +1,5 @@
-import { Radio, Users, QrCode, Server, AlertTriangle, Zap, Activity, X } from 'lucide-react';
-import { DotGrid } from './DotGrid';
-import { useState, useEffect } from 'react';
+import { Radio, Users, QrCode, Server, AlertTriangle, Activity, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { NetworkMap } from './NetworkMap';
 import { MemberListModal } from './MemberListModal';
 import { SignalDiagnosticsModal } from './SignalDiagnosticsModal';
@@ -16,6 +15,82 @@ interface NetworkScreenProps {
   onNavigate?: (screen: string) => void;
 }
 
+const GROWTH_MILESTONE = 100;
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+function StatCard({ icon, label, value, sub, grad, onClick, pulse }: {
+  icon: React.ElementType; label: string; value: string; sub?: string; grad: string;
+  onClick?: () => void; pulse?: boolean;
+}) {
+  const Icon = icon;
+  const Wrapper = onClick ? 'button' : 'div';
+  return (
+    <Wrapper
+      onClick={onClick}
+      className={`flex flex-col gap-2.5 rounded-2xl cn-glass p-4 text-left ${onClick ? 'hover:border-black/15 dark:hover:border-white/15 transition-colors' : ''}`}
+    >
+      <div className="flex items-center justify-between">
+        <span className={`w-9 h-9 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center shadow-sm shrink-0`}>
+          <Icon className="w-4 h-4 text-white" />
+        </span>
+        {pulse && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+      </div>
+      <div>
+        <div className="font-mono text-xl font-bold cn-text-1 leading-none">{value}</div>
+        <div className="text-[11px] cn-text-3 mt-1.5">{label}</div>
+      </div>
+      {sub && <div className="text-[11px] cn-text-4 truncate">{sub}</div>}
+    </Wrapper>
+  );
+}
+
+function GrowthCard({ current, goal }: { current: number; goal: number }) {
+  const pct = current > 0 ? Math.min(100, Math.round((current / goal) * 100)) : 0;
+  return (
+    <div className="rounded-2xl cn-glass p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold cn-text-1">Growth toward next milestone</span>
+        <span className="font-mono text-[11px] cn-text-3">{current} / {goal}</span>
+      </div>
+      <div className="h-2 rounded-full cn-surface-3 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 transition-all duration-700"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="text-[11px] cn-text-4">{Math.max(0, goal - current)} more members until the next milestone.</p>
+    </div>
+  );
+}
+
+interface QuickAction { icon: React.ElementType; label: string; desc: string; danger?: boolean; onClick: () => void; }
+
+function QuickActionsCard({ actions }: { actions: QuickAction[] }) {
+  return (
+    <div className="rounded-2xl cn-glass p-4">
+      <h3 className="text-sm font-semibold cn-text-1 mb-2.5">Quick actions</h3>
+      <div className="flex flex-col gap-1">
+        {actions.map(a => (
+          <button
+            key={a.label}
+            onClick={a.onClick}
+            className="w-full flex items-center gap-3 py-2 px-1 -mx-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+          >
+            <span className={`w-9 h-9 rounded-xl cn-surface-2 flex items-center justify-center shrink-0 ${a.danger ? 'text-red-500 dark:text-red-400' : 'text-purple-500 dark:text-purple-300'}`}>
+              <a.icon className="w-4 h-4" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-semibold cn-text-1">{a.label}</span>
+              <span className="block text-[11px] cn-text-3">{a.desc}</span>
+            </span>
+            <ChevronRight className="w-4 h-4 cn-text-4 shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const [memberListOpen, setMemberListOpen] = useState(false);
   const [memberListFilter, setMemberListFilter] = useState<'all' | 'admins'>('all');
@@ -28,7 +103,6 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const { currentHub } = useHub();
   const { status, label: statusLabel, dotColor } = useHubStatus();
 
-  // Fetch real hub members
   useEffect(() => {
     if (!currentHub?.slug) return;
     const load = () => {
@@ -40,224 +114,107 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   }, [currentHub?.slug]);
 
   const activeMembers = members.length;
-  const targetUsers = 100;
-  const progress = activeMembers > 0 ? Math.min((activeMembers / targetUsers) * 100, 100) : 0;
+  const newThisMonth = useMemo(() => {
+    const now = Date.now();
+    return members.filter(m => now - new Date(m.created_at).getTime() < THIRTY_DAYS_MS).length;
+  }, [members]);
   const hubName = currentHub?.name || 'Community Hub';
   const tunnelUrl = currentHub?.tunnelUrl || '';
 
+  const actions: QuickAction[] = [
+    { icon: QrCode, label: 'Invite neighbors', desc: 'Share a QR code or join link', onClick: () => setInviteNeighborsOpen(true) },
+    { icon: Server, label: 'Host a node', desc: 'Set up a relay to extend coverage', onClick: () => setHostNodeOpen(true) },
+    { icon: AlertTriangle, label: 'Emergency signal', desc: 'Broadcast an urgent alert', danger: true, onClick: () => setEmergencySignalOpen(true) },
+  ];
+
+  const statsRow = (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <StatCard
+        icon={Users}
+        label="Active members"
+        value={String(activeMembers)}
+        sub={memberListFilter === 'admins' ? undefined : 'View member list →'}
+        grad="from-purple-500 to-indigo-600"
+        pulse
+        onClick={() => { setMemberListFilter('all'); setMemberListOpen(true); }}
+      />
+      <StatCard
+        icon={Radio}
+        label="Hub connection"
+        value={statusLabel}
+        sub={tunnelUrl ? tunnelUrl.replace(/^https?:\/\//, '') : 'No tunnel configured'}
+        grad="from-teal-500 to-cyan-600"
+        pulse={status === 'connected'}
+        onClick={() => setSignalDiagnosticsOpen(true)}
+      />
+      <StatCard
+        icon={TrendingUp}
+        label="Growth this month"
+        value={`+${newThisMonth}`}
+        sub={`${newThisMonth === 1 ? 'neighbor' : 'neighbors'} joined recently`}
+        grad="from-amber-500 to-orange-600"
+      />
+    </div>
+  );
+
+  const sidebar = (
+    <div className="flex flex-col gap-4">
+      <GrowthCard current={activeMembers} goal={GROWTH_MILESTONE} />
+      <QuickActionsCard actions={actions} />
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-      <DotGrid />
+    <div className="min-h-screen">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
+        {/* Breadcrumb */}
+        <button onClick={onBack} className="flex items-center gap-0.5 mb-4 group">
+          <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
+          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">{hubName}</span>
+        </button>
+
         {/* Header */}
-      <div className="sticky top-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
-        <div className="max-w-5xl mx-auto px-4 md:px-8 py-4">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <h2 className="text-slate-900 dark:text-white text-2xl font-semibold tracking-tight">Network</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-400 font-light">Your local mesh infrastructure</p>
-            </div>
-            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
+        <div className="flex items-center gap-4 mb-6">
+          <span className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center bg-gradient-to-br from-teal-500 to-cyan-600 shadow-md">
+            <Radio className="w-6 h-6 text-white" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Network</h1>
+            <p className="text-sm cn-text-3 mt-0.5">Live status for {hubName}</p>
           </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 space-y-6">
-        {/* Two Column Layout - Map and Stats Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Network Map - Takes 2 columns */}
-          <div className="lg:col-span-2">
-            <div className="mb-3">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Live Network</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 font-light">Real-time visualization</p>
-            </div>
-            <div className="h-[500px]">
-              <NetworkMap members={members} />
-            </div>
-          </div>
-
-          {/* Stats Column */}
-          <div className="space-y-4">
-            <button
-              onClick={() => {
-                setMemberListFilter('all');
-                setMemberListOpen(true);
-              }}
-              className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700 transition-all cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                  <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              </div>
-              <div className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tabular-nums">{activeMembers}</div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Active Members</div>
-            </button>
-
-            <div className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                  <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              </div>
-              <div className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tabular-nums">
-                {currentHub?.connectionStatus === 'connected' ? 'Online' : 'Local'}
-              </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Hub Status</div>
-            </div>
-
-            <button
-              onClick={() => setSignalDiagnosticsOpen(true)}
-              className="w-full bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-700 transition-all cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                  status === 'connected'    ? 'bg-green-100 dark:bg-green-900/30' :
-                  status === 'connecting'   ? 'bg-yellow-100 dark:bg-yellow-900/30' :
-                  status === 'unreachable'  ? 'bg-orange-100 dark:bg-orange-900/30' :
-                                             'bg-slate-100 dark:bg-zinc-800'
-                }`}>
-                  <Radio className={`w-4 h-4 ${
-                    status === 'connected'   ? 'text-green-600 dark:text-green-400' :
-                    status === 'connecting'  ? 'text-yellow-600 dark:text-yellow-400' :
-                    status === 'unreachable' ? 'text-orange-500 dark:text-orange-400' :
-                                              'text-slate-400'
-                  }`} />
-                </div>
-                <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
-              </div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
-                {status === 'connected'   ? 'Connected' :
-                 status === 'connecting'  ? 'Connecting' :
-                 status === 'unreachable' ? 'Unreachable' :
-                                           'Local Only'}
-              </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Hub Connection</div>
-            </button>
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full cn-surface-2 shrink-0">
+            <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
+            <span className="text-xs font-semibold cn-text-2">{statusLabel}</span>
           </div>
         </div>
 
-        {/* Status and Growth in One Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Cloud Status */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                <Radio className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">{hubName}</h3>
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30">
-                    <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
-                    <span className="text-xs font-medium text-green-700 dark:text-green-400">{statusLabel.toUpperCase()}</span>
-                  </div>
+        <div className="flex flex-col gap-5">
+          {statsRow}
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
+            {/* Main column */}
+            <div className="flex flex-col gap-5 min-w-0">
+              <div>
+                <h2 className="text-base font-semibold cn-text-1 mb-0.5">Live network</h2>
+                <p className="text-xs cn-text-3 mb-3">Real-time member locations around this hub</p>
+                <div className="h-[420px]">
+                  <NetworkMap members={members} />
                 </div>
-                <p className="text-sm text-slate-600 dark:text-slate-400 font-light">
-                  {tunnelUrl ? (
-                    <span className="font-mono text-xs break-all">{tunnelUrl}</span>
-                  ) : (
-                    'No tunnel URL configured'
-                  )}
-                </p>
               </div>
+              {/* Sidebar content repeats here on mobile, below the map */}
+              <div className="lg:hidden">{sidebar}</div>
             </div>
+
+            {/* Sidebar — desktop only */}
+            <div className="hidden lg:block sticky top-7">{sidebar}</div>
           </div>
 
-          {/* Community Growth */}
-          <div className="bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              </div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white">Growth</h3>
-            </div>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{activeMembers}</span>
-              <span className="text-sm text-slate-500 dark:text-slate-400">/ {targetUsers}</span>
-            </div>
-            <div className="space-y-1.5">
-              <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-purple-600 to-blue-600 rounded-full transition-all duration-1000"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400">
-                {targetUsers - activeMembers} more until next milestone
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button
-              onClick={() => setInviteNeighborsOpen(true)}
-              className="group bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 hover:border-purple-300 dark:hover:border-purple-700 shadow-sm hover:shadow-md transition-all"
-            >
-              <div className="flex flex-col items-center text-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <QrCode className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div>
-                  <h4 className="text-slate-900 dark:text-white font-semibold text-sm mb-1">Invite Neighbors</h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">Share QR or link</p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setHostNodeOpen(true)}
-              className="group bg-white dark:bg-zinc-900 rounded-xl p-5 border border-slate-200 dark:border-zinc-800 hover:border-blue-300 dark:hover:border-blue-700 shadow-sm hover:shadow-md transition-all"
-            >
-              <div className="flex flex-col items-center text-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Server className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <h4 className="text-slate-900 dark:text-white font-semibold text-sm mb-1">Host a Node</h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">Setup guide</p>
-                </div>
-              </div>
-            </button>
-
-            <button
-              onClick={() => setEmergencySignalOpen(true)}
-              className="group bg-white dark:bg-zinc-900 rounded-xl p-5 border-2 border-red-200 dark:border-red-900/50 hover:border-red-300 dark:hover:border-red-800 shadow-sm hover:shadow-md transition-all"
-            >
-              <div className="flex flex-col items-center text-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <h4 className="text-slate-900 dark:text-white font-semibold text-sm mb-1">Emergency Signal</h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">Urgent alert</p>
-                </div>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Future Features */}
-        <div className="bg-blue-50 dark:bg-blue-900/10 rounded-xl p-5 border border-blue-200 dark:border-blue-800/30">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center flex-shrink-0">
-              <Zap className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-                Coming Soon: Physical Nodes
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">
-                When mesh nodes deploy, you'll see node names, signal metrics, and interactive maps.
-              </p>
-            </div>
+          {/* Honest note — no physical relay hardware yet, this is a single hub + tunnel today */}
+          <div className="rounded-2xl cn-glass p-4 flex items-center gap-3">
+            <Activity className="w-4 h-4 cn-text-4 shrink-0" />
+            <p className="text-xs cn-text-3">
+              This hub runs as a single node today — when physical relay nodes are supported, you'll see live signal metrics and coverage here.
+            </p>
           </div>
         </div>
       </div>

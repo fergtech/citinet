@@ -251,6 +251,15 @@ async function initDb() {
       )
     `);
     await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_event_rsvps (
+        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id    UUID        NOT NULL REFERENCES hub_posts(id) ON DELETE CASCADE,
+        user_id    UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(post_id, user_id)
+      )
+    `);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS hub_post_embeddings (
         post_id     UUID PRIMARY KEY REFERENCES hub_posts(id) ON DELETE CASCADE,
         embedding   JSONB NOT NULL,
@@ -1632,6 +1641,7 @@ app.get('/api/conversations', authenticate, async (req, res) => {
          ) AS last_message
        FROM hub_conversations c
        JOIN hub_conversation_members me ON c.id = me.conversation_id AND me.user_id = $1
+       WHERE c.kind != 'dm' OR EXISTS (SELECT 1 FROM hub_messages m WHERE m.conversation_id = c.id)
        ORDER BY c.updated_at DESC`,
       [req.user.id],
     );
@@ -2543,6 +2553,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
     // Private posts are only visible to their author
     const visClause = `(p.visibility != 'private' OR p.author_id = $${params.length + 1})`;
     params.push(req.user.id);
+    const myUserIdParam = params.length;
     const combinedWhere = where
       ? `${where} AND ${spaceClause} AND ${visClause}`
       : `WHERE ${spaceClause} AND ${visClause}`;
@@ -2553,7 +2564,9 @@ app.get('/api/posts', authenticate, async (req, res) => {
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
               s.name AS space_name, s.slug AS space_slug,
-              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+              (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $${myUserIdParam}) AS my_rsvp
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
@@ -2845,14 +2858,16 @@ app.get('/api/events/upcoming', authenticate, async (req, res) => {
               p.created_at, p.updated_at,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
-              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+              (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
        WHERE p.category = 'EVENT' AND p.event_date >= NOW() - INTERVAL '2 hours'
        ORDER BY p.event_date ASC
        LIMIT $1`,
-      [limit],
+      [limit, req.user.id],
     );
     res.json({ events: rows });
   } catch (err) {
@@ -2969,18 +2984,71 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
               p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
               u.id AS author_id, u.username AS author_username,
               f.file_name AS media_file_name,
-              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+              (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
        WHERE p.id = $1`,
-      [req.params.id],
+      [req.params.id, req.user.id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Post not found' });
     res.json(rows[0]);
   } catch (err) {
     console.error('Get post error:', err);
     res.status(500).json({ error: 'Failed to get post' });
+  }
+});
+
+// Toggle the caller's RSVP ("going") for an event post
+app.post('/api/posts/:id/rsvp', authenticate, async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM hub_event_rsvps WHERE post_id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id],
+    );
+    let going;
+    if (existing[0]) {
+      await pool.query(`DELETE FROM hub_event_rsvps WHERE id = $1`, [existing[0].id]);
+      going = false;
+    } else {
+      await pool.query(
+        `INSERT INTO hub_event_rsvps (post_id, user_id) VALUES ($1, $2) ON CONFLICT (post_id, user_id) DO NOTHING`,
+        [req.params.id, req.user.id],
+      );
+      going = true;
+    }
+    const { rows: countRows } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM hub_event_rsvps WHERE post_id = $1`,
+      [req.params.id],
+    );
+    res.json({ going, count: countRows[0].count });
+  } catch (err) {
+    console.error('Toggle RSVP error:', err);
+    res.status(500).json({ error: 'Failed to update RSVP' });
+  }
+});
+
+// List attendees for an event post
+app.get('/api/posts/:id/rsvp', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id AS user_id, u.username, u.display_name, er.created_at
+       FROM hub_event_rsvps er
+       JOIN hub_users u ON er.user_id = u.id
+       WHERE er.post_id = $1
+       ORDER BY er.created_at ASC`,
+      [req.params.id],
+    );
+    res.json({
+      attendees: rows,
+      count: rows.length,
+      going: rows.some(r => r.user_id === req.user.id),
+    });
+  } catch (err) {
+    console.error('List RSVPs error:', err);
+    res.status(500).json({ error: 'Failed to load attendees' });
   }
 });
 

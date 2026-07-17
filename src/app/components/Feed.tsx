@@ -1,38 +1,24 @@
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { PostCard } from './PostCard';
+import { PollFeedCard } from './PollFeedCard';
 import { LocationSearchInput } from './LocationSearchInput';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
-  MessageCircle, ShieldCheck, ChevronLeft, Send, BarChart2,
+  MessageCircle, Newspaper, ShieldCheck, ChevronLeft, Send, BarChart2, Vote, Plus, Link2,
   MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
-import { geocodeLocation } from '../utils/geocoding';
-import type { HubPost, HubPostReply } from '../types/hub';
-
-/** Deep-links a post's location into Atlas — reuses real coordinates captured at
- * compose time when available, falling back to a one-off geocode for older posts
- * that only ever had free text. Atlas resolves this to a nearby pin if one exists,
- * or offers to add one if not — nothing is created here. */
-async function openPostLocationInAtlas(
-  eventLocation: string,
-  eventLat: number | null | undefined,
-  eventLng: number | null | undefined,
-  onNavigate?: (screen: string) => void,
-) {
-  let lat = eventLat, lng = eventLng;
-  if (lat == null || lng == null) {
-    const coords = await geocodeLocation(eventLocation);
-    if (!coords) return;
-    [lat, lng] = coords;
-  }
-  sessionStorage.setItem('citinet-deeplink-coords', JSON.stringify({ lat, lng, label: eventLocation }));
-  onNavigate?.('atlas');
-}
+import { openLocationInAtlas } from '../utils/geocoding';
+import { hubPath } from '../utils/subdomain';
+import { pollsService } from '../services/pollsService';
+import { requestsService, type HubRequest } from '../services/requestsService';
+import type { HubPost, HubPostReply, HubEventAttendee } from '../types/hub';
+import type { Poll } from '../types/poll';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +46,7 @@ const CAT_TABS = [
   { value: 'REQUEST',      label: 'Requests' },
   { value: 'PROJECT',      label: 'Projects' },
   { value: 'DISCUSSION',   label: 'Discussions' },
+  { value: 'POLL',         label: 'Polls' },
 ] as const;
 
 function formatTimestamp(iso: string): string {
@@ -177,6 +164,80 @@ function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId
   return <div className={`${dim} rounded-full bg-gradient-to-br ${avatarColorClass(authorUsername)} flex items-center justify-center text-white font-semibold shrink-0`}>{getInitials(authorUsername)}</div>;
 }
 
+/** Real, shared RSVP row for an EVENT post — same hub_event_rsvps backend the
+ * dashboard's compact event overlay uses, so "going" stays consistent everywhere. */
+function EventRsvpRow({ post, hubSlug, onNavigateToProfile }: { post: HubPost; hubSlug: string; onNavigateToProfile?: (userId: string) => void }) {
+  const [going, setGoing] = useState(post.my_rsvp ?? false);
+  const [count, setCount] = useState(post.rsvp_count ?? 0);
+  const [attendees, setAttendees] = useState<HubEventAttendee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    hubService.listRsvps(hubSlug, post.id)
+      .then(data => { if (!cancelled) { setAttendees(data.attendees); setCount(data.count); setGoing(data.going); } })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [hubSlug, post.id]);
+
+  const toggle = async () => {
+    if (toggling) return;
+    setToggling(true);
+    const was = going;
+    setGoing(!was);
+    setCount(c => was ? Math.max(0, c - 1) : c + 1);
+    try {
+      const result = await hubService.toggleRsvp(hubSlug, post.id);
+      setGoing(result.going);
+      setCount(result.count);
+      const data = await hubService.listRsvps(hubSlug, post.id);
+      setAttendees(data.attendees);
+    } catch {
+      setGoing(was);
+      setCount(c => was ? c + 1 : Math.max(0, c - 1));
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 flex items-center justify-between gap-3 p-3 rounded-xl border cn-border bg-white/[0.03]">
+      <div className="flex items-center gap-2.5 min-w-0">
+        {loading ? (
+          <Loader2 className="w-4 h-4 animate-spin cn-text-4" />
+        ) : attendees.length > 0 ? (
+          <div className="flex -space-x-2 shrink-0">
+            {attendees.slice(0, 5).map(a => (
+              <button
+                key={a.user_id}
+                onClick={() => onNavigateToProfile?.(a.user_id)}
+                title={a.display_name || a.username}
+                className="rounded-full ring-2 ring-white dark:ring-zinc-900 hover:z-10 hover:scale-110 transition-transform"
+              >
+                <AvatarCircle authorId={a.user_id} authorUsername={a.display_name || a.username} authorAvatarUrl={hubService.getAvatarUrl(hubSlug, a.user_id) ?? undefined} size="sm" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {!loading && (
+          <span className="text-xs cn-text-3 truncate">
+            {count > 0 ? `${count} going${attendees.length > 5 ? ` · +${count - 5} more` : ''}` : 'No one going yet'}
+          </span>
+        )}
+      </div>
+      <button
+        onClick={toggle}
+        disabled={toggling}
+        className={`shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+      >
+        {going ? "You're going" : "I'm going"}
+      </button>
+    </div>
+  );
+}
+
 function toDatetimeLocal(iso: string) {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, '0');
@@ -254,6 +315,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
   const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
   const repliesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { currentHub } = useHub();
 
   const loadReplies = useCallback(async (silent = false) => {
     if (!silent) setLoadingReplies(true);
@@ -373,7 +435,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
   return (
     <div>
       {/* Back nav */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-5">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-3 pb-5">
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border cn-border hover:border-zinc-500 text-sm cn-text-3 hover:text-zinc-200 transition-colors"
@@ -384,7 +446,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
       </div>
 
       {/* Centered content */}
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 pb-8">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-8">
 
         {/* Post card */}
         <div className="cn-glass rounded-2xl overflow-hidden mb-5">
@@ -473,7 +535,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl cn-surface-2 border cn-border shadow-xl w-56">
                         {PDV_VIS_OPTIONS.map(opt => (
                           <button key={opt.value} type="button" onClick={() => { setEditVisibility(opt.value); setVisibilityOpen(false); }}
-                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'}`}>
+                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'}`}>
                             <span className="mt-0.5 shrink-0">{opt.icon}</span>
                             <span><span className="block text-xs font-medium">{opt.label}</span><span className="block text-[10px] cn-text-4 mt-0.5">{opt.desc}</span></span>
                           </button>
@@ -558,7 +620,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                 {/* Event metadata */}
                 {post.category === 'EVENT' && post.event_date && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/20 text-xs font-medium text-purple-300">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-500/15 border border-purple-300 dark:border-purple-500/20 text-xs font-medium text-purple-700 dark:text-purple-300">
                       <Calendar className="w-3.5 h-3.5 shrink-0" />
                       <span>
                         {new Date(post.event_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -572,7 +634,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                 {/* Referenced location — always clickable when present, whether or not a pin exists yet */}
                 {post.event_location && (
                   <button
-                    onClick={() => openPostLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate)}
+                    onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location)}
                     className="mt-3 w-full flex items-center gap-3 p-3 rounded-xl border cn-border bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left"
                   >
                     <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">
@@ -584,6 +646,11 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </span>
                   </button>
+                )}
+
+                {/* RSVP — real, shared attendance for this event */}
+                {post.category === 'EVENT' && (
+                  <EventRsvpRow post={post} hubSlug={hubSlug} onNavigateToProfile={onNavigateToProfile} />
                 )}
 
                 {/* Engagement row */}
@@ -896,7 +963,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                     {VISIBILITY_OPTIONS.map(opt => (
                       <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setVisibilityOpen(false); }}
                         className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                          visibility === opt.value ? 'bg-purple-500/15 text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
+                          visibility === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
                         }`}>
                         <span className="mt-0.5 shrink-0">{opt.icon}</span>
                         <span>
@@ -927,19 +994,227 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
   );
 }
 
+// ── Compose Poll Modal ───────────────────────────────────────
+
+interface ComposePollModalProps {
+  hubSlug: string;
+  onClose: () => void;
+  onCreated: (poll: Poll) => void;
+}
+
+function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps) {
+  const [question, setQuestion] = useState('');
+  const [options, setOptions] = useState(['', '']);
+  const [closesAt, setClosesAt] = useState('');
+  const [quorumPct, setQuorumPct] = useState(0);
+  const [passPct, setPassPct] = useState(50);
+  const [linkedRequestId, setLinkedRequestId] = useState('');
+  const [openRequests, setOpenRequests] = useState<HubRequest[]>([]);
+  const [showGovernance, setShowGovernance] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  useEffect(() => {
+    requestsService.list(hubSlug).then(reqs =>
+      setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
+    ).catch(() => {});
+  }, [hubSlug]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [onClose]);
+
+  async function handleCreate() {
+    const validOptions = options.filter(o => o.trim());
+    if (!question.trim() || validOptions.length < 2) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      const poll = await pollsService.create(hubSlug, {
+        question: question.trim(),
+        options: validOptions,
+        closes_at: closesAt || undefined,
+        request_id: linkedRequestId || undefined,
+        quorum_pct: quorumPct,
+        pass_pct: passPct,
+      });
+      onCreated(poll);
+      onClose();
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create poll');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          onClick={e => e.stopPropagation()}
+          className="cn-surface border cn-border rounded-2xl shadow-2xl w-full max-w-lg pointer-events-auto flex flex-col overflow-hidden"
+        >
+          <div className="flex items-center justify-between px-6 py-4 border-b cn-border">
+            <h2 className="cn-text-1 font-semibold text-lg flex items-center gap-2">
+              <Vote className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> New Poll
+            </h2>
+            <button onClick={onClose} className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
+              <X className="w-4 h-4 cn-text-3" />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-4 p-6 overflow-y-auto max-h-[70vh]">
+            <div>
+              <label className="block text-xs font-medium cn-text-3 mb-1.5">Question <span className="text-indigo-500 dark:text-indigo-400">*</span></label>
+              <textarea value={question} onChange={e => setQuestion(e.target.value)} rows={2}
+                placeholder="What should the community decide?"
+                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-indigo-400 resize-none" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium cn-text-3 mb-1.5">Options (2–5) <span className="text-indigo-500 dark:text-indigo-400">*</span></label>
+              <div className="space-y-2">
+                {options.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input type="text" value={opt} onChange={e => setOptions(opts => opts.map((o, j) => j === i ? e.target.value : o))}
+                      placeholder={`Option ${i + 1}`}
+                      className="flex-1 cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-indigo-400" />
+                    {options.length > 2 && (
+                      <button onClick={() => setOptions(opts => opts.filter((_, j) => j !== i))} className="w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {options.length < 5 && (
+                  <button onClick={() => setOptions(opts => [...opts, ''])} className="flex items-center gap-1.5 text-xs text-indigo-500 hover:text-indigo-400 font-medium transition-colors">
+                    <Plus className="w-3.5 h-3.5" /> Add option
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium cn-text-3 mb-1.5">Close date <span className="cn-text-4 font-normal">(optional)</span></label>
+              <input type="datetime-local" value={closesAt} onChange={e => setClosesAt(e.target.value)}
+                className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400" />
+            </div>
+
+            {/* Governance options — quorum/pass-threshold/linked-request are formal decision-making
+                controls, not something a casual poll needs; keep them out of the way by default. */}
+            <div className="border-t cn-border pt-3">
+              <button type="button" onClick={() => setShowGovernance(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium cn-text-3 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors">
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showGovernance ? 'rotate-180' : ''}`} />
+                Governance options
+              </button>
+              {showGovernance && (
+                <div className="flex flex-col gap-4 mt-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium cn-text-3 mb-1.5">
+                        Quorum <span className="cn-text-4 font-normal">(% of members)</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" min={0} max={100} value={quorumPct}
+                          onChange={e => setQuorumPct(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                          className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400" />
+                        <span className="text-sm cn-text-4">%</span>
+                      </div>
+                      <p className="text-[10px] cn-text-4 mt-1">0 = no quorum</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium cn-text-3 mb-1.5">Pass threshold</label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" min={1} max={100} value={passPct}
+                          onChange={e => setPassPct(Math.min(100, Math.max(1, parseInt(e.target.value) || 50)))}
+                          className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400" />
+                        <span className="text-sm cn-text-4">%</span>
+                      </div>
+                      <p className="text-[10px] cn-text-4 mt-1">of votes cast</p>
+                    </div>
+                  </div>
+
+                  {openRequests.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium cn-text-3 mb-1.5">
+                        <Link2 className="w-3 h-3 inline mr-1" />
+                        Link to feature request (optional)
+                      </label>
+                      <select value={linkedRequestId} onChange={e => setLinkedRequestId(e.target.value)}
+                        className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400">
+                        <option value="">— None —</option>
+                        {openRequests.map(r => (
+                          <option key={r.id} value={r.id}>{r.problem.slice(0, 80)}{r.problem.length > 80 ? '…' : ''}</option>
+                        ))}
+                      </select>
+                      {linkedRequestId && (
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">
+                          If this poll passes, the linked request will auto-advance to "Approved"
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {createError && <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">{createError}</p>}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t cn-border">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
+            <button onClick={handleCreate} disabled={!question.trim() || options.filter(o => o.trim()).length < 2 || creating}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+              {creating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</> : 'Create Poll'}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
+
 // ── Feed ──────────────────────────────────────────────────────
 
 export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  const navigate = useNavigate();
+  const { postId: urlPostId } = useParams<{ postId?: string }>();
 
   const [posts, setPosts] = useState<HubPost[]>([]);
+  const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
+  const [composingPoll, setComposingPoll] = useState(false);
+  const [pollVoting, setPollVoting] = useState<string | null>(null);
+  const [pollClosing, setPollClosing] = useState<string | null>(null);
+  const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const isMod = currentUser?.hubRole === 'admin' || currentUser?.hubRole === 'moderator'
+    || currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
 
   // Mark feed notifications read
   useEffect(() => {
@@ -965,26 +1240,44 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setComposing(true);
   }, []);
 
-  // Deep-link: open specific post
+  // Deep-link: preset the category filter (e.g. "See all" from the dashboard's Upcoming events)
   useEffect(() => {
-    const postId = sessionStorage.getItem('citinet-deeplink-feed-post');
-    if (!postId || selectedPost) return;
-    sessionStorage.removeItem('citinet-deeplink-feed-post');
-    const found = posts.find(p => p.id === postId);
+    const cat = sessionStorage.getItem('citinet-deeplink-feed-category');
+    if (!cat) return;
+    sessionStorage.removeItem('citinet-deeplink-feed-category');
+    setActiveFilter(cat);
+  }, []);
+
+  // /feed/:postId — the URL is the single source of truth for which post's detail view
+  // (if any) is showing; selectedPost is only ever written here, never optimistically by
+  // openPost/closePost, so there's no race between a state clear and the URL catching up.
+  // useLayoutEffect (not useEffect) so this resolves before paint — no flicker of the
+  // wrong content for a frame while the URL and selectedPost briefly disagree.
+  useLayoutEffect(() => {
+    if (!urlPostId) {
+      setSelectedPost(null);
+      return;
+    }
+    if (selectedPost?.id === urlPostId) return;
+    const found = posts.find(p => p.id === urlPostId);
     if (found) {
       setSelectedPost(found);
     } else if (!loading && hubSlug) {
-      hubService.getPost(hubSlug, postId).then(setSelectedPost).catch(() => {});
+      hubService.getPost(hubSlug, urlPostId).then(setSelectedPost).catch(() => {});
     }
-  }, [posts, loading, hubSlug, selectedPost]);
+  }, [urlPostId, posts, loading, hubSlug, selectedPost]);
 
   const load = useCallback(async (silent = false) => {
     if (!hubSlug) return;
     if (!silent) setLoading(true);
     setError('');
     try {
-      const data = await hubService.listPosts(hubSlug);
-      setPosts(data);
+      const [postData, pollData] = await Promise.all([
+        hubService.listPosts(hubSlug),
+        pollsService.list(hubSlug),
+      ]);
+      setPosts(postData);
+      setPolls(pollData);
     } catch (err) {
       if (!silent) {
         const msg = err instanceof Error ? err.message : 'Could not load posts';
@@ -1001,15 +1294,80 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     return () => clearInterval(id);
   }, [load]);
 
-  const filteredPosts = useMemo(() => {
-    if (!activeFilter) return posts;
-    return posts.filter(p => p.category === activeFilter);
-  }, [posts, activeFilter]);
+  // Unified, chronologically-sorted feed of posts + polls (polls are just another post type, client-side only)
+  type FeedItem = { kind: 'post'; sortAt: string; post: HubPost } | { kind: 'poll'; sortAt: string; poll: Poll };
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [
+      ...posts.map(post => ({ kind: 'post' as const, sortAt: post.created_at, post })),
+      ...polls.map(poll => ({ kind: 'poll' as const, sortAt: poll.created_at, poll })),
+    ];
+    items.sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime());
+    return items;
+  }, [posts, polls]);
+
+  const filteredItems = useMemo(() => {
+    if (!activeFilter) return feedItems;
+    if (activeFilter === 'POLL') return feedItems.filter(i => i.kind === 'poll');
+    return feedItems.filter(i => i.kind === 'post' && i.post.category === activeFilter);
+  }, [feedItems, activeFilter]);
+
+  // A post's detail view lives at /feed/:postId — real, shareable, survives refresh/back.
+  // These only ever touch the URL; the effect above is solely responsible for reacting
+  // to it and setting selectedPost, so there's exactly one writer and no race.
+  // replace: true — opening/closing a post swaps the current history entry in place rather
+  // than piling up new ones, so the feed's own "‹ HubName" breadcrumb (a literal back-one-step)
+  // always lands on the dashboard instead of bouncing between /feed and /feed/:postId forever.
+  function openPost(post: HubPost) {
+    navigate(hubPath(`/feed/${post.id}`), { replace: true });
+  }
+  function closePost() {
+    navigate(hubPath('/feed'), { replace: true });
+  }
 
   function handleCreated(post: HubPost) { setPosts(prev => [post, ...prev]); }
   function handlePostDeleted(postId: string) {
     setPosts(prev => prev.filter(p => p.id !== postId));
-    if (selectedPost?.id === postId) setSelectedPost(null);
+    if (selectedPost?.id === postId) closePost();
+  }
+  function handlePollCreated(poll: Poll) { setPolls(prev => [poll, ...prev]); }
+
+  async function handlePollVote(poll: Poll, optionIndex: number) {
+    if (poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
+    setPollVoting(poll.id);
+    const prev = polls;
+    setPolls(ps => ps.map(p => {
+      if (p.id !== poll.id) return p;
+      const newCounts = [...p.vote_counts];
+      if (p.my_vote != null) newCounts[p.my_vote] = Math.max(0, newCounts[p.my_vote] - 1);
+      newCounts[optionIndex]++;
+      const totalDelta = p.my_vote != null ? 0 : 1;
+      return { ...p, vote_counts: newCounts, my_vote: optionIndex, total_votes: p.total_votes + totalDelta };
+    }));
+    try {
+      await pollsService.vote(hubSlug, poll.id, optionIndex);
+      load(true);
+    } catch {
+      setPolls(prev);
+    } finally {
+      setPollVoting(null);
+    }
+  }
+
+  async function handlePollClose(pollId: string) {
+    setPollClosing(pollId);
+    try {
+      await pollsService.close(hubSlug, pollId);
+      load(true);
+    } catch { /* non-critical */ }
+    setPollClosing(null);
+  }
+
+  function handleCopyPollLink(pollId: string) {
+    const link = `${window.location.href.split('#')[0]}#poll=${pollId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopyLinkFeedback(pollId);
+      setTimeout(() => setCopyLinkFeedback(null), 2000);
+    });
   }
 
   return (
@@ -1023,7 +1381,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           isAdmin={currentUser?.isAdmin}
           categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
-          onBack={() => setSelectedPost(null)}
+          onBack={closePost}
           onDeleted={handlePostDeleted}
           onNavigateToProfile={onNavigate ? (userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); } : undefined}
           onNavigate={onNavigate}
@@ -1043,7 +1401,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           {/* Icon + Title + Subtitle */}
           <div className="flex items-center gap-4 mb-3">
             <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-feed)' }}>
-              <MessageCircle className="w-6 h-6 text-white" />
+              <Newspaper className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Feed</h1>
@@ -1054,7 +1412,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           {/* Category tabs */}
           <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar -mx-1 px-1 border-b cn-border">
             {CAT_TABS.map(({ value, label }) => {
-              const count = value ? posts.filter(p => p.category === value).length : 0;
+              const count = value === 'POLL' ? polls.length : value ? posts.filter(p => p.category === value).length : 0;
               return (
                 <button
                   key={value ?? 'all'}
@@ -1068,7 +1426,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   {label}
                   {count > 0 && (
                     <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
-                      activeFilter === value ? 'bg-purple-500/25 text-purple-200' : 'cn-surface-2 cn-text-3'
+                      activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
                     }`}>
                       {count}
                     </span>
@@ -1096,25 +1454,34 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   </div>
                   <span className="flex-1 text-left text-sm cn-text-4">Share something with your neighbors…</span>
                 </button>
-                <div className="border-t cn-border px-3 py-2 flex items-center gap-0.5">
-                  {([
-                    { icon: <Image className="w-3.5 h-3.5" />, label: 'Photo' },
-                    { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Event' },
-                    { icon: <BarChart2 className="w-3.5 h-3.5" />, label: 'Poll' },
-                    { icon: <MapPin className="w-3.5 h-3.5" />, label: 'Place' },
-                  ] as const).map(({ icon, label }) => (
-                    <button
-                      key={label}
-                      onClick={() => setComposing(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                    >
-                      {icon}{label}
-                    </button>
-                  ))}
+                <div className="border-t cn-border px-3 py-2 flex items-center gap-1">
+                  <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
+                    {([
+                      { icon: <Image className="w-3.5 h-3.5" />, label: 'Photo' },
+                      { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Event' },
+                      { icon: <MapPin className="w-3.5 h-3.5" />, label: 'Place' },
+                    ] as const).map(({ icon, label }) => (
+                      <button
+                        key={label}
+                        onClick={() => setComposing(true)}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      >
+                        {icon}{label}
+                      </button>
+                    ))}
+                    {isMod && (
+                      <button
+                        onClick={() => setComposingPoll(true)}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      >
+                        <BarChart2 className="w-3.5 h-3.5" />Poll
+                      </button>
+                    )}
+                  </div>
                   <div className="flex-1" />
                   <button
                     onClick={() => setComposing(true)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors"
+                    className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors"
                   >
                     <Send className="w-3 h-3" /> Post
                   </button>
@@ -1140,19 +1507,44 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               )}
 
               {/* Empty */}
-              {!loading && !error && filteredPosts.length === 0 && (
+              {!loading && !error && filteredItems.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center cn-glass rounded-2xl">
                   <p className="cn-text-3 text-sm mb-3">
-                    {activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
+                    {activeFilter === 'POLL' ? 'No polls yet.' : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
                   </p>
-                  <button onClick={() => setComposing(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
-                    Be the first to post →
-                  </button>
+                  {activeFilter === 'POLL' ? (
+                    isMod && (
+                      <button onClick={() => setComposingPoll(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
+                        Create the first poll →
+                      </button>
+                    )
+                  ) : (
+                    <button onClick={() => setComposing(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
+                      Be the first to post →
+                    </button>
+                  )}
                 </div>
               )}
 
-              {/* Posts */}
-              {!loading && !error && filteredPosts.map(post => {
+              {/* Feed items — posts and polls, chronologically merged */}
+              {!loading && !error && filteredItems.map(item => {
+                if (item.kind === 'poll') {
+                  const poll = item.poll;
+                  return (
+                    <PollFeedCard
+                      key={poll.id}
+                      poll={poll}
+                      isMod={isMod}
+                      voting={pollVoting === poll.id}
+                      closing={pollClosing === poll.id}
+                      onVote={idx => handlePollVote(poll, idx)}
+                      onClose={() => handlePollClose(poll.id)}
+                      onCopyLink={() => handleCopyPollLink(poll.id)}
+                      copyLinkActive={copyLinkFeedback === poll.id}
+                    />
+                  );
+                }
+                const post = item.post;
                 const mediaUrl = post.media_file_name
                   ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
                   : undefined;
@@ -1160,7 +1552,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   <div
                     key={post.id}
                     className="cursor-pointer"
-                    onClick={() => setSelectedPost(post)}
+                    onClick={() => openPost(post)}
                   >
                     <PostCard
                       id={post.id}
@@ -1175,7 +1567,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       categoryColors={CATEGORY_COLORS}
                       eventDate={post.event_date}
                       eventLocation={post.event_location}
-                      onOpenInAtlas={post.event_location ? () => openPostLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate) : undefined}
+                      onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location) : undefined}
                       autoPlay={false}
                     />
                   </div>
@@ -1187,7 +1579,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
             <div className="hidden lg:block sticky top-0 self-start">
               <RightRail
                 hubName={currentHub?.name ?? 'Hub'}
-                posts={filteredPosts}
+                posts={posts}
               />
             </div>
           </div>
@@ -1204,6 +1596,15 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           onCreated={handleCreated}
           initialTitle={composeInitial?.title}
           initialBody={composeInitial?.body}
+        />
+      )}
+
+      {/* Compose poll modal */}
+      {composingPoll && (
+        <ComposePollModal
+          hubSlug={hubSlug}
+          onClose={() => setComposingPoll(false)}
+          onCreated={handlePollCreated}
         />
       )}
     </div>

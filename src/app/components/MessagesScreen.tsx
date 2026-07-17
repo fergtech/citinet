@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { DotGrid } from './DotGrid';
 import {
   Search, Send, Users, Loader2, AlertCircle,
@@ -291,7 +292,12 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [selectedMembers, setSelectedMembers] = useState<HubMember[]>([]);
   const [groupName, setGroupName] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
-  const [creating, setCreating] = useState(false);
+
+  // A conversation the user has opened (via "New Conversation", a profile's Message
+  // button, or "Message seller") but hasn't sent anything in yet — exists only in
+  // local state. It's only persisted to the backend on the first actual send, so
+  // backing out without sending never leaves an empty conversation in anyone's list.
+  const [draftConvo, setDraftConvo] = useState<HubConversation | null>(null);
 
   // Conversation IDs that have unread notifications — drives the purple dot per row
   const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
@@ -365,6 +371,22 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     setUnreadConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
   }, [conversations, selectedId, slug]);
 
+  // Deep-link: arriving from a "Message" button elsewhere (profile, exchange listing) with
+  // no conversation created yet — reuse an existing DM with that person if one exists,
+  // otherwise open a draft. Waits for the initial conversation list to finish loading so
+  // the "does a DM already exist" check is accurate even for a user with zero conversations.
+  useEffect(() => {
+    if (loading || selectedId) return;
+    const raw = sessionStorage.getItem('citinet-deeplink-message-peer');
+    if (!raw) return;
+    sessionStorage.removeItem('citinet-deeplink-message-peer');
+    try {
+      const { userId, username } = JSON.parse(raw) as { userId: string; username: string };
+      if (userId) startDm(userId, username || 'Neighbor');
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, conversations, selectedId]);
+
   // Poll conversations
   useEffect(() => {
     if (!slug) return;
@@ -395,7 +417,8 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   }, [slug]);
 
   useEffect(() => {
-    if (selectedId) {
+    // Drafts only exist locally — nothing to fetch, and the id isn't a real conversation yet.
+    if (selectedId && !selectedId.startsWith('draft')) {
       loadMessages(selectedId);
     } else {
       setMessages([]);
@@ -404,7 +427,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
   // Poll messages for active conversation
   useEffect(() => {
-    if (!selectedId || !slug) return;
+    if (!selectedId || !slug || selectedId.startsWith('draft')) return;
     const timer = setInterval(() => loadMessages(selectedId, true), POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [selectedId, slug, loadMessages]);
@@ -417,6 +440,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // ── select conversation + per-conversation read marking ──
   const handleSelectConversation = (convId: string) => {
     setSelectedId(convId);
+    setDraftConvo(null);
     if (unreadConvIds.has(convId)) {
       setUnreadConvIds(prev => { const next = new Set(prev); next.delete(convId); return next; });
       notificationsService.markReadByRef(slug, convId).catch(() => {});
@@ -436,20 +460,35 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     clearStagedFiles();
 
     try {
+      let convoId = selectedId;
+      let members = selectedConvo?.members;
+
+      // First message in a draft thread — this is the moment it actually becomes a
+      // real conversation. Reuses an existing DM server-side if one raced into
+      // existence in the meantime, so this never creates a duplicate.
+      if (draftConvo && selectedId === draftConvo.id) {
+        const peerIds = draftConvo.members.filter(m => m.user_id !== myUserId).map(m => m.user_id);
+        const real = await hubService.createConversation(slug, draftConvo.kind, peerIds, draftConvo.name);
+        convoId = real.id;
+        members = real.members;
+        setConversations(prev => [real, ...prev]);
+        setDraftConvo(null);
+        setSelectedId(real.id);
+      }
+
       let msg: HubMessage;
-      const members = selectedConvo?.members;
       if (hasFiles) {
         setUploadProgress(`Uploading ${filesToSend.length} file${filesToSend.length > 1 ? 's' : ''}…`);
         msg = await hubService.sendMessageWithMedia(
           slug,
-          selectedId,
+          convoId,
           text,
           filesToSend.map(sf => sf.file),
           members,
         );
         setUploadProgress(null);
       } else {
-        msg = await hubService.sendMessage(slug, selectedId, text, members);
+        msg = await hubService.sendMessage(slug, convoId, text, members);
       }
       setMessages(prev => [...prev, msg]);
       loadConversations(true);
@@ -555,26 +594,59 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     );
   };
 
-  const handleCreateConversation = async () => {
-    if (selectedMembers.length === 0 || !slug) return;
-    setCreating(true);
-    try {
-      const kind = selectedMembers.length === 1 ? 'dm' as const : 'group' as const;
-      const ids = selectedMembers.map(m => m.user_id);
-      const name = kind === 'group' ? groupName.trim() || undefined : undefined;
-      const convo = await hubService.createConversation(slug, kind, ids, name);
-      setConversations(prev => [convo, ...prev]);
-      setSelectedId(convo.id);
-      setShowNewConvo(false);
-    } catch (err: any) {
-      console.error('Failed to create conversation:', err);
-    } finally {
-      setCreating(false);
+  /** Opens a DM thread without touching the backend — reuses an existing conversation
+   * with this person if one exists, otherwise opens a local-only draft. Nothing is
+   * persisted until the first message is actually sent (see handleSend). */
+  const startDm = (userId: string, username: string) => {
+    const existing = conversations.find(c => c.kind === 'dm' && c.members.some(m => m.user_id === userId));
+    if (existing) {
+      setDraftConvo(null);
+      setSelectedId(existing.id);
+      return;
     }
+    const draftId = `draft:${userId}`;
+    setDraftConvo({
+      id: draftId,
+      kind: 'dm',
+      members: [
+        { user_id: myUserId, username: currentUser?.username || currentUser?.displayName || 'You' },
+        { user_id: userId, username },
+      ],
+      created_by: myUserId,
+      created_at: new Date().toISOString(),
+      updated_at: undefined,
+    });
+    setSelectedId(draftId);
+  };
+
+  const handleCreateConversation = () => {
+    if (selectedMembers.length === 0 || !slug) return;
+    if (selectedMembers.length === 1) {
+      startDm(selectedMembers[0].user_id, selectedMembers[0].username);
+    } else {
+      const draftId = `draft-group:${Date.now()}`;
+      setDraftConvo({
+        id: draftId,
+        kind: 'group',
+        name: groupName.trim() || undefined,
+        members: [
+          { user_id: myUserId, username: currentUser?.username || currentUser?.displayName || 'You' },
+          ...selectedMembers.map(m => ({ user_id: m.user_id, username: m.username })),
+        ],
+        created_by: myUserId,
+        created_at: new Date().toISOString(),
+        updated_at: undefined,
+      });
+      setSelectedId(draftId);
+    }
+    setShowNewConvo(false);
   };
 
   // ── derived ───────────────────────────────────────────
-  const selectedConvo = conversations.find(c => c.id === selectedId);
+  // Drafts live outside `conversations` on purpose — they must never show in the
+  // sidebar list, only in the currently-open thread.
+  const selectedConvo = conversations.find(c => c.id === selectedId)
+    ?? (draftConvo && draftConvo.id === selectedId ? draftConvo : undefined);
   const filteredConversations = conversations.filter(c =>
     convoDisplayName(c, myUserId).toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -632,6 +704,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     const isSwipeRight = dx > 72 && dy < 88 && (velocityX > 0.42 || dx > 140);
     if (isSwipeRight) {
       setSelectedId(null);
+      setDraftConvo(null);
     }
   };
 
@@ -683,32 +756,40 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     <div className="h-full bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
       <DotGrid />
 
-      {/* ── Lightbox Overlay ── */}
-      <AnimatePresence>
-        {lightboxUrl && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-            onClick={closeLightbox}
-          >
-            <img
-              src={lightboxUrl}
-              alt="Preview"
-              className="max-w-full max-h-full object-contain rounded-lg"
-              onClick={e => e.stopPropagation()}
-            />
-            <button
+      {/* ── Lightbox Overlay ──
+          Portaled to <body>: HubLayout's content area (where this screen renders) is
+          `position: relative; z-index: 10`, which starts its own stacking context — no
+          z-index on anything inside it can ever out-rank HubLayout's chrome (top bar /
+          sidebar / bottom dock, all z-30) as long as it's nested inside that z-10 wrapper.
+          Escaping via a portal is what actually lets this render above the chrome. */}
+      {createPortal(
+        <AnimatePresence>
+          {lightboxUrl && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
               onClick={closeLightbox}
-              className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 rounded-full p-2 transition-colors"
-              title="Close preview"
             >
-              <X className="w-6 h-6 text-white" />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <img
+                src={lightboxUrl}
+                alt="Preview"
+                className="max-w-full max-h-full object-contain rounded-lg"
+                onClick={e => e.stopPropagation()}
+              />
+              <button
+                onClick={closeLightbox}
+                className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 rounded-full p-2 transition-colors"
+                title="Close preview"
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* ── New Conversation Modal ── */}
       <AnimatePresence>
@@ -812,11 +893,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               <div className="p-4 border-t border-slate-200 dark:border-zinc-800">
                 <button
                   onClick={handleCreateConversation}
-                  disabled={selectedMembers.length === 0 || creating}
+                  disabled={selectedMembers.length === 0}
                   className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2"
                 >
-                  {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageCircle className="w-4 h-4" />}
-                  {creating ? 'Creating…' : selectedMembers.length > 1 ? 'Create Group' : 'Start DM'}
+                  <MessageCircle className="w-4 h-4" />
+                  {selectedMembers.length > 1 ? 'Create Group' : 'Start DM'}
                 </button>
               </div>
             </motion.div>
@@ -979,7 +1060,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           >
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setSelectedId(null)}
+                onClick={() => { setSelectedId(null); setDraftConvo(null); }}
                 aria-label="Back to conversations"
                 className="md:hidden w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
               >
@@ -1145,14 +1226,14 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           <div
             className="bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-t border-slate-200/50 dark:border-zinc-800/50"
             style={{
-              paddingTop: '1rem',
-              paddingLeft: '1rem',
-              paddingRight: '1rem',
-              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+              paddingTop: '0.625rem',
+              paddingLeft: '0.75rem',
+              paddingRight: '0.75rem',
+              paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))',
             }}
           >
             <div
-              className={`flex items-end gap-3 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
+              className={`flex items-end gap-1.5 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -1160,33 +1241,33 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               <div className="flex-1 relative">
                 {/* Attachment preview strip - now above the textarea */}
                 {stagedFiles.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-2">
+                  <div className="mb-1.5 flex flex-wrap gap-1.5">
                     {stagedFiles.map((sf, i) => (
                       <div key={i} className="relative group">
                         {sf.type === 'image' ? (
                           <img
                             src={sf.previewUrl}
                             alt={sf.file.name}
-                            className="max-w-[220px] max-h-[160px] rounded-xl border border-purple-300 shadow-sm"
+                            className="max-w-[140px] max-h-[100px] rounded-lg border border-purple-300 shadow-sm"
                           />
                         ) : sf.type === 'video' ? (
                           <video
                             src={sf.previewUrl}
-                            className="max-w-[220px] max-h-[160px] rounded-xl border border-purple-300 shadow-sm"
+                            className="max-w-[140px] max-h-[100px] rounded-lg border border-purple-300 shadow-sm"
                             controls
                           />
                         ) : (
-                          <div className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-xl px-4 py-2 border border-purple-300">
-                            <FileIcon className="w-6 h-6 text-purple-400" />
-                            <span className="text-base truncate max-w-[160px]">{sf.file.name}</span>
+                          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 border border-purple-300">
+                            <FileIcon className="w-4 h-4 text-purple-400" />
+                            <span className="text-xs truncate max-w-[120px]">{sf.file.name}</span>
                           </div>
                         )}
                         <button
-                          className="absolute top-1 right-1 bg-white/80 hover:bg-white/90 rounded-full p-1 shadow group-hover:scale-110 transition"
+                          className="absolute top-0.5 right-0.5 bg-white/80 hover:bg-white/90 rounded-full p-0.5 shadow group-hover:scale-110 transition"
                           onClick={() => removeStagedFile(i)}
                           title="Remove"
                         >
-                          <X className="w-4 h-4 text-purple-600" />
+                          <X className="w-3 h-3 text-purple-600" />
                         </button>
                       </div>
                     ))}
@@ -1194,11 +1275,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 )}
                 {/* Upload progress */}
                 {uploadProgress && (
-                  <div className="mb-2 text-xs text-purple-600 dark:text-purple-400">{uploadProgress}</div>
+                  <div className="mb-1.5 text-xs text-purple-600 dark:text-purple-400">{uploadProgress}</div>
                 )}
                 {/* Send error */}
                 {sendError && (
-                  <div className="mb-2 flex items-center gap-2 text-xs text-red-500 dark:text-red-400">
+                  <div className="mb-1.5 flex items-center gap-2 text-xs text-red-500 dark:text-red-400">
                     <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>{sendError}</span>
                     <button onClick={() => setSendError(null)} title="Dismiss error" className="ml-auto text-red-400 hover:text-red-600">
@@ -1211,20 +1292,20 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   onKeyDown={onKeyDown}
-                  placeholder="Type your message..."
+                  placeholder="Type a message…"
                   title="Message input"
                   rows={1}
-                  className="w-full px-4 py-3 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all resize-none max-h-[120px] min-h-[48px]"
+                  className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-lg"
+                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-sm shrink-0"
                 title="Attach file"
                 disabled={sending || stagedFiles.length >= MAX_ATTACHMENTS}
               >
-                <Paperclip className="w-5 h-5 text-white" />
+                <Paperclip className="w-4 h-4 text-white" />
               </button>
               <input
                 ref={fileInputRef}
@@ -1240,14 +1321,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 onClick={handleSend}
                 disabled={sending || (!messageText.trim() && stagedFiles.length === 0)}
                 aria-label="Send message"
-                className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-slate-300 disabled:to-slate-400 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600 flex items-center justify-center transition-all disabled:cursor-not-allowed shadow-lg disabled:shadow-none"
+                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-slate-300 disabled:to-slate-400 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600 flex items-center justify-center transition-all disabled:cursor-not-allowed shadow-sm disabled:shadow-none shrink-0"
               >
-                {sending ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Send className="w-5 h-5 text-white" />}
+                {sending ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Send className="w-4 h-4 text-white" />}
               </button>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-              Press Enter to send, Shift+Enter for new line. Drag & drop or click the paperclip to attach files.
-            </p>
           </div>
         </div>
       ) : (

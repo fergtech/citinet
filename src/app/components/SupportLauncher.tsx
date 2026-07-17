@@ -12,7 +12,7 @@ const FEATURE_MAP: Record<string, string> = {
   messages: 'Messages', account: 'Account', profile: 'Profile',
   settings: 'Settings', 'hub-management': 'Hub Management',
   vendor: 'Vendor Profile', chat: 'Chat', notes: 'Notes',
-  polls: 'Polls', 'mod-log': 'Mod Log', spaces: 'Spaces', assistant: 'Assistant',
+  'mod-log': 'Mod Log', spaces: 'Spaces', assistant: 'Assistant',
 };
 
 type Kind = RequestType;

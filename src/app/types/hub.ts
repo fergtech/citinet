@@ -278,6 +278,17 @@ export interface HubPost {
   event_lng?: number | null;
   /** Who can see this post: 'inherit' (follow profile) | 'hub' (members only) | 'private' (author only) */
   visibility?: 'inherit' | 'hub' | 'private';
+  /** RSVP ("going") count and the caller's own status — only meaningful for EVENT posts */
+  rsvp_count?: number;
+  my_rsvp?: boolean;
+}
+
+/** A single RSVP entry for an event post */
+export interface HubEventAttendee {
+  user_id: string;
+  username: string;
+  display_name?: string | null;
+  created_at: string;
 }
 
 /** A reply to a hub post */

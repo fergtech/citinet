@@ -18,7 +18,7 @@ import { registryService } from '../services/registryService';
 import type { RegistryHub } from '../services/registryService';
 import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubPath, clearSubdomainCache } from '../utils/subdomain';
-import { APP_TILES, DOCK_PRIORITY_SCREENS } from './Dashboard';
+import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
 import type { HubVendor } from '../types/hub';
 
 export function HubLayout({ children }: { children: React.ReactNode }) {
@@ -126,6 +126,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   const handleNavigate = async (screen: string, notifyFeature?: NotificationFeature) => {
     setShowMoreMenu(false);
     setShowMobileAppsMenu(false);
+    let target = screen;
     if (notifyFeature && notifCounts[notifyFeature] > 0) {
       try {
         const unread = await notificationsService.getUnread(hubSlug);
@@ -134,13 +135,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           if (msgNotifs[0]?.ref_id) sessionStorage.setItem('citinet-deeplink-message-conv', msgNotifs[0].ref_id);
         } else if (screen === 'feed') {
           const hit = unread.find(n => n.type === 'reply' && n.ref_id);
-          if (hit?.ref_id) sessionStorage.setItem('citinet-deeplink-feed-post', hit.ref_id);
+          if (hit?.ref_id) target = `feed/${hit.ref_id}`;
           clearBadge('feed');
           notificationsService.markRead(hubSlug, 'feed').catch(() => {});
         }
       } catch { /* navigation proceeds even if fetch fails */ }
     }
-    navigate(hubPath(`/${screen}`));
+    navigate(hubPath(`/${target}`));
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -223,16 +224,78 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   };
 
   const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
-  const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw) ? projectInfoUrlRaw : `https://${projectInfoUrlRaw}`;
+  const projectInfoUrl = /^https?:\/\//i.test(projectInfoUrlRaw)
+    ? projectInfoUrlRaw
+    : `https://${projectInfoUrlRaw}`;
   const githubIssueBaseUrl = 'https://github.com/fergtech/citinet/issues/new';
+
+  const getCurrentFeatureContext = () => {
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const cleanPath = path.toLowerCase();
+    const firstSegment = cleanPath.split('/').filter(Boolean)[0] ?? '';
+
+    const labelMap: Record<string, string> = {
+      '': 'Dashboard',
+      feed: 'Feed',
+      discover: 'Discover',
+      atlas: 'Atlas',
+      marketplace: 'Exchange',
+      neighbors: 'Neighbors',
+      files: 'Files',
+      initiatives: 'Initiatives',
+      toolkit: 'Resources',
+      network: 'Network',
+      messages: 'Messages',
+      account: 'Account',
+      profile: 'Profile',
+      settings: 'Settings',
+      'hub-management': 'Hub Management',
+      vendor: 'Vendor Profile',
+    };
+
+    const featureName = labelMap[firstSegment] ?? (firstSegment ? `${firstSegment.charAt(0).toUpperCase()}${firstSegment.slice(1)}` : 'Dashboard');
+    return { featureName, path };
+  };
+
   const buildSupportUrl = (kind: 'help' | 'bug' | 'feature') => {
+    const { featureName, path } = getCurrentFeatureContext();
     const params = new URLSearchParams();
-    if (kind === 'help') params.set('template', 'help.md');
-    else if (kind === 'bug') params.set('template', 'bug_report.md');
-    else params.set('template', 'feature_request.md');
+    const contextText = [
+      `Feature/Screen: ${featureName}`,
+      `Route: ${path}`,
+      `Hub: ${nodeName}`,
+    ].join('\n');
+
+    if (kind === 'help') {
+      params.set('template', 'help.yml');
+      params.set('title', `[Help] ${featureName}: `);
+      params.set('question-summary', `Need help with ${featureName}`);
+      params.set('additional-info', contextText);
+    }
+
+    if (kind === 'bug') {
+      params.set('template', 'bug_report.yml');
+      params.set('title', `[Bug] ${featureName}: `);
+      params.set('what-happened', `Issue encountered in ${featureName}.`);
+      params.set('steps-to-reproduce', `1. Open ${featureName}\n2. ...\n3. Observe issue`);
+      params.set('additional-info', contextText);
+    }
+
+    if (kind === 'feature') {
+      params.set('template', 'feature_request.yml');
+      params.set('title', `[Feature] ${featureName}: `);
+      params.set('feature-summary', `Enhance ${featureName}`);
+      params.set('use-case', `While using ${featureName}, it would help if ...`);
+      params.set('additional-info', contextText);
+    }
+
     return `${githubIssueBaseUrl}?${params.toString()}`;
   };
-  const openProjectInfo = () => window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
+
+  const openProjectInfo = () => {
+    window.open(projectInfoUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const openSupportLink = (kind: 'help' | 'bug' | 'feature') => {
     window.open(buildSupportUrl(kind), '_blank', 'noopener,noreferrer');
     setShowSupportMenu(false);
@@ -244,41 +307,41 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     <div className="h-[100dvh]">
 
       {/* ═══ DESKTOP TOP MENUBAR ═══ */}
-      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-slate-950/80 dark:bg-black/80 backdrop-blur-xl border-b border-slate-800/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
+      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-white/85 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
         <button
           onClick={() => setShowHubInfoModal(true)}
-          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-white/10 transition-colors shrink-0"
+          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0"
           title="About this hub"
         >
-          <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
-          <span className="text-sm font-semibold text-slate-100">{nodeName}</span>
+          <Hexagon className="w-4 h-4 text-purple-500 dark:text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{nodeName}</span>
         </button>
         <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
           <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-slate-500 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search posts, people, files…"
-              className="w-full h-6 pl-7 pr-2 rounded-md bg-white/5 border border-white/10 text-xs text-slate-200 placeholder:text-slate-500 hover:bg-white/10 focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
+              className="w-full h-6 pl-7 pr-2 rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs text-slate-900 dark:text-slate-200 placeholder:text-slate-500 hover:bg-black/10 dark:hover:bg-white/10 focus:bg-black/10 dark:focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
             />
           </div>
         </form>
         <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-        <span className="text-xs text-slate-300">{statusLabel}</span>
+        <span className="text-xs text-slate-700 dark:text-slate-300">{statusLabel}</span>
         {nodeStatus.onlineNow > 0 && (
           <>
-            <span className="text-xs text-slate-300 dark:text-zinc-600">·</span>
-            <span className="text-xs text-slate-300">{nodeStatus.onlineNow} online</span>
+            <span className="text-xs cn-text-4">·</span>
+            <span className="text-xs text-slate-700 dark:text-slate-300">{nodeStatus.onlineNow} online</span>
           </>
         )}
         <button
           onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
-          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+          className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
           title="Update tunnel URL"
         >
-          <Link2 className="w-3 h-3 text-slate-400 dark:text-slate-500" />
+          <Link2 className="w-3 h-3 text-slate-500 dark:text-slate-500" />
         </button>
       </div>
 
@@ -437,11 +500,11 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
 
       {/* ═══ DESKTOP BOTTOM DOCK or SIDEBAR ═══ */}
       {desktopNavLayout === 'dock' ? (
-        <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60 items-center px-4 gap-1">
+        <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-white/85 dark:bg-black/62 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60 items-center px-4 gap-1">
           <button
             onClick={() => navigate(hubPath('/'))}
             title="Home"
-            className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+            className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
           >
             <Home className="w-5 h-5" />
           </button>
@@ -452,28 +515,28 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
                 title={app.label}
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
               >
                 <app.Icon className="w-5 h-5" />
                 {badge > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                  <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
                     {badge > 9 ? '9+' : badge}
                   </span>
                 )}
               </button>
             );
           })}
-          <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
+          <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700/60 mx-1 shrink-0" />
           <button
             onClick={() => setShowMoreMenu(true)}
             title="More"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
           >
             <Grid3x3 className="w-5 h-5" />
           </button>
           {myVendor && (
             <>
-              <div className="w-px h-8 bg-slate-700/60 dark:bg-zinc-700/60 mx-1 shrink-0" />
+              <div className="w-px h-8 bg-slate-200 dark:bg-zinc-700/60 mx-1 shrink-0" />
               <button
                 onClick={() => handleNavigate(`vendor/${myVendor.id}`)}
                 title={myVendor.name}
@@ -491,7 +554,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => handleNavigate('hub-management')}
               title="Hub Admin"
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
             >
               <Shield className="w-5 h-5" />
             </button>
@@ -499,7 +562,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openProjectInfo}
             title="About citinet"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
           >
             <CircleAlert className="w-5 h-5" />
           </button>
@@ -517,17 +580,17 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={toggleDesktopNavLayout}
             title="Switch to sidebar layout"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-all active:scale-95 shrink-0 ml-1"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0 ml-1"
           >
             <PanelLeft className="w-4 h-4" />
           </button>
         </div>
       ) : (
-        <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-slate-900/66 dark:bg-black/62 backdrop-blur-xl border-r border-slate-700/60 dark:border-zinc-800/60 group">
+        <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-white/85 dark:bg-black/62 backdrop-blur-xl border-r border-slate-200/70 dark:border-zinc-800/60 group">
           <button
             onClick={() => navigate(hubPath('/'))}
             title="Home"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
               <Home className="w-5 h-5" />
@@ -541,12 +604,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
                 title={app.label}
-                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
               >
                 <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
                   <app.Icon className="w-5 h-5" />
                   {badge > 0 && (
-                    <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                    <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
                       {badge > 9 ? '9+' : badge}
                     </span>
                   )}
@@ -555,22 +618,22 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               </button>
             );
           })}
-          <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+          <div className="h-px mx-4 my-1 bg-slate-200 dark:bg-zinc-700/60 shrink-0" />
           <button
             onClick={() => setShowMoreMenu(true)}
             title="More"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><Grid3x3 className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
           </button>
           {myVendor && (
             <>
-              <div className="h-px mx-4 my-1 bg-slate-700/60 dark:bg-zinc-700/60 shrink-0" />
+              <div className="h-px mx-4 my-1 bg-slate-200 dark:bg-zinc-700/60 shrink-0" />
               <button
                 onClick={() => handleNavigate(`vendor/${myVendor.id}`)}
                 title={myVendor.name}
-                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
               >
                 <span className="w-16 h-12 flex items-center justify-center shrink-0">
                   <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold overflow-hidden">
@@ -589,7 +652,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => handleNavigate('hub-management')}
               title="Hub Admin"
-              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
             >
               <span className="w-16 h-12 flex items-center justify-center shrink-0"><Shield className="w-5 h-5" /></span>
               <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Hub Admin</span>
@@ -598,7 +661,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openProjectInfo}
             title="About citinet"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><CircleAlert className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">About citinet</span>
@@ -606,7 +669,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setShowAccountMenu(v => !v)}
             title="Account"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
               <span className="w-9 h-9 rounded-xl overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
@@ -621,7 +684,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={toggleDesktopNavLayout}
             title="Switch to bottom dock"
-            className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-300 transition-colors"
+            className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-500 dark:text-slate-400 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><PanelBottom className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Bottom dock</span>
@@ -632,32 +695,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       {/* ═══ MAIN CONTENT AREA ═══ */}
       <div className={`h-full flex flex-col relative z-10 ${desktopNavLayout === 'sidebar' ? 'md:pl-16 md:pt-9' : 'md:pt-9 md:pb-14'}`}>
 
-        {/* Mobile Header */}
+        {/* Mobile Header — single compact row (name, online count, connection status) */}
         <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 shrink-0 z-20">
-          <div className="px-4 py-3 space-y-3">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">{nodeStatus.onlineNow} online · {nodeStatus.activeMembers} members</p>
-                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
-                  <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-                  <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">{statusLabel}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 min-w-0">
-                <Hexagon className="w-5 h-5 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
-                <h1 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h1>
+          <div className="px-3 py-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+              <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate flex-1 min-w-0">{nodeName}</h1>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">{nodeStatus.onlineNow} online</span>
+              <div className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
+                <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+                <span className="text-[9px] font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">{statusLabel}</span>
               </div>
             </div>
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search posts, people, files…"
-                className="w-full h-9 pl-9 pr-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 border border-transparent text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-zinc-900 focus:border-purple-400/40 focus:outline-none focus:ring-1 focus:ring-purple-400/40 transition-colors"
-              />
-            </form>
             {connectionStatus === 'unreachable' && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
                 <div className="flex items-center gap-2">
@@ -740,29 +789,29 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══ MOBILE BOTTOM DOCK ═══ */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-slate-900/68 dark:bg-black/64 backdrop-blur-xl border-t border-slate-700/60 dark:border-zinc-800/60">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/85 dark:bg-black/64 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60">
         <div className="flex items-stretch h-16 px-1">
           {/* Home */}
           <button
             onClick={() => navigate(hubPath('/'))}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95 transition-transform"
           >
             <Home className="w-5 h-5" />
             <span className="text-[10px] font-medium leading-none">Home</span>
           </button>
-          {/* Messages · Feed · Atlas (from DOCK_PRIORITY_SCREENS) */}
-          {dockItems.map(app => {
+          {/* Feed · Search (from DOCK_PRIORITY_SCREENS, Search inserted after Feed) */}
+          {dockItems.flatMap(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
-            return (
+            const tile = (
               <button
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95 transition-transform"
               >
                 <div className="relative">
                   <app.Icon className="w-5 h-5" />
                   {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-slate-900/50">
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
                       {badge > 9 ? '9+' : badge}
                     </span>
                   )}
@@ -770,19 +819,37 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 <span className="text-[10px] font-medium leading-none">{app.label}</span>
               </button>
             );
+            if (app.screen !== 'feed') return [tile];
+            return [tile, (
+              <button
+                key="search"
+                onClick={() => handleNavigate('discover')}
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95 transition-transform"
+              >
+                <Search className="w-5 h-5" />
+                <span className="text-[10px] font-medium leading-none">Search</span>
+              </button>
+            )];
           })}
-          {/* Apps waffle */}
+          {/* Apps waffle — reveals the full app grid (incl. Messages); replaces the old fixed Messages slot */}
           <button
             onClick={() => setShowMobileAppsMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95 transition-transform"
           >
-            <Grid3x3 className="w-5 h-5" />
+            <div className="relative">
+              <Grid3x3 className="w-5 h-5" />
+              {notifCounts.messages > 0 && (
+                <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                  {notifCounts.messages > 9 ? '9+' : notifCounts.messages}
+                </span>
+              )}
+            </div>
             <span className="text-[10px] font-medium leading-none">Apps</span>
           </button>
           {/* Profile */}
           <button
             onClick={() => setShowMobileAccountMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-300 hover:text-purple-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-300 active:scale-95 transition-transform"
           >
             <div className="w-5 h-5 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-[10px]">
               {resolvedAvatarUrl

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   File, FileText, FileImage, FileVideo, FileAudio, FileArchive,
   MonitorPlay, Table2, Download, Search, Loader2, AlertCircle, RefreshCw,
@@ -106,7 +107,7 @@ function FileKindBadge({ file, size = 40 }: { file: HubFile; size?: number }) {
 function KindChip({ file }: { file: HubFile }) {
   const { label } = KIND_CFG[getKind(file)];
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-zinc-800 text-slate-400 leading-none shrink-0">
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold cn-surface-2 cn-text-3 leading-none shrink-0">
       {label}
     </span>
   );
@@ -128,8 +129,8 @@ function UploaderChip({
 
   return (
     <span className="inline-flex items-center gap-1 shrink-0 max-w-[120px]">
-      <span className="relative w-4 h-4 rounded-full overflow-hidden shrink-0 bg-zinc-700 flex items-center justify-center">
-        <span className="text-[7px] font-bold text-slate-300 select-none">{initials}</span>
+      <span className="relative w-4 h-4 rounded-full overflow-hidden shrink-0 cn-surface-3 flex items-center justify-center">
+        <span className="text-[7px] font-bold cn-text-2 select-none">{initials}</span>
         {avatarSrc && (
           <img
             src={avatarSrc}
@@ -139,7 +140,7 @@ function UploaderChip({
           />
         )}
       </span>
-      <span className="text-[10px] text-slate-500 truncate">{name}</span>
+      <span className="text-[10px] cn-text-4 truncate">{name}</span>
     </span>
   );
 }
@@ -148,16 +149,16 @@ function StorageCard({ files }: { files: HubFile[] }) {
   const totalBytes = files.reduce((s, f) => s + (f.size || 0), 0);
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
+    <div className="rounded-2xl cn-glass p-4">
       <div className="flex items-center gap-2 mb-3">
         <HardDrive className="w-3.5 h-3.5 text-purple-400" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Hub storage</span>
+        <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">Hub storage</span>
       </div>
-      <div className="font-mono text-2xl font-bold text-white leading-none">
+      <div className="font-mono text-2xl font-bold cn-text-1 leading-none">
         {formatFileSize(totalBytes)}
-        <span className="text-sm text-slate-400 font-semibold ml-1">used</span>
+        <span className="text-sm cn-text-3 font-semibold ml-1">used</span>
       </div>
-      <div className="mt-3 text-xs text-slate-500">
+      <div className="mt-3 text-xs cn-text-4">
         {files.length} {files.length === 1 ? 'file' : 'files'} · stored on your hub node
       </div>
     </div>
@@ -174,18 +175,18 @@ function RecentUploadsCard({ files, myUserId }: { files: HubFile[]; myUserId: st
   ).slice(0, 3);
   if (recent.length === 0) return null;
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
+    <div className="rounded-2xl cn-glass p-4">
       <div className="flex items-center gap-2 mb-3">
         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Just uploaded</span>
+        <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">Just uploaded</span>
       </div>
       <div className="flex flex-col gap-3">
         {recent.map(f => (
           <div key={f.id} className="overflow-hidden flex items-center gap-3">
             <FileKindBadge file={f} size={30} />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{f.name || 'Unnamed'}</p>
-              <p className="text-[10px] font-mono text-slate-500 mt-0.5">{timeAgo(f.uploaded_at)}</p>
+              <p className="text-xs font-semibold cn-text-1 truncate">{f.name || 'Unnamed'}</p>
+              <p className="text-[10px] font-mono cn-text-4 mt-0.5">{timeAgo(f.uploaded_at)}</p>
             </div>
           </div>
         ))}
@@ -213,16 +214,16 @@ function TypeBreakdownCard({ files }: { files: HubFile[] }) {
 
   if (rows.length === 0) return null;
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-4">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">By type</span>
+    <div className="rounded-2xl cn-glass p-4">
+      <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">By type</span>
       <div className="mt-3 flex flex-col gap-1">
         {rows.map(({ key, label, Icon, grad }) => (
           <div key={key} className="flex items-center gap-3 py-1">
             <span className={`w-7 h-7 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shrink-0`}>
               <Icon className="w-3.5 h-3.5 text-white" />
             </span>
-            <span className="text-sm text-slate-300 flex-1">{label}</span>
-            <span className="font-mono text-xs text-slate-500">{counts[key]}</span>
+            <span className="text-sm cn-text-2 flex-1">{label}</span>
+            <span className="font-mono text-xs cn-text-4">{counts[key]}</span>
           </div>
         ))}
       </div>
@@ -499,7 +500,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div
-      className="min-h-screen bg-zinc-950"
+      className="min-h-screen"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -521,7 +522,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* Back */}
             <button
               onClick={onBack}
-              className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors shrink-0 mb-4"
+              className="flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors shrink-0 mb-4"
             >
               <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
             </button>
@@ -535,19 +536,19 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                   </svg>
                 </span>
                 <div>
-                  <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Files</h1>
-                  <p className="text-sm text-slate-400 mt-0.5">Shared community files · members only</p>
+                  <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Files</h1>
+                  <p className="text-sm cn-text-3 mt-0.5">Shared community files · members only</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
                 {uploading && (
-                  <div className="flex items-center gap-2 bg-zinc-800 rounded-lg px-3 py-1.5">
+                  <div className="flex items-center gap-2 cn-surface-2 rounded-lg px-3 py-1.5">
                     <Loader2 className="w-3.5 h-3.5 text-purple-400 animate-spin" />
-                    <div className="w-16 h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                    <div className="w-16 h-1.5 cn-surface-3 rounded-full overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400 w-7">{uploadProgress}%</span>
+                    <span className="text-[10px] font-mono cn-text-3 w-7">{uploadProgress}%</span>
                   </div>
                 )}
                 <div className="relative">
@@ -565,16 +566,16 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         initial={{ opacity: 0, scale: 0.95, y: -4 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                        className="absolute right-0 top-11 w-52 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden"
+                        className="absolute right-0 top-11 w-52 cn-surface border cn-border rounded-xl shadow-xl z-50 overflow-hidden"
                       >
-                        <button onClick={() => triggerUpload(false)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
+                        <button onClick={() => triggerUpload(false)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left">
                           <Lock className="w-4 h-4 text-blue-400" />
-                          <div><p className="text-sm font-medium text-white">Private</p><p className="text-[11px] text-slate-400">Only you can see this</p></div>
+                          <div><p className="text-sm font-medium cn-text-1">Private</p><p className="text-[11px] cn-text-3">Only you can see this</p></div>
                         </button>
-                        <div className="border-t border-zinc-800" />
-                        <button onClick={() => triggerUpload(true)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-800 transition-colors text-left">
+                        <div className="border-t cn-border" />
+                        <button onClick={() => triggerUpload(true)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left">
                           <Users className="w-4 h-4 text-amber-400" />
-                          <div><p className="text-sm font-medium text-white">Hub members</p><p className="text-[11px] text-slate-400">Visible to hub members</p></div>
+                          <div><p className="text-sm font-medium cn-text-1">Hub members</p><p className="text-[11px] cn-text-3">Visible to hub members</p></div>
                         </button>
                       </motion.div>
                     )}
@@ -583,16 +584,16 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                 <button
                   onClick={() => fetchFiles(true)}
                   disabled={refreshing}
-                  className="w-9 h-9 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors disabled:opacity-50"
+                  className="w-9 h-9 rounded-lg cn-surface-2 hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center transition-colors disabled:opacity-50"
                   title="Refresh"
                 >
-                  <RefreshCw className={`w-4 h-4 text-slate-300 ${refreshing ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 cn-text-2 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-0 overflow-x-auto no-scrollbar mb-5 border-b border-zinc-800/60">
+            <div className="flex gap-0 overflow-x-auto no-scrollbar mb-5 border-b cn-border">
               {TABS.map(t => {
                 const active = tab === t.key;
                 const count = tabCounts[t.key];
@@ -601,12 +602,12 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     key={t.key}
                     onClick={() => { setTab(t.key); setSearch(''); }}
                     className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap relative transition-colors ${
-                      active ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                      active ? 'cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'
                     }`}
                   >
                     {t.label}
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                      active ? 'bg-amber-500/20 text-amber-300' : 'bg-zinc-800 text-slate-500'
+                      active ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300' : 'cn-surface-2 cn-text-4'
                     }`}>{count}</span>
                     {active && (
                       <motion.div
@@ -621,11 +622,11 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* Upload error */}
             {uploadError && (
-              <div className="mb-4 bg-red-900/20 border border-red-800 rounded-xl p-3 flex items-center gap-3">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                <p className="text-sm text-red-300 flex-1">{uploadError}</p>
-                <button onClick={() => setUploadError('')} className="p-1 rounded-lg hover:bg-red-900/30" title="Dismiss upload error">
-                  <X className="w-3.5 h-3.5 text-red-400" />
+              <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 flex items-center gap-3">
+                <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                <p className="text-sm text-red-600 dark:text-red-300 flex-1">{uploadError}</p>
+                <button onClick={() => setUploadError('')} className="p-1 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30" title="Dismiss upload error">
+                  <X className="w-3.5 h-3.5 text-red-500 dark:text-red-400" />
                 </button>
               </div>
             )}
@@ -633,13 +634,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* Search */}
             {allFiles.length > 0 && (
               <div className="relative mb-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4" />
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search files…"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 text-white placeholder-slate-600 focus:ring-2 focus:ring-amber-500/40 focus:border-amber-600/40 focus:outline-none text-sm transition-colors"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border cn-border cn-surface cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:ring-2 focus:ring-amber-500/40 focus:border-amber-600/40 focus:outline-none text-sm transition-colors"
                 />
               </div>
             )}
@@ -647,15 +648,15 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* Toolbar */}
             {!loading && tabFiles.length > 0 && (
               <div className="flex items-center gap-3 mb-4">
-                <span className="text-sm text-slate-500">
-                  <span className="font-mono font-semibold text-slate-300">{displayed.length}</span> {displayed.length === 1 ? 'file' : 'files'}
+                <span className="text-sm cn-text-4">
+                  <span className="font-mono font-semibold cn-text-2">{displayed.length}</span> {displayed.length === 1 ? 'file' : 'files'}
                 </span>
                 <div className="flex-1" />
                 {/* Sort */}
                 <div className="relative">
                   <button
                     onClick={() => setShowSortMenu(s => !s)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 text-slate-300 text-xs font-semibold hover:bg-zinc-800 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cn-border cn-surface cn-text-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                   >
                     <ArrowUpDown className="w-3.5 h-3.5" />
                     {sortBy === 'recent' ? 'Recent' : sortBy === 'name' ? 'Name' : 'Size'}
@@ -666,14 +667,14 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         initial={{ opacity: 0, scale: 0.95, y: -4 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -4 }}
-                        className="absolute right-0 top-9 w-36 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden py-1"
+                        className="absolute right-0 top-9 w-36 cn-surface border cn-border rounded-xl shadow-xl z-50 overflow-hidden py-1"
                       >
                         {([['recent', 'Recent'], ['name', 'Name'], ['size', 'Size']] as [SortKey, string][]).map(([k, l]) => (
                           <button
                             key={k}
                             onClick={() => { setSortBy(k); setShowSortMenu(false); }}
                             className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${
-                              sortBy === k ? 'text-amber-300 bg-amber-500/10' : 'text-slate-300 hover:bg-zinc-800'
+                              sortBy === k ? 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/10' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
                             }`}
                           >
                             {l}
@@ -685,13 +686,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                   </AnimatePresence>
                 </div>
                 {/* View toggle */}
-                <span className="inline-flex gap-0.5 p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+                <span className="inline-flex gap-0.5 p-1 rounded-lg cn-surface border cn-border">
                   {([['list', List], ['grid', LayoutGrid]] as [ViewMode, React.ElementType][]).map(([v, Icon]) => (
                     <button
                       key={v}
                       onClick={() => setView(v)}
                       className={`w-7 h-6 rounded-md flex items-center justify-center transition-colors ${
-                        view === v ? 'bg-zinc-700 text-white' : 'text-slate-500 hover:text-slate-300'
+                        view === v ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'
                       }`}
                       title={v}
                     >
@@ -704,7 +705,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* Loading */}
             {loading && (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-20 cn-text-4">
                 <Loader2 className="w-8 h-8 animate-spin mb-3" />
                 <p className="text-sm">Loading files…</p>
               </div>
@@ -712,13 +713,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* Error */}
             {error && !loading && !error.includes('Failed to fetch') && !error.includes('tunnel') && !error.includes('timed out') && (
-              <div className="bg-red-900/20 border border-red-800 rounded-xl p-4 mb-6">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 mb-6">
                 <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
+                  <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-red-300">Could not load files</p>
-                    <p className="text-xs text-red-400 mt-1">{error}</p>
-                    <button onClick={() => fetchFiles()} className="mt-2 text-xs font-medium text-red-300 underline hover:no-underline">Try again</button>
+                    <p className="text-sm font-medium text-red-600 dark:text-red-300">Could not load files</p>
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">{error}</p>
+                    <button onClick={() => fetchFiles()} className="mt-2 text-xs font-medium text-red-600 dark:text-red-300 underline hover:no-underline">Try again</button>
                   </div>
                 </div>
               </div>
@@ -726,13 +727,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* Empty state */}
             {!loading && tabFiles.length === 0 && (!error || error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out')) && (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-20 cn-text-4">
                 <span className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 flex items-center justify-center mb-5">
                   <svg className="w-8 h-8 text-amber-500/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                   </svg>
                 </span>
-                <p className="text-base font-semibold text-slate-300 mb-1">
+                <p className="text-base font-semibold cn-text-2 mb-1">
                   {tab === 'starred' ? 'No starred files yet'
                     : tab === 'mine' ? 'No uploads yet'
                     : tab === 'shared' ? 'No shared files yet'
@@ -758,9 +759,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* No search results */}
             {!loading && !error && tabFiles.length > 0 && displayed.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-16 cn-text-4">
                 <Search className="w-10 h-10 mb-3 opacity-40" />
-                <p className="text-sm font-medium text-slate-400">No files match "{search}"</p>
+                <p className="text-sm font-medium cn-text-3">No files match "{search}"</p>
               </div>
             )}
 
@@ -783,20 +784,20 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ delay: index * 0.025 }}
-                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-900/80 backdrop-blur-sm transition-all cursor-pointer ${isVisOpen ? 'z-20' : 'z-0'}`}
+                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer ${isVisOpen ? 'z-20' : 'z-0'}`}
                         onClick={() => openPreview(file)}
                       >
                         <FileKindBadge file={file} size={42} />
 
                         <div className="flex-1 min-w-0" onClick={() => openPreview(file)}>
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-semibold text-white truncate min-w-0 max-w-full">{file.name || 'Unnamed file'}</span>
+                            <span className="text-sm font-semibold cn-text-1 truncate min-w-0 max-w-full">{file.name || 'Unnamed file'}</span>
                             {fresh && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
                           </div>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <KindChip file={file} />
-                            {file.size > 0 && <span className="font-mono text-[10px] text-slate-500 shrink-0">{formatFileSize(file.size)}</span>}
-                            {file.uploaded_at && <span className="text-[10px] text-slate-500 shrink-0">· {timeAgo(file.uploaded_at)}</span>}
+                            {file.size > 0 && <span className="font-mono text-[10px] cn-text-4 shrink-0">{formatFileSize(file.size)}</span>}
+                            {file.uploaded_at && <span className="text-[10px] cn-text-4 shrink-0">· {timeAgo(file.uploaded_at)}</span>}
                             <UploaderChip file={file} slug={slug} memberMap={memberMap} myUserId={myUserId} />
                           </div>
                         </div>
@@ -806,15 +807,15 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                           <button
                             onClick={() => toggleStar(file.id)}
                             title={isStarred ? 'Unstar' : 'Star'}
-                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 transition-colors"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                           >
-                            <Star className={`w-4 h-4 transition-colors ${isStarred ? 'text-amber-400 fill-amber-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+                            <Star className={`w-4 h-4 transition-colors ${isStarred ? 'text-amber-400 fill-amber-400' : 'cn-text-4 group-hover:text-slate-500 dark:group-hover:text-zinc-400'}`} />
                           </button>
 
                           {/* Preview */}
                           {getPreviewCategory(file) !== 'other' && (
-                            <button onClick={() => openPreview(file)} title="Preview" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 transition-colors">
-                              <Eye className="w-4 h-4 text-slate-500" />
+                            <button onClick={() => openPreview(file)} title="Preview" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                              <Eye className="w-4 h-4 cn-text-4" />
                             </button>
                           )}
 
@@ -825,10 +826,10 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                                 onClick={() => setVisPopoverId(isVisOpen ? null : file.id)}
                                 disabled={togglingId === file.id}
                                 title="Change visibility"
-                                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
                               >
                                 {togglingId === file.id ? (
-                                  <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+                                  <Loader2 className="w-4 h-4 cn-text-3 animate-spin" />
                                 ) : vis === 'web' ? (
                                   <Globe className="w-4 h-4 text-emerald-400" />
                                 ) : vis === 'hub' ? (
@@ -844,12 +845,12 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                                     animate={{ opacity: 1, scale: 1, y: 0 }}
                                     exit={{ opacity: 0, scale: 0.95, y: -4 }}
                                     transition={{ duration: 0.12 }}
-                                    className="absolute right-0 top-10 w-56 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 overflow-hidden"
+                                    className="absolute right-0 top-10 w-56 cn-surface border cn-border rounded-xl shadow-xl z-50 overflow-hidden"
                                   >
-                                    <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Who can access</p>
+                                    <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide cn-text-4">Who can access</p>
                                     {VIS_OPTS.map((opt, i) => (
                                       <React.Fragment key={opt.key}>
-                                        {i > 0 && <div className="border-t border-zinc-800" />}
+                                        {i > 0 && <div className="border-t cn-border" />}
                                         <button
                                           onClick={() => handleSetVisibility(file, opt.key)}
                                           className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
@@ -858,16 +859,16 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                                         >
                                           <opt.Icon className={`w-4 h-4 ${opt.color} shrink-0`} />
                                           <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white leading-tight">{opt.label}</p>
-                                            <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{opt.sub}</p>
+                                            <p className="text-sm font-medium cn-text-1 leading-tight">{opt.label}</p>
+                                            <p className="text-[11px] cn-text-4 leading-tight mt-0.5">{opt.sub}</p>
                                           </div>
-                                          {vis === opt.key && <Check className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                                          {vis === opt.key && <Check className="w-3.5 h-3.5 cn-text-3 shrink-0" />}
                                         </button>
                                       </React.Fragment>
                                     ))}
                                     {vis === 'web' && (
                                       <>
-                                        <div className="border-t border-zinc-700 mx-3 my-1" />
+                                        <div className="border-t cn-border mx-3 my-1" />
                                         <button
                                           onClick={() => { handleCopyLink(file); setVisPopoverId(null); }}
                                           className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-emerald-900/20 transition-colors text-left mb-1"
@@ -884,8 +885,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                           )}
 
                           {/* Download */}
-                          <button onClick={() => handleDownload(file)} title="Download" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 transition-colors">
-                            <Download className="w-4 h-4 text-slate-500" />
+                          <button onClick={() => handleDownload(file)} title="Download" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                            <Download className="w-4 h-4 cn-text-4" />
                           </button>
 
                           {/* Delete (owner only) */}
@@ -920,7 +921,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: index * 0.02 }}
-                      className="group rounded-2xl border border-zinc-800 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900 transition-all cursor-pointer overflow-hidden"
+                      className="group rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer overflow-hidden"
                       onClick={() => openPreview(file)}
                     >
                       <div className={`relative h-20 bg-gradient-to-br ${grad} flex items-center justify-center`}>
@@ -935,8 +936,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         </button>
                       </div>
                       <div className="p-3 min-w-0">
-                        <p className="text-xs font-semibold text-white truncate max-w-full">{file.name || 'Unnamed'}</p>
-                        <p className="font-mono text-[10px] text-slate-500 mt-1 truncate">{formatFileSize(file.size)} · {timeAgo(file.uploaded_at)}</p>
+                        <p className="text-xs font-semibold cn-text-1 truncate max-w-full">{file.name || 'Unnamed'}</p>
+                        <p className="font-mono text-[10px] cn-text-4 mt-1 truncate">{formatFileSize(file.size)} · {timeAgo(file.uploaded_at)}</p>
                         <div className="mt-1.5">
                           <UploaderChip file={file} slug={slug} memberMap={memberMap} myUserId={myUserId} />
                         </div>
@@ -983,39 +984,44 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           >
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-6 w-80 mx-4"
+              className="cn-surface border cn-border rounded-2xl shadow-2xl p-6 w-80 mx-4"
               onClick={e => e.stopPropagation()}
             >
-              <p className="text-sm font-semibold text-white mb-1 truncate">{droppedFile.name}</p>
-              <p className="text-xs text-slate-400 mb-5">{formatFileSize(droppedFile.size)} · Who can see this?</p>
+              <p className="text-sm font-semibold cn-text-1 mb-1 truncate">{droppedFile.name}</p>
+              <p className="text-xs cn-text-3 mb-5">{formatFileSize(droppedFile.size)} · Who can see this?</p>
               <div className="space-y-2">
-                <button onClick={() => uploadDroppedFile(false)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-zinc-700 hover:border-blue-500/50 hover:bg-blue-900/20 transition-colors text-left">
+                <button onClick={() => uploadDroppedFile(false)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-blue-500/50 hover:bg-blue-900/20 transition-colors text-left">
                   <Lock className="w-5 h-5 text-blue-400 shrink-0" />
-                  <div><p className="text-sm font-medium text-white">Private</p><p className="text-xs text-slate-400">Only you</p></div>
+                  <div><p className="text-sm font-medium cn-text-1">Private</p><p className="text-xs cn-text-3">Only you</p></div>
                 </button>
-                <button onClick={() => uploadDroppedFile(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-zinc-700 hover:border-amber-500/50 hover:bg-amber-900/20 transition-colors text-left">
+                <button onClick={() => uploadDroppedFile(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-amber-500/50 hover:bg-amber-900/20 transition-colors text-left">
                   <Users className="w-5 h-5 text-amber-400 shrink-0" />
-                  <div><p className="text-sm font-medium text-white">Hub members</p><p className="text-xs text-slate-400">Requires a hub account</p></div>
+                  <div><p className="text-sm font-medium cn-text-1">Hub members</p><p className="text-xs cn-text-3">Requires a hub account</p></div>
                 </button>
               </div>
-              <button onClick={() => setDroppedFile(null)} className="mt-4 w-full text-xs text-slate-500 hover:text-slate-300 transition-colors">Cancel</button>
+              <button onClick={() => setDroppedFile(null)} className="mt-4 w-full text-xs cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">Cancel</button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Lightbox preview ── */}
+      {/* ── Lightbox preview ──
+          Portaled to <body>: HubLayout's content area is `position: relative; z-index: 10`,
+          its own stacking context — nothing inside it can out-rank the chrome (top bar /
+          sidebar / bottom dock, all z-30) no matter its own z-index. Escaping via a portal
+          (same fix as the Messages lightbox) is what makes this render above the chrome. */}
+      {createPortal(
       <AnimatePresence>
         {previewFile && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
             onClick={closePreview}
           >
-            <button onClick={closePreview} className="absolute top-4 md:top-11 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors" aria-label="Close">
+            <button onClick={closePreview} className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors" aria-label="Close">
               <X className="w-5 h-5 text-white" />
             </button>
-            <button onClick={e => { e.stopPropagation(); handleDownload(previewFile); }} className="absolute top-4 md:top-11 right-16 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors" aria-label="Download">
+            <button onClick={e => { e.stopPropagation(); handleDownload(previewFile); }} className="absolute top-4 right-16 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors" aria-label="Download">
               <Download className="w-5 h-5 text-white" />
             </button>
             <motion.div
@@ -1059,7 +1065,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </div>
   );
 }

@@ -74,10 +74,10 @@ function getAvatarColor(name: string) {
 }
 
 function fileTypeIcon(mime?: string) {
-  if (!mime) return <FileText className="w-5 h-5 text-zinc-400" />;
-  if (mime.startsWith('image/')) return <ImageIcon className="w-5 h-5 text-blue-400" />;
-  if (mime.startsWith('video/')) return <Video className="w-5 h-5 text-purple-400" />;
-  return <FileText className="w-5 h-5 text-zinc-400" />;
+  if (!mime) return <FileText className="w-5 h-5 cn-text-3" />;
+  if (mime.startsWith('image/')) return <ImageIcon className="w-5 h-5 text-blue-500 dark:text-blue-400" />;
+  if (mime.startsWith('video/')) return <Video className="w-5 h-5 text-purple-500 dark:text-purple-400" />;
+  return <FileText className="w-5 h-5 cn-text-3" />;
 }
 
 function isImage(mime?: string) { return !!mime?.startsWith('image/'); }
@@ -149,49 +149,49 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
-        className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-base font-semibold text-white">Create a Space</h2>
-          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center">
-            <X className="w-4 h-4 text-zinc-400" />
+        className="w-full max-w-md bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-zinc-800">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">Create a Space</h2>
+          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center">
+            <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
           </button>
         </div>
         <form onSubmit={submit} className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Space Name</label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Space Name</label>
             <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="Neighborhood Garden Club" required
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Slug (URL)</label>
-            <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-xl px-3 focus-within:border-purple-500 overflow-hidden">
-              <span className="text-zinc-500 text-sm mr-1">spaces/</span>
+            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Slug (URL)</label>
+            <div className="flex items-center bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 focus-within:border-purple-500 overflow-hidden">
+              <span className="text-slate-400 dark:text-zinc-500 text-sm mr-1">spaces/</span>
               <input value={slug} onChange={e => { setSlug(e.target.value); setSlugManual(true); }} placeholder="garden-club" required
-                className="flex-1 bg-transparent py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none" />
+                className="flex-1 bg-transparent py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none" />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-1">Description <span className="text-zinc-600">(optional)</span></label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Description <span className="text-slate-400 dark:text-zinc-600">(optional)</span></label>
             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="What is this space about?"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-400 mb-2">Visibility</label>
+            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-2">Visibility</label>
             <div className="grid grid-cols-3 gap-2">
               {(['public', 'private', 'invite-only'] as const).map(v => (
                 <button key={v} type="button" onClick={() => setVisibility(v)}
-                  className={`py-2 rounded-xl text-xs font-medium border transition-colors ${visibility === v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'}`}>
+                  className={`py-2 rounded-xl text-xs font-medium border transition-colors ${visibility === v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                   {visibilityLabel(v)}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-zinc-500 mt-1.5">
+            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5">
               {visibility === 'public' ? 'Anyone on the hub can join directly.' : visibility === 'private' ? 'Members request to join; admin approves.' : 'Members can only join via invitation.'}
             </p>
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-sm text-zinc-300 hover:bg-zinc-700">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700">Cancel</button>
             <button type="submit" disabled={loading || !name || !slug}
               className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
               {loading && <Loader2 className="w-4 h-4 animate-spin" />} Create Space
@@ -231,29 +231,29 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
-        className="w-full max-w-sm bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-base font-semibold text-white">Invite Members</h2>
-          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-zinc-800 flex items-center justify-center"><X className="w-4 h-4 text-zinc-400" /></button>
+        className="w-full max-w-sm bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-zinc-800">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">Invite Members</h2>
+          <button onClick={onClose} title="Close" aria-label="Close" className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"><X className="w-4 h-4 text-slate-500 dark:text-zinc-400" /></button>
         </div>
         <div className="p-4">
           <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-zinc-500" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search hub members…"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl pl-9 pr-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
           </div>
-          {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
+          {error && <p className="text-xs text-red-500 dark:text-red-400 mb-2">{error}</p>}
           <div className="space-y-1 max-h-64 overflow-y-auto">
-            {loading && <div className="py-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-zinc-500" /></div>}
+            {loading && <div className="py-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-zinc-500" /></div>}
             {!loading && filtered.map(m => (
-              <div key={m.user_id} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-zinc-800">
+              <div key={m.user_id} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800">
                 <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{m.display_name || m.username}</p>
-                  <p className="text-xs text-zinc-500">@{m.username}</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{m.display_name || m.username}</p>
+                  <p className="text-xs text-slate-400 dark:text-zinc-500">@{m.username}</p>
                 </div>
                 <button onClick={() => invite(m.user_id)} disabled={inviting === m.user_id || invited.has(m.user_id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${invited.has(m.user_id) ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${invited.has(m.user_id) ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
                   {inviting === m.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : invited.has(m.user_id) ? <><Check className="w-3 h-3" /> Invited</> : <><UserPlus className="w-3 h-3" /> Invite</>}
                 </button>
               </div>
@@ -261,7 +261,7 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
           </div>
         </div>
         <div className="px-4 pb-4">
-          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-zinc-800 text-sm text-zinc-300 hover:bg-zinc-700">Done</button>
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700">Done</button>
         </div>
       </motion.div>
     </div>
@@ -309,8 +309,8 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
-        className="w-full max-w-2xl mx-auto flex items-center gap-3 px-4 py-3 bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700 rounded-2xl text-zinc-400 text-sm transition-colors">
-        <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center"><Plus className="w-4 h-4" /></div>
+        className="w-full max-w-2xl mx-auto flex items-center gap-3 px-4 py-3 cn-surface-2 hover:bg-black/5 dark:hover:bg-white/5 border cn-border rounded-2xl cn-text-3 text-sm transition-colors">
+        <div className="w-8 h-8 rounded-full cn-surface-3 flex items-center justify-center"><Plus className="w-4 h-4" /></div>
         <span>Share something with this space…</span>
       </button>
     );
@@ -319,24 +319,24 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
   const isVid = mediaFile?.type.startsWith('video/');
 
   return (
-    <form onSubmit={submit} className="w-full max-w-2xl mx-auto bg-zinc-800/60 border border-zinc-700 rounded-2xl p-4 space-y-3">
+    <form onSubmit={submit} className="w-full max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 space-y-3">
       <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with this space…" rows={3}
-        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
+        className="w-full cn-surface border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
       {mediaPreview && (
         <div className="relative rounded-xl overflow-hidden">
           {isVid ? <video src={mediaPreview} controls className="w-full max-h-48 object-contain bg-black" /> : <img src={mediaPreview} alt="Preview" className="w-full max-h-48 object-cover" />}
           <button type="button" onClick={removeMedia} title="Remove media" aria-label="Remove media" className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
       <div className="flex gap-2 items-center">
         <button type="button" onClick={() => fileRef.current?.click()}
-          className="p-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors" title="Attach media">
+          className="p-2 rounded-xl cn-surface-3 hover:bg-black/10 dark:hover:bg-white/10 cn-text-2 transition-colors" title="Attach media">
           <ImageIcon className="w-4 h-4" />
         </button>
         <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
         <div className="flex-1" />
-        <button type="button" onClick={() => { removeMedia(); setOpen(false); }} className="px-3 py-2 rounded-xl bg-zinc-700 text-sm text-zinc-300 hover:bg-zinc-600">Cancel</button>
+        <button type="button" onClick={() => { removeMedia(); setOpen(false); }} className="px-3 py-2 rounded-xl cn-surface-3 text-sm cn-text-2 hover:bg-black/10 dark:hover:bg-white/10">Cancel</button>
         <button type="submit" disabled={loading || (!body.trim() && !mediaFile)}
           className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}<Send className="w-4 h-4" /> Post
@@ -371,31 +371,31 @@ function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: strin
 
   return (
     <div className="p-5">
-      {loading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
+      {loading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
       {!loading && files.length === 0 && (
-        <div className="text-center py-12 text-zinc-500 text-sm">No files shared in this space yet.</div>
+        <div className="text-center py-12 cn-text-4 text-sm">No files shared in this space yet.</div>
       )}
       <div className="space-y-2">
         {files.map(f => (
-          <div key={f.id} className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/50 border border-zinc-700/60 hover:bg-zinc-800 transition-colors">
-            <div className="w-10 h-10 rounded-xl bg-zinc-700 flex items-center justify-center flex-shrink-0">
+          <div key={f.id} className="flex items-center gap-3 p-3 rounded-xl cn-surface-2 border cn-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <div className="w-10 h-10 rounded-xl cn-surface-3 flex items-center justify-center flex-shrink-0">
               {fileTypeIcon(f.mime_type)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{f.file_name}</p>
-              <p className="text-xs text-zinc-500 truncate">
+              <p className="text-sm font-medium cn-text-1 truncate">{f.file_name}</p>
+              <p className="text-xs cn-text-4 truncate">
                 {f.uploaded_by && `@${f.uploaded_by}`}{f.post_title && ` · ${f.post_title}`} {formatBytes(f.size_bytes) && `· ${formatBytes(f.size_bytes)}`}
               </p>
             </div>
             <div className="flex gap-1 flex-shrink-0">
               {(isImage(f.mime_type) || isVideo(f.mime_type)) && (
                 <button onClick={() => handlePreview(f)}
-                  className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors" title="Preview">
+                  className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 cn-text-3 hover:text-slate-700 dark:hover:text-white transition-colors" title="Preview">
                   <ImageIcon className="w-4 h-4" />
                 </button>
               )}
               <a href={getFileUrl(f.file_name)} download={f.file_name}
-                className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors" title="Download">
+                className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 cn-text-3 hover:text-slate-700 dark:hover:text-white transition-colors" title="Download">
                 <Download className="w-4 h-4" />
               </a>
             </div>
@@ -441,49 +441,49 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
       {/* About */}
       {space.description && (
         <div>
-          <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">About</p>
-          <p className="text-sm text-zinc-300 leading-relaxed">{space.description}</p>
+          <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">About</p>
+          <p className="text-sm cn-text-2 leading-relaxed">{space.description}</p>
         </div>
       )}
 
       {/* Stats */}
       <div>
-        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Stats</p>
+        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Stats</p>
         <div className="grid grid-cols-2 gap-2">
-          <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-3 text-center">
-            <p className="text-lg font-bold text-white">{Number(space.member_count) || 0}</p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Members</p>
+          <div className="cn-surface-2 border cn-border rounded-xl p-3 text-center">
+            <p className="text-lg font-bold cn-text-1">{Number(space.member_count) || 0}</p>
+            <p className="text-[11px] cn-text-4 mt-0.5">Members</p>
           </div>
-          <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-3 text-center">
-            <p className="text-lg font-bold text-white">{posts.length}</p>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Posts</p>
+          <div className="cn-surface-2 border cn-border rounded-xl p-3 text-center">
+            <p className="text-lg font-bold cn-text-1">{posts.length}</p>
+            <p className="text-[11px] cn-text-4 mt-0.5">Posts</p>
           </div>
         </div>
       </div>
 
       {/* Members */}
       <div>
-        <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Members</p>
+        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Members</p>
         {membersLoading && (
-          <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin text-zinc-600" /></div>
+          <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin cn-text-4" /></div>
         )}
         {!membersLoading && activeMembers.length === 0 && (
-          <p className="text-xs text-zinc-600">No members yet.</p>
+          <p className="text-xs cn-text-4">No members yet.</p>
         )}
         <div className="space-y-1">
           {activeMembers.slice(0, 8).map(m => (
-            <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800 cursor-default transition-colors">
+            <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-default transition-colors">
               <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
                 {getInitials(m.display_name || m.username)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-zinc-200 truncate">{m.display_name || m.username}</p>
-                <p className="text-[10px] text-zinc-600 capitalize">{m.role}</p>
+                <p className="text-xs font-medium cn-text-2 truncate">{m.display_name || m.username}</p>
+                <p className="text-[10px] cn-text-4 capitalize">{m.role}</p>
               </div>
             </div>
           ))}
           {activeMembers.length > 8 && (
-            <p className="text-[11px] text-zinc-600 px-2 pt-1">+{activeMembers.length - 8} more members</p>
+            <p className="text-[11px] cn-text-4 px-2 pt-1">+{activeMembers.length - 8} more members</p>
           )}
         </div>
       </div>
@@ -491,15 +491,15 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
       {/* Top contributors */}
       {topPosters.size > 0 && (
         <div>
-          <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Top Contributors</p>
+          <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Top Contributors</p>
           <div className="space-y-1">
             {[...topPosters.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([username, count]) => (
               <div key={username} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
                 <div className={`w-6 h-6 rounded-full bg-gradient-to-br ${getAvatarColor(username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
                   {getInitials(username)}
                 </div>
-                <span className="text-xs text-zinc-300 flex-1 truncate">{username}</span>
-                <span className="text-[11px] text-zinc-600">{count} post{count !== 1 ? 's' : ''}</span>
+                <span className="text-xs cn-text-2 flex-1 truncate">{username}</span>
+                <span className="text-[11px] cn-text-4">{count} post{count !== 1 ? 's' : ''}</span>
               </div>
             ))}
           </div>
@@ -764,32 +764,32 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
       <AnimatePresence>
         {showBannerEditor && isAdmin && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="flex-shrink-0 px-5 py-3 border-b border-zinc-800 bg-zinc-900/80 space-y-3 overflow-hidden">
+            className="flex-shrink-0 px-5 py-3 border-b cn-border cn-surface space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-zinc-300">Banner Style</p>
+              <p className="text-xs font-semibold cn-text-2">Banner Style</p>
               <button onClick={() => bannerInputRef.current?.click()} disabled={bannerSaving}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 transition-colors">
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-surface-2 hover:bg-black/10 dark:hover:bg-white/10 text-xs font-medium cn-text-2 transition-colors">
                 <ImagePlus className="w-3.5 h-3.5" /> Upload Image
               </button>
             </div>
             <div>
-              <p className="text-[11px] text-zinc-500 mb-1.5">Solid Colors</p>
+              <p className="text-[11px] cn-text-4 mb-1.5">Solid Colors</p>
               <div className="flex flex-wrap gap-2">
                 {BANNER_SOLID_COLORS.map(color => (
                   <button key={color} type="button" onClick={() => saveBannerStyle({ banner_mode: 'solid', banner_color: color })}
                     title={`Select color ${color}`} aria-label={`Select color ${color}`}
-                    className="w-7 h-7 rounded-full border-2 border-zinc-600 hover:scale-110 transition-transform"
+                    className="w-7 h-7 rounded-full border-2 border-slate-300 dark:border-zinc-600 hover:scale-110 transition-transform"
                     style={{ backgroundColor: color }} />
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-[11px] text-zinc-500 mb-1.5">Gradients</p>
+              <p className="text-[11px] cn-text-4 mb-1.5">Gradients</p>
               <div className="flex flex-wrap gap-2">
                 {BANNER_GRADIENTS.map((g, i) => (
                   <button key={i} type="button" onClick={() => saveBannerStyle({ banner_mode: 'gradient', banner_gradient_from: g.from, banner_gradient_to: g.to })}
                     title={`Select gradient ${g.from} to ${g.to}`} aria-label={`Select gradient ${g.from} to ${g.to}`}
-                    className="w-14 h-7 rounded-full border-2 border-zinc-600 hover:scale-105 transition-transform"
+                    className="w-14 h-7 rounded-full border-2 border-slate-300 dark:border-zinc-600 hover:scale-105 transition-transform"
                     style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }} />
                 ))}
               </div>
@@ -800,10 +800,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
 
       {/* Tabs */}
       {isActive && (
-        <div className="flex border-b border-zinc-800 px-6 flex-shrink-0 overflow-x-auto no-scrollbar">
+        <div className="flex border-b cn-border px-6 flex-shrink-0 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-purple-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
+              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-purple-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
               {t}
             </button>
           ))}
@@ -815,16 +815,16 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         {/* Not a member */}
         {!isActive && !isPending && !isInvited && (
           <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center mb-4"><Users className="w-7 h-7 text-zinc-500" /></div>
-            <h3 className="text-base font-semibold text-white mb-1">Join to participate</h3>
-            <p className="text-sm text-zinc-500">{space.visibility === 'invite-only' ? 'This space is invite-only. Ask an admin to invite you.' : space.visibility === 'private' ? 'Request to join — an admin will approve you.' : 'Join this space to read posts and contribute.'}</p>
+            <div className="w-16 h-16 rounded-2xl cn-surface-2 flex items-center justify-center mb-4"><Users className="w-7 h-7 cn-text-4" /></div>
+            <h3 className="text-base font-semibold cn-text-1 mb-1">Join to participate</h3>
+            <p className="text-sm cn-text-4">{space.visibility === 'invite-only' ? 'This space is invite-only. Ask an admin to invite you.' : space.visibility === 'private' ? 'Request to join — an admin will approve you.' : 'Join this space to read posts and contribute.'}</p>
           </div>
         )}
         {isPending && (
           <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-amber-900/40 border border-amber-800 flex items-center justify-center mb-4"><Loader2 className="w-7 h-7 text-amber-400 animate-spin" /></div>
-            <h3 className="text-base font-semibold text-white mb-1">Request pending</h3>
-            <p className="text-sm text-zinc-500">An admin will review your request to join.</p>
+            <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-800 flex items-center justify-center mb-4"><Loader2 className="w-7 h-7 text-amber-600 dark:text-amber-400 animate-spin" /></div>
+            <h3 className="text-base font-semibold cn-text-1 mb-1">Request pending</h3>
+            <p className="text-sm cn-text-4">An admin will review your request to join.</p>
           </div>
         )}
 
@@ -834,8 +834,8 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             {/* Main feed column */}
             <div className="flex-1 min-w-0 p-5 space-y-4">
               <ComposePost hubSlug={hubSlug} spaceSlug={space.slug} onPosted={p => setPosts(prev => [p, ...prev])} />
-              {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
-              {!postsLoading && posts.length === 0 && <div className="text-center py-12 text-zinc-500 text-sm">No posts yet. Be the first to share something.</div>}
+              {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
+              {!postsLoading && posts.length === 0 && <div className="text-center py-12 cn-text-4 text-sm">No posts yet. Be the first to share something.</div>}
               {posts.map(post => {
                 // SP proxy posts carry a direct R2 URL in media_url; local posts use the auth-token space-files endpoint
                 const mediaUrl = (post as any).media_url
@@ -862,7 +862,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                   || null;
                 return (
                   <div key={post.id} onClick={() => setSelectedPost(post)}
-                    className="max-w-2xl mx-auto bg-zinc-800/50 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:bg-zinc-800/70 transition-colors">
+                    className="max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                     <div className="flex items-center gap-2 mb-3">
                       {isExternalProxyAuthor ? (
                         <a
@@ -870,26 +870,26 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={e => e.stopPropagation()}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/70 border border-zinc-700/80 hover:border-zinc-500 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full cn-surface border cn-border hover:border-slate-400 dark:hover:border-zinc-500 transition-colors"
                         >
                           {sourceBrandLogo
                             ? <img src={sourceBrandLogo} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                            : <LayoutGrid className="w-3 h-3 text-zinc-400" />
+                            : <LayoutGrid className="w-3 h-3 cn-text-3" />
                           }
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Shared from</span>
-                          <span className="text-xs font-semibold text-zinc-200 leading-none">{sourceBrandName}</span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide cn-text-4">Shared from</span>
+                          <span className="text-xs font-semibold cn-text-2 leading-none">{sourceBrandName}</span>
                         </a>
                       ) : (
                         <>
                           <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
-                          <span className="text-sm font-medium text-white">{post.author_username}</span>
+                          <span className="text-sm font-medium cn-text-1">{post.author_username}</span>
                         </>
                       )}
-                      <span className="text-xs text-zinc-500 ml-auto">{timeAgo(post.created_at)}</span>
+                      <span className="text-xs cn-text-4 ml-auto">{timeAgo(post.created_at)}</span>
                     </div>
                     {post.body && (() => {
                       const { truncated, isTruncated } = truncateText(post.body);
-                      return <p className="text-sm text-zinc-400 leading-relaxed">{truncated}{isTruncated && <span className="text-purple-400 font-medium"> Click to read more</span>}</p>;
+                      return <p className="text-sm cn-text-3 leading-relaxed">{truncated}{isTruncated && <span className="text-purple-600 dark:text-purple-400 font-medium"> Click to read more</span>}</p>;
                     })()}
                     {mediaUrl && (
                       <div className="mt-3 rounded-xl overflow-hidden">
@@ -898,16 +898,16 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                           : <img src={mediaUrl} alt={post.title} className="w-full max-h-64 object-cover rounded-xl" />}
                       </div>
                     )}
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-zinc-700">
-                      <span className="text-xs text-zinc-500 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t cn-border">
+                      <span className="text-xs cn-text-4 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
                       {post.author_id === myUserId && !sharedPosts.has(post.id) && !(post as any).shared_to_feed && (
                         <button onClick={e => { e.stopPropagation(); handleShareToFeed(post.id); }} disabled={sharingPost === post.id}
-                          className="ml-auto flex items-center gap-1.5 text-xs text-zinc-400 hover:text-purple-400 transition-colors">
+                          className="ml-auto flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
                           {sharingPost === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />} Share to hub feed
                         </button>
                       )}
                       {(sharedPosts.has(post.id) || (post as any).shared_to_feed) && (
-                        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400"><Check className="w-3.5 h-3.5" /> Shared to feed</span>
+                        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"><Check className="w-3.5 h-3.5" /> Shared to feed</span>
                       )}
                     </div>
                   </div>
@@ -916,7 +916,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             </div>
 
             {/* Info sidebar — desktop only, sticky within outer scroll container */}
-            <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l border-zinc-800 sticky top-0 self-start max-h-screen overflow-y-auto">
+            <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l cn-border sticky top-0 self-start max-h-screen overflow-y-auto">
               <SpaceInfoSidebar space={space} members={members} membersLoading={membersLoading} posts={posts} />
             </div>
           </div>
@@ -927,20 +927,20 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
           <div className="p-5 max-w-2xl">
             {isAdmin && (
               <button onClick={() => setShowInvite(true)} title="Invite members" aria-label="Invite members"
-                  className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-purple-600 text-sm text-zinc-400 hover:text-purple-400 transition-colors">
+                  className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed cn-border hover:border-purple-600 text-sm cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
                   <UserPlus className="w-4 h-4" /> Invite hub members
                 </button>
             )}
-            {membersLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
+            {membersLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
             {members.filter(m => m.status === 'pending').length > 0 && (
               <div className="mb-4">
-                <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">Pending Approval</p>
+                <p className="text-xs font-semibold uppercase tracking-widest cn-text-4 mb-2">Pending Approval</p>
                 {members.filter(m => m.status === 'pending').map(m => (
-                  <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-zinc-800">
+                  <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
                     <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{m.display_name || m.username}</p>
-                      <p className="text-xs text-zinc-500">@{m.username}</p>
+                      <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
+                      <p className="text-xs cn-text-4">@{m.username}</p>
                     </div>
                     {isAdmin && <button onClick={() => handleApproveMember(m.user_id)} title="Approve member" aria-label={`Approve ${m.display_name || m.username}`} className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-medium text-white flex items-center gap-1"><Check className="w-3 h-3" /> Approve</button>}
                   </div>
@@ -949,16 +949,16 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             )}
             {members.filter(m => m.status === 'active').length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-2">Members</p>
+                <p className="text-xs font-semibold uppercase tracking-widest cn-text-4 mb-2">Members</p>
                 {members.filter(m => m.status === 'active').map(m => (
-                  <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-zinc-800">
+                  <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
                     <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{m.display_name || m.username}</p>
-                      <p className="text-xs text-zinc-500 capitalize">{m.role}</p>
+                      <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
+                      <p className="text-xs cn-text-4 capitalize">{m.role}</p>
                     </div>
                     {isAdmin && m.user_id !== myUserId && m.role !== 'owner' && (
-                      <button onClick={() => handleRemoveMember(m.user_id)} title={`Remove ${m.display_name || m.username}`} aria-label={`Remove ${m.display_name || m.username}`} className="p-1.5 rounded-lg hover:bg-zinc-700 text-zinc-500 hover:text-red-400 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => handleRemoveMember(m.user_id)} title={`Remove ${m.display_name || m.username}`} aria-label={`Remove ${m.display_name || m.username}`} className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 cn-text-4 hover:text-red-500 dark:hover:text-red-400 transition-colors"><X className="w-3.5 h-3.5" /></button>
                     )}
                   </div>
                 ))}
@@ -976,21 +976,21 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         {isActive && tab === 'settings' && isAdmin && (
           <form onSubmit={saveSettings} className="p-5 space-y-4 max-w-md">
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Space Name</label>
+              <label className="block text-xs font-medium cn-text-3 mb-1">Space Name</label>
               <input value={settingsName} onChange={e => setSettingsName(e.target.value)} required
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500" />
+                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-purple-500" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+              <label className="block text-xs font-medium cn-text-3 mb-1">Description</label>
               <textarea value={settingsDesc} onChange={e => setSettingsDesc(e.target.value)} rows={3}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500 resize-none" />
+                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-purple-500 resize-none" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-2">Visibility</label>
+              <label className="block text-xs font-medium cn-text-3 mb-2">Visibility</label>
               <div className="grid grid-cols-3 gap-2">
                 {(['public', 'private', 'invite-only'] as const).map(v => (
                   <button key={v} type="button" onClick={() => setSettingsVis(v)}
-                    className={`py-2 rounded-xl text-xs font-medium border transition-colors ${settingsVis === v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'}`}>
+                    className={`py-2 rounded-xl text-xs font-medium border transition-colors ${settingsVis === v ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                     {visibilityLabel(v)}
                   </button>
                 ))}
@@ -998,19 +998,19 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             </div>
             {/* Web sharing */}
             <div className="pt-1">
-              <label className="block text-xs font-medium text-zinc-400 mb-2">Web Sharing</label>
-              <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700">
+              <label className="block text-xs font-medium cn-text-3 mb-2">Web Sharing</label>
+              <div className="flex items-center justify-between px-3 py-2.5 rounded-xl cn-surface-2 border cn-border">
                 <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm text-zinc-300">Share to open web</span>
+                  <Globe className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  <span className="text-sm cn-text-2">Share to open web</span>
                 </div>
                 <button type="button" onClick={() => setSettingsWebPublic(v => !v)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${settingsWebPublic ? 'bg-emerald-600' : 'bg-zinc-600'}`}>
+                  className={`relative w-10 h-5 rounded-full transition-colors ${settingsWebPublic ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-zinc-600'}`}>
                   <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settingsWebPublic ? 'translate-x-5' : ''}`} />
                 </button>
               </div>
               {settingsWebPublic && !space.web_public && (
-                <p className="mt-2 text-xs text-amber-400">Save settings to activate the share link.</p>
+                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Save settings to activate the share link.</p>
               )}
               {space.web_public && (
                 <div className="mt-2 flex items-center gap-2">
@@ -1020,30 +1020,30 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       setSpaceLinkCopied(true);
                       setTimeout(() => setSpaceLinkCopied(false), 2000);
                     }}
-                    className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                    className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors">
                     {spaceLinkCopied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Link2 className="w-3.5 h-3.5" /> Copy share link</>}
                   </button>
-                  <span className="text-xs text-zinc-600">Anyone with the link can read this space.</span>
+                  <span className="text-xs cn-text-4">Anyone with the link can read this space.</span>
                 </div>
               )}
             </div>
-            {settingsError && <p className="text-xs text-red-400">{settingsError}</p>}
+            {settingsError && <p className="text-xs text-red-500 dark:text-red-400">{settingsError}</p>}
             <button type="submit" disabled={settingsSaving}
               className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
               {settingsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsSaved ? <><Check className="w-4 h-4" /> Saved</> : <><Settings className="w-4 h-4" /> Save Settings</>}
             </button>
             {space.my_role === 'owner' && (
-              <div className="pt-4 mt-4 border-t border-zinc-800">
+              <div className="pt-4 mt-4 border-t cn-border">
                 {!confirmDelete ? (
                   <button type="button" onClick={() => setConfirmDelete(true)}
-                    className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-red-950 border border-zinc-700 hover:border-red-800 text-sm text-zinc-400 hover:text-red-400 transition-colors">
+                    className="w-full py-2.5 rounded-xl cn-surface-2 hover:bg-red-50 dark:hover:bg-red-950 border cn-border hover:border-red-300 dark:hover:border-red-800 text-sm cn-text-3 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                     Delete Space
                   </button>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-xs text-red-400 text-center">Permanently deletes the space and membership data. Posts are kept but detached.</p>
+                    <p className="text-xs text-red-500 dark:text-red-400 text-center">Permanently deletes the space and membership data. Posts are kept but detached.</p>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => setConfirmDelete(false)} className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-sm text-zinc-300 hover:bg-zinc-700">Cancel</button>
+                      <button type="button" onClick={() => setConfirmDelete(false)} className="flex-1 py-2.5 rounded-xl cn-surface-2 text-sm cn-text-2 hover:bg-black/10 dark:hover:bg-white/10">Cancel</button>
                       <button type="button" onClick={handleDelete} disabled={deleting}
                         className="flex-1 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
                         {deleting && <Loader2 className="w-4 h-4 animate-spin" />} Yes, Delete
@@ -1171,59 +1171,59 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const pendingInvites = allSpaces.filter(s => s.my_status === 'invited');
 
   return (
-    <div className="flex h-full bg-zinc-950 overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Left panel */}
-      <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 border-r border-zinc-800 flex-shrink-0`}>
-        <div className="flex items-center gap-3 px-4 py-4 border-b border-zinc-800 flex-shrink-0">
-          <button onClick={onBack} className="w-8 h-8 rounded-xl hover:bg-zinc-800 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 text-zinc-400" /></button>
-          <h1 className="text-base font-semibold text-white flex-1">Spaces</h1>
+      <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 border-r cn-border flex-shrink-0`}>
+        <div className="flex items-center gap-3 px-4 py-4 border-b cn-border flex-shrink-0">
+          <button onClick={onBack} className="w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 cn-text-3" /></button>
+          <h1 className="text-base font-semibold cn-text-1 flex-1">Spaces</h1>
           <button onClick={() => setShowCreate(true)} title="Create space" aria-label="Create space" className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
         </div>
-        <div className="px-4 py-3 border-b border-zinc-800 flex-shrink-0">
+        <div className="px-4 py-3 border-b cn-border flex-shrink-0">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search spaces…"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full cn-surface-2 border cn-border rounded-xl pl-9 pr-3 py-2 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
           </div>
           <div className="flex gap-1 mt-2">
-            <button onClick={() => setShowAll(false)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${!showAll ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>My Spaces</button>
-            <button onClick={() => setShowAll(true)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${showAll ? 'bg-zinc-700 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>Discover</button>
+            <button onClick={() => setShowAll(false)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${!showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>My Spaces</button>
+            <button onClick={() => setShowAll(true)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Discover</button>
           </div>
         </div>
         {pendingInvites.length > 0 && !showAll && (
-          <div className="px-4 py-2 bg-purple-900/20 border-b border-purple-900/40 flex-shrink-0">
-            <p className="text-xs text-purple-400 font-medium mb-1">You have {pendingInvites.length} invite{pendingInvites.length > 1 ? 's' : ''}</p>
+          <div className="px-4 py-2 bg-purple-100 dark:bg-purple-900/20 border-b border-purple-300 dark:border-purple-900/40 flex-shrink-0">
+            <p className="text-xs text-purple-700 dark:text-purple-400 font-medium mb-1">You have {pendingInvites.length} invite{pendingInvites.length > 1 ? 's' : ''}</p>
             {pendingInvites.map(s => (
-              <button key={s.id} onClick={() => selectSpace(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm text-white hover:text-purple-300">
-                <ChevronRight className="w-3 h-3 text-purple-400" /> {s.name}
+              <button key={s.id} onClick={() => selectSpace(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm cn-text-1 hover:text-purple-600 dark:hover:text-purple-300">
+                <ChevronRight className="w-3 h-3 text-purple-500 dark:text-purple-400" /> {s.name}
               </button>
             ))}
           </div>
         )}
         <div className="flex-1 overflow-y-auto">
-          {loading && <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-zinc-500" /></div>}
-          {error && <div className="m-4 p-3 rounded-xl bg-red-950/40 border border-red-900 flex gap-2 text-sm text-red-400"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}</div>}
+          {loading && <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
+          {error && <div className="m-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-900 flex gap-2 text-sm text-red-600 dark:text-red-400"><AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}</div>}
           {!loading && displaySpaces.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3"><LayoutGrid className="w-6 h-6 text-zinc-500" /></div>
-              <p className="text-sm text-zinc-400 font-medium mb-1">{showAll ? 'No spaces on this hub yet' : 'No spaces joined yet'}</p>
-              <p className="text-xs text-zinc-600">{showAll ? 'Be the first to create one.' : 'Switch to Discover to find spaces to join.'}</p>
+              <div className="w-14 h-14 rounded-2xl cn-surface-2 flex items-center justify-center mb-3"><LayoutGrid className="w-6 h-6 cn-text-4" /></div>
+              <p className="text-sm cn-text-3 font-medium mb-1">{showAll ? 'No spaces on this hub yet' : 'No spaces joined yet'}</p>
+              <p className="text-xs cn-text-4">{showAll ? 'Be the first to create one.' : 'Switch to Discover to find spaces to join.'}</p>
             </div>
           )}
           {displaySpaces.map(space => (
             <button key={space.id} onClick={() => selectSpace(space)}
-              className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-zinc-800/60 transition-colors text-left border-b border-zinc-800/50 ${selected?.id === space.id ? 'bg-zinc-800/70' : ''}`}>
+              className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left border-b cn-border ${selected?.id === space.id ? 'bg-black/5 dark:bg-white/5' : ''}`}>
               <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden" style={getBannerStyle(space, tunnelUrl)}>
                 <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold bg-black/10">{space.name[0]?.toUpperCase()}</div>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-sm font-medium text-white truncate">{space.name}</span>
-                  <span className="text-zinc-600 flex-shrink-0">{visibilityIcon(space.visibility)}</span>
+                  <span className="text-sm font-medium cn-text-1 truncate">{space.name}</span>
+                  <span className="cn-text-4 flex-shrink-0">{visibilityIcon(space.visibility)}</span>
                 </div>
-                <p className="text-xs text-zinc-500 truncate">{space.description || `${Number(space.member_count) || 0} members`}</p>
-                {space.my_status === 'pending' && <span className="text-xs text-amber-400">Pending approval</span>}
-                {space.my_status === 'invited' && <span className="text-xs text-purple-400">Invited — tap to accept</span>}
+                <p className="text-xs cn-text-4 truncate">{space.description || `${Number(space.member_count) || 0} members`}</p>
+                {space.my_status === 'pending' && <span className="text-xs text-amber-600 dark:text-amber-400">Pending approval</span>}
+                {space.my_status === 'invited' && <span className="text-xs text-purple-600 dark:text-purple-400">Invited — tap to accept</span>}
               </div>
             </button>
           ))}
@@ -1234,7 +1234,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
       <div className={`${selected ? 'flex' : 'hidden md:flex'} flex-col flex-1 overflow-hidden`}>
         {selected ? (
           <>
-            <button onClick={() => selectSpace(null)} className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-zinc-800 text-zinc-400 text-sm flex-shrink-0">
+            <button onClick={() => selectSpace(null)} className="md:hidden flex items-center gap-2 px-4 py-3 border-b cn-border cn-text-3 text-sm flex-shrink-0">
               <ArrowLeft className="w-4 h-4" /> All Spaces
             </button>
             <SpaceDetail hubSlug={hubSlug} space={selected} myUserId={myUserId}
@@ -1244,8 +1244,8 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-800 flex items-center justify-center mb-5"><LayoutGrid className="w-9 h-9 text-purple-300" /></div>
-            <h2 className="text-lg font-semibold text-white mb-2">Select a Space</h2>
-            <p className="text-sm text-zinc-500 max-w-xs">Choose a space from the list to view its feed and members, or create a new one.</p>
+            <h2 className="text-lg font-semibold cn-text-1 mb-2">Select a Space</h2>
+            <p className="text-sm cn-text-4 max-w-xs">Choose a space from the list to view its feed and members, or create a new one.</p>
           </div>
         )}
       </div>

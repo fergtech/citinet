@@ -34,11 +34,11 @@ const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string 
 };
 
 export const KIND_META: Record<HubListing['price_type'], { label: string; classes: string }> = {
-  fixed:      { label: 'For sale',   classes: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
-  negotiable: { label: 'Negotiable', classes: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-  free:       { label: 'Free',       classes: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
-  hourly:     { label: 'Hourly',     classes: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
-  contact:    { label: 'Contact',    classes: 'bg-slate-500/20 text-slate-300 border-slate-500/30' },
+  fixed:      { label: 'For sale',   classes: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30' },
+  negotiable: { label: 'Negotiable', classes: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30' },
+  free:       { label: 'Free',       classes: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' },
+  hourly:     { label: 'Hourly',     classes: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/30' },
+  contact:    { label: 'Contact',    classes: 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30' },
 };
 
 const TABS: { key: 'all' | HubListing['price_type']; label: string }[] = [
@@ -109,7 +109,7 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
   return (
     <button
       onClick={onOpen}
-      className="text-left flex flex-col overflow-hidden rounded-2xl border cn-border cn-surface hover:shadow-md transition-all group"
+      className="text-left flex flex-col overflow-hidden rounded-2xl cn-glass hover:border-black/15 dark:hover:border-white/15 transition-all group"
     >
       <div className={`relative h-26 flex items-center justify-center bg-gradient-to-br ${meta.gradient}`} style={{ height: 104 }}>
         {imageUrl
@@ -210,6 +210,16 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   };
 
   useEffect(() => { load(); }, [slug]);
+
+  // Deep-link: open a specific listing (e.g. arriving back from a vendor profile page)
+  useEffect(() => {
+    if (loading || selectedListing) return;
+    const listingId = sessionStorage.getItem('citinet-deeplink-listing');
+    if (!listingId) return;
+    sessionStorage.removeItem('citinet-deeplink-listing');
+    const found = listings.find(l => l.id === listingId);
+    if (found) setSelectedListing(found);
+  }, [loading, listings, selectedListing]);
 
   // ── Banner edit handlers ─────────────────────────────────
   const handleOpenBannerEdit = () => {
@@ -657,7 +667,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Empty state */}
             {!loading && !error && listings.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-14 text-center rounded-2xl border cn-border cn-surface">
+              <div className="flex flex-col items-center justify-center py-14 text-center rounded-2xl cn-glass">
                 <Store className="w-9 h-9 cn-text-4 mb-3" />
                 <h3 className="text-base font-semibold cn-text-1 mb-1">Nothing listed yet</h3>
                 <p className="text-sm cn-text-3 max-w-xs mb-5">Be the first to list something for the neighborhood.</p>
@@ -702,7 +712,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
           {/* ── Right rail ── */}
           <div className="hidden lg:flex flex-col gap-4 sticky top-7">
-            <div className="rounded-2xl p-4 border cn-border cn-surface">
+            <div className="rounded-2xl p-4 cn-glass">
               <div className="flex items-center gap-2 mb-3.5">
                 <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-300" />
                 <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">This hub</span>
@@ -727,7 +737,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             </div>
 
             {topVendors.length > 0 && (
-              <div className="rounded-2xl p-4 border cn-border cn-surface">
+              <div className="rounded-2xl p-4 cn-glass">
                 <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Community vendors</span>
                 <div className="flex flex-col gap-1 mt-3">
                   {topVendors.map(v => (
@@ -748,7 +758,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
               </div>
             )}
 
-            <div className="rounded-2xl p-4 border cn-border cn-surface">
+            <div className="rounded-2xl p-4 cn-glass">
               <div className="flex gap-2.5">
                 <ShieldCheck className="w-4.5 h-4.5 text-purple-500 dark:text-purple-300 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
                 <div>

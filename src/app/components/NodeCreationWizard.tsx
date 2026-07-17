@@ -168,7 +168,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     hubName: '', hubLocation: '', hubZip: '', hubDescription: '', dataDir: '',
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
-    enabledApps: ['feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls'],
+    enabledApps: ['feed', 'messages', 'atlas', 'neighbors', 'notes'],
   });
 
   // Generated once when the user reaches the download step
@@ -828,7 +828,6 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     { id: 'atlas',       label: 'Atlas',        emoji: '🗺️', desc: 'Interactive community map' },
                     { id: 'neighbors',   label: 'Neighbors',    emoji: '👥', desc: 'Browse and connect with members' },
                     { id: 'notes',       label: 'Notes',        emoji: '📓', desc: 'Private notes and journal' },
-                    { id: 'polls',       label: 'Polls',        emoji: '🗳️', desc: 'Community voting and surveys' },
                     { id: 'spaces',      label: 'Spaces',       emoji: '🌐', desc: 'Topic-based community groups' },
                     { id: 'marketplace', label: 'Exchange',     emoji: '🏪', desc: 'Buy, sell, and trade locally' },
                     { id: 'files',       label: 'Files',        emoji: '📁', desc: 'Shared file storage' },
@@ -838,7 +837,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     { id: 'network',     label: 'Network',      emoji: '📡', desc: 'Hub network map and stats' },
                     { id: 'mod-log',     label: 'Mod Log',      emoji: '📜', desc: 'Moderation and governance log' },
                   ];
-                  const ESSENTIALS = ['feed', 'messages', 'atlas', 'neighbors', 'notes', 'polls'];
+                  const ESSENTIALS = ['feed', 'messages', 'atlas', 'neighbors', 'notes'];
                   const toggle = (id: string) => {
                     set({
                       enabledApps: data.enabledApps.includes(id)

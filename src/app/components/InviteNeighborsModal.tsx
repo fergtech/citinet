@@ -1,154 +1,119 @@
-import { X, Copy, Check, Users, QrCode, Link, AlertCircle } from 'lucide-react';
+import { X, Copy, Check, UserPlus, Mail, QrCode } from 'lucide-react';
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useHub } from '../context/HubContext';
+import { JoinQrCard } from './JoinQrCard';
 
 interface InviteNeighborsModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+/** Whether a tunnel URL only resolves on the hub's own machine/network — if so it's not
+ * something a neighbor's browser can actually load, so we need the LAN-IP flow instead
+ * of just sharing it verbatim. */
+function isLocalTunnelUrl(url: string): boolean {
+  if (!url || url === 'https://' || url === 'http://') return true;
+  try {
+    const host = new URL(url).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.');
+  } catch {
+    return true;
+  }
+}
+
 export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalProps) {
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const { currentHub } = useHub();
 
-  const inviteUrl = currentHub?.tunnelUrl || '';
+  const tunnelUrl = currentHub?.tunnelUrl || '';
+  const isLocal = isLocalTunnelUrl(tunnelUrl);
   const memberCount = currentHub?.meta?.activeMembers ?? currentHub?.memberCount ?? 0;
-  const qrCodeUrl = inviteUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(inviteUrl)}`
-    : '';
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(inviteUrl);
+      await navigator.clipboard.writeText(tunnelUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard not available
-    }
+    } catch { /* clipboard not available */ }
+  };
+
+  const handleEmail = () => {
+    const subject = encodeURIComponent(`Join ${currentHub?.name || 'our hub'} on Citinet`);
+    const body = encodeURIComponent(`Come join our local community hub — ${tunnelUrl}`);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
-        {/* Header */}
-        <div className="relative p-6 bg-gradient-to-br from-purple-600 to-blue-600 text-white">
-          <button
-            onClick={onClose}
-            aria-label="Close invite neighbors modal"
-            className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all backdrop-blur-sm"
-          >
-            <X className="w-4 h-4 text-white" />
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="cn-surface border cn-border rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
+            <UserPlus className="w-5 h-5 text-white" />
+          </span>
+          <h2 className="flex-1 text-lg font-bold cn-text-1">Invite neighbors</h2>
+          <button onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors shrink-0">
+            <X className="w-4 h-4 cn-text-3" />
           </button>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Users className="w-7 h-7" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold">Invite Neighbors</h3>
-              <p className="text-purple-100 text-sm mt-1">
-                {currentHub?.name ? `Grow ${currentHub.name}` : 'Grow your community hub'}
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-5">
-          {inviteUrl ? (
-            <>
-              {/* QR Code */}
-              <div className="bg-gradient-to-br from-slate-50 to-blue-50 dark:from-zinc-800 dark:to-zinc-800 rounded-xl p-6 border border-slate-200 dark:border-zinc-700">
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <QrCode className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">Scan to Join</p>
-                  </div>
-                  <div className="inline-flex items-center justify-center p-4 bg-white rounded-xl shadow-lg">
-                    <img
-                      src={qrCodeUrl}
-                      alt="Hub invite QR code"
-                      className="w-44 h-44"
-                    />
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
-                    Anyone who scans this can request to join {currentHub?.name || 'your hub'}
-                  </p>
-                </div>
-              </div>
+        <p className="text-sm cn-text-2 leading-relaxed">
+          Share this link with people nearby. Each new neighbor who joins grows {currentHub?.name || 'the hub'}.
+        </p>
 
-              {/* Link Copy */}
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Link className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                  <label className="text-sm font-medium text-slate-900 dark:text-white">
-                    Or share this link
-                  </label>
-                </div>
-                <div className="flex gap-2">
-                  <div className="flex-1 px-3.5 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-700 dark:text-slate-300 font-mono truncate">
-                    {inviteUrl}
-                  </div>
-                  <button
-                    onClick={handleCopy}
-                    className={`px-4 py-2.5 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
-                      copied
-                        ? 'bg-green-600 text-white'
-                        : 'bg-purple-600 hover:bg-purple-700 text-white'
-                    }`}
-                  >
-                    {copied ? <><Check className="w-4 h-4" />Copied</> : <><Copy className="w-4 h-4" />Copy</>}
-                  </button>
-                </div>
+        {isLocal ? (
+          // Local/unconfigured hub — a raw localhost or LAN API URL isn't something another
+          // device can actually load, so hand off to the same LAN-IP-aware flow Hub
+          // Management uses, rather than sharing a link that won't work for anyone else.
+          <JoinQrCard hubSlug={currentHub?.slug ?? ''} tunnelUrl={tunnelUrl} embedded />
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0 px-3.5 py-2.5 rounded-lg cn-surface-2 border cn-border text-sm cn-text-2 font-mono truncate">
+                {tunnelUrl}
               </div>
-            </>
-          ) : (
-            /* No URL configured */
-            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-xl p-5 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-300 mb-1">No hub URL configured</p>
-                <p className="text-xs text-amber-800 dark:text-amber-400">
-                  Your hub needs a public URL before you can share an invite. If you set up Tailscale, the URL will appear here automatically. For local-only hubs, share your LAN IP directly with neighbors.
-                </p>
-              </div>
+              <button
+                onClick={handleCopy}
+                className={`px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center gap-1.5 shrink-0 ${
+                  copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'
+                }`}
+              >
+                {copied ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
+              </button>
             </div>
-          )}
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-1">
-                {memberCount > 0 ? memberCount : '—'}
-              </div>
-              <p className="text-xs text-purple-700 dark:text-purple-400">Current Members</p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleEmail}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border cn-border cn-text-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                <Mail className="w-4 h-4" /> Email invite
+              </button>
+              <button
+                onClick={() => setShowQr(v => !v)}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border cn-border cn-text-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                <QrCode className="w-4 h-4" /> {showQr ? 'Hide QR code' : 'Show QR code'}
+              </button>
             </div>
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-1">∞</div>
-              <p className="text-xs text-blue-700 dark:text-blue-400">Invite Limit</p>
-            </div>
-          </div>
 
-          {/* Tips */}
-          <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-lg p-4">
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">
-              Tips for growing your hub
-            </h4>
-            <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
-              {[
-                'Share the link in your building\'s group chat or neighborhood forum',
-                'Print QR codes and post them on community boards or mailrooms',
-                'Post on the hub\'s feed to let existing members know to invite others',
-              ].map((tip, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 flex-shrink-0 mt-1" />
-                  {tip}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+            {showQr && (
+              <div className="flex flex-col items-center gap-2 pt-1">
+                <div className="p-3 bg-white rounded-xl">
+                  <QRCodeSVG value={tunnelUrl} size={160} bgColor="#ffffff" fgColor="#18181b" level="M" />
+                </div>
+                <p className="text-xs cn-text-4">Anyone who scans this can request to join</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {memberCount > 0 && (
+          <p className="text-xs cn-text-4">{memberCount} current member{memberCount === 1 ? '' : 's'}</p>
+        )}
       </div>
     </div>
   );

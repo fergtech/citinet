@@ -15,7 +15,7 @@ interface HubStatusData {
 function tunnelType(url: string): string {
   if (!url || url === 'https://' || url === 'http://') return 'Not configured';
   if (url.includes('.ts.net'))   return 'Tailscale Funnel';
-  if (url.includes('localhost') || url.includes('192.168') || url.includes('10.')) return 'Local Network';
+  if (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('192.168') || url.includes('10.')) return 'Local Network';
   if (url.includes('trycloudflare') || url.includes('cloudflare')) return 'Cloudflare Tunnel';
   return 'Custom Tunnel';
 }
@@ -78,46 +78,39 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
   const tType = tunnelType(tunnelUrl);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-lg w-full max-h-[85vh] shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="cn-surface border cn-border rounded-2xl max-w-md w-full max-h-[85vh] shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className={`relative p-6 text-white ${
-          status === 'connected'   ? 'bg-gradient-to-br from-green-600 to-emerald-600' :
-          status === 'connecting'  ? 'bg-gradient-to-br from-yellow-500 to-amber-500' :
-          status === 'unreachable' ? 'bg-gradient-to-br from-orange-600 to-red-600' :
-                                     'bg-gradient-to-br from-slate-600 to-slate-700'
-        }`}>
+        <div className="flex items-center gap-3 p-6 pb-0">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 flex items-center justify-center shrink-0">
+            <Server className="w-5 h-5 text-white" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-bold cn-text-1">Hub connection</h2>
+            <p className="text-xs cn-text-3 mt-0.5 flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
+              {statusLabel}
+            </p>
+          </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
+            className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4 cn-text-3" />
           </button>
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-              <Server className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold">Hub Connection</h3>
-              <p className="text-white/80 text-sm mt-0.5 flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${dotColor} ${status === 'connected' ? 'animate-pulse' : ''}`} />
-                {statusLabel}
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+        <div className="p-6 space-y-3 overflow-y-auto flex-1">
 
           {/* Latency */}
-          <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
+          <div className="rounded-xl cn-surface-2 p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                <span className="text-sm font-medium text-slate-900 dark:text-white">Round-trip Latency</span>
+                <span className="text-sm font-medium cn-text-1">Round-trip latency</span>
               </div>
               <button
                 onClick={measure}
@@ -135,7 +128,7 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
                 <span className="text-sm">Hub not reachable — cannot measure latency</span>
               </div>
             ) : measuring && latency === null ? (
-              <div className="flex items-center gap-2 text-slate-500">
+              <div className="flex items-center gap-2 cn-text-4">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span className="text-sm">Measuring…</span>
               </div>
@@ -150,7 +143,7 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
               </div>
             )}
             {lastChecked && (
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+              <p className="text-xs cn-text-4 mt-2">
                 Measured {lastChecked.toLocaleTimeString()}
               </p>
             )}
@@ -159,41 +152,41 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
           {/* Hub stats from /api/status */}
           {hubStatus && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
+              <div className="rounded-xl cn-surface-2 p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Clock className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Uptime</span>
+                  <Clock className="w-4 h-4 cn-text-4" />
+                  <span className="text-xs cn-text-3">Uptime</span>
                 </div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">{hubStatus.uptime}</p>
+                <p className="text-sm font-semibold cn-text-1">{hubStatus.uptime}</p>
               </div>
-              <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
+              <div className="rounded-xl cn-surface-2 p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Users className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs text-slate-500 dark:text-slate-400">Members</span>
+                  <Users className="w-4 h-4 cn-text-4" />
+                  <span className="text-xs cn-text-3">Members</span>
                 </div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">{hubStatus.user_count}</p>
+                <p className="text-sm font-semibold cn-text-1">{hubStatus.user_count}</p>
               </div>
             </div>
           )}
 
           {/* Connection path */}
-          <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-3">Connection Path</p>
+          <div className="rounded-xl cn-surface-2 p-4">
+            <p className="text-xs font-medium cn-text-3 mb-3">Connection path</p>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 text-xs font-medium text-slate-700 dark:text-slate-300">
-                Your Browser
+              <span className="px-2.5 py-1 rounded-lg cn-surface border cn-border text-xs font-medium cn-text-2">
+                Your browser
               </span>
-              <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 text-xs font-medium text-slate-700 dark:text-slate-300">
+              <ArrowRight className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+              <span className="px-2.5 py-1 rounded-lg cn-surface border cn-border text-xs font-medium cn-text-2">
                 {tType}
               </span>
-              <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 text-xs font-medium text-slate-700 dark:text-slate-300">
+              <ArrowRight className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+              <span className="px-2.5 py-1 rounded-lg cn-surface border cn-border text-xs font-medium cn-text-2">
                 {currentHub?.name || 'Hub'} API
               </span>
             </div>
             {tunnelUrl && (
-              <p className="text-xs font-mono text-slate-400 dark:text-slate-500 mt-2 break-all">{tunnelUrl}</p>
+              <p className="text-xs font-mono cn-text-4 mt-2 break-all">{tunnelUrl}</p>
             )}
           </div>
 

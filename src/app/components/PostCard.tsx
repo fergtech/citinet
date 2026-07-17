@@ -70,7 +70,7 @@ export function PostCard({
         {/* Event metadata */}
         {category === 'EVENT' && eventDate && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-[11px] font-medium text-purple-300">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-500/15 border border-purple-300 dark:border-purple-500/30 text-[11px] font-medium text-purple-700 dark:text-purple-300">
               <Calendar className="w-3 h-3 shrink-0" />
               {new Date(eventDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
               {' · '}
@@ -81,7 +81,7 @@ export function PostCard({
 
         {/* Body */}
         {content && (
-          <p className="text-sm text-zinc-200 leading-relaxed line-clamp-4">{content}</p>
+          <p className="text-sm cn-text-2 leading-relaxed line-clamp-4">{content}</p>
         )}
 
         {/* Media */}

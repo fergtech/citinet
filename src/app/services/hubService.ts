@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 
@@ -1645,6 +1645,25 @@ class HubService {
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ body, reply_to_reply_id: replyToReplyId ?? null, reply_to_user_id: replyToUserId ?? null }),
     });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** Toggle the caller's RSVP ("going") for an event post. */
+  async toggleRsvp(hubSlug: string, postId: string): Promise<{ going: boolean; count: number }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/rsvp`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** List everyone who RSVP'd "going" to an event post. */
+  async listRsvps(hubSlug: string, postId: string): Promise<{ attendees: HubEventAttendee[]; count: number; going: boolean }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/rsvp`, { headers });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     return response.json();
   }
