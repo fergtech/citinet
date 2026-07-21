@@ -27,6 +27,8 @@ interface HubContextValue {
   refreshStatus: () => Promise<void>;
   /** Leave/disconnect from a hub */
   leaveHub: (slug: string) => void;
+  /** Sign out of a hub while keeping the connection/profile for a quick re-login */
+  signOutOfHub: (slug: string) => void;
   /** Update the hub context after onboarding completion */
   onOnboardingComplete: (hubSlug: string, userData: HubUser) => void;
   /** Update after joining a new hub */
@@ -221,6 +223,13 @@ export function HubProvider({ children }: { children: ReactNode }) {
     }
   }, [currentHub?.slug, resolveUserAvatar]);
 
+  const signOutOfHub = useCallback((slug: string) => {
+    hubService.signOut(slug);
+    if (currentHub?.slug === slug) {
+      setCurrentUser(null);
+    }
+  }, [currentHub?.slug]);
+
   const onOnboardingComplete = useCallback((hubSlug: string, userData: HubUser) => {
     // Update context immediately
     const connection = hubService.getHubConnection(hubSlug);
@@ -330,6 +339,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       switchHub,
       refreshStatus,
       leaveHub,
+      signOutOfHub,
       onOnboardingComplete,
       onHubJoined,
       updateTunnelUrl,

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import {
   Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
-  LogOut, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
+  LogOut, ArrowRightLeft, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
   Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -25,7 +25,7 @@ import type { HubVendor } from '../types/hub';
 export function HubLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { currentHub, currentUser, leaveHub, updateTunnelUrl } = useHub();
+  const { currentHub, currentUser, leaveHub, signOutOfHub, updateTunnelUrl } = useHub();
   const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
   const { resolvedTheme, setTheme } = useTheme();
   const isDarkMode = resolvedTheme === 'dark';
@@ -154,11 +154,22 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     navigate(hubPath('/discover'));
   };
 
-  const handleLogout = () => {
+  /** Lightweight sign-out — keeps the hub connection/profile so the account
+   * menu's "Sign Out" leads to a quick re-login on /onboard instead of the
+   * full hub picker. */
+  const handleSignOut = () => {
+    const slug = currentHub?.slug || hubSlug;
+    if (slug) signOutOfHub(slug);
+    navigate(hubPath('/onboard'));
+  };
+
+  /** Full disconnect — forgets this hub entirely and returns to hub discovery.
+   * Distinct from handleSignOut: this is for switching to a different hub. */
+  const handleLeaveHub = () => {
     const slug = currentHub?.slug || hubSlug;
     if (slug) leaveHub(slug);
     clearSubdomainCache();
-    window.location.href = window.location.origin + '/';
+    window.location.href = window.location.origin + '/join';
   };
 
   const autoRegisterHub = (url: string) => {
@@ -488,11 +499,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
               <div className="p-2">
                 <button
-                  onClick={() => { setShowAccountMenu(false); handleLogout(); }}
+                  onClick={() => { setShowAccountMenu(false); handleSignOut(); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <LogOut className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-slate-300">Sign Out</span>
+                </button>
+                <button
+                  onClick={() => { setShowAccountMenu(false); handleLeaveHub(); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
                 >
-                  <LogOut className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
-                  <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                  <ArrowRightLeft className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                  <span className="text-sm text-red-600 dark:text-red-400">Switch Hub</span>
                 </button>
               </div>
             </motion.div>
@@ -965,13 +983,20 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
               <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
-              <div className="p-3">
+              <div className="p-3 space-y-1">
                 <button
-                  onClick={() => { setShowMobileAccountMenu(false); handleLogout(); }}
+                  onClick={() => { setShowMobileAccountMenu(false); handleSignOut(); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <LogOut className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <span className="text-sm text-slate-800 dark:text-slate-200">Sign Out</span>
+                </button>
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); handleLeaveHub(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
                 >
-                  <LogOut className="w-4 h-4 text-red-500 dark:text-red-400" />
-                  <span className="text-sm text-red-600 dark:text-red-400">Leave Hub</span>
+                  <ArrowRightLeft className="w-4 h-4 text-red-500 dark:text-red-400" />
+                  <span className="text-sm text-red-600 dark:text-red-400">Switch Hub</span>
                 </button>
               </div>
             </motion.div>

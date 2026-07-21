@@ -583,6 +583,28 @@ class HubService {
     return connection.user;
   }
 
+  /**
+   * Lightweight sign-out: invalidates the server session token and clears the
+   * local auth token, but keeps the hub connection and profile (username,
+   * tags, bio, etc.) intact so the user can log back in without re-entering
+   * the hub URL. Use leaveHub() to fully disconnect from the hub instead.
+   */
+  signOut(slug: string): void {
+    const connections = this.getAllHubConnections();
+    const conn = connections[slug];
+    if (!conn) return;
+
+    if (conn.hub?.tunnelUrl && conn.user?.authToken) {
+      fetch(`${conn.hub.tunnelUrl}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      }).catch(() => {});
+    }
+
+    connections[slug] = { hub: conn.hub, user: { ...conn.user, authToken: undefined } };
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+  }
+
   /** Remove a hub connection — also invalidates the server-side session */
   leaveHub(slug: string): void {
     const connections = this.getAllHubConnections();

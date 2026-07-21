@@ -155,7 +155,11 @@ function HubOnboardRoute() {
     navigate(hubPath('/'));
   };
 
-  return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} hubSlug={hubSlug} />;
+  // A connection with a saved username already completed profile setup once —
+  // landing here again means their session expired, not a fresh signup.
+  const defaultMode: 'login' | 'signup' = connection?.user?.username ? 'login' : 'signup';
+
+  return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} hubSlug={hubSlug} hub={connection?.hub} defaultMode={defaultMode} />;
 }
 
 function HubDashboardRoute() {
@@ -487,12 +491,16 @@ function HubModeRoutes() {
 
 function AppInner() {
   const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/v/') || window.location.pathname.startsWith('/u/');
+  // /join and /create are explicit requests to reach the multi-hub portal (e.g. after
+  // "Switch Hub" clears the local connection) — the same-origin auto-rejoin below must not
+  // silently override that by re-joining the hub this domain happens to be served from.
+  const isPortalPath = window.location.pathname === '/join' || window.location.pathname === '/create';
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
-  const [probing, setProbing] = useState(!subdomain && !isSharePath);
+  const [probing, setProbing] = useState(!subdomain && !isSharePath && !isPortalPath);
 
   useEffect(() => {
-    if (subdomain || isSharePath) return;
+    if (subdomain || isSharePath || isPortalPath) return;
     fetch('/api/info', { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : null)
       .then(async info => {
