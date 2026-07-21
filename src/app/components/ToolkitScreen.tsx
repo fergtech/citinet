@@ -193,7 +193,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
             </div>
 
             {/* Category chips */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 -mx-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
               <button
                 onClick={() => setSelectedCategory('all')}
                 className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
@@ -229,7 +229,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
             </div>
 
             {addingCategory && (
-              <div className="flex gap-1.5 -mt-2">
+              <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 -mx-4 py-2 flex gap-1.5">
                 <input
                   ref={newCatInputRef}
                   type="text"
@@ -340,6 +340,76 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
                   <div className="text-[11px] cn-text-4">Categories</div>
                 </div>
               </div>
+            </div>
+
+            <div className="rounded-2xl p-4 border cn-border cn-surface">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Categories</span>
+                {isAdmin && !addingCategory && (
+                  <button
+                    onClick={() => setAddingCategory(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> Add
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  onClick={() => setSelectedCategory('all')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                    selectedCategory === 'all'
+                      ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
+                      : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
+                  }`}
+                >
+                  All <span className="cn-mono">{filteredTools.length}</span>
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                      selectedCategory === cat
+                        ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
+                        : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
+                    }`}
+                  >
+                    {cat}
+                    {categoryCounts[cat] > 0 && <span className="cn-mono"> {categoryCounts[cat]}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {addingCategory && (
+                <div className="flex gap-1.5 mt-3">
+                  <input
+                    ref={newCatInputRef}
+                    type="text"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateCategory();
+                      if (e.key === 'Escape') { setAddingCategory(false); setNewCatName(''); }
+                    }}
+                    placeholder="Category name"
+                    className="flex-1 h-9 px-3 text-xs cn-surface border cn-border rounded-lg cn-text-1 focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-0"
+                  />
+                  <button
+                    onClick={handleCreateCategory}
+                    className="w-9 h-9 rounded-lg bg-purple-600 text-white flex items-center justify-center hover:bg-purple-700 transition-colors shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => { setAddingCategory(false); setNewCatName(''); }}
+                    className="w-9 h-9 rounded-lg border cn-border flex items-center justify-center cn-text-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

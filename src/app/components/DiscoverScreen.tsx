@@ -1,16 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
-import { DotGrid } from './DotGrid';
 import {
-  Search, X, Tag, Users, MessageCircle, FolderOpen,
-  Compass, Shield, FileText, Loader2,
+  Search, Compass, Layers, Target, Wrench, Calendar, Users, Hexagon,
+  ChevronLeft, ChevronRight, MessageCircle, Loader2,
+  type LucideIcon,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
+import { spacesService } from '../services/spacesService';
+import { registryService, type RegistryHub } from '../services/registryService';
+import { toolkitService } from '../services/toolkitService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
-import type { HubPost, HubMember, HubFile } from '../types/hub';
+import { HubIcon } from './HubIcon';
+import type { HubPost, HubMember, HubSpace } from '../types/hub';
+import type { Tool } from '../types/toolkit';
 
-type Tab = 'all' | 'posts' | 'people' | 'files';
+type FilterId = 'all' | 'spaces' | 'initiatives' | 'resources' | 'events' | 'people' | 'hubs';
 
 interface DiscoverScreenProps {
   onBack: () => void;
@@ -18,7 +22,22 @@ interface DiscoverScreenProps {
   onViewProfile?: (userId: string) => void;
 }
 
-// ── shared helpers ──────────────────────────────────────────────────────────
+const SECTIONS: { value: FilterId; label: string; icon: LucideIcon }[] = [
+  { value: 'all', label: 'All', icon: Compass },
+  { value: 'spaces', label: 'Spaces', icon: Layers },
+  { value: 'initiatives', label: 'Initiatives', icon: Target },
+  { value: 'resources', label: 'Resources', icon: Wrench },
+  { value: 'events', label: 'Events', icon: Calendar },
+  { value: 'people', label: 'People', icon: Users },
+  { value: 'hubs', label: 'Other hubs', icon: Hexagon },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
+  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
+  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
+  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
+};
 
 const AVATAR_COLORS = [
   'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
@@ -32,458 +51,491 @@ function avatarColor(username: string): string {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
-  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
-  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
-  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
+// Minimal local shape + status styling for initiatives — the full Initiative
+// type and its color/status maps live in InitiativesScreen.tsx and aren't
+// exported, so only the fields Discover actually renders are mirrored here.
+interface DiscoverInitiative {
+  id: string;
+  title: string;
+  status: 'planning' | 'active' | 'completed';
+  progress: number;
+}
+const INI_STATUS_LABEL: Record<DiscoverInitiative['status'], string> = { active: 'In progress', planning: 'Planning', completed: 'Completed' };
+const INI_STATUS_BADGE: Record<DiscoverInitiative['status'], string> = {
+  active:    'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+  planning:  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
 };
 
-function formatRelative(iso: string): string {
-  try {
-    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return new Date(iso).toLocaleDateString();
-  } catch { return ''; }
+function getSpaceBanner(space: HubSpace, tunnelUrl: string): React.CSSProperties {
+  if (space.banner_mode === 'image') {
+    const url = space.banner_image_url ?? (space.banner_image_file_name ? spacesService.getSpaceBannerUrl(tunnelUrl, space.slug) : null);
+    if (url) return { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  }
+  if (space.banner_mode === 'solid' && space.banner_color) return { background: space.banner_color };
+  if (space.banner_mode === 'gradient' && space.banner_gradient_from && space.banner_gradient_to) {
+    return { background: `linear-gradient(135deg, ${space.banner_gradient_from}, ${space.banner_gradient_to})` };
+  }
+  return { background: 'var(--cn-grad-spaces)' };
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-}
+// ── shared rail bits ────────────────────────────────────────────────────────
 
-// ── sub-components ───────────────────────────────────────────────────────────
-
-function PostResult({ post, onOpen }: { post: HubPost; onOpen: () => void }) {
+function SectionHeading({ title, sub, onSeeAll }: { title: string; sub?: string; onSeeAll?: () => void }) {
   return (
-    <motion.button
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      onClick={onOpen}
-      className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 hover:border-purple-300 dark:hover:border-purple-700 hover:shadow-md transition-all group"
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
-              {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-            </span>
-            <span className="text-xs text-slate-400">by @{post.author_username}</span>
-            <span className="text-xs text-slate-400">{formatRelative(post.created_at)}</span>
-          </div>
-          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-            {post.title}
-          </p>
-          {post.body && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
-              {post.body}
-            </p>
-          )}
-        </div>
-        {post.reply_count > 0 && (
-          <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0 mt-0.5">
-            <MessageCircle className="w-3.5 h-3.5" />
-            {post.reply_count}
-          </div>
-        )}
+    <div className="flex items-center justify-between mb-3">
+      <div>
+        <h2 className="text-[17px] font-bold cn-text-1">{title}</h2>
+        {sub && <p className="text-xs cn-text-3 mt-0.5">{sub}</p>}
       </div>
-    </motion.button>
+      {onSeeAll && (
+        <button onClick={onSeeAll} className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline shrink-0">
+          See all
+        </button>
+      )}
+    </div>
   );
 }
 
-function MemberResult({
-  member, slug, isYou, onViewProfile, onNavigate,
-}: {
-  member: HubMember;
-  slug: string;
-  isYou: boolean;
-  onViewProfile?: (id: string) => void;
-  onNavigate: (s: string) => void;
-}) {
+const RAIL_CARD = 'cn-glass rounded-xl text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5';
+
+function TrendingRow({ icon: Icon, gradient, title, meta, onClick }: { icon: LucideIcon; gradient: string; title: string; meta: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-3`}>
+      <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: gradient }}>
+        <Icon className="w-4 h-4 text-white" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13.5px] font-semibold cn-text-1 truncate">{title}</div>
+        <div className="text-[11.5px] cn-text-4 mt-0.5 truncate">{meta}</div>
+      </div>
+      <ChevronRight className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+    </button>
+  );
+}
+
+function SpaceCard({ space, tunnelUrl, onClick }: { space: HubSpace; tunnelUrl: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex flex-col gap-2`}>
+      <div className="flex items-center gap-2.5">
+        <span className="w-8 h-8 rounded-lg shrink-0" style={getSpaceBanner(space, tunnelUrl)} />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold cn-text-1 truncate">{space.name}</div>
+          <div className="text-[10.5px] cn-text-4 font-mono">{space.member_count ?? 0} members</div>
+        </div>
+      </div>
+      {space.description && (
+        <p className="text-[11.5px] leading-relaxed cn-text-3 line-clamp-2">{space.description}</p>
+      )}
+    </button>
+  );
+}
+
+function InitiativeCard({ ini, onClick }: { ini: DiscoverInitiative; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex flex-col gap-2`}>
+      <div className="text-[13px] font-semibold cn-text-1 line-clamp-1">{ini.title}</div>
+      <div className="text-[11px] cn-text-3">{ini.progress}% complete</div>
+      <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full ${INI_STATUS_BADGE[ini.status]}`}>
+        {INI_STATUS_LABEL[ini.status]}
+      </span>
+    </button>
+  );
+}
+
+function ResourceCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-2.5`}>
+      <span
+        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+        style={!tool.icon ? { background: 'var(--cn-grad-files)' } : undefined}
+      >
+        {tool.icon ? <img src={tool.icon} alt="" className="w-full h-full object-cover" /> : <Wrench className="w-4 h-4 text-white" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-semibold cn-text-1 truncate">{tool.name}</div>
+        <div className="text-[11px] cn-text-4 truncate">{tool.shortDescription}</div>
+      </div>
+    </button>
+  );
+}
+
+function EventCard({ post, onClick }: { post: HubPost; onClick: () => void }) {
+  const d = post.event_date ? new Date(post.event_date) : null;
+  const day = d ? d.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase() : '';
+  const date = d ? d.getDate() : '';
+  const time = d ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+  return (
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-3`}>
+      <div className="w-11 text-center shrink-0 rounded-lg cn-surface-2 border cn-border py-1.5">
+        <div className="text-[9px] font-bold tracking-wider text-purple-500 dark:text-purple-400">{day}</div>
+        <div className="text-[17px] font-bold cn-text-1 font-mono">{date}</div>
+      </div>
+      <div className="min-w-0">
+        <div className="text-[13px] font-semibold cn-text-1 truncate">{post.title}</div>
+        <div className="text-[11.5px] cn-text-3 truncate">{[time, post.event_location].filter(Boolean).join(' · ')}</div>
+      </div>
+    </button>
+  );
+}
+
+function PersonCard({ member, slug, isYou, onClick }: { member: HubMember; slug: string; isYou: boolean; onClick: () => void }) {
   const avatarUrl = hubService.getAvatarUrl(slug, member.user_id);
   return (
-    <motion.button
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      onClick={() => isYou ? onNavigate('account') : onViewProfile?.(member.user_id)}
-      className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 hover:border-purple-300 dark:hover:border-purple-700 transition-all group"
-    >
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shrink-0 relative overflow-hidden`}>
-          {member.username.slice(0, 2).toUpperCase()}
-          {avatarUrl && (
-            <img src={avatarUrl} alt={member.username} className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm font-semibold text-slate-900 dark:text-white">
-              {member.display_name || member.username}
-            </span>
-            {member.display_name && member.display_name !== member.username && (
-              <span className="text-xs text-slate-400 font-mono">@{member.username}</span>
-            )}
-            {isYou && <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-medium rounded-full">You</span>}
-            {member.is_admin && (
-              <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-[10px] font-medium rounded-full">
-                <Shield className="w-2.5 h-2.5" />Admin
-              </span>
-            )}
-          </div>
-          {member.bio && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">{member.bio}</p>
-          )}
-          {(member.tags?.length ?? 0) > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1">
-              {member.tags!.slice(0, 4).map(tag => (
-                <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-2.5`}>
+      <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-xs shrink-0 relative overflow-hidden`}>
+        {member.username.slice(0, 2).toUpperCase()}
+        {avatarUrl && (
+          <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        )}
       </div>
-    </motion.button>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-semibold cn-text-1 truncate">
+          {member.display_name || member.username}
+          {isYou && <span className="ml-1.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">(you)</span>}
+        </div>
+        {member.bio && <p className="text-[11.5px] cn-text-3 line-clamp-2 leading-snug mt-0.5">{member.bio}</p>}
+      </div>
+    </button>
   );
 }
 
-function FileResult({ file }: { file: HubFile }) {
-  const ext = file.name.split('.').pop()?.toUpperCase() ?? 'FILE';
+function OtherHubCard({ hub }: { hub: RegistryHub }) {
   return (
-    <motion.button
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      onClick={() => {
-        sessionStorage.setItem('citinet-deeplink-file', file.name);
-        // Navigate to files screen — caller handles this via onNavigate wrapper
-      }}
-      className="w-full text-left bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-3 hover:border-purple-300 dark:hover:border-purple-700 transition-all group cursor-pointer"
-    >
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-          <FileText className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-            {file.name}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-            <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-zinc-800 rounded font-mono">{ext}</span>
-            {file.size > 0 && <span>{formatBytes(file.size)}</span>}
-            {file.uploaded_at && <span>{formatRelative(file.uploaded_at)}</span>}
+    <div className="cn-glass rounded-xl p-3 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2.5">
+        <HubIcon hub={hub} baseUrl={hub.tunnel_url} size={32} variant="badge" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold cn-text-1 truncate">{hub.name}</div>
+          <div className="text-[11px] cn-text-4 truncate">
+            {[hub.location, hub.member_count !== undefined ? `${hub.member_count.toLocaleString()} members` : null].filter(Boolean).join(' · ')}
           </div>
         </div>
       </div>
-    </motion.button>
+      <button
+        onClick={() => window.open(`${window.location.origin}/join?url=${encodeURIComponent(hub.tunnel_url)}`, '_blank', 'noopener')}
+        className="self-start text-xs font-semibold px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-colors"
+      >
+        Join this hub
+      </button>
+    </div>
   );
 }
 
-// ── main screen ───────────────────────────────────────────────────────────────
+// ── main screen ──────────────────────────────────────────────────────────────
 
 export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug ?? '';
+  const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const currentUserId = currentUser?.hubUserId;
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>('all');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterId>('all');
 
   const [posts, setPosts] = useState<HubPost[]>([]);
   const [members, setMembers] = useState<HubMember[]>([]);
-  const [files, setFiles] = useState<HubFile[]>([]);
+  const [spaces, setSpaces] = useState<HubSpace[]>([]);
+  const [initiatives, setInitiatives] = useState<DiscoverInitiative[]>([]);
+  const [otherHubs, setOtherHubs] = useState<RegistryHub[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
 
-  const tunnelUrl = currentHub?.tunnelUrl ?? '';
+  const tools = useMemo(() => toolkitService.getAllTools(), []);
+
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
 
-  // Read tag filter set by ProfileScreen or NeighborsScreen
-  useEffect(() => {
-    const tag = sessionStorage.getItem('citinet-filter-tag');
-    if (tag) {
-      setActiveTag(tag);
-      sessionStorage.removeItem('citinet-filter-tag');
-    }
-  }, []);
-
-  // Read search query set by the Dashboard's search bar
+  // Search query deep-linked from the Dashboard's search bar
   useEffect(() => {
     const q = sessionStorage.getItem('citinet-deeplink-search');
     if (q) {
-      setSearchQuery(q);
+      setQuery(q);
       sessionStorage.removeItem('citinet-deeplink-search');
     }
   }, []);
 
-  // Fetch all data once
   useEffect(() => {
     if (!slug) return;
     setLoading(true);
     Promise.allSettled([
       hubService.listPosts(slug),
       hubService.listMembers(slug),
-      hubService.listFiles(slug),
-    ]).then(([postsRes, membersRes, filesRes]) => {
+      spacesService.listAll(slug),
+      registryService.getHubs(),
+      tunnelUrl
+        ? fetch(`${tunnelUrl}/api/initiatives`, {
+            headers: { 'Content-Type': 'application/json', ...(currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {}) },
+          }).then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+        : Promise.reject(new Error('no tunnel url')),
+    ]).then(([postsRes, membersRes, spacesRes, hubsRes, iniRes]) => {
       if (postsRes.status === 'fulfilled') setPosts(postsRes.value);
       if (membersRes.status === 'fulfilled') setMembers(membersRes.value);
-      if (filesRes.status === 'fulfilled') setFiles(filesRes.value);
+      if (spacesRes.status === 'fulfilled') setSpaces(spacesRes.value);
+      if (hubsRes.status === 'fulfilled') setOtherHubs(hubsRes.value.filter(h => h.slug !== slug));
+      if (iniRes.status === 'fulfilled') {
+        const raw = iniRes.value as unknown;
+        const list: Array<Record<string, unknown>> = Array.isArray(raw)
+          ? raw
+          : (raw as { initiatives?: Array<Record<string, unknown>> })?.initiatives ?? [];
+        setInitiatives(list.map((i): DiscoverInitiative => ({
+          id: String(i.id ?? ''),
+          title: typeof i.title === 'string' ? i.title : 'Untitled',
+          status: (i.status as DiscoverInitiative['status']) ?? 'planning',
+          progress: typeof i.progress === 'number' ? i.progress : 0,
+        })));
+      }
       setLoading(false);
     });
-  }, [slug]);
+  }, [slug, tunnelUrl, currentUser?.authToken]);
 
-  // userId → tags lookup for post filtering
-  const memberTagMap = useMemo(() => {
-    const map = new Map<string, string[]>();
-    members.forEach(m => map.set(m.user_id, m.tags ?? []));
-    return map;
-  }, [members]);
+  const needle = query.trim().toLowerCase();
 
-  // Normalise query — strip leading # so #gardening and gardening are equivalent
-  const query = searchQuery.toLowerCase().replace(/^#/, '').trim();
+  const filteredSpaces = useMemo(
+    () => spaces.filter(s => s.my_status !== 'active' && (!needle || s.name.toLowerCase().includes(needle))),
+    [spaces, needle]
+  );
+  const filteredInitiatives = useMemo(
+    () => initiatives.filter(i => !needle || i.title.toLowerCase().includes(needle)),
+    [initiatives, needle]
+  );
+  const filteredTools = useMemo(
+    () => [...tools].filter(t => !needle || t.name.toLowerCase().includes(needle)).sort((a, b) => (b.recommendedScore ?? 0) - (a.recommendedScore ?? 0)),
+    [tools, needle]
+  );
+  const filteredEvents = useMemo(() => {
+    const cutoff = Date.now() - 86400000;
+    return posts
+      .filter(p => !!p.event_date && new Date(p.event_date!).getTime() >= cutoff && (!needle || p.title.toLowerCase().includes(needle)))
+      .sort((a, b) => new Date(a.event_date!).getTime() - new Date(b.event_date!).getTime());
+  }, [posts, needle]);
+  const filteredMembers = useMemo(
+    () => members.filter(m => !needle || m.username.toLowerCase().includes(needle) || (m.display_name?.toLowerCase().includes(needle) ?? false)),
+    [members, needle]
+  );
+  const filteredHubs = useMemo(
+    () => otherHubs.filter(h => !needle || h.name.toLowerCase().includes(needle)),
+    [otherHubs, needle]
+  );
 
-  const filteredPosts = useMemo(() => posts.filter(p => {
-    const matchQ = !query ||
-      p.title.toLowerCase().includes(query) ||
-      p.body?.toLowerCase().includes(query) ||
-      p.author_username?.toLowerCase().includes(query);
-    const matchTag = !activeTag ||
-      (memberTagMap.get(p.author_id)?.includes(activeTag) ?? false) ||
-      p.title.toLowerCase().includes(activeTag) ||
-      p.body?.toLowerCase().includes(activeTag);
-    return matchQ && matchTag;
-  }), [posts, query, activeTag, memberTagMap]);
+  // "Active neighbors" — members who authored something in the recent posts
+  // list (a real activity signal), backfilled with the most recently joined
+  // members when there aren't enough active ones to fill the rail.
+  const activeNeighbors = useMemo(() => {
+    const activeIds = new Set(posts.map(p => p.author_id));
+    const active = filteredMembers.filter(m => activeIds.has(m.user_id) && m.user_id !== currentUserId);
+    const rest = filteredMembers
+      .filter(m => !activeIds.has(m.user_id) && m.user_id !== currentUserId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return [...active, ...rest].slice(0, 4);
+  }, [filteredMembers, posts, currentUserId]);
 
-  const filteredMembers = useMemo(() => members.filter(m => {
-    const matchQ = !query ||
-      m.username.toLowerCase().includes(query) ||
-      (m.display_name?.toLowerCase().includes(query) ?? false) ||
-      (m.bio?.toLowerCase().includes(query) ?? false) ||
-      (m.tags?.some(t => t.includes(query)) ?? false);
-    const matchTag = !activeTag || (m.tags?.includes(activeTag) ?? false);
-    return matchQ && matchTag;
-  }), [members, query, activeTag]);
+  const suggestedSpaces = useMemo(() => [...filteredSpaces].sort((a, b) => (b.member_count ?? 0) - (a.member_count ?? 0)).slice(0, 4), [filteredSpaces]);
+  const featuredInitiatives = useMemo(
+    () => [...filteredInitiatives].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active')).slice(0, 3),
+    [filteredInitiatives]
+  );
+  const popularResources = useMemo(() => filteredTools.slice(0, 4), [filteredTools]);
+  const upcomingEvents = useMemo(() => filteredEvents.slice(0, 3), [filteredEvents]);
+  const otherHubsSlice = useMemo(() => [...filteredHubs].sort((a, b) => (b.member_count ?? 0) - (a.member_count ?? 0)).slice(0, 4), [filteredHubs]);
 
-  const filteredFiles = useMemo(() => files.filter(f => {
-    const matchQ = !query || f.name.toLowerCase().includes(query);
-    const matchTag = !activeTag || f.name.toLowerCase().includes(activeTag);
-    return matchQ && matchTag;
-  }), [files, query, activeTag]);
+  // "Trending" mirrors one item per content kind — post, space, initiative,
+  // resource — the same cross-type mix the design reference uses, backed by
+  // real engagement/size/progress/recommendation signals per kind.
+  const trending = useMemo(() => {
+    const items: { id: string; title: string; meta: string; gradient: string; icon: LucideIcon; onClick: () => void }[] = [];
 
-  const hasResults = filteredPosts.length + filteredMembers.length + filteredFiles.length > 0;
-  const hasFilter = !!query || !!activeTag;
+    const topPost = [...posts].sort((a, b) => ((b.reply_count ?? 0) + (b.like_count ?? 0)) - ((a.reply_count ?? 0) + (a.like_count ?? 0)))[0];
+    if (topPost) {
+      items.push({
+        id: `p-${topPost.id}`, title: topPost.title,
+        meta: `Feed · ${topPost.reply_count} ${topPost.reply_count === 1 ? 'reply' : 'replies'}`,
+        gradient: 'var(--cn-grad-feed)', icon: MessageCircle, onClick: () => setSelectedPost(topPost),
+      });
+    }
+    const topSpace = [...spaces].sort((a, b) => (b.member_count ?? 0) - (a.member_count ?? 0))[0];
+    if (topSpace) {
+      items.push({
+        id: `s-${topSpace.id}`, title: topSpace.name, meta: `Spaces · ${topSpace.member_count ?? 0} members`,
+        gradient: 'var(--cn-grad-spaces)', icon: Layers, onClick: () => onNavigate('spaces'),
+      });
+    }
+    const topIni = [...initiatives].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') || b.progress - a.progress)[0];
+    if (topIni) {
+      items.push({
+        id: `i-${topIni.id}`, title: topIni.title, meta: `Initiatives · ${topIni.progress}% complete`,
+        gradient: 'var(--cn-grad-initiatives)', icon: Target, onClick: () => onNavigate('initiatives'),
+      });
+    }
+    const topTool = [...tools].sort((a, b) => (b.recommendedScore ?? 0) - (a.recommendedScore ?? 0))[0];
+    if (topTool) {
+      items.push({
+        id: `t-${topTool.id}`, title: topTool.name, meta: `Resources · ${topTool.shortDescription}`,
+        gradient: 'var(--cn-grad-files)', icon: Wrench, onClick: () => onNavigate('toolkit'),
+      });
+    }
+    return needle ? items.filter(i => i.title.toLowerCase().includes(needle)) : items;
+  }, [posts, spaces, initiatives, tools, needle, onNavigate]);
 
-  const TABS: { id: Tab; label: string; icon: React.ReactNode; count: number }[] = [
-    { id: 'all',    label: 'All',    icon: <Compass className="w-3.5 h-3.5" />,    count: filteredPosts.length + filteredMembers.length + filteredFiles.length },
-    { id: 'posts',  label: 'Posts',  icon: <MessageCircle className="w-3.5 h-3.5" />, count: filteredPosts.length },
-    { id: 'people', label: 'People', icon: <Users className="w-3.5 h-3.5" />,      count: filteredMembers.length },
-    { id: 'files',  label: 'Files',  icon: <FolderOpen className="w-3.5 h-3.5" />, count: filteredFiles.length },
-  ];
-
-  const showPosts   = activeTab === 'all' || activeTab === 'posts';
-  const showPeople  = activeTab === 'all' || activeTab === 'people';
-  const showFiles   = activeTab === 'all' || activeTab === 'files';
-  const postsSlice  = activeTab === 'all' ? filteredPosts.slice(0, 5)   : filteredPosts;
-  const peopleSlice = activeTab === 'all' ? filteredMembers.slice(0, 4) : filteredMembers;
-  const filesSlice  = activeTab === 'all' ? filteredFiles.slice(0, 4)   : filteredFiles;
+  const showAll = filter === 'all';
+  const hasAnyResults = trending.length > 0 || suggestedSpaces.length > 0 || featuredInitiatives.length > 0
+    || popularResources.length > 0 || upcomingEvents.length > 0 || activeNeighbors.length > 0 || otherHubsSlice.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
-      <DotGrid />
+    <div>
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 pt-3 pb-2">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex-1">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white">Discover</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Search posts, people, and files</p>
-            </div>
-            <button onClick={onBack} className="w-9 h-9 rounded-lg bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 flex items-center justify-center transition-colors" aria-label="Close"><X className="w-4 h-4 text-white" /></button>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-0">
+        <button onClick={onBack} className="flex items-center gap-0.5 mb-2 group">
+          <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
+          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">
+            {currentHub?.name ?? 'Hub'}
+          </span>
+        </button>
+
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-discover)' }}>
+            <Compass className="w-6 h-6 text-white" />
           </div>
-
-          {/* Search bar */}
-          <div className="relative mb-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search or type #tag to filter by interest…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <X className="w-4 h-4" />
-              </button>
-            )}
+          <div>
+            <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Discover</h1>
+            <p className="text-sm cn-text-3 mt-0.5">Explore what's happening in your hub — and beyond</p>
           </div>
+        </div>
 
-          {/* Active tag pill */}
-          {activeTag && (
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs text-slate-500 dark:text-slate-400">Filtering by:</span>
-              <button
-                onClick={() => setActiveTag(null)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
-              >
-                <Tag className="w-3 h-3" />
-                #{activeTag}
-                <X className="w-3 h-3 ml-0.5" />
-              </button>
-            </div>
-          )}
+        {/* Search */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search spaces, initiatives, resources, people, hubs…"
+            className="w-full h-[46px] pl-10 pr-4 rounded-xl border cn-border cn-surface-2 cn-text-1 text-sm placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+          />
+        </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
-            {TABS.map(tab => (
+        {/* Filter chips */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3">
+          {SECTIONS.map(s => {
+            const Icon = s.icon;
+            const active = filter === s.value;
+            return (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                key={s.value}
+                onClick={() => setFilter(s.value)}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                  active
+                    ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-transparent'
+                    : 'cn-surface-2 cn-text-2 cn-border hover:border-purple-300 dark:hover:border-purple-700'
                 }`}
               >
-                {tab.icon}
-                {tab.label}
-                {hasFilter && tab.count > 0 && (
-                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-slate-300'}`}>
-                    {tab.count}
-                  </span>
-                )}
+                <Icon className="w-3 h-3" />{s.label}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
-
-        {/* Loading */}
+      {/* Body */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 flex flex-col gap-7">
         {loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin mb-3" />
+          <div className="flex flex-col items-center justify-center py-20 cn-text-4">
+            <Loader2 className="w-7 h-7 animate-spin mb-3" />
             <p className="text-sm">Loading…</p>
           </div>
         )}
 
-        {/* Empty / prompt state */}
-        {!loading && !hasFilter && (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Compass className="w-12 h-12 mb-3 opacity-30" />
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Start typing to search</p>
-            <p className="text-xs mt-1 text-center max-w-xs">
-              Use <span className="font-mono text-purple-500">#tag</span> to filter by interest, or type any keyword to search across posts, people, and files.
-            </p>
+        {!loading && needle && !hasAnyResults && (
+          <div className="cn-glass rounded-2xl py-14 text-center cn-text-3">
+            Nothing found for "{query}" — try another search.
           </div>
         )}
 
-        {/* No results */}
-        {!loading && hasFilter && !hasResults && (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Search className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm font-medium">No results found</p>
-            <p className="text-xs mt-1">Try a different keyword or tag</p>
-          </div>
-        )}
-
-        {/* Posts section */}
-        {!loading && showPosts && postsSlice.length > 0 && (
+        {!loading && showAll && trending.length > 0 && (
           <section>
-            {activeTab === 'all' && (
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <MessageCircle className="w-4 h-4" /> Posts
-                </h2>
-                {filteredPosts.length > 5 && (
-                  <button onClick={() => setActiveTab('posts')} className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
-                    See all {filteredPosts.length}
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {postsSlice.map(post => (
-                  <PostResult key={post.id} post={post} onOpen={() => setSelectedPost(post)} />
-                ))}
-              </AnimatePresence>
+            <SectionHeading title="Trending in your hub" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {trending.map(t => (
+                <TrendingRow key={t.id} icon={t.icon} gradient={t.gradient} title={t.title} meta={t.meta} onClick={t.onClick} />
+              ))}
             </div>
           </section>
         )}
 
-        {/* People section */}
-        {!loading && showPeople && peopleSlice.length > 0 && (
+        {!loading && (showAll || filter === 'spaces') && suggestedSpaces.length > 0 && (
           <section>
-            {activeTab === 'all' && (
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <Users className="w-4 h-4" /> People
-                </h2>
-                {filteredMembers.length > 4 && (
-                  <button onClick={() => setActiveTab('people')} className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
-                    See all {filteredMembers.length}
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {peopleSlice.map(member => (
-                  <MemberResult
-                    key={member.user_id}
-                    member={member}
-                    slug={slug}
-                    isYou={member.user_id === currentUserId}
-                    onViewProfile={onViewProfile}
-                    onNavigate={onNavigate}
-                  />
-                ))}
-              </AnimatePresence>
+            <SectionHeading title="Spaces you might like" sub="Based on activity across your hub" onSeeAll={showAll ? () => setFilter('spaces') : undefined} />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              {(showAll ? suggestedSpaces : filteredSpaces).map(s => (
+                <SpaceCard key={s.id} space={s} tunnelUrl={tunnelUrl} onClick={() => onNavigate('spaces')} />
+              ))}
             </div>
           </section>
         )}
 
-        {/* Files section */}
-        {!loading && showFiles && filesSlice.length > 0 && (
+        {!loading && (showAll || filter === 'initiatives') && featuredInitiatives.length > 0 && (
           <section>
-            {activeTab === 'all' && (
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                  <FolderOpen className="w-4 h-4" /> Files
-                </h2>
-                {filteredFiles.length > 4 && (
-                  <button onClick={() => setActiveTab('files')} className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
-                    See all {filteredFiles.length}
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="space-y-2">
-              <AnimatePresence mode="popLayout">
-                {filesSlice.map(file => (
-                  <FileResult
-                    key={file.id}
-                    file={file}
-                  />
-                ))}
-              </AnimatePresence>
+            <SectionHeading title="Featured initiatives" sub="Community projects residents are building" onSeeAll={showAll ? () => setFilter('initiatives') : undefined} />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              {(showAll ? featuredInitiatives : filteredInitiatives).map(i => (
+                <InitiativeCard key={i.id} ini={i} onClick={() => onNavigate('initiatives')} />
+              ))}
             </div>
           </section>
         )}
 
-        <div className="h-8" />
+        {!loading && (showAll || filter === 'resources') && popularResources.length > 0 && (
+          <section>
+            <SectionHeading title="Popular resources" sub="Most recommended tools and open-source picks" onSeeAll={showAll ? () => setFilter('resources') : undefined} />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              {(showAll ? popularResources : filteredTools).map(t => (
+                <ResourceCard key={t.id} tool={t} onClick={() => onNavigate('toolkit')} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!loading && (showAll || filter === 'events') && upcomingEvents.length > 0 && (
+          <section>
+            <SectionHeading title="Upcoming events" />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+              {(showAll ? upcomingEvents : filteredEvents).map(e => (
+                <EventCard key={e.id} post={e} onClick={() => setSelectedPost(e)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!loading && (showAll || filter === 'people') && activeNeighbors.length > 0 && (
+          <section>
+            <SectionHeading title="Active neighbors" sub="People to know in your hub" />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              {(showAll ? activeNeighbors : filteredMembers.filter(m => m.user_id !== currentUserId)).map(m => (
+                <PersonCard
+                  key={m.user_id}
+                  member={m}
+                  slug={slug}
+                  isYou={m.user_id === currentUserId}
+                  onClick={() => (m.user_id === currentUserId ? onNavigate('account') : onViewProfile?.(m.user_id))}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!loading && (showAll || filter === 'hubs') && otherHubsSlice.length > 0 && (
+          <section>
+            <SectionHeading title="Other communities" sub="Hubs beyond your own you could explore" />
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+              {(showAll ? otherHubsSlice : filteredHubs).map(h => (
+                <OtherHubCard key={h.id} hub={h} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
-      {/* Post detail modal */}
+      {/* Post detail modal (used by Trending posts + Events) */}
       {selectedPost && (
         <PostDetailModal
           isOpen

@@ -88,7 +88,12 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Registry not configured (missing token)' });
     }
 
-    const { id, name, slug, location, description, tunnel_url, member_count } = req.body || {};
+    const {
+      id, name, slug, location, description, tunnel_url, member_count,
+      hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
+      hub_icon_gradient_from, hub_icon_gradient_to,
+      hub_icon_solid_color, hub_icon_image_file_name,
+    } = req.body || {};
     if (!tunnel_url || !name || !slug) {
       return res.status(400).json({ error: 'name, slug, and tunnel_url are required' });
     }
@@ -117,6 +122,13 @@ export default async function handler(req, res) {
         online:        info !== null,
         registered_at: existingIndex >= 0 ? content.hubs[existingIndex].registered_at : now,
         last_seen:     now,
+        hub_icon_mode,
+        hub_icon_symbol,
+        hub_icon_bg_mode,
+        hub_icon_gradient_from,
+        hub_icon_gradient_to,
+        hub_icon_solid_color,
+        hub_icon_image_file_name,
       };
 
       if (existingIndex >= 0) {

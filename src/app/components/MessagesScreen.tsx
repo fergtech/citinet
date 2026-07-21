@@ -4,7 +4,7 @@ import { DotGrid } from './DotGrid';
 import {
   Search, Send, Users, Loader2, AlertCircle,
   RefreshCw, Plus, MessageCircle, X, Check,
-  Paperclip, File as FileIcon, Download, ArrowLeft,
+  Paperclip, File as FileIcon, Download, ArrowLeft, ChevronRight,
 } from 'lucide-react';
 import { SupportLauncher } from './SupportLauncher';
 import { motion, AnimatePresence } from 'motion/react';
@@ -293,6 +293,9 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [groupName, setGroupName] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
 
+  // Group members panel (view who's in a group chat, click through to their profile)
+  const [showGroupMembers, setShowGroupMembers] = useState(false);
+
   // A conversation the user has opened (via "New Conversation", a profile's Message
   // button, or "Message seller") but hasn't sent anything in yet — exists only in
   // local state. It's only persisted to the backend on the first actual send, so
@@ -567,23 +570,33 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     }
   };
 
+  // Full hub member directory (bio/headline/role) — loaded once and shared between
+  // the "new conversation" picker and the group members panel.
+  const ensureMembersLoaded = async () => {
+    if (members.length > 0) return;
+    setMembersLoading(true);
+    try {
+      const m = await hubService.listMembers(slug);
+      setMembers(m.filter(x => x.user_id !== myUserId));
+    } catch (err) {
+      console.error('Failed to load members:', err);
+    } finally {
+      setMembersLoading(false);
+    }
+  };
+
   // ── new conversation flow ─────────────────────────────
   const openNewConvo = async () => {
     setShowNewConvo(true);
     setSelectedMembers([]);
     setGroupName('');
     setMemberSearch('');
-    if (members.length === 0) {
-      setMembersLoading(true);
-      try {
-        const m = await hubService.listMembers(slug);
-        setMembers(m.filter(x => x.user_id !== myUserId));
-      } catch (err) {
-        console.error('Failed to load members:', err);
-      } finally {
-        setMembersLoading(false);
-      }
-    }
+    await ensureMembersLoaded();
+  };
+
+  const openGroupMembers = async () => {
+    setShowGroupMembers(true);
+    await ensureMembersLoaded();
   };
 
   const toggleMember = (member: HubMember) => {
@@ -905,6 +918,87 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
         )}
       </AnimatePresence>
 
+      {/* ── Group Members Panel ── */}
+      <AnimatePresence>
+        {showGroupMembers && selectedConvo?.kind === 'group' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            onClick={() => setShowGroupMembers(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Group Members <span className="text-slate-400 dark:text-slate-500 font-normal text-sm">({selectedConvo.members.length})</span>
+                </h2>
+                <button onClick={() => setShowGroupMembers(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Close group members">
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="p-2 overflow-y-auto">
+                {membersLoading ? (
+                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-purple-500" /></div>
+                ) : (
+                  selectedConvo.members.map(participant => {
+                    const isSelf = participant.user_id === myUserId;
+                    const detail = members.find(m => m.user_id === participant.user_id);
+                    const displayName = isSelf
+                      ? (currentUser?.displayName || currentUser?.username || 'You')
+                      : (detail?.display_name || participant.username);
+                    return (
+                      <button
+                        key={participant.user_id}
+                        onClick={() => {
+                          if (isSelf || !onNavigate) return;
+                          if (selectedId) sessionStorage.setItem('citinet-deeplink-message-conv', selectedId);
+                          setShowGroupMembers(false);
+                          onNavigate(`profile/${participant.user_id}`);
+                        }}
+                        disabled={isSelf || !onNavigate}
+                        className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors text-left disabled:cursor-default disabled:hover:bg-transparent"
+                      >
+                        <AvatarBadge
+                          slug={slug}
+                          userId={participant.user_id}
+                          name={participant.username}
+                          sizeClass="w-10 h-10"
+                          radiusClass="rounded-xl"
+                          textClass=""
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{displayName}</span>
+                            {isSelf && <span className="text-[10px] text-slate-400 shrink-0">(You)</span>}
+                            {!isSelf && detail && detail.role !== 'member' && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0 uppercase">
+                                {detail.role}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {!isSelf && (detail?.profile_headline || detail?.bio) || `@${participant.username}`}
+                          </p>
+                        </div>
+                        {!isSelf && <ChevronRight className="w-4 h-4 text-slate-300 dark:text-zinc-600 shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Conversations Sidebar ── */}
       <aside className={`${selectedId ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 relative z-10`}>
         {/* Header */}
@@ -1087,11 +1181,16 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     <Users className="w-4 h-4 text-slate-400" />
                   )}
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  {selectedConvo.kind === 'group'
-                    ? `${selectedConvo.members.length} members`
-                    : 'Direct message'}
-                </p>
+                {selectedConvo.kind === 'group' ? (
+                  <button
+                    onClick={openGroupMembers}
+                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:underline transition-colors"
+                  >
+                    {selectedConvo.members.length} members
+                  </button>
+                ) : (
+                  <p className="text-xs text-slate-600 dark:text-slate-400">Direct message</p>
+                )}
               </div>
             </div>
           </div>

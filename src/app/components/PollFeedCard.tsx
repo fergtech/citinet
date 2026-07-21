@@ -1,4 +1,4 @@
-import { Vote, Check, Lock, Loader2, Clock, Link2, CheckCircle2, XCircle } from 'lucide-react';
+import { Vote, Check, Lock, Loader2, Clock, Link2, CheckCircle2, XCircle, Pencil, RotateCcw } from 'lucide-react';
 import type { Poll } from '../types/poll';
 
 export function timeLeft(closesAt: string | null): string | null {
@@ -40,13 +40,16 @@ interface PollFeedCardProps {
   isMod: boolean;
   voting: boolean;
   closing: boolean;
+  reopening: boolean;
   onVote: (idx: number) => void;
   onClose: () => void;
+  onReopen: () => void;
+  onEdit: () => void;
   onCopyLink: () => void;
   copyLinkActive: boolean;
 }
 
-export function PollFeedCard({ poll, isMod, voting, closing, onVote, onClose, onCopyLink, copyLinkActive }: PollFeedCardProps) {
+export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onCopyLink, copyLinkActive }: PollFeedCardProps) {
   const isClosed = poll.closed || (poll.closes_at ? new Date(poll.closes_at) < new Date() : false);
   const hasVoted = poll.my_vote != null;
   const showBars = hasVoted || isClosed;
@@ -194,7 +197,23 @@ export function PollFeedCard({ poll, isMod, voting, closing, onVote, onClose, on
           {copyLinkActive ? '✓ Copied' : 'Share'}
         </button>
         <div className="flex-1" />
-        {isMod && !isClosed && (
+        {isMod && (
+          <button
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold"
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+        )}
+        {isMod && (isClosed ? (
+          <button
+            onClick={onReopen}
+            disabled={reopening}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold"
+          >
+            {reopening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><RotateCcw className="w-3.5 h-3.5" /> Reopen</>}
+          </button>
+        ) : (
           <button
             onClick={onClose}
             disabled={closing}
@@ -202,7 +221,7 @@ export function PollFeedCard({ poll, isMod, voting, closing, onVote, onClose, on
           >
             {closing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Close poll'}
           </button>
-        )}
+        ))}
       </div>
     </div>
   );

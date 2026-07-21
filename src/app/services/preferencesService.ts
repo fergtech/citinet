@@ -4,6 +4,8 @@ export interface UserPreferences {
   background_type?: 'default' | 'color' | 'image' | 'preset';
   background_value?: string;
   background_brightness?: string;
+  /** Absence means enabled — mirrors the server's opt-out default. */
+  email_notifications?: 'true' | 'false';
 }
 
 class PreferencesService {

@@ -23,6 +23,7 @@ class AtlasService {
       title:         row.title as string,
       description:   row.description as string | undefined,
       category:      row.category as AtlasPinCategory,
+      imageFileName: row.image_file_name as string | undefined,
       createdAt:     row.created_at as string,
     };
   }
@@ -51,18 +52,45 @@ class AtlasService {
       title: string;
       description?: string;
       category: AtlasPinCategory;
+      imageFileName?: string;
     }
   ): Promise<AtlasPin> {
     const conn = this.getConn(hubSlug);
     if (!conn) throw new Error('Not connected to hub');
+    const { imageFileName, ...rest } = data;
     const res = await fetch(`${conn.baseUrl}/api/atlas/pins`, {
       method: 'POST',
       headers: this.headers(conn.token),
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...rest, image_file_name: imageFileName }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to add pin' }));
       throw new Error(err.error ?? 'Failed to add pin');
+    }
+    return this.rowToPin(await res.json(), hubSlug);
+  }
+
+  async updatePin(
+    hubSlug: string,
+    pinId: string,
+    data: {
+      title: string;
+      description?: string;
+      category: AtlasPinCategory;
+      imageFileName?: string;
+    }
+  ): Promise<AtlasPin> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) throw new Error('Not connected to hub');
+    const { imageFileName, ...rest } = data;
+    const res = await fetch(`${conn.baseUrl}/api/atlas/pins/${pinId}`, {
+      method: 'PATCH',
+      headers: this.headers(conn.token),
+      body: JSON.stringify({ ...rest, image_file_name: imageFileName }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to update pin' }));
+      throw new Error(err.error ?? 'Failed to update pin');
     }
     return this.rowToPin(await res.json(), hubSlug);
   }

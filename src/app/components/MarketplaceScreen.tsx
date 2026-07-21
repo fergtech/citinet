@@ -407,7 +407,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
               </span>
               <div className="flex-1 min-w-0">
                 <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Exchange</h1>
-                <p className="text-sm cn-text-3 mt-0.5">Buy, sell, lend & give — between neighbors</p>
+                <p className="text-sm cn-text-3 mt-0.5">Buy, sell, lend & give - between neighbors</p>
               </div>
               <button
                 onClick={handlePostListing}

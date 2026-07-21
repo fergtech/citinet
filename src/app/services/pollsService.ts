@@ -82,6 +82,38 @@ class PollsService {
       headers: { Authorization: `Bearer ${conn.token}` },
     });
   }
+
+  /** Reopens a closed poll. Omitting `closesAt` reopens with no deadline (open
+   * until manually closed again) rather than immediately re-closing against a
+   * stale past date. */
+  async reopen(hubSlug: string, pollId: string, closesAt?: string): Promise<void> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) throw new Error('Not connected to hub');
+    const res = await fetch(`${conn.baseUrl}/api/polls/${pollId}/reopen`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closes_at: closesAt || undefined }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to reopen poll' }));
+      throw new Error((err as { error?: string }).error ?? 'Failed to reopen poll');
+    }
+  }
+
+  async update(hubSlug: string, pollId: string, data: { question?: string; options?: string[]; closes_at?: string | null; quorum_pct?: number; pass_pct?: number }): Promise<Poll> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) throw new Error('Not connected to hub');
+    const res = await fetch(`${conn.baseUrl}/api/polls/${pollId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${conn.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to edit poll' }));
+      throw new Error((err as { error?: string }).error ?? 'Failed to edit poll');
+    }
+    return rowToPoll(await res.json());
+  }
 }
 
 export const pollsService = new PollsService();

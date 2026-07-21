@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import {
-  Hexagon, Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
+  Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
   Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import type { NotificationFeature } from '../services/notificationsService';
 import { registryService } from '../services/registryService';
 import type { RegistryHub } from '../services/registryService';
 import { FeatureRequestModal } from './FeatureRequestModal';
+import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache } from '../utils/subdomain';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
 import type { HubVendor } from '../types/hub';
@@ -36,8 +37,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   const showNav = pathname !== '/onboard';
 
   const [desktopNavLayout, setDesktopNavLayout] = useState<'dock' | 'sidebar'>(() => {
-    if (typeof window === 'undefined') return 'dock';
-    return localStorage.getItem('citinet-desktop-nav-layout') === 'sidebar' ? 'sidebar' : 'dock';
+    if (typeof window === 'undefined') return 'sidebar';
+    return localStorage.getItem('citinet-desktop-nav-layout') === 'dock' ? 'dock' : 'sidebar';
   });
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
@@ -166,6 +167,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       id: currentHub.slug, name: currentHub.name, slug: currentHub.slug,
       location: currentHub.location ?? '', description: currentHub.description ?? '',
       tunnel_url: url, member_count: currentHub.meta?.activeMembers ?? 0, online: true,
+      ...hubIconRegistryFields(currentHub),
     }).catch(() => {});
   };
 
@@ -313,7 +315,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0"
           title="About this hub"
         >
-          <Hexagon className="w-4 h-4 text-purple-500 dark:text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+          <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{nodeName}</span>
         </button>
         <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
@@ -699,7 +701,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
         <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 shrink-0 z-20">
           <div className="px-3 py-2 space-y-2">
             <div className="flex items-center gap-2">
-              <Hexagon className="w-4 h-4 text-purple-400 shrink-0" fill="currentColor" strokeWidth={0} />
+              <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
               <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate flex-1 min-w-0">{nodeName}</h1>
               <span className="text-[10px] text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">{nodeStatus.onlineNow} online</span>
               <div className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
@@ -1060,9 +1062,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             >
               <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center shrink-0">
-                    <Hexagon className="w-5 h-5 text-purple-500 dark:text-purple-400" fill="currentColor" strokeWidth={0} />
-                  </div>
+                  <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={40} variant="badge" />
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Hub</p>

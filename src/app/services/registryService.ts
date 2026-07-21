@@ -12,7 +12,9 @@
  *   DELETE /hubs/:id        → deregister (called by admin panel)
  */
 
-export interface RegistryHub {
+import type { HubIconFields } from '../types/hub';
+
+export interface RegistryHub extends HubIconFields {
   /** Unique hub ID (node_id from the hub's /api/info) */
   id: string;
   /** Human-readable hub name */

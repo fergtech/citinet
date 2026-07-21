@@ -25,6 +25,13 @@ export interface PostCardProps {
   content?: string;
   mediaUrl?: string;
   replyCount?: number;
+  likeCount?: number;
+  myLiked?: boolean;
+  /** Toggles the caller's like on this post. */
+  onLike?: () => void;
+  /** Opens the post and focuses its reply box — distinct from the card's own
+   * open-on-click so it can additionally signal "I came here to comment." */
+  onCommentClick?: () => void;
   categoryColors?: Record<string, string>;
   eventDate?: string | null;
   eventLocation?: string | null;
@@ -36,7 +43,8 @@ export interface PostCardProps {
 
 export function PostCard({
   variant, category, author, timestamp, content,
-  mediaUrl, replyCount, eventDate, eventLocation, onOpenInAtlas, autoPlay,
+  mediaUrl, replyCount, likeCount, myLiked, onLike, onCommentClick,
+  eventDate, eventLocation, onOpenInAtlas, autoPlay,
 }: PostCardProps) {
   const cat = CAT_CONFIG[category] ?? CAT_CONFIG.DISCUSSION;
   const { Icon, label, iconColor, avatarGrad } = cat;
@@ -138,17 +146,30 @@ export function PostCard({
         className="flex items-center gap-1 px-3 pb-3 pt-2 border-t cn-border"
         onClick={e => e.stopPropagation()}
       >
-        <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold">
-          <Heart className="w-3.5 h-3.5" />
+        <button
+          onClick={() => onLike?.()}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold ${
+            myLiked
+              ? 'text-rose-500 hover:text-rose-600'
+              : 'cn-text-4 hover:text-rose-500 dark:hover:text-rose-400'
+          } hover:bg-black/5 dark:hover:bg-white/5`}
+        >
+          <Heart className={`w-3.5 h-3.5 ${myLiked ? 'fill-rose-500' : ''}`} />
+          {typeof likeCount === 'number' && likeCount > 0 && (
+            <span className="cn-mono">{likeCount}</span>
+          )}
         </button>
-        <button className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold">
+        <button
+          onClick={() => onCommentClick?.()}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold"
+        >
           <MessageCircle className="w-3.5 h-3.5" />
           {typeof replyCount === 'number' && replyCount > 0 && (
             <span className="cn-mono">{replyCount}</span>
           )}
         </button>
         <div className="flex-1" />
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
           <Bookmark className="w-3.5 h-3.5" />
         </button>
       </div>

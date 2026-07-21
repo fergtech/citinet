@@ -1,6 +1,8 @@
 import { Network, Plus, MapPin, X, Download, Share, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { OnboardingBackground } from './OnboardingBackground';
+import { CitinetLogo } from './CitinetLogo';
 
 interface WelcomeScreenProps {
   onJoinNetwork: () => void;
@@ -13,25 +15,14 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
   const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden flex flex-col items-center justify-center p-6">
-      {/* Background Vector Pattern */}
-      <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <pattern id="mesh-pattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-            <path d="M 0 100 Q 50 50 100 100 T 200 100" stroke="white" strokeWidth="1.5" fill="none" />
-            <path d="M 0 150 Q 50 100 100 150 T 200 150" stroke="white" strokeWidth="1.5" fill="none" />
-            <ellipse cx="100" cy="100" rx="80" ry="40" stroke="white" strokeWidth="1" fill="none" opacity="0.5" />
-            <ellipse cx="150" cy="150" rx="60" ry="30" stroke="white" strokeWidth="1" fill="none" opacity="0.5" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#mesh-pattern)" />
-      </svg>
+    <div className="min-h-screen w-full relative overflow-hidden flex flex-col items-center justify-center p-6">
+      <OnboardingBackground />
 
       {/* Top Left Logo */}
       <div className="absolute top-6 left-6">
-        <a href={INFO_SITE_URL} target="_blank" rel="noopener noreferrer"
-          className="text-white tracking-tight hover:text-white/85 transition-colors">
-          [citinet]
+        <a href="/"
+          className="block hover:opacity-80 transition-opacity">
+          <CitinetLogo size={36} />
         </a>
       </div>
 
@@ -67,7 +58,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           {/* Join Existing Network */}
           <motion.button
             onClick={onJoinNetwork}
-            className="group bg-white dark:bg-zinc-900/78 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left border-2 border-transparent hover:border-purple-300 dark:hover:border-purple-600"
+            className="group bg-white dark:bg-zinc-900/78 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left"
             whileHover={{ y: -4 }}
           >
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-4">
@@ -88,7 +79,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           {/* Create New Node */}
           <motion.button
             onClick={onCreateNetwork}
-            className="group bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left border-2 border-white/20 hover:border-white/40"
+            className="group bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur-md rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left"
             whileHover={{ y: -4 }}
           >
             <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4">
@@ -118,7 +109,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           className="mt-3 inline-flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-medium transition-colors"
         >
           <ExternalLink className="w-3.5 h-3.5" />
-          About CitiNet
+          About Citinet
         </a>
       </div>
 

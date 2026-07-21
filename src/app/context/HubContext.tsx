@@ -6,7 +6,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import type { Hub, HubConnectionStatus, HubUser } from '../types/hub';
+import type { Hub, HubConnectionStatus, HubUser, HubIconFields } from '../types/hub';
 import { hubService } from '../services/hubService';
 import { registryService } from '../services/registryService';
 import { preferencesService, type UserPreferences } from '../services/preferencesService';
@@ -39,6 +39,8 @@ interface HubContextValue {
   updateLocation: (location: string, lat: number, lng: number) => Promise<Hub | null>;
   /** Update the hub's description (server + localStorage) */
   updateDescription: (description: string) => Promise<Hub | null>;
+  /** Update the hub's identity icon — symbol/background preset or a custom image (server + localStorage) */
+  updateHubIcon: (fields: Partial<HubIconFields>) => Promise<Hub | null>;
   /** Current user's background/appearance preferences */
   userPreferences: UserPreferences;
   /** Update and persist user preferences */
@@ -292,6 +294,17 @@ export function HubProvider({ children }: { children: ReactNode }) {
     }
   }, [currentHub?.slug]);
 
+  const updateHubIcon = useCallback(async (fields: Partial<HubIconFields>): Promise<Hub | null> => {
+    if (!currentHub?.slug) return null;
+    try {
+      const updatedHub = await hubService.updateHubInfo(currentHub.slug, fields);
+      setCurrentHub(updatedHub);
+      return updatedHub;
+    } catch {
+      return null;
+    }
+  }, [currentHub?.slug]);
+
   const updateTunnelUrl = useCallback(async (newUrl: string, skipProbe = false): Promise<{ ok: boolean; error?: string }> => {
     if (!currentHub?.slug) return { ok: false, error: 'No active hub' };
     try {
@@ -323,6 +336,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       updateUserProfile,
       updateLocation,
       updateDescription,
+      updateHubIcon,
       userPreferences,
       updateUserPreferences,
     }}>

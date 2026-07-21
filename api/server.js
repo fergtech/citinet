@@ -36,6 +36,7 @@ const multer = require('multer');
 const busboy = require('busboy');
 const { PassThrough } = require('stream');
 const Minio = require('minio');
+const { sendEmail } = require('./mailer');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -260,6 +261,15 @@ async function initDb() {
       )
     `);
     await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_post_likes (
+        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id    UUID        NOT NULL REFERENCES hub_posts(id) ON DELETE CASCADE,
+        user_id    UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(post_id, user_id)
+      )
+    `);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS hub_post_embeddings (
         post_id     UUID PRIMARY KEY REFERENCES hub_posts(id) ON DELETE CASCADE,
         embedding   JSONB NOT NULL,
@@ -296,6 +306,9 @@ async function initDb() {
         created_at  TIMESTAMPTZ      DEFAULT NOW()
       )
     `);
+    await client.query(
+      `ALTER TABLE hub_atlas_pins ADD COLUMN IF NOT EXISTS image_file_name TEXT`,
+    );
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_config (
         key   VARCHAR(100) PRIMARY KEY,
@@ -805,6 +818,67 @@ async function logMod(
     .catch((err) => console.error('logMod error:', err));
 }
 
+/** Subject/body copy for each notification type — kept in one place so adding a
+ * new notification type means adding one case here, not hunting for every email
+ * touchpoint. Returns { subject: null } for unmapped types so callers skip silently. */
+function emailCopyForNotification(type, actorName, hubName) {
+  switch (type) {
+    case 'message':
+      return { subject: `New message from ${actorName}`, line: `${actorName} sent you a message on ${hubName}.` };
+    case 'reply':
+      return { subject: `${actorName} replied to your post`, line: `${actorName} replied to your post on ${hubName}.` };
+    case 'space_invite':
+      return { subject: `${actorName} invited you to a Space`, line: `${actorName} invited you to join a Space on ${hubName}.` };
+    default:
+      return { subject: null, line: null };
+  }
+}
+
+/** Records an in-app notification and, if the recipient has an email on file and
+ * hasn't opted out (hub_user_preferences key 'email_notifications', default on),
+ * sends a matching email. Fire-and-forget safe — never throws into the caller. */
+async function notifyUser(userId, type, actorId, refId) {
+  try {
+    await pool.query(
+      `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, $2, $3, $4)`,
+      [userId, type, actorId, refId],
+    );
+  } catch (err) {
+    console.error('Notification insert failed:', err.message);
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.email,
+              COALESCE(p.value, 'true') AS email_notifications,
+              a.username AS actor_username
+       FROM hub_users u
+       LEFT JOIN hub_user_preferences p ON p.user_id = u.id AND p.key = 'email_notifications'
+       LEFT JOIN hub_users a ON a.id = $2
+       WHERE u.id = $1`,
+      [userId, actorId],
+    );
+    const recipient = rows[0];
+    if (!recipient?.email || recipient.email_notifications !== 'true') return;
+
+    const hubName = process.env.HUB_NAME || 'your hub';
+    const tunnelUrl = (process.env.TUNNEL_URL || '').replace(/\/$/, '');
+    const actorName = recipient.actor_username || 'Someone';
+    const { subject, line } = emailCopyForNotification(type, actorName, hubName);
+    if (!subject) return;
+
+    const footer = 'You can turn off email notifications in Account Settings.';
+    await sendEmail({
+      to: recipient.email,
+      subject,
+      text: `${line}${tunnelUrl ? `\n\n${tunnelUrl}` : ''}\n\n${footer}`,
+      html: `<p>${line}</p>${tunnelUrl ? `<p><a href="${tunnelUrl}">Open ${hubName}</a></p>` : ''}<p style="color:#888;font-size:12px">${footer}</p>`,
+    });
+  } catch (err) {
+    console.error('Notification email failed:', err.message);
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────
 
 function getLanIp() {
@@ -941,6 +1015,15 @@ app.get('/api/info', async (_req, res) => {
     lan_ip: getLanIp(),
     api_port: PORT,
     enabled_apps: enabledApps,
+    // Hub identity icon — defaults reproduce today's hardcoded look (white Hexagon
+    // on a blue→purple gradient) so unconfigured hubs render exactly as before.
+    hub_icon_mode: cfg.hub_icon_mode || 'preset',
+    hub_icon_symbol: cfg.hub_icon_symbol || 'hexagon',
+    hub_icon_bg_mode: cfg.hub_icon_bg_mode || 'gradient',
+    hub_icon_gradient_from: cfg.hub_icon_gradient_from || '#2563eb',
+    hub_icon_gradient_to: cfg.hub_icon_gradient_to || '#9333ea',
+    hub_icon_solid_color: cfg.hub_icon_solid_color || '',
+    hub_icon_image_file_name: cfg.hub_icon_image_file_name || '',
   });
 });
 
@@ -949,7 +1032,12 @@ app.get('/api/info', async (_req, res) => {
 app.patch('/api/hub-info', authenticate, async (req, res) => {
   if (!req.user.is_admin)
     return res.status(403).json({ error: 'Admin access required' });
-  const { name, location, description, enabled_apps } = req.body || {};
+  const {
+    name, location, description, enabled_apps,
+    hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
+    hub_icon_gradient_from, hub_icon_gradient_to,
+    hub_icon_solid_color, hub_icon_image_file_name,
+  } = req.body || {};
   const updates = [];
   if (name !== undefined) updates.push(['hub_name', String(name).trim()]);
   if (location !== undefined)
@@ -963,6 +1051,13 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
       enabled_apps === null ? null : JSON.stringify(enabled_apps),
     ]);
   }
+  if (hub_icon_mode !== undefined) updates.push(['hub_icon_mode', hub_icon_mode]);
+  if (hub_icon_symbol !== undefined) updates.push(['hub_icon_symbol', hub_icon_symbol]);
+  if (hub_icon_bg_mode !== undefined) updates.push(['hub_icon_bg_mode', hub_icon_bg_mode]);
+  if (hub_icon_gradient_from !== undefined) updates.push(['hub_icon_gradient_from', hub_icon_gradient_from]);
+  if (hub_icon_gradient_to !== undefined) updates.push(['hub_icon_gradient_to', hub_icon_gradient_to]);
+  if (hub_icon_solid_color !== undefined) updates.push(['hub_icon_solid_color', hub_icon_solid_color]);
+  if (hub_icon_image_file_name !== undefined) updates.push(['hub_icon_image_file_name', hub_icon_image_file_name]);
   if (updates.length === 0)
     return res.status(400).json({ error: 'No fields provided' });
   try {
@@ -1034,7 +1129,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO hub_users (username, email, password_hash, is_admin, role)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, username, is_admin, role, avatar_url`,
+       RETURNING id, username, email, is_admin, role, avatar_url`,
       [
         username.trim().toLowerCase(),
         email || '',
@@ -1055,6 +1150,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       token,
       userId: user.id,
       username: user.username,
+      email: user.email || null,
       isAdmin: user.is_admin,
       role: user.role,
       avatar_url: user.avatar_url || null,
@@ -1106,6 +1202,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       token,
       userId: user.id,
       username: user.username,
+      email: user.email || null,
       isAdmin: user.is_admin,
       role: user.role ?? (user.is_admin ? 'admin' : 'member'),
       avatar_url: user.avatar_url || null,
@@ -1876,12 +1973,7 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
       [id, req.user.id],
     );
     for (const row of recipients.rows) {
-      pool
-        .query(
-          `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'message', $2, $3)`,
-          [row.user_id, req.user.id, id],
-        )
-        .catch(() => {});
+      notifyUser(row.user_id, 'message', req.user.id, id).catch(() => {});
     }
 
     res.json({
@@ -2566,7 +2658,9 @@ app.get('/api/posts', authenticate, async (req, res) => {
               s.name AS space_name, s.slug AS space_slug,
               (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
               (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
-              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $${myUserIdParam}) AS my_rsvp
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $${myUserIdParam}) AS my_rsvp,
+              (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
+              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
@@ -2933,12 +3027,7 @@ app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
     const notifiedUsers = new Set();
     if (postAuthorId && postAuthorId !== req.user.id) {
       notifiedUsers.add(postAuthorId);
-      pool
-        .query(
-          `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'reply', $2, $3)`,
-          [postAuthorId, req.user.id, req.params.id],
-        )
-        .catch(() => {});
+      notifyUser(postAuthorId, 'reply', req.user.id, req.params.id).catch(() => {});
     }
     // Also notify the person being directly replied to (if different from post author)
     if (
@@ -2946,12 +3035,7 @@ app.post('/api/posts/:id/replies', authenticate, async (req, res) => {
       reply_to_user_id !== req.user.id &&
       !notifiedUsers.has(reply_to_user_id)
     ) {
-      pool
-        .query(
-          `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, 'reply', $2, $3)`,
-          [reply_to_user_id, req.user.id, req.params.id],
-        )
-        .catch(() => {});
+      notifyUser(reply_to_user_id, 'reply', req.user.id, req.params.id).catch(() => {});
     }
 
     // Fetch reply_to_username to include in response
@@ -2986,7 +3070,9 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
               f.file_name AS media_file_name,
               (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
               (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
-              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
+              (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
+              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
@@ -2998,6 +3084,35 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Get post error:', err);
     res.status(500).json({ error: 'Failed to get post' });
+  }
+});
+
+// Toggle the caller's like on a post
+app.post('/api/posts/:id/like', authenticate, async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM hub_post_likes WHERE post_id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id],
+    );
+    let liked;
+    if (existing[0]) {
+      await pool.query(`DELETE FROM hub_post_likes WHERE id = $1`, [existing[0].id]);
+      liked = false;
+    } else {
+      await pool.query(
+        `INSERT INTO hub_post_likes (post_id, user_id) VALUES ($1, $2) ON CONFLICT (post_id, user_id) DO NOTHING`,
+        [req.params.id, req.user.id],
+      );
+      liked = true;
+    }
+    const { rows: countRows } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM hub_post_likes WHERE post_id = $1`,
+      [req.params.id],
+    );
+    res.json({ liked, count: countRows[0].count });
+  } catch (err) {
+    console.error('Toggle like error:', err);
+    res.status(500).json({ error: 'Failed to update like' });
   }
 });
 
@@ -3756,6 +3871,124 @@ app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
   }
 });
 
+// Edit a poll's content (admin or moderator). Changing the options invalidates
+// existing votes — their option_index no longer means what it used to — so votes
+// are cleared when options actually change; question/date/threshold-only edits
+// leave votes intact.
+app.patch('/api/polls/:id', authenticate, async (req, res) => {
+  if (!isMod(req.user))
+    return res
+      .status(403)
+      .json({ error: 'Admin or moderator access required' });
+
+  const { question, options, closes_at, quorum_pct, pass_pct } = req.body || {};
+
+  try {
+    const { rows: existingRows } = await pool.query(
+      `SELECT question, options, closes_at, quorum_pct, pass_pct FROM hub_polls WHERE id = $1`,
+      [req.params.id],
+    );
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: 'Poll not found' });
+
+    const nextQuestion = question !== undefined ? question : existing.question;
+    if (!nextQuestion?.trim())
+      return res.status(400).json({ error: 'question is required' });
+
+    let nextOptions = existing.options;
+    let optionsChanged = false;
+    if (options !== undefined) {
+      if (!Array.isArray(options) || options.length < 2 || options.length > 5)
+        return res
+          .status(400)
+          .json({ error: 'options must be an array of 2–5 strings' });
+      if (options.some((o) => typeof o !== 'string' || !o.trim()))
+        return res
+          .status(400)
+          .json({ error: 'All options must be non-empty strings' });
+      nextOptions = options.map((o) => o.trim());
+      optionsChanged = JSON.stringify(nextOptions) !== JSON.stringify(existing.options);
+    }
+
+    const nextQuorum =
+      typeof quorum_pct === 'number' ? Math.min(100, Math.max(0, quorum_pct)) : existing.quorum_pct;
+    const nextPass =
+      typeof pass_pct === 'number' ? Math.min(100, Math.max(1, pass_pct)) : existing.pass_pct;
+    const nextClosesAt = closes_at !== undefined ? closes_at || null : existing.closes_at;
+
+    const { rows } = await pool.query(
+      `UPDATE hub_polls
+       SET question = $1, options = $2, closes_at = $3, quorum_pct = $4, pass_pct = $5
+       WHERE id = $6
+       RETURNING id, question, options, created_by, closes_at, closed, created_at, request_id, quorum_pct, pass_pct`,
+      [nextQuestion.trim(), JSON.stringify(nextOptions), nextClosesAt, nextQuorum, nextPass, req.params.id],
+    );
+
+    if (optionsChanged) {
+      await pool.query(`DELETE FROM hub_poll_votes WHERE poll_id = $1`, [req.params.id]);
+    }
+
+    logMod(
+      req.user.id,
+      'edit_poll',
+      'poll',
+      req.params.id,
+      rows[0].question,
+      optionsChanged ? 'Options changed — votes reset' : null,
+      { quorum_pct: nextQuorum, pass_pct: nextPass },
+    );
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Edit poll error:', err);
+    res.status(500).json({ error: 'Failed to edit poll' });
+  }
+});
+
+// Reopen a closed poll (admin or moderator) — undoes both explicit closure and an
+// expired closes_at deadline. Without a new closes_at, the poll reopens with no
+// deadline (open until manually closed again) so it doesn't immediately re-close
+// itself against the stale date. If a linked feature request was auto-approved
+// because this poll passed, revert it to "under review" so the request's status
+// stays consistent with the poll being open again.
+app.patch('/api/polls/:id/reopen', authenticate, async (req, res) => {
+  if (!isMod(req.user))
+    return res
+      .status(403)
+      .json({ error: 'Admin or moderator access required' });
+
+  const { closes_at } = req.body || {};
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_polls SET closed = FALSE, closes_at = $1 WHERE id = $2 RETURNING id, question, request_id`,
+      [closes_at || null, req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Poll not found' });
+    const poll = rows[0];
+
+    if (poll.request_id) {
+      const { rows: reverted } = await pool.query(
+        `UPDATE hub_requests SET status = 'under_review', updated_at = NOW()
+         WHERE id = $1 AND status = 'approved'
+         RETURNING id`,
+        [poll.request_id],
+      );
+      if (reverted[0]) {
+        logMod(req.user.id, 'reopen_request', 'request', poll.request_id, null, 'Poll reopened', {
+          poll_id: req.params.id,
+        });
+      }
+    }
+
+    logMod(req.user.id, 'reopen_poll', 'poll', req.params.id, poll.question, null, {});
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Reopen poll error:', err);
+    res.status(500).json({ error: 'Failed to reopen poll' });
+  }
+});
+
 // ── Key registry routes ───────────────────────────────────
 // Server stores public keys only — private keys never leave the client.
 
@@ -4317,7 +4550,8 @@ const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 
 app.get('/api/atlas/pins', authenticate, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category, p.created_at,
+      `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
+              p.image_file_name, p.created_at,
               u.username AS author_username
        FROM hub_atlas_pins p
        LEFT JOIN hub_users u ON p.author_id = u.id
@@ -4332,7 +4566,7 @@ app.get('/api/atlas/pins', authenticate, async (_req, res) => {
 
 // Create a pin
 app.post('/api/atlas/pins', authenticate, async (req, res) => {
-  const { latitude, longitude, title, description, category } = req.body || {};
+  const { latitude, longitude, title, description, category, image_file_name } = req.body || {};
 
   if (!title?.trim())
     return res.status(400).json({ error: 'Title is required' });
@@ -4349,9 +4583,9 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO hub_atlas_pins (author_id, latitude, longitude, title, description, category)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, latitude, longitude, title, description, category, created_at`,
+      `INSERT INTO hub_atlas_pins (author_id, latitude, longitude, title, description, category, image_file_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, latitude, longitude, title, description, category, image_file_name, created_at`,
       [
         req.user.id,
         latitude,
@@ -4359,12 +4593,58 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
         title.trim(),
         description?.trim() || null,
         category,
+        image_file_name || null,
       ],
     );
     res.json({ ...rows[0], author_username: req.user.username });
   } catch (err) {
     console.error('Create atlas pin error:', err);
     res.status(500).json({ error: 'Failed to create pin' });
+  }
+});
+
+// Edit a pin (author only — moderators/admins can delete a pin but not rewrite its content)
+app.patch('/api/atlas/pins/:id', authenticate, async (req, res) => {
+  const { title, description, category, image_file_name } = req.body || {};
+
+  if (!title?.trim())
+    return res.status(400).json({ error: 'Title is required' });
+  if (!ATLAS_CATEGORIES.includes(category)) {
+    return res.status(400).json({
+      error: `category must be one of: ${ATLAS_CATEGORIES.join(', ')}`,
+    });
+  }
+
+  try {
+    const { rows: updated } = await pool.query(
+      `UPDATE hub_atlas_pins
+       SET title = $1, description = $2, category = $3, image_file_name = $4
+       WHERE id = $5 AND author_id = $6
+       RETURNING id`,
+      [
+        title.trim(),
+        description?.trim() || null,
+        category,
+        image_file_name || null,
+        req.params.id,
+        req.user.id,
+      ],
+    );
+    if (!updated[0])
+      return res.status(404).json({ error: 'Pin not found or not authorized' });
+
+    const { rows } = await pool.query(
+      `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
+              p.image_file_name, p.created_at, u.username AS author_username
+       FROM hub_atlas_pins p
+       LEFT JOIN hub_users u ON p.author_id = u.id
+       WHERE p.id = $1`,
+      [updated[0].id],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Update atlas pin error:', err);
+    res.status(500).json({ error: 'Failed to update pin' });
   }
 });
 
@@ -4830,6 +5110,7 @@ const PREF_KEYS = [
   'background_type',
   'background_value',
   'background_brightness',
+  'email_notifications',
 ];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {
@@ -5976,13 +6257,7 @@ app.post('/api/spaces/:slug/invite', authenticate, async (req, res) => {
       [space.id, user_id],
     );
     // Send notification to invited user
-    await pool.query(
-      `
-      INSERT INTO hub_notifications (user_id, type, actor_id, ref_id)
-      VALUES ($1, 'space_invite', $2, $3)
-    `,
-      [user_id, req.user.id, space.slug],
-    );
+    await notifyUser(user_id, 'space_invite', req.user.id, space.slug);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

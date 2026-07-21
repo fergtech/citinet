@@ -1,23 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
 import { featuredService } from '../services/featuredService';
 import { requestsService, type HubRequest, type RequestStatus, type RequestType } from '../services/requestsService';
-import type { HubMember, HubPost } from '../types/hub';
+import type { HubMember, HubPost, HubIconFields } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import { registryService } from '../services/registryService';
 import { JoinQrCard } from './JoinQrCard';
+import { HubIcon, hubIconRegistryFields, HUB_ICON_SYMBOLS, HUB_ICON_SOLID_COLORS, HUB_ICON_GRADIENTS } from './HubIcon';
 
 interface HubManagementScreenProps {
   onBack: () => void;
 }
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
-  const { currentHub, currentUser, updateLocation, updateDescription, refreshStatus } = useHub();
+  const { currentHub, currentUser, updateLocation, updateDescription, updateHubIcon, refreshStatus } = useHub();
   const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -29,6 +30,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [nameValue, setNameValue] = useState('');
   const [nameSaving, setNameSaving] = useState(false);
   const [nameError, setNameError] = useState('');
+
+  // Hub icon editing
+  const [showIconEditor, setShowIconEditor] = useState(false);
+  const [iconSaving, setIconSaving] = useState(false);
+  const [iconError, setIconError] = useState('');
+  const iconFileInputRef = useRef<HTMLInputElement>(null);
 
   // Description editing
   const [editingDescription, setEditingDescription] = useState(false);
@@ -337,9 +344,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       .catch(() => setRegistryListed(null));
   }, [activeTab, currentHub?.tunnelUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const reRegisterHub = (overrides?: { name?: string; location?: string; description?: string }) => {
+  const reRegisterHub = (overrides?: Partial<HubIconFields> & { name?: string; location?: string; description?: string }) => {
     if (!currentHub?.tunnelUrl) return;
     const stableId = hubNodeId ?? currentHub.slug;
+    const iconBase = hubIconRegistryFields(currentHub);
     registryService.registerHub({
       id: stableId,
       name: overrides?.name ?? currentHub.name,
@@ -349,6 +357,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       tunnel_url: currentHub.tunnelUrl,
       member_count: 0,
       online: true,
+      hub_icon_mode: overrides?.hub_icon_mode ?? iconBase.hub_icon_mode,
+      hub_icon_symbol: overrides?.hub_icon_symbol ?? iconBase.hub_icon_symbol,
+      hub_icon_bg_mode: overrides?.hub_icon_bg_mode ?? iconBase.hub_icon_bg_mode,
+      hub_icon_gradient_from: overrides?.hub_icon_gradient_from ?? iconBase.hub_icon_gradient_from,
+      hub_icon_gradient_to: overrides?.hub_icon_gradient_to ?? iconBase.hub_icon_gradient_to,
+      hub_icon_solid_color: overrides?.hub_icon_solid_color ?? iconBase.hub_icon_solid_color,
+      hub_icon_image_file_name: overrides?.hub_icon_image_file_name ?? iconBase.hub_icon_image_file_name,
     }).catch(() => {});
   };
 
@@ -369,6 +384,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       location: currentHub.location ?? '',
       description: currentHub.description ?? '',
       tunnel_url: currentHub.tunnelUrl,
+      ...hubIconRegistryFields(currentHub),
       member_count: 0,
       online: true,
     });
@@ -392,6 +408,39 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       setNameError('Failed to save name.');
     } finally {
       setNameSaving(false);
+    }
+  };
+
+  const saveHubIcon = async (fields: Parameters<typeof updateHubIcon>[0]) => {
+    setIconSaving(true);
+    setIconError('');
+    try {
+      const updated = await updateHubIcon(fields);
+      if (!updated) setIconError('Failed to save hub icon.');
+      else reRegisterHub(fields);
+    } catch {
+      setIconError('Failed to save hub icon.');
+    } finally {
+      setIconSaving(false);
+    }
+  };
+
+  const handleIconFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentHub?.slug) return;
+    setIconSaving(true);
+    setIconError('');
+    try {
+      const uploaded = await hubService.uploadFile(currentHub.slug, file, true);
+      const fields: Parameters<typeof updateHubIcon>[0] = { hub_icon_mode: 'image', hub_icon_image_file_name: uploaded.name };
+      const updated = await updateHubIcon(fields);
+      if (!updated) setIconError('Failed to save hub icon.');
+      else reRegisterHub(fields);
+    } catch {
+      setIconError('Failed to upload icon image.');
+    } finally {
+      setIconSaving(false);
+      e.target.value = '';
     }
   };
 
@@ -740,6 +789,26 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     {nameError && <p className="text-xs text-amber-600 dark:text-amber-400">{nameError}</p>}
                   </div>
                 )}
+              </div>
+              <div className="h-px bg-slate-100 dark:bg-zinc-800" />
+              {/* Hub Icon — editable */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Hub Icon</p>
+                  <button
+                    onClick={() => setShowIconEditor(true)}
+                    className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Change
+                  </button>
+                </div>
+                <div className="flex items-center gap-3">
+                  <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={44} variant="badge" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Shown wherever this hub's identity appears — the top bar, the "About this hub" panel, and the login/signup screen.
+                  </p>
+                </div>
               </div>
               <div className="h-px bg-slate-100 dark:bg-zinc-800" />
               <InfoRow label="Slug" value={currentHub?.slug} mono />
@@ -2124,6 +2193,100 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         </div>
       </div>
       </div>
+
+      {/* Hidden input for hub icon image upload */}
+      <input ref={iconFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleIconFileChange} />
+
+      {/* Hub Icon editor */}
+      {showIconEditor && (
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowIconEditor(false)}>
+          <div onClick={e => e.stopPropagation()} className="cn-surface border cn-border rounded-2xl p-6 max-w-sm w-full space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center gap-3">
+              <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={48} variant="badge" />
+              <h3 className="font-bold cn-text-1">Hub Icon</h3>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => iconFileInputRef.current?.click()}
+              className="w-full py-2 px-4 rounded-lg cn-surface-2 hover:bg-black/5 dark:hover:bg-white/5 text-sm font-medium cn-text-2 transition-colors"
+            >
+              {iconSaving ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : <ImagePlus className="w-4 h-4 inline mr-2" />}
+              Upload Custom Image
+            </button>
+
+            <div>
+              <p className="text-xs font-medium cn-text-3 mb-2">Symbol</p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(HUB_ICON_SYMBOLS).map(([id, Icon]) => {
+                  const selected = currentHub?.hub_icon_mode !== 'image' && (currentHub?.hub_icon_symbol ?? 'hexagon') === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => saveHubIcon({ hub_icon_mode: 'preset', hub_icon_symbol: id })}
+                      title={id}
+                      className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all cn-text-2 ${
+                        selected ? 'border-purple-500 ring-2 ring-purple-300 dark:ring-purple-700 bg-purple-50 dark:bg-purple-900/20' : 'cn-border hover:border-purple-300 dark:hover:border-purple-700'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium cn-text-3 mb-2">Solid Colors</p>
+              <div className="flex flex-wrap gap-2">
+                {HUB_ICON_SOLID_COLORS.map(color => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => saveHubIcon({ hub_icon_mode: 'preset', hub_icon_bg_mode: 'solid', hub_icon_solid_color: color })}
+                    className={`w-8 h-8 rounded-full border-2 transition-all ${
+                      currentHub?.hub_icon_mode !== 'image' && currentHub?.hub_icon_bg_mode === 'solid' && currentHub?.hub_icon_solid_color === color
+                        ? 'border-slate-900 dark:border-white ring-2 ring-slate-300 dark:ring-zinc-600' : 'border-white/70 dark:border-zinc-700'
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium cn-text-3 mb-2">Gradients</p>
+              <div className="flex flex-wrap gap-2">
+                {HUB_ICON_GRADIENTS.map(g => {
+                  const selected = currentHub?.hub_icon_mode !== 'image'
+                    && (currentHub?.hub_icon_bg_mode ?? 'gradient') === 'gradient'
+                    && (currentHub?.hub_icon_gradient_from ?? '#2563eb') === g.from
+                    && (currentHub?.hub_icon_gradient_to ?? '#9333ea') === g.to;
+                  return (
+                    <button
+                      key={`${g.from}-${g.to}`}
+                      type="button"
+                      onClick={() => saveHubIcon({ hub_icon_mode: 'preset', hub_icon_bg_mode: 'gradient', hub_icon_gradient_from: g.from, hub_icon_gradient_to: g.to })}
+                      className={`w-12 h-8 rounded-lg border-2 transition-all ${selected ? 'border-slate-900 dark:border-white ring-2 ring-slate-300 dark:ring-zinc-600' : 'border-white/70 dark:border-zinc-700'}`}
+                      style={{ backgroundImage: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {iconError && <p className="text-xs text-red-500 dark:text-red-400">{iconError}</p>}
+
+            <button
+              onClick={() => setShowIconEditor(false)}
+              className="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

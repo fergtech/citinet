@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, X, Search, Trash2, MapPin,
-  Navigation, Bookmark, Share2, Check, Map as MapIcon,
+  Navigation, Bookmark, Share2, Check, Map as MapIcon, ImagePlus, Pencil,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,10 +9,12 @@ import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-lea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useHub } from '../context/HubContext';
+import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
 import { LocationSearchInput } from './LocationSearchInput';
 import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
+import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
 
 // ── Icon factory (cached) ──────────────────────────────────────────────────
 // Teardrop-from-rotated-square marker matching the design system: a category-
@@ -130,31 +132,43 @@ function PlaceRow({ pin, distanceLabel, canDelete, onSelect, onDelete }: {
 
 // ── Place detail panel ───────────────────────────────────────────────────────
 
-function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
+function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, saved, onBack, onDelete, onToggleSave, onEdit }: {
   pin: AtlasPin;
+  hubSlug: string;
   distanceLabel: string | null;
   canDelete: boolean;
+  canEdit: boolean;
+  saved: boolean;
   onBack: () => void;
   onDelete: () => void;
+  onToggleSave: () => void;
+  onEdit: () => void;
 }) {
   const cat = ATLAS_CATEGORIES[pin.category];
-  const [saved, setSaved] = useState(() => {
-    try { return (JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]') as string[]).includes(pin.id); } catch { return false; }
-  });
   const [copied, setCopied] = useState(false);
+  const [photo, setPhoto] = useState<PlacePhoto | null>(null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [userPhotoFailed, setUserPhotoFailed] = useState(false);
 
-  const toggleSave = () => {
-    let ids: string[] = [];
-    try { ids = JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]'); } catch {}
-    const idx = ids.indexOf(pin.id);
-    if (idx !== -1) ids.splice(idx, 1); else ids.push(pin.id);
-    localStorage.setItem(SAVED_PINS_KEY, JSON.stringify(ids));
-    setSaved(!saved);
-  };
+  // A user-uploaded photo (set at pin creation) is authoritative — only fall back
+  // to the Wikidata/Wikimedia lookup when the pin has none of its own.
+  const userPhotoUrl = pin.imageFileName ? hubService.getPublicFileUrl(hubSlug, pin.imageFileName) : null;
+
+  useEffect(() => {
+    if (userPhotoUrl) return;
+    let cancelled = false;
+    setPhoto(null);
+    setPhotoFailed(false);
+    fetchPlacePhoto(pin.latitude, pin.longitude, pin.title).then(p => {
+      if (!cancelled) setPhoto(p);
+    });
+    return () => { cancelled = true; };
+  }, [pin.latitude, pin.longitude, pin.title, userPhotoUrl]);
 
   const handleShare = () => {
-    const url = `${window.location.href.split('?')[0]}?pin=${pin.id}`;
-    navigator.clipboard.writeText(url);
+    const url = new URL(window.location.href);
+    url.searchParams.set('pin', pin.id);
+    navigator.clipboard.writeText(url.toString());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -169,9 +183,39 @@ function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
         <ChevronLeft className="w-3.5 h-3.5" />All places
       </button>
 
-      <div className={`h-32 sm:h-36 rounded-2xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-md`}>
-        <cat.Icon className="w-10 h-10 text-white" />
-      </div>
+      {userPhotoUrl && !userPhotoFailed ? (
+        <div className="relative h-32 sm:h-36 rounded-2xl overflow-hidden shadow-md">
+          <img
+            src={userPhotoUrl}
+            alt={pin.title}
+            className="w-full h-full object-cover"
+            onError={() => setUserPhotoFailed(true)}
+          />
+        </div>
+      ) : photo && !photoFailed ? (
+        <div className="relative h-32 sm:h-36 rounded-2xl overflow-hidden shadow-md">
+          <img
+            src={photo.url}
+            alt={pin.title}
+            className="w-full h-full object-cover"
+            onError={() => setPhotoFailed(true)}
+          />
+          {photo.sourceUrl && (
+            <a
+              href={photo.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded-md bg-black/50 text-white text-[10px] font-medium backdrop-blur-sm hover:bg-black/70 transition-colors"
+            >
+              {photo.attribution}
+            </a>
+          )}
+        </div>
+      ) : (
+        <div className={`h-32 sm:h-36 rounded-2xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-md`}>
+          <cat.Icon className="w-10 h-10 text-white" />
+        </div>
+      )}
 
       <div>
         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30 mb-2">
@@ -206,7 +250,7 @@ function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
           Directions
         </button>
         <button
-          onClick={toggleSave}
+          onClick={onToggleSave}
           title={saved ? 'Remove from saved' : 'Save'}
           className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
         >
@@ -219,6 +263,15 @@ function PlaceDetailPanel({ pin, distanceLabel, canDelete, onBack, onDelete }: {
         >
           {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Share2 className="w-4 h-4" />}
         </button>
+        {canEdit && (
+          <button
+            onClick={onEdit}
+            title="Edit pin"
+            className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        )}
         {canDelete && (
           <button
             onClick={onDelete}
@@ -259,21 +312,50 @@ function suggestCategory(title: string): AtlasPinCategory | null {
 
 type CreateStep = 'details' | 'review' | 'success';
 
-function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, onPublish, onCancel, onDone }: {
+/** Handles both "drop a new pin" and "edit an existing pin" — pass `editingPin`
+ * for the latter. Editing skips the review/success steps (it's a quick correction,
+ * not a new-place ceremony) and saves straight from the single details form. */
+function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category, onCategoryChange, onPublish, onCancel, onDone }: {
   position: [number, number];
+  hubSlug: string;
+  editingPin?: AtlasPin;
   suggestedTitle: string | null;
   category: AtlasPinCategory;
   onCategoryChange: (c: AtlasPinCategory) => void;
-  onPublish: (data: { title: string; description?: string; category: AtlasPinCategory }) => Promise<AtlasPin>;
+  onPublish: (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string }) => Promise<AtlasPin>;
   onCancel: () => void;
   onDone: (pin: AtlasPin) => void;
 }) {
+  const isEditing = !!editingPin;
   const [step, setStep] = useState<CreateStep>('details');
-  const [title, setTitle] = useState(suggestedTitle ?? '');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(editingPin?.title ?? suggestedTitle ?? '');
+  const [description, setDescription] = useState(editingPin?.description ?? '');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(
+    editingPin?.imageFileName ? hubService.getPublicFileUrl(hubSlug, editingPin.imageFileName) : null
+  );
+  const [imageRemoved, setImageRemoved] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishedPin, setPublishedPin] = useState<AtlasPin | null>(null);
+
+  const imagePreviewRef = useRef<string | null>(null);
+  imagePreviewRef.current = imagePreview;
+  useEffect(() => () => { if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current); }, []);
+
+  const handleImageSelect = (file: File) => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setImageRemoved(false);
+  };
+
+  const clearImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+    setImageRemoved(true);
+  };
 
   const cat = ATLAS_CATEGORIES[category];
   const categorySuggestion = useMemo(() => suggestCategory(title), [title]);
@@ -282,9 +364,20 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
     setPublishing(true);
     setError(null);
     try {
-      const pin = await onPublish({ title: title.trim(), description: description.trim() || undefined, category });
-      setPublishedPin(pin);
-      setStep('success');
+      let imageFileName = editingPin?.imageFileName;
+      if (imageFile) {
+        const uploaded = await hubService.uploadFile(hubSlug, imageFile, true);
+        imageFileName = uploaded.name;
+      } else if (imageRemoved) {
+        imageFileName = undefined;
+      }
+      const pin = await onPublish({ title: title.trim(), description: description.trim() || undefined, category, imageFileName });
+      if (isEditing) {
+        onDone(pin);
+      } else {
+        setPublishedPin(pin);
+        setStep('success');
+      }
     } catch {
       setError('Something went wrong — try again.');
     } finally {
@@ -302,7 +395,7 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
           {step === 'success' ? <X className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
           {step === 'success' ? 'Close' : 'Cancel'}
         </button>
-        {step !== 'success' && (
+        {step !== 'success' && !isEditing && (
           <div className="flex items-center gap-1.5">
             <span className={`h-1.5 rounded-full transition-all ${step === 'details' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
             <span className={`h-1.5 rounded-full transition-all ${step === 'review' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
@@ -313,8 +406,10 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
       {step === 'details' && (
         <>
           <div>
-            <h2 className="text-lg font-bold cn-text-1">Add details</h2>
-            <p className="text-xs cn-text-3 mt-1">Your pin will be placed exactly where you positioned it on the map.</p>
+            <h2 className="text-lg font-bold cn-text-1">{isEditing ? 'Edit pin' : 'Add details'}</h2>
+            <p className="text-xs cn-text-3 mt-1">
+              {isEditing ? 'Update the details for this pin.' : 'Your pin will be placed exactly where you positioned it on the map.'}
+            </p>
           </div>
           <div>
             <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">Name</label>
@@ -368,12 +463,41 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
               className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
             />
           </div>
+          <div>
+            <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
+              Photo <span className="font-normal cn-text-4">(optional)</span>
+            </label>
+            {imagePreview ? (
+              <div className="relative h-20 rounded-lg overflow-hidden">
+                <img src={imagePreview} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={clearImage}
+                  className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-purple-400 dark:hover:border-purple-500 cursor-pointer transition-colors">
+                <ImagePlus className="w-3.5 h-3.5 cn-text-4" />
+                <span className="text-xs cn-text-4">Add a photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); }}
+                />
+              </label>
+            )}
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
           <button
-            onClick={() => setStep('review')}
-            disabled={!title.trim()}
+            onClick={isEditing ? handlePublish : () => setStep('review')}
+            disabled={!title.trim() || publishing}
             className="w-full px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
           >
-            Review pin
+            {isEditing ? (publishing ? 'Saving…' : 'Save changes') : 'Review pin'}
           </button>
         </>
       )}
@@ -383,9 +507,13 @@ function CreatePinPanel({ position, suggestedTitle, category, onCategoryChange, 
           <h2 className="text-lg font-bold cn-text-1">Review &amp; publish</h2>
           <div className="cn-glass rounded-xl p-3.5 flex flex-col gap-2.5">
             <div className="flex items-center gap-3">
-              <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
-                <cat.Icon className="w-4 h-4 text-white" />
-              </span>
+              {imagePreview ? (
+                <img src={imagePreview} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+              ) : (
+                <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
+                  <cat.Icon className="w-4 h-4 text-white" />
+                </span>
+              )}
               <div className="min-w-0">
                 <div className="text-sm font-bold cn-text-1 truncate">{title.trim() || 'Untitled place'}</div>
                 <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/5 dark:bg-white/8 cn-text-2">{cat.label}</span>
@@ -463,6 +591,8 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // Drop-here placement mode
   const [placingPin, setPlacingPin] = useState(false);
   const [pendingPosition, setPendingPosition] = useState<[number, number] | null>(null);
+  // Reuses the same create-flow panel/position state for editing an existing pin
+  const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [dropHereCenter, setDropHereCenter] = useState<[number, number] | null>(null);
   const [nearbyPlace, setNearbyPlace] = useState<string | null>(null);
   const [suggestedTitle, setSuggestedTitle] = useState<string | null>(null);
@@ -477,6 +607,21 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // Pin list filters
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
+  const [savedOnly, setSavedOnly] = useState(false);
+
+  // Saved/bookmarked pins — persisted across sessions, shared between the detail
+  // panel's bookmark toggle and the "Saved" filter chip in the list view.
+  const [savedPinIds, setSavedPinIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]'); } catch { return []; }
+  });
+
+  const toggleSavedPin = (pinId: string) => {
+    setSavedPinIds(prev => {
+      const next = prev.includes(pinId) ? prev.filter(id => id !== pinId) : [...prev, pinId];
+      localStorage.setItem(SAVED_PINS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   const reverseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -503,6 +648,22 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     sessionStorage.removeItem('citinet-focus-pin');
     const target = pins.find(p => p.id === focusPin);
     if (target) handlePinSelect(target);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pins]);
+
+  // A pin shared via the detail panel's Share button — carried as a real ?pin= URL
+  // param (unlike the sessionStorage deep-links above) so it survives a fresh load
+  // in another tab/device. Consumed once, then stripped from the URL.
+  useEffect(() => {
+    if (pins.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedPinId = params.get('pin');
+    if (!sharedPinId) return;
+    const target = pins.find(p => p.id === sharedPinId);
+    if (target) handlePinSelect(target);
+    params.delete('pin');
+    const newSearch = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins]);
 
@@ -612,10 +773,25 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   // ── Pin CRUD ─────────────────────────────────────────────────────────────
 
-  /** Creates the pin but leaves the create-flow panel open — it advances to its
-   * own 'success' step and the panel calls `finishCreate` once the user is done. */
-  const publishPin = async (data: { title: string; description?: string; category: AtlasPinCategory }): Promise<AtlasPin> => {
-    if (!pendingPosition || !hubSlug || !currentUser?.username) throw new Error('Not ready to publish');
+  const startEditPin = (pin: AtlasPin) => {
+    setEditingPinId(pin.id);
+    setPendingPosition([pin.latitude, pin.longitude]);
+    setSuggestedTitle(null);
+    setCreateCategory(pin.category);
+  };
+
+  /** Creates or updates a pin (editingPinId decides which) but leaves the panel's
+   * own step logic in charge of what happens next — for creation it advances to a
+   * 'success' step and calls `finishCreate` once the user is done there; edits skip
+   * straight to `finishCreate` themselves. */
+  const handleFormSubmit = async (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string }): Promise<AtlasPin> => {
+    if (!hubSlug) throw new Error('Not ready');
+    if (editingPinId) {
+      const pin = await atlasService.updatePin(hubSlug, editingPinId, data);
+      await loadPins();
+      return pin;
+    }
+    if (!pendingPosition || !currentUser?.username) throw new Error('Not ready to publish');
     const pin = await atlasService.addPin(hubSlug, currentUser.username, {
       latitude: pendingPosition[0],
       longitude: pendingPosition[1],
@@ -628,6 +804,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const finishCreate = (pin: AtlasPin) => {
     setPendingPosition(null);
     setSuggestedTitle(null);
+    setEditingPinId(null);
     setSelectedPinId(pin.id);
     setMapCenter([pin.latitude, pin.longitude]);
   };
@@ -635,6 +812,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const cancelCreate = () => {
     setPendingPosition(null);
     setSuggestedTitle(null);
+    setEditingPinId(null);
   };
 
   const handleDeletePin = async (pinId: string) => {
@@ -650,6 +828,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const rightPanelActive = !!selectedPin || !!pendingPosition;
 
   const filteredPins = pins
+    .filter(p => !savedOnly || savedPinIds.includes(p.id))
     .filter(p => categoryFilter === 'all' || p.category === categoryFilter)
     .filter(p => !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -657,7 +836,10 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const distanceTo = (pin: AtlasPin) =>
     hubGeoCenter ? formatDistanceMiles(distanceMeters(hubGeoCenter[0], hubGeoCenter[1], pin.latitude, pin.longitude)) : null;
 
+  // Moderation (delete) stays available to admins; editing someone else's pin content
+  // does not — a mod can remove a bad pin, but shouldn't be able to rewrite it.
   const canDeletePin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername || !!currentUser?.isAdmin;
+  const canEditPin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername;
 
   const tileUrl = resolvedTheme === 'dark'
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -850,22 +1032,29 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               internally instead of pushing the whole page; mobile keeps normal flow. */}
           <div className="lg:sticky lg:top-7 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto lg:pr-1 no-scrollbar">
             {pendingPosition ? (
-              <CreatePinPanel
+              <PinFormPanel
                 position={pendingPosition}
+                hubSlug={hubSlug}
+                editingPin={editingPinId ? pins.find(p => p.id === editingPinId) : undefined}
                 suggestedTitle={suggestedTitle}
                 category={createCategory}
                 onCategoryChange={setCreateCategory}
-                onPublish={publishPin}
+                onPublish={handleFormSubmit}
                 onCancel={cancelCreate}
                 onDone={finishCreate}
               />
             ) : selectedPin ? (
               <PlaceDetailPanel
                 pin={selectedPin}
+                hubSlug={hubSlug}
                 distanceLabel={distanceTo(selectedPin)}
                 canDelete={canDeletePin(selectedPin)}
+                canEdit={canEditPin(selectedPin)}
+                saved={savedPinIds.includes(selectedPin.id)}
                 onBack={() => setSelectedPinId(null)}
                 onDelete={() => handleDeletePin(selectedPin.id)}
+                onToggleSave={() => toggleSavedPin(selectedPin.id)}
+                onEdit={() => startEditPin(selectedPin)}
               />
             ) : (
               <div className="flex flex-col gap-4">
@@ -888,6 +1077,17 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
                 {/* Category chips */}
                 <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                  <button
+                    onClick={() => setSavedOnly(s => !s)}
+                    className={`flex-none flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                      savedOnly
+                        ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
+                        : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                    }`}
+                  >
+                    <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-purple-300' : ''}`} />
+                    Saved{savedPinIds.length > 0 ? ` (${savedPinIds.length})` : ''}
+                  </button>
                   <button
                     onClick={() => setCategoryFilter('all')}
                     className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
@@ -929,6 +1129,13 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                           <p className="text-sm font-medium cn-text-2 mb-1">No pins yet</p>
                           <p className="text-xs cn-text-4">
                             Search for a place above or click <strong>Drop a pin</strong> to mark a spot
+                          </p>
+                        </>
+                      ) : savedOnly ? (
+                        <>
+                          <p className="text-sm font-medium cn-text-2 mb-1">No saved pins</p>
+                          <p className="text-xs cn-text-4">
+                            Tap the <Bookmark className="w-3 h-3 inline -mt-0.5" /> icon on a pin's detail view to save it here
                           </p>
                         </>
                       ) : (

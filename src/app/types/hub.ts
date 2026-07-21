@@ -13,7 +13,20 @@
  *   Future:  Custom domain with subdomain or query-param routing
  */
 
-export interface Hub {
+/** Hub identity icon config — shared shape between pre-join (HubInfoResponse) and
+ * post-join (Hub) data so <HubIcon> can render from either. Unset fields fall back
+ * to today's hardcoded look (white Hexagon on a blue→purple gradient). */
+export interface HubIconFields {
+  hub_icon_mode?: 'preset' | 'image';
+  hub_icon_symbol?: string;
+  hub_icon_bg_mode?: 'gradient' | 'solid';
+  hub_icon_gradient_from?: string;
+  hub_icon_gradient_to?: string;
+  hub_icon_solid_color?: string;
+  hub_icon_image_file_name?: string;
+}
+
+export interface Hub extends HubIconFields {
   /** Unique ID for this hub (generated client-side or from hub API) */
   id: string;
   /** URL-friendly identifier, used in routing (e.g., "highland-park") */
@@ -137,12 +150,14 @@ export interface HubConnection {
  * Response from GET /api/info
  * The hub API returns: node_id, node_name, node_type, storage_quota
  */
-export interface HubInfoResponse {
+export interface HubInfoResponse extends HubIconFields {
   node_id: string;
   /** Hub name — normalized from the API's node_name field */
   name: string;
   /** Raw field returned by the API */
   node_name?: string;
+  /** Stable hub slug reported by the API (survives display-name renames) */
+  hub_slug?: string;
   node_type?: string;
   storage_quota?: number;
   // Optional fields the hub may add later
@@ -281,6 +296,8 @@ export interface HubPost {
   /** RSVP ("going") count and the caller's own status — only meaningful for EVENT posts */
   rsvp_count?: number;
   my_rsvp?: boolean;
+  like_count?: number;
+  my_liked?: boolean;
 }
 
 /** A single RSVP entry for an event post */

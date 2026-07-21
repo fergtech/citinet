@@ -289,11 +289,12 @@ interface PostDetailViewProps {
   publicFileUrl: (name: string) => string;
   onBack: () => void;
   onDeleted: (postId: string) => void;
+  onLike: (post: HubPost) => void;
   onNavigateToProfile?: (userId: string) => void;
   onNavigate?: (screen: string) => void;
 }
 
-function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onNavigateToProfile, onNavigate }: PostDetailViewProps) {
+function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onLike, onNavigateToProfile, onNavigate }: PostDetailViewProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
   const [replyText, setReplyText] = useState('');
@@ -331,6 +332,14 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
     const id = setInterval(() => loadReplies(true), 15_000);
     return () => clearInterval(id);
   }, [loadReplies]);
+
+  // Arrived here via the list view's Comment button (see handleCommentClick) — jump
+  // straight to the reply box the same way clicking Comment from inside this view does.
+  useEffect(() => {
+    if (sessionStorage.getItem('citinet-focus-reply') !== post.id) return;
+    sessionStorage.removeItem('citinet-focus-reply');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [post.id]);
 
   function scrollToReply(replyId: string) {
     const el = document.getElementById(`pdv-reply-${replyId}`);
@@ -655,8 +664,13 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
 
                 {/* Engagement row */}
                 <div className="flex items-center gap-4 mt-4 pt-4 border-t cn-border">
-                  <button title="Like" aria-label="Like post" className="flex items-center gap-1.5 cn-text-4 hover:text-rose-400 transition-colors text-sm">
-                    <Heart className="w-4 h-4" /><span>0</span>
+                  <button
+                    title="Like"
+                    aria-label={post.my_liked ? 'Unlike post' : 'Like post'}
+                    onClick={() => onLike(post)}
+                    className={`flex items-center gap-1.5 transition-colors text-sm ${post.my_liked ? 'text-rose-500' : 'cn-text-4 hover:text-rose-400'}`}
+                  >
+                    <Heart className={`w-4 h-4 ${post.my_liked ? 'fill-rose-500' : ''}`} /><span>{post.like_count ?? 0}</span>
                   </button>
                   <button title="Comment" aria-label={`Comment, ${post.reply_count} comments`} className="flex items-center gap-1.5 cn-text-4 hover:text-blue-400 transition-colors text-sm" onClick={() => textareaRef.current?.focus()}>
                     <MessageCircle className="w-4 h-4" /><span>{post.reply_count}</span>
@@ -998,16 +1012,19 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
 
 interface ComposePollModalProps {
   hubSlug: string;
+  editingPoll?: Poll;
   onClose: () => void;
   onCreated: (poll: Poll) => void;
+  onUpdated: (poll: Poll) => void;
 }
 
-function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps) {
-  const [question, setQuestion] = useState('');
-  const [options, setOptions] = useState(['', '']);
-  const [closesAt, setClosesAt] = useState('');
-  const [quorumPct, setQuorumPct] = useState(0);
-  const [passPct, setPassPct] = useState(50);
+function ComposePollModal({ hubSlug, editingPoll, onClose, onCreated, onUpdated }: ComposePollModalProps) {
+  const isEditing = !!editingPoll;
+  const [question, setQuestion] = useState(editingPoll?.question ?? '');
+  const [options, setOptions] = useState(editingPoll ? [...editingPoll.options] : ['', '']);
+  const [closesAt, setClosesAt] = useState(editingPoll?.closes_at ? toDatetimeLocal(editingPoll.closes_at) : '');
+  const [quorumPct, setQuorumPct] = useState(editingPoll?.quorum_pct ?? 0);
+  const [passPct, setPassPct] = useState(editingPoll?.pass_pct ?? 50);
   const [linkedRequestId, setLinkedRequestId] = useState('');
   const [openRequests, setOpenRequests] = useState<HubRequest[]>([]);
   const [showGovernance, setShowGovernance] = useState(false);
@@ -1015,10 +1032,11 @@ function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps
   const [createError, setCreateError] = useState('');
 
   useEffect(() => {
+    if (isEditing) return; // editing doesn't support (re)linking a request
     requestsService.list(hubSlug).then(reqs =>
       setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
     ).catch(() => {});
-  }, [hubSlug]);
+  }, [hubSlug, isEditing]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1036,18 +1054,29 @@ function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps
     setCreating(true);
     setCreateError('');
     try {
-      const poll = await pollsService.create(hubSlug, {
-        question: question.trim(),
-        options: validOptions,
-        closes_at: closesAt || undefined,
-        request_id: linkedRequestId || undefined,
-        quorum_pct: quorumPct,
-        pass_pct: passPct,
-      });
-      onCreated(poll);
+      if (isEditing) {
+        const poll = await pollsService.update(hubSlug, editingPoll.id, {
+          question: question.trim(),
+          options: validOptions,
+          closes_at: closesAt || null,
+          quorum_pct: quorumPct,
+          pass_pct: passPct,
+        });
+        onUpdated(poll);
+      } else {
+        const poll = await pollsService.create(hubSlug, {
+          question: question.trim(),
+          options: validOptions,
+          closes_at: closesAt || undefined,
+          request_id: linkedRequestId || undefined,
+          quorum_pct: quorumPct,
+          pass_pct: passPct,
+        });
+        onCreated(poll);
+      }
       onClose();
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create poll');
+      setCreateError(e instanceof Error ? e.message : `Failed to ${isEditing ? 'save' : 'create'} poll`);
     } finally {
       setCreating(false);
     }
@@ -1071,7 +1100,7 @@ function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps
         >
           <div className="flex items-center justify-between px-6 py-4 border-b cn-border">
             <h2 className="cn-text-1 font-semibold text-lg flex items-center gap-2">
-              <Vote className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> New Poll
+              <Vote className="w-5 h-5 text-indigo-500 dark:text-indigo-400" /> {isEditing ? 'Edit Poll' : 'New Poll'}
             </h2>
             <button onClick={onClose} className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
               <X className="w-4 h-4 cn-text-3" />
@@ -1107,6 +1136,9 @@ function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps
                   </button>
                 )}
               </div>
+              {isEditing && (
+                <p className="text-[10px] cn-text-4 mt-1.5">Changing the options resets all existing votes.</p>
+              )}
             </div>
 
             <div>
@@ -1181,12 +1213,427 @@ function ComposePollModal({ hubSlug, onClose, onCreated }: ComposePollModalProps
             <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
             <button onClick={handleCreate} disabled={!question.trim() || options.filter(o => o.trim()).length < 2 || creating}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
-              {creating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</> : 'Create Poll'}
+              {creating
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {isEditing ? 'Saving…' : 'Creating…'}</>
+                : (isEditing ? 'Save changes' : 'Create Poll')}
             </button>
           </div>
         </motion.div>
       </div>
     </AnimatePresence>
+  );
+}
+
+// ── Inline composer ──────────────────────────────────────────
+// Event and Poll expand in place within the same card, rather than opening a
+// separate modal — the caption you're already typing (or start typing) carries
+// straight over as the event's body / the poll's question, since it's the same
+// "what do you want to say" field underneath either post type. Photo and Video
+// open the device's native file picker directly and preview inline, right below
+// the caption. Place drops in the same location search Atlas/Event use, and
+// collapses to a small removable chip once picked — carried over as the
+// event's location if you then switch into Event mode. The full ComposeModal
+// is only a fallback for the empty-everything case (category/visibility picker).
+
+interface InlineComposerProps {
+  hubSlug: string;
+  hubCenter?: [number, number];
+  isMod: boolean;
+  displayInitial: string;
+  onPostCreated: (post: HubPost) => void;
+  onPollCreated: (poll: Poll) => void;
+  onOpenFullComposer: (initialBody: string) => void;
+}
+
+function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onPollCreated, onOpenFullComposer }: InlineComposerProps) {
+  const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
+  const [body, setBody] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState('');
+
+  // Idle-mode attachments — a plain post can carry a photo/video and/or a place
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [placeOpen, setPlaceOpen] = useState(false);
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [place, setPlace] = useState<{ label: string; lat: number; lng: number } | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Event-only fields
+  const [eventDate, setEventDate] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventCoords, setEventCoords] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Poll-only fields
+  const [options, setOptions] = useState(['', '']);
+  const [closesAt, setClosesAt] = useState('');
+  const [quorumPct, setQuorumPct] = useState(0);
+  const [passPct, setPassPct] = useState(50);
+  const [linkedRequestId, setLinkedRequestId] = useState('');
+  const [openRequests, setOpenRequests] = useState<HubRequest[]>([]);
+  const [showGovernance, setShowGovernance] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'poll') return;
+    requestsService.list(hubSlug).then(reqs =>
+      setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
+    ).catch(() => {});
+  }, [hubSlug, mode]);
+
+  const reset = () => {
+    setMode('idle'); setBody(''); setPostError('');
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(null); setMediaPreview(null);
+    setPlaceOpen(false); setPlaceQuery(''); setPlace(null);
+    setEventDate(''); setEventLocation(''); setEventCoords(null);
+    setOptions(['', '']); setClosesAt(''); setQuorumPct(0); setPassPct(50); setLinkedRequestId(''); setShowGovernance(false);
+  };
+
+  function handleMediaFile(file: File) {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(file);
+    setMediaPreview(URL.createObjectURL(file));
+  }
+
+  function removeMedia() {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(null);
+    setMediaPreview(null);
+  }
+
+  const canQuickPost = !!(body.trim() || mediaFile || place);
+
+  async function submitQuickPost() {
+    if (!canQuickPost || posting) return;
+    setPosting(true);
+    setPostError('');
+    try {
+      const post = await hubService.createPost(hubSlug, {
+        category: 'DISCUSSION',
+        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
+        body: body.trim(),
+        mediaFile: mediaFile ?? undefined,
+        eventLocation: place?.label,
+        eventLat: place?.lat,
+        eventLng: place?.lng,
+      });
+      onPostCreated(post);
+      reset();
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Failed to post');
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function submitEvent() {
+    if (!body.trim() || !eventDate || posting) return;
+    setPosting(true);
+    setPostError('');
+    try {
+      const post = await hubService.createPost(hubSlug, {
+        category: 'EVENT',
+        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
+        body: body.trim(),
+        eventDate: new Date(eventDate).toISOString(),
+        eventLocation: eventLocation || undefined,
+        eventLat: eventCoords?.lat,
+        eventLng: eventCoords?.lng,
+      });
+      onPostCreated(post);
+      reset();
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Failed to post event');
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function submitPoll() {
+    const validOptions = options.filter(o => o.trim());
+    if (!body.trim() || validOptions.length < 2 || posting) return;
+    setPosting(true);
+    setPostError('');
+    try {
+      const poll = await pollsService.create(hubSlug, {
+        question: body.trim(),
+        options: validOptions,
+        closes_at: closesAt || undefined,
+        request_id: linkedRequestId || undefined,
+        quorum_pct: quorumPct,
+        pass_pct: passPct,
+      });
+      onPollCreated(poll);
+      reset();
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Failed to create poll');
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  const fieldCls = 'w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
+
+  if (mode === 'poll') {
+    const validCount = options.filter(o => o.trim()).length;
+    return (
+      <div className="cn-glass rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--cn-grad-spaces)' }}>
+            <Vote className="w-4 h-4 text-white" />
+          </span>
+          <span className="text-sm font-semibold cn-text-1 flex-1">Create a poll</span>
+          <button onClick={reset} className="w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <textarea
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          rows={2}
+          autoFocus
+          placeholder="Ask your neighbors something…"
+          className={`${fieldCls} resize-none`}
+        />
+        <div className="flex flex-col gap-2">
+          {options.map((opt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="font-mono text-[11px] cn-text-4 w-4 shrink-0">{i + 1}</span>
+              <input
+                value={opt}
+                onChange={e => setOptions(o => o.map((x, idx) => idx === i ? e.target.value : x))}
+                placeholder={`Option ${i + 1}`}
+                className={fieldCls}
+              />
+              {options.length > 2 && (
+                <button onClick={() => setOptions(o => o.filter((_, idx) => idx !== i))} className="w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+          {options.length < 5 && (
+            <button onClick={() => setOptions(o => [...o, ''])} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-purple-500 hover:text-purple-400 transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Add option
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs cn-text-3">Closes</span>
+          <input type="datetime-local" value={closesAt} onChange={e => setClosesAt(e.target.value)} className="cn-surface-2 border cn-border rounded-lg px-2.5 py-1.5 text-xs cn-text-1 focus:outline-none focus:border-purple-400" />
+          <span className="text-xs cn-text-4">(optional)</span>
+        </div>
+
+        <div className="border-t cn-border pt-2.5">
+          <button type="button" onClick={() => setShowGovernance(v => !v)} className="flex items-center gap-1.5 text-xs font-medium cn-text-3 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showGovernance ? 'rotate-180' : ''}`} /> Governance options
+          </button>
+          {showGovernance && (
+            <div className="flex flex-col gap-3 mt-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium cn-text-3 mb-1">Quorum (%)</label>
+                  <input type="number" min={0} max={100} value={quorumPct}
+                    onChange={e => setQuorumPct(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))} className={fieldCls} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium cn-text-3 mb-1">Pass threshold (%)</label>
+                  <input type="number" min={1} max={100} value={passPct}
+                    onChange={e => setPassPct(Math.min(100, Math.max(1, parseInt(e.target.value) || 50)))} className={fieldCls} />
+                </div>
+              </div>
+              {openRequests.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium cn-text-3 mb-1 flex items-center gap-1">
+                    <Link2 className="w-3 h-3" /> Link to feature request (optional)
+                  </label>
+                  <select value={linkedRequestId} onChange={e => setLinkedRequestId(e.target.value)} className={fieldCls}>
+                    <option value="">— None —</option>
+                    {openRequests.map(r => (
+                      <option key={r.id} value={r.id}>{r.problem.slice(0, 80)}{r.problem.length > 80 ? '…' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {postError && <p className="text-xs text-rose-500">{postError}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={reset} className="px-3.5 py-1.5 rounded-lg text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
+          <button
+            onClick={submitPoll}
+            disabled={!body.trim() || validCount < 2 || posting}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Vote className="w-3.5 h-3.5" />} Post poll
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'event') {
+    return (
+      <div className="cn-glass rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--cn-grad-exchange)' }}>
+            <Calendar className="w-4 h-4 text-white" />
+          </span>
+          <span className="text-sm font-semibold cn-text-1 flex-1">Create an event</span>
+          <button onClick={reset} className="w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <textarea
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          rows={2}
+          autoFocus
+          placeholder="What's the event? Add details for your neighbors…"
+          className={`${fieldCls} resize-none`}
+        />
+        <input
+          type="datetime-local"
+          value={eventDate}
+          onChange={e => setEventDate(e.target.value)}
+          min={new Date().toISOString().slice(0, 16)}
+          className={fieldCls}
+        />
+        <LocationSearchInput
+          value={eventLocation}
+          onChange={v => { setEventLocation(v); setEventCoords(null); }}
+          onSelect={r => { setEventLocation(r.label); setEventCoords({ lat: r.lat, lng: r.lng }); }}
+          hubCenter={hubCenter}
+          historyKey="citinet-feed-event-location-history"
+          placeholder="Location — optional"
+          inputClassName={fieldCls}
+        />
+        {eventCoords && <p className="text-[11px] text-emerald-500">Linked to Atlas — this exact spot will be clickable on the post.</p>}
+
+        {postError && <p className="text-xs text-rose-500">{postError}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={reset} className="px-3.5 py-1.5 rounded-lg text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
+          <button
+            onClick={submitEvent}
+            disabled={!body.trim() || !eventDate || posting}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+          >
+            {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />} Post event
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
+
+  return (
+    <div className="cn-glass rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+          {displayInitial}
+        </div>
+        <input
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && canQuickPost) submitQuickPost(); }}
+          placeholder="Share something with your neighbors…"
+          className="flex-1 bg-transparent text-sm cn-text-1 placeholder:cn-text-4 focus:outline-none"
+        />
+      </div>
+
+      {/* Photo/video preview — right where you were typing */}
+      {mediaPreview && (
+        <div className="px-4 pb-3">
+          <div className="relative rounded-xl overflow-hidden bg-black">
+            {isVideoFile
+              ? <video src={mediaPreview} controls className="w-full max-h-56 object-contain" />
+              : <img src={mediaPreview} alt="Preview" className="w-full max-h-56 object-cover" />}
+            <button onClick={removeMedia} className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/50 hover:bg-black/70 flex items-center justify-center transition-colors">
+              <X className="w-3.5 h-3.5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Place — inline search that collapses to a removable chip once picked */}
+      {(placeOpen || place) && (
+        <div className="px-4 pb-3">
+          {place ? (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg cn-surface-2 border cn-border text-xs cn-text-2">
+              <MapPin className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400 shrink-0" />
+              {place.label}
+              <button onClick={() => setPlace(null)} className="cn-text-4 hover:text-red-500 transition-colors">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <LocationSearchInput
+              value={placeQuery}
+              onChange={setPlaceQuery}
+              onSelect={r => { setPlace({ label: r.label, lat: r.lat, lng: r.lng }); setPlaceOpen(false); setPlaceQuery(''); }}
+              hubCenter={hubCenter}
+              historyKey="citinet-feed-place-history"
+              placeholder="Search a place…"
+              inputClassName={fieldCls}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="border-t cn-border px-3 py-2 flex items-center gap-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
+          <button onClick={() => photoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <Image className="w-3.5 h-3.5" />Photo
+          </button>
+          <button onClick={() => videoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <Film className="w-3.5 h-3.5" />Video
+          </button>
+          <button
+            onClick={() => {
+              if (place) return;
+              setEventLocation(''); setEventCoords(null);
+              setPlaceOpen(v => !v);
+            }}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <MapPin className="w-3.5 h-3.5" />Place
+          </button>
+          <button
+            onClick={() => {
+              if (place) { setEventLocation(place.label); setEventCoords({ lat: place.lat, lng: place.lng }); }
+              setMode('event');
+            }}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <Calendar className="w-3.5 h-3.5" />Event
+          </button>
+          {isMod && (
+            <button onClick={() => setMode('poll')} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+              <BarChart2 className="w-3.5 h-3.5" />Poll
+            </button>
+          )}
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={() => (canQuickPost ? submitQuickPost() : onOpenFullComposer(''))}
+          disabled={posting}
+          className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+        >
+          {posting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Post
+        </button>
+      </div>
+      {postError && <p className="text-xs text-rose-500 px-4 pb-2">{postError}</p>}
+
+      <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+      <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+    </div>
   );
 }
 
@@ -1207,8 +1654,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
   const [composingPoll, setComposingPoll] = useState(false);
+  const [editingPoll, setEditingPoll] = useState<Poll | null>(null);
   const [pollVoting, setPollVoting] = useState<string | null>(null);
   const [pollClosing, setPollClosing] = useState<string | null>(null);
+  const [pollReopening, setPollReopening] = useState<string | null>(null);
   const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
 
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
@@ -1324,6 +1773,34 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     navigate(hubPath('/feed'), { replace: true });
   }
 
+  /** Opens the post and flags that we got here specifically to comment, so the
+   * detail view focuses its reply box once it mounts (see the matching effect
+   * in PostDetailView, keyed off the same sessionStorage flag). */
+  function handleCommentClick(post: HubPost) {
+    sessionStorage.setItem('citinet-focus-reply', post.id);
+    openPost(post);
+  }
+
+  async function handlePostLike(post: HubPost) {
+    const wasLiked = !!post.my_liked;
+    const optimistic = (p: HubPost): HubPost => ({
+      ...p,
+      my_liked: !wasLiked,
+      like_count: Math.max(0, (p.like_count ?? 0) + (wasLiked ? -1 : 1)),
+    });
+    setPosts(ps => ps.map(p => (p.id === post.id ? optimistic(p) : p)));
+    setSelectedPost(sp => (sp && sp.id === post.id ? optimistic(sp) : sp));
+    try {
+      const result = await hubService.toggleLike(hubSlug, post.id);
+      const reconcile = (p: HubPost): HubPost => ({ ...p, my_liked: result.liked, like_count: result.count });
+      setPosts(ps => ps.map(p => (p.id === post.id ? reconcile(p) : p)));
+      setSelectedPost(sp => (sp && sp.id === post.id ? reconcile(sp) : sp));
+    } catch {
+      setPosts(ps => ps.map(p => (p.id === post.id ? post : p)));
+      setSelectedPost(sp => (sp && sp.id === post.id ? post : sp));
+    }
+  }
+
   function handleCreated(post: HubPost) { setPosts(prev => [post, ...prev]); }
   function handlePostDeleted(postId: string) {
     setPosts(prev => prev.filter(p => p.id !== postId));
@@ -1362,6 +1839,19 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setPollClosing(null);
   }
 
+  async function handlePollReopen(pollId: string) {
+    setPollReopening(pollId);
+    try {
+      await pollsService.reopen(hubSlug, pollId);
+      load(true); // refetch so the poll, and any request it's linked to, reflect the reopened state everywhere
+    } catch { /* non-critical */ }
+    setPollReopening(null);
+  }
+
+  function handlePollUpdated() {
+    load(true); // votes may have reset if options changed — refetch for accurate counts
+  }
+
   function handleCopyPollLink(pollId: string) {
     const link = `${window.location.href.split('#')[0]}#poll=${pollId}`;
     navigator.clipboard.writeText(link).then(() => {
@@ -1383,6 +1873,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
           onBack={closePost}
           onDeleted={handlePostDeleted}
+          onLike={handlePostLike}
           onNavigateToProfile={onNavigate ? (userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); } : undefined}
           onNavigate={onNavigate}
         />
@@ -1443,50 +1934,16 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
 
             {/* Feed column */}
             <div className="flex flex-col gap-4 min-w-0">
-              {/* Inline composer bar */}
-              <div className="cn-glass rounded-2xl overflow-hidden">
-                <button
-                  onClick={() => setComposing(true)}
-                  className="w-full flex items-center gap-3 px-4 pt-3.5 pb-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                >
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
-                    {currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
-                  </div>
-                  <span className="flex-1 text-left text-sm cn-text-4">Share something with your neighbors…</span>
-                </button>
-                <div className="border-t cn-border px-3 py-2 flex items-center gap-1">
-                  <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
-                    {([
-                      { icon: <Image className="w-3.5 h-3.5" />, label: 'Photo' },
-                      { icon: <Calendar className="w-3.5 h-3.5" />, label: 'Event' },
-                      { icon: <MapPin className="w-3.5 h-3.5" />, label: 'Place' },
-                    ] as const).map(({ icon, label }) => (
-                      <button
-                        key={label}
-                        onClick={() => setComposing(true)}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        {icon}{label}
-                      </button>
-                    ))}
-                    {isMod && (
-                      <button
-                        onClick={() => setComposingPoll(true)}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <BarChart2 className="w-3.5 h-3.5" />Poll
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex-1" />
-                  <button
-                    onClick={() => setComposing(true)}
-                    className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors"
-                  >
-                    <Send className="w-3 h-3" /> Post
-                  </button>
-                </div>
-              </div>
+              {/* Inline composer — Event/Poll expand in place; Photo/Place still hand off to the full modal */}
+              <InlineComposer
+                hubSlug={hubSlug}
+                hubCenter={currentHub?.lat && currentHub?.lng ? [currentHub.lat, currentHub.lng] : undefined}
+                isMod={isMod}
+                displayInitial={currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
+                onPostCreated={handleCreated}
+                onPollCreated={handlePollCreated}
+                onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
+              />
 
               {/* Loading */}
               {loading && (
@@ -1537,8 +1994,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       isMod={isMod}
                       voting={pollVoting === poll.id}
                       closing={pollClosing === poll.id}
+                      reopening={pollReopening === poll.id}
                       onVote={idx => handlePollVote(poll, idx)}
                       onClose={() => handlePollClose(poll.id)}
+                      onReopen={() => handlePollReopen(poll.id)}
+                      onEdit={() => setEditingPoll(poll)}
                       onCopyLink={() => handleCopyPollLink(poll.id)}
                       copyLinkActive={copyLinkFeedback === poll.id}
                     />
@@ -1564,6 +2024,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       content={post.body}
                       mediaUrl={mediaUrl}
                       replyCount={post.reply_count}
+                      likeCount={post.like_count}
+                      myLiked={post.my_liked}
+                      onLike={() => handlePostLike(post)}
+                      onCommentClick={() => handleCommentClick(post)}
                       categoryColors={CATEGORY_COLORS}
                       eventDate={post.event_date}
                       eventLocation={post.event_location}
@@ -1599,12 +2063,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         />
       )}
 
-      {/* Compose poll modal */}
-      {composingPoll && (
+      {/* Compose/edit poll modal — shared between creating a new poll and editing an existing one */}
+      {(composingPoll || editingPoll) && (
         <ComposePollModal
           hubSlug={hubSlug}
-          onClose={() => setComposingPoll(false)}
+          editingPoll={editingPoll ?? undefined}
+          onClose={() => { setComposingPoll(false); setEditingPoll(null); }}
           onCreated={handlePollCreated}
+          onUpdated={handlePollUpdated}
         />
       )}
     </div>

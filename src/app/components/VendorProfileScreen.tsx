@@ -296,41 +296,84 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               </div>
             )}
           </div>
-          <div className="px-5 sm:px-7 pb-5 pt-3 flex items-end gap-4 flex-wrap">
-            {/* Only the (opaque) logo overlaps the banner — text always stays fully on the
-                solid surface below it, so its color reads correctly regardless of banner color/theme. */}
-            <div
-              className={`relative w-[76px] h-[76px] sm:w-[92px] sm:h-[92px] rounded-2xl ring-4 ring-white dark:ring-zinc-900 shadow-lg overflow-hidden shrink-0 -mt-9 sm:-mt-11 ${isOwner ? 'cursor-pointer group' : ''}`}
-              onClick={() => isOwner && logoInputRef.current?.click()}
-            >
-              {(logoPreview || vendor.logo_file_name)
-                ? <img src={logoPreview ?? (fileUrl(vendor.logo_file_name) ?? undefined)} alt={vendor.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-3xl font-bold">{vendor.name.charAt(0).toUpperCase()}</div>
-              }
-              {isOwner && (
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  {savingVisual === 'logo' ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <ImagePlus className="w-5 h-5 text-white" />}
+          <div className="px-5 sm:px-7 pb-5 pt-3">
+            <div className="flex items-end gap-4">
+              {/* Only the (opaque) logo overlaps the banner — text always stays fully on the
+                  solid surface below it, so its color reads correctly regardless of banner color/theme. */}
+              <div
+                className={`relative w-[76px] h-[76px] sm:w-[92px] sm:h-[92px] rounded-2xl ring-4 ring-white dark:ring-zinc-900 shadow-lg overflow-hidden shrink-0 -mt-9 sm:-mt-11 ${isOwner ? 'cursor-pointer group' : ''}`}
+                onClick={() => isOwner && logoInputRef.current?.click()}
+              >
+                {(logoPreview || vendor.logo_file_name)
+                  ? <img src={logoPreview ?? (fileUrl(vendor.logo_file_name) ?? undefined)} alt={vendor.name} className="w-full h-full object-cover" />
+                  : <div className="w-full h-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-3xl font-bold">{vendor.name.charAt(0).toUpperCase()}</div>
+                }
+                {isOwner && (
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    {savingVisual === 'logo' ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <ImagePlus className="w-5 h-5 text-white" />}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 pb-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-bold cn-text-1 tracking-tight leading-tight">{vendor.name}</h1>
+                  <BadgeCheck className="w-4 h-4 text-purple-500 dark:text-purple-300 shrink-0" />
                 </div>
+                <p className="text-sm cn-text-3 mt-0.5">
+                  {vendor.category ? `${vendor.category} · ` : ''}Joined {formatMemberSince(vendor.created_at)}
+                </p>
+              </div>
+              {canMessage && (
+                <button
+                  onClick={handleMessageVendor}
+                  className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors shrink-0"
+                >
+                  <MessageCircle className="w-4 h-4" /> Message
+                </button>
               )}
             </div>
-            <div className="flex-1 min-w-0 pb-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-bold cn-text-1 tracking-tight leading-tight">{vendor.name}</h1>
-                <BadgeCheck className="w-4 h-4 text-purple-500 dark:text-purple-300 shrink-0" />
-              </div>
-              <p className="text-sm cn-text-3 mt-0.5">
-                {vendor.category ? `${vendor.category} · ` : ''}Joined {formatMemberSince(vendor.created_at)}
-              </p>
-            </div>
+            {/* Mobile: Message lives in the header itself as a full-width row, not a
+                separate floating button elsewhere on the screen. */}
             {canMessage && (
               <button
                 onClick={handleMessageVendor}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors shrink-0"
+                className="sm:hidden w-full mt-3 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
               >
                 <MessageCircle className="w-4 h-4" /> Message
               </button>
             )}
           </div>
+
+          {/* Contact — consolidated into the header, at the very bottom of the hero card */}
+          {hasContact && (
+            <div className="px-5 sm:px-7 py-3 border-t cn-border flex flex-wrap items-center gap-x-5 gap-y-2">
+              {vendor.contact_phone && (
+                <a href={`tel:${vendor.contact_phone}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                  <Phone className="w-3.5 h-3.5 shrink-0" /> {vendor.contact_phone}
+                </a>
+              )}
+              {vendor.contact_email && (
+                <a href={`mailto:${vendor.contact_email}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                  <Mail className="w-3.5 h-3.5 shrink-0" /> {vendor.contact_email}
+                </a>
+              )}
+              {vendor.website && (
+                <a
+                  href={vendor.website.startsWith('http') ? vendor.website : `https://${vendor.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors truncate max-w-[220px]"
+                >
+                  <Globe className="w-3.5 h-3.5 shrink-0" /> {vendor.website}
+                </a>
+              )}
+              {vendor.hours && (
+                <span className="inline-flex items-center gap-1.5 text-xs cn-text-3">
+                  <Clock className="w-3.5 h-3.5 shrink-0" /> {vendor.hours}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Owner: public link */}
@@ -355,65 +398,35 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
           </div>
         )}
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="rounded-xl cn-glass p-3.5">
-            <Package className="w-4 h-4 cn-text-4" />
-            <div className="font-mono text-lg font-bold cn-text-1 mt-1.5">{activeListings.length}</div>
-            <div className="text-[11px] cn-text-3 mt-0.5">Active listings</div>
-          </div>
-          <div className="rounded-xl cn-glass p-3.5">
-            <Calendar className="w-4 h-4 cn-text-4" />
-            <div className="text-sm font-bold cn-text-1 mt-1.5 truncate">{formatMemberSince(vendor.created_at)}</div>
-            <div className="text-[11px] cn-text-3 mt-0.5">Member since</div>
-          </div>
-          <div className="rounded-xl cn-glass p-3.5">
-            <Tag className="w-4 h-4 cn-text-4" />
-            <div className="text-sm font-bold cn-text-1 mt-1.5 truncate">{vendor.category || '—'}</div>
-            <div className="text-[11px] cn-text-3 mt-0.5">Category</div>
-          </div>
-        </div>
-
-        {/* About */}
-        {vendor.description && (
-          <div className="rounded-xl cn-glass p-5 mb-6">
-            <h2 className="text-sm font-semibold cn-text-2 mb-2">About</h2>
-            <div className="space-y-3">
-              {storyParagraphs.map((para, idx) => (
-                <p key={idx} className="text-sm cn-text-2 leading-relaxed">{para}</p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Contact */}
-        {hasContact && (
-          <div className="rounded-xl cn-glass p-5 mb-6">
-            <h2 className="text-sm font-semibold cn-text-2 mb-3">Contact</h2>
-            <div className="space-y-1">
-              {vendor.contact_phone && (
-                <a href={`tel:${vendor.contact_phone}`} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-sm cn-text-2">
-                  <Phone className="w-4 h-4 cn-text-4 shrink-0" /> {vendor.contact_phone}
-                </a>
-              )}
-              {vendor.contact_email && (
-                <a href={`mailto:${vendor.contact_email}`} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-sm cn-text-2">
-                  <Mail className="w-4 h-4 cn-text-4 shrink-0" /> {vendor.contact_email}
-                </a>
-              )}
-              {vendor.website && (
-                <a href={vendor.website.startsWith('http') ? vendor.website : `https://${vendor.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-sm cn-text-2 truncate">
-                  <Globe className="w-4 h-4 cn-text-4 shrink-0" /> {vendor.website}
-                </a>
-              )}
-              {vendor.hours && (
-                <div className="flex items-center gap-3 px-2 py-2 text-sm cn-text-2">
-                  <Clock className="w-4 h-4 cn-text-4 shrink-0" /> {vendor.hours}
+        {/* Compact stat + bio strip — keeps trust info visible without competing with listings */}
+        <div className="rounded-xl cn-glass p-4 sm:p-5 mb-6 flex flex-col sm:flex-row gap-4 sm:gap-6">
+          <div className="flex gap-5 sm:gap-6 sm:flex-none">
+            {[
+              { icon: Package, label: 'Active listings', val: String(activeListings.length) },
+              { icon: Calendar, label: 'Member since', val: formatMemberSince(vendor.created_at) },
+              { icon: Tag, label: 'Category', val: vendor.category || '—' },
+            ].map(s => (
+              <div key={s.label} className="flex items-center gap-2 min-w-0">
+                <s.icon className="w-4 h-4 cn-text-4 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-mono text-[15px] font-bold cn-text-1 leading-tight truncate">{s.val}</div>
+                  <div className="text-[10.5px] cn-text-3 whitespace-nowrap">{s.label}</div>
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        )}
+          {vendor.description && (
+            <>
+              <div className="hidden sm:block w-px self-stretch" style={{ background: 'var(--cn-border)' }} />
+              <div className="sm:hidden h-px" style={{ background: 'var(--cn-border)' }} />
+              <div className="flex-1 min-w-0 space-y-2">
+                {storyParagraphs.map((para, idx) => (
+                  <p key={idx} className="text-sm cn-text-2 leading-relaxed">{para}</p>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Listings */}
         <div>
@@ -444,16 +457,6 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
           )}
         </div>
       </div>
-
-      {/* Floating mobile message button */}
-      {canMessage && (
-        <button
-          onClick={handleMessageVendor}
-          className="md:hidden fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-purple-600 hover:bg-purple-500 text-white shadow-lg flex items-center justify-center transition-colors"
-        >
-          <MessageCircle className="w-6 h-6" />
-        </button>
-      )}
 
       {/* Hidden inputs */}
       <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoFileChange} />

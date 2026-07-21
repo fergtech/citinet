@@ -20,6 +20,8 @@ const ACTION_CONFIG: Record<string, { label: string; color: string; dot: string 
   unban_user:        { label: 'User Unbanned',       color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: 'bg-emerald-400' },
   create_poll:       { label: 'Poll Created',        color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300', dot: 'bg-indigo-400' },
   close_poll:        { label: 'Poll Closed',         color: 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',        dot: 'bg-slate-400' },
+  edit_poll:         { label: 'Poll Edited',         color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',       dot: 'bg-blue-400' },
+  reopen_poll:       { label: 'Poll Reopened',       color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300', dot: 'bg-emerald-400' },
 };
 
 function timeAgo(iso: string): string {

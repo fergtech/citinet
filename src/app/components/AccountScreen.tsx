@@ -30,7 +30,7 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -365,15 +365,16 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const roleLabel = isAdmin ? '★ Hub Admin' : role.charAt(0).toUpperCase() + role.slice(1);
 
-  type Section = 'profile' | 'appearance' | 'security' | 'hub' | 'danger';
+  type Section = 'profile' | 'appearance' | 'notifications' | 'security' | 'hub' | 'danger';
   const [activeSection, setActiveSection] = useState<Section>('profile');
 
   const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; danger?: boolean }[] = [
-    { id: 'profile',    label: 'Profile',    icon: User    },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
-    { id: 'security',   label: 'Security',   icon: Lock    },
-    { id: 'hub',        label: 'Connected Hub', icon: Server },
-    { id: 'danger',     label: 'Delete Account', icon: Trash2, danger: true },
+    { id: 'profile',       label: 'Profile',       icon: User    },
+    { id: 'appearance',    label: 'Appearance',    icon: Palette },
+    { id: 'notifications', label: 'Notifications', icon: Bell    },
+    { id: 'security',      label: 'Security',      icon: Lock    },
+    { id: 'hub',           label: 'Connected Hub', icon: Server },
+    { id: 'danger',        label: 'Delete Account', icon: Trash2, danger: true },
   ];
 
 
@@ -718,6 +719,34 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     </div>
   );
 
+  const emailNotificationsEnabled = userPreferences.email_notifications !== 'false';
+
+  const notificationsSection = (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <Bell className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Notifications</h3>
+      </div>
+      {!currentUser?.email && (
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+          Add an email address in the <button onClick={() => setActiveSection('profile')} className="text-purple-600 dark:text-purple-400 hover:underline font-medium">Profile</button> tab to receive email notifications.
+        </p>
+      )}
+      <button
+        onClick={() => updateUserPreferences({ email_notifications: emailNotificationsEnabled ? 'false' : 'true' })}
+        className="w-full flex items-center gap-3 py-1 text-left"
+      >
+        <div className="flex-1">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">Email notifications</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Get an email for new messages, replies to your posts, and Space invites — the same things you get notified about in-app.</p>
+        </div>
+        <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${emailNotificationsEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${emailNotificationsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+        </span>
+      </button>
+    </div>
+  );
+
   const securitySection = (
     <div className="space-y-5">
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
@@ -875,6 +904,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const SECTION_CONTENT: Record<Section, React.ReactNode> = {
     profile: profileSection,
     appearance: appearanceSection,
+    notifications: notificationsSection,
     security: securitySection,
     hub: hubSection,
     danger: dangerSection,

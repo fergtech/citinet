@@ -17,7 +17,7 @@ FROM node:18-alpine
 WORKDIR /app
 COPY api/package.json ./
 RUN npm install --omit=dev --ignore-scripts
-COPY api/server.js ./
+COPY api/server.js api/mailer.js ./
 COPY --from=portal-builder /portal/dist ./dist
 EXPOSE 9090
 USER node

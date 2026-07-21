@@ -164,12 +164,12 @@ export function LocationPicker({
     }
   };
 
-  const defaultInputClass = `w-full p-3.5 pr-10 border-2 rounded-xl
-    text-slate-900 dark:text-white bg-white dark:bg-zinc-800
+  const defaultInputClass = `w-full h-[42px] px-3.5 pr-10 border rounded-lg
+    text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px]
     focus:outline-none transition-colors ${
     selected
       ? 'border-green-500 dark:border-green-600'
-      : 'border-slate-200 dark:border-zinc-700 focus:border-purple-500'
+      : 'border-slate-200 dark:border-white/10 focus:border-purple-500'
   }`;
 
   return (

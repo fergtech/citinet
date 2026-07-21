@@ -11,9 +11,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  ArrowLeft, Loader2, CheckCircle, AlertCircle,
-  Globe, User, Lock, Eye, EyeOff, LogIn, Mail,
-  RefreshCw, Wifi, WifiOff, Users, MapPin, ChevronDown,
+  Loader2, AlertCircle,
+  Globe, User, Lock, Eye, EyeOff, Mail,
+  RefreshCw, WifiOff, Users, MapPin, Search, ChevronLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
@@ -21,6 +21,9 @@ import { hubService } from '../services/hubService';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { registryService, type RegistryHub } from '../services/registryService';
 import type { Hub, HubInfoResponse, HubStatusResponse } from '../types/hub';
+import { OnboardingBackground } from './OnboardingBackground';
+import { HubIcon } from './HubIcon';
+import { CitinetLogo } from './CitinetLogo';
 
 interface NodeDiscoveryScreenProps {
   onNodeFound: (hubSlug: string, hubName: string, hub: Hub) => void;
@@ -51,12 +54,16 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
   // ── Step state ──
   const [step, setStep] = useState<JoinStep>('browse');
-  const [authMode, setAuthMode] = useState<AuthMode>('signup');
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
 
   // ── Directory state ──
   const [registryHubs, setRegistryHubs] = useState<RegistryHub[]>([]);
   const [registryLoading, setRegistryLoading] = useState(true);
   const [registryRefreshKey, setRegistryRefreshKey] = useState(0);
+  const [hubSearchQuery, setHubSearchQuery] = useState('');
+  const filteredRegistryHubs = registryHubs.filter(hub =>
+    hub.name.toLowerCase().includes(hubSearchQuery.trim().toLowerCase())
+  );
 
   // ── URL input state ──
   const [urlOpen, setUrlOpen] = useState(false);
@@ -232,159 +239,133 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden flex flex-col">
-      {/* Background Pattern */}
-      <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <pattern id="discovery-pattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-            <path d="M 0 100 Q 50 50 100 100 T 200 100" stroke="white" strokeWidth="1.5" fill="none" />
-            <path d="M 0 150 Q 50 100 100 150 T 200 150" stroke="white" strokeWidth="1.5" fill="none" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#discovery-pattern)" />
-      </svg>
-
-      {/* Header */}
-      <div className="relative z-10 p-6 flex items-center justify-between">
-        <button
-          onClick={step === 'auth' || step === 'error' ? resetToBrowse : onBack}
-          className="flex items-center gap-2 text-white hover:text-white/80 transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="font-medium">{step === 'auth' || step === 'error' ? 'Back' : 'Home'}</span>
-        </button>
-
-        {step === 'browse' && (
-          <button
-            onClick={() => setRegistryRefreshKey(k => k + 1)}
-            disabled={registryLoading}
-            className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors text-sm disabled:opacity-40"
-          >
-            <RefreshCw className={`w-4 h-4 ${registryLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        )}
-      </div>
+    <div className="min-h-screen relative overflow-hidden flex flex-col">
+      <OnboardingBackground />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col p-4 pb-8 relative z-10">
+      <div className="flex-1 flex flex-col p-4 pb-8 items-center justify-center relative z-10">
         <div className="w-full max-w-lg mx-auto flex flex-col gap-4">
 
           {/* ───── Step: Browse / Input ───── */}
+          {/* Follows the Citinet Design System's ConnectScreen (ui_kits/hub/app.jsx) closely:
+              single glass card, live name search over the registry, a small hub-identity
+              badge per result row, and the manual-URL fallback collapsed inline below the
+              list rather than as a separate card. */}
           {step === 'browse' && (
-            <>
-              <div className="text-center mb-2">
-                <h2 className="text-2xl font-bold text-white">Join a Hub</h2>
-                <p className="text-white/75 text-sm mt-1">Browse available hubs or enter a URL directly</p>
-              </div>
-
-              {/* ── Hub Directory ── */}
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden">
-                <div className="px-5 pt-5 pb-3 border-b border-slate-100 dark:border-zinc-800">
-                  <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
-                    Available Hubs
-                    <span className="ml-2 text-xs font-normal text-slate-400 dark:text-zinc-500">
-                      from registry
-                    </span>
-                  </h3>
-                </div>
-
-                <div className="divide-y divide-slate-100 dark:divide-zinc-800">
-                  {registryLoading && (
-                    <div className="flex items-center justify-center gap-3 py-8 text-slate-400 dark:text-zinc-500">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">Fetching hubs…</span>
-                    </div>
-                  )}
-
-                  {!registryLoading && registryHubs.length === 0 && (
-                    <div className="px-5 py-6 text-center">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No hubs registered yet.
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">
-                        Enter a URL below to connect directly.
-                      </p>
-                    </div>
-                  )}
-
-                  {!registryLoading && registryHubs.map((hub) => (
-                    <DirectoryHubRow
-                      key={hub.id}
-                      hub={hub}
-                      onJoin={() => handleProbeDirectoryHub(hub)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* ── URL Input (collapsible) ── */}
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="cn-glass rounded-3xl shadow-2xl p-6 relative z-10 max-w-[420px] w-full mx-auto"
+            >
+              <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={() => {
-                    setUrlOpen(o => !o);
-                    if (!urlOpen) setTimeout(() => urlInputRef.current?.focus(), 150);
-                  }}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left"
+                  onClick={onBack}
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                      <Globe className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Have a hub URL?</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Enter it directly to connect</p>
-                    </div>
-                  </div>
-                  <ChevronDown
-                    className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${urlOpen ? 'rotate-180' : ''}`}
-                  />
+                  <ChevronLeft className="w-3.5 h-3.5" />Home
                 </button>
-
-                <AnimatePresence initial={false}>
-                  {urlOpen && (
-                    <motion.div
-                      key="url-panel"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <div className="px-5 pb-5 pt-1 space-y-3 border-t border-slate-100 dark:border-zinc-800">
-                        <div className="relative">
-                          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                          <input
-                            ref={urlInputRef}
-                            type="url"
-                            value={tunnelUrl}
-                            onChange={(e) => setTunnelUrl(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbeUrl(tunnelUrl)}
-                            placeholder="e.g., https://myhub.tailXXX.ts.net or https://abc123.trycloudflare.com"
-                            className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-xs"
-                            list="hub-url-history"
-                          />
-                          <datalist id="hub-url-history">
-                            {urlHistory.map((url, i) => <option value={url} key={i} />)}
-                          </datalist>
-                        </div>
-                        <button
-                          onClick={() => handleProbeUrl(tunnelUrl)}
-                          disabled={!isValidUrl(tunnelUrl)}
-                          className={`w-full py-3 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
-                            isValidUrl(tunnelUrl)
-                              ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow hover:shadow-md active:scale-95'
-                              : 'bg-slate-200 dark:bg-zinc-700 cursor-not-allowed opacity-50'
-                          }`}
-                        >
-                          Connect to Hub
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <button
+                  onClick={() => setRegistryRefreshKey(k => k + 1)}
+                  disabled={registryLoading}
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${registryLoading ? 'animate-spin' : ''}`} />Refresh
+                </button>
               </div>
-            </>
+
+              <div className="flex flex-col items-center text-center gap-1 mb-5">
+                <CitinetLogo size={44} className="mb-2" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Join a Hub</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Connect to your community's hub</p>
+              </div>
+
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={hubSearchQuery}
+                  onChange={(e) => setHubSearchQuery(e.target.value)}
+                  placeholder="Search by name…"
+                  className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                {registryLoading && (
+                  <div className="flex items-center justify-center gap-2 py-6 text-slate-400 dark:text-zinc-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Fetching hubs…</span>
+                  </div>
+                )}
+
+                {!registryLoading && filteredRegistryHubs.length === 0 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 px-1 py-2">
+                    {registryHubs.length === 0 ? 'No hubs registered yet — enter a URL below.' : 'No hubs found — enter a URL below.'}
+                  </p>
+                )}
+
+                {!registryLoading && filteredRegistryHubs.map((hub) => (
+                  <DirectoryHubRow
+                    key={hub.id}
+                    hub={hub}
+                    onJoin={() => handleProbeDirectoryHub(hub)}
+                  />
+                ))}
+              </div>
+
+              <button
+                onClick={() => {
+                  setUrlOpen(o => !o);
+                  if (!urlOpen) setTimeout(() => urlInputRef.current?.focus(), 150);
+                }}
+                className="mt-3 text-xs text-slate-400 dark:text-slate-500 underline hover:no-underline"
+              >
+                {urlOpen ? 'Hide' : 'Enter tunnel URL manually'}
+              </button>
+
+              <AnimatePresence initial={false}>
+                {urlOpen && (
+                  <motion.div
+                    key="url-panel"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-3 space-y-2">
+                      <div className="relative">
+                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input
+                          ref={urlInputRef}
+                          type="url"
+                          value={tunnelUrl}
+                          onChange={(e) => setTunnelUrl(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbeUrl(tunnelUrl)}
+                          placeholder="e.g., https://myhub.tailXXX.ts.net"
+                          className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-xs"
+                          list="hub-url-history"
+                        />
+                        <datalist id="hub-url-history">
+                          {urlHistory.map((url, i) => <option value={url} key={i} />)}
+                        </datalist>
+                      </div>
+                      <button
+                        onClick={() => handleProbeUrl(tunnelUrl)}
+                        disabled={!isValidUrl(tunnelUrl)}
+                        className={`w-full py-2.5 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
+                          isValidUrl(tunnelUrl)
+                            ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow hover:shadow-md active:scale-95'
+                            : 'bg-slate-200 dark:bg-zinc-700 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        Connect to Hub
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           )}
 
           {/* ───── Step: Probing ───── */}
@@ -392,9 +373,15 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center"
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center relative"
             >
-              <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4" />
+              <button
+                onClick={resetToBrowse}
+                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />Cancel
+              </button>
+              <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4 mt-2" />
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
                 Connecting to Hub
               </h3>
@@ -408,33 +395,45 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
           )}
 
           {/* ───── Step: Auth ───── */}
+          {/* Layout follows the Citinet Design System's AuthScreen reference (ui_kits/hub/app.jsx)
+              closely: glass card, compact hub-identity row, segmented Log in / Sign up tabs
+              (login first and default), "Forgot password?" only in login mode, "or" divider,
+              switch-mode line at the bottom. One deliberate deviation: the identifier field is
+              Username, not Email — this hub's login is username-based and email is optional at
+              signup, so an email-only field would lock out existing accounts without one. */}
           {step === 'auth' && probeInfo && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-6 relative z-10"
+              className="cn-glass rounded-3xl shadow-2xl p-6 relative z-10 max-w-[420px] w-full mx-auto"
             >
-              {/* Hub confirmed / skip-probe banner */}
-              <div className="text-center mb-6">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${
-                  skipProbe
-                    ? 'bg-amber-100 dark:bg-amber-900/30'
-                    : 'bg-gradient-to-br from-green-500 to-emerald-600'
-                }`}>
-                  {skipProbe
-                    ? <WifiOff className="w-7 h-7 text-amber-600 dark:text-amber-400" />
-                    : <CheckCircle className="w-7 h-7 text-white" />
-                  }
+              {/* Back nav + brand mark */}
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  onClick={resetToBrowse}
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />All hubs
+                </button>
+                <CitinetLogo size={20} className="opacity-60" />
+              </div>
+
+              {/* Hub identity row */}
+              <div className="flex items-center gap-3 mb-5">
+                {skipProbe ? (
+                  <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md bg-amber-100 dark:bg-amber-900/30">
+                    <WifiOff className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                  </span>
+                ) : (
+                  <HubIcon hub={probeInfo} baseUrl={hubService.normalizeTunnelUrl(tunnelUrl)} size={44} variant="badge" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="text-base font-bold text-slate-900 dark:text-white truncate">{probeInfo.name || 'Hub'}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    {[probeInfo.location, probeStatus?.user_count !== undefined ? `${probeStatus.user_count} members` : null]
+                      .filter(Boolean).join(' · ')}
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">
-                  {authMode === 'login' ? `Log into ${probeInfo.name || 'Hub'}` : `Join ${probeInfo.name || 'Hub'}`}
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {skipProbe
-                    ? 'Hub not reachable right now — enter your credentials to try'
-                    : authMode === 'login' ? 'Sign in with your existing account' : 'Create a new account to join'
-                  }
-                </p>
               </div>
 
               {/* Skip-probe warning */}
@@ -446,54 +445,19 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 </div>
               )}
 
-              {/* Hub info card — only when we have real probe data */}
-              {!skipProbe && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 mb-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-9 h-9 rounded-lg bg-green-600 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-4 h-4 text-white" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-green-900 dark:text-green-300">{probeInfo.name}</h4>
-                    {probeInfo.location && (
-                      <p className="text-xs text-green-700 dark:text-green-400">{probeInfo.location}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs mt-3">
-                  {probeInfo.node_type && (
-                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                      <div className="font-bold text-green-900 dark:text-green-200 capitalize">{probeInfo.node_type}</div>
-                      <div className="text-green-700 dark:text-green-400">Type</div>
-                    </div>
-                  )}
-                  {probeStatus?.user_count !== undefined && (
-                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                      <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.user_count}</div>
-                      <div className="text-green-700 dark:text-green-400">Members</div>
-                    </div>
-                  )}
-                  {probeStatus?.online !== undefined && (
-                    <div className="text-center bg-green-100 dark:bg-green-900/30 rounded-lg py-2">
-                      <div className="font-bold text-green-900 dark:text-green-200">{probeStatus.online ? 'Yes' : 'No'}</div>
-                      <div className="text-green-700 dark:text-green-400">Online</div>
-                    </div>
-                  )}
-                </div>
-              </div>}
-
-              {/* Auth mode toggle */}
-              <div className="flex rounded-xl bg-slate-100 dark:bg-zinc-800 p-1 mb-5">
-                {(['signup', 'login'] as AuthMode[]).map((mode) => (
+              {/* Log in / Sign up tabs — login first and default */}
+              <div className="flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-800 mb-5">
+                {(['login', 'signup'] as AuthMode[]).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => switchAuthMode(mode)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
                       authMode === mode
                         ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
                         : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
                     }`}
                   >
-                    {mode === 'signup' ? <><User className="w-3.5 h-3.5" /> New Account</> : <><LogIn className="w-3.5 h-3.5" /> Log In</>}
+                    {mode === 'login' ? 'Log in' : 'Sign up'}
                   </button>
                 ))}
               </div>
@@ -529,7 +493,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="your@email.com"
+                        placeholder="you@example.com"
                         className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
                       />
                     </div>
@@ -562,6 +526,13 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   </div>
                   {authMode === 'signup' && password.length > 0 && password.length < 4 && (
                     <p className="text-xs text-red-500 mt-1">At least 4 characters</p>
+                  )}
+                  {authMode === 'login' && (
+                    <div className="flex justify-end mt-1.5">
+                      <button type="button" className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
+                        Forgot password?
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -597,14 +568,6 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 </div>
               )}
 
-              {/* Hub URL display */}
-              <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-3 border border-slate-200 dark:border-zinc-700 mt-4">
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">Connecting to</div>
-                <div className="font-mono text-xs text-slate-900 dark:text-white break-all">
-                  {hubService.normalizeTunnelUrl(tunnelUrl)}
-                </div>
-              </div>
-
               {/* Submit */}
               <button
                 onClick={handleAuth}
@@ -622,11 +585,20 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 )}
               </button>
 
-              <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-3">
-                {authMode === 'signup'
-                  ? <>Already have an account? <button onClick={() => switchAuthMode('login')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Log in</button></>
-                  : <>New here? <button onClick={() => switchAuthMode('signup')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Create an account</button></>
-                }
+              {/* Divider + switch-mode line */}
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+                <span className="text-[11px] text-slate-400 dark:text-zinc-500">or</span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+              </div>
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                {authMode === 'login' ? 'New to this hub? ' : 'Already a member? '}
+                <button
+                  onClick={() => switchAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                  className="text-purple-600 dark:text-purple-400 font-semibold hover:underline"
+                >
+                  {authMode === 'login' ? 'Sign up' : 'Log in'}
+                </button>
               </p>
             </motion.div>
           )}
@@ -636,9 +608,15 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center"
+              className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl p-8 text-center relative"
             >
-              <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
+              <button
+                onClick={onBack}
+                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />Home
+              </button>
+              <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4 mt-2">
                 <AlertCircle className="w-7 h-7 text-red-600 dark:text-red-400" />
               </div>
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
@@ -694,18 +672,18 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
   const isOnline = hub.online !== false;
   return (
-    <div className="flex items-center gap-3 px-5 py-4">
-      {/* Status dot */}
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'}`} />
+    <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+      <div className="relative flex-shrink-0">
+        <HubIcon hub={hub} baseUrl={hub.tunnel_url ?? ''} size={34} variant="badge" />
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 ${isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+        />
+      </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm text-slate-900 dark:text-white truncate">{hub.name}</span>
-          {isOnline
-            ? <Wifi className="w-3 h-3 text-green-500 flex-shrink-0" />
-            : <WifiOff className="w-3 h-3 text-slate-400 flex-shrink-0" />
-          }
         </div>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {hub.location && (

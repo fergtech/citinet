@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 
@@ -140,6 +140,13 @@ class HubService {
       lastConnectedAt: probeInfo ? new Date().toISOString() : undefined,
       lanIp: probeInfo?.lan_ip || undefined,
       enabledApps: probeInfo?.enabled_apps ?? null,
+      hub_icon_mode: probeInfo?.hub_icon_mode,
+      hub_icon_symbol: probeInfo?.hub_icon_symbol,
+      hub_icon_bg_mode: probeInfo?.hub_icon_bg_mode,
+      hub_icon_gradient_from: probeInfo?.hub_icon_gradient_from,
+      hub_icon_gradient_to: probeInfo?.hub_icon_gradient_to,
+      hub_icon_solid_color: probeInfo?.hub_icon_solid_color,
+      hub_icon_image_file_name: probeInfo?.hub_icon_image_file_name,
       meta: {
         nodeType: probeInfo?.node_type,
         storageQuota: probeInfo?.storage_quota,
@@ -212,6 +219,7 @@ class HubService {
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
+      email: result.email || credentials.email || undefined,
     };
 
     // Save user data for this hub
@@ -260,6 +268,7 @@ class HubService {
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
+      email: result.email || undefined,
     };
 
     await this.completeOnboarding(hubSlug, userData);
@@ -630,6 +639,16 @@ class HubService {
         connections[slug].hub.enabledApps = result.info.enabled_apps ?? null;
         dirty = true;
       }
+      // Sync hub icon fields the same way — so an admin's icon change reaches
+      // other already-joined members on their next periodic refresh, not just
+      // the admin's own session (which updates immediately via HubContext).
+      if (result.info?.hub_icon_mode !== undefined) { connections[slug].hub.hub_icon_mode = result.info.hub_icon_mode; dirty = true; }
+      if (result.info?.hub_icon_symbol !== undefined) { connections[slug].hub.hub_icon_symbol = result.info.hub_icon_symbol; dirty = true; }
+      if (result.info?.hub_icon_bg_mode !== undefined) { connections[slug].hub.hub_icon_bg_mode = result.info.hub_icon_bg_mode; dirty = true; }
+      if (result.info?.hub_icon_gradient_from !== undefined) { connections[slug].hub.hub_icon_gradient_from = result.info.hub_icon_gradient_from; dirty = true; }
+      if (result.info?.hub_icon_gradient_to !== undefined) { connections[slug].hub.hub_icon_gradient_to = result.info.hub_icon_gradient_to; dirty = true; }
+      if (result.info?.hub_icon_solid_color !== undefined) { connections[slug].hub.hub_icon_solid_color = result.info.hub_icon_solid_color; dirty = true; }
+      if (result.info?.hub_icon_image_file_name !== undefined) { connections[slug].hub.hub_icon_image_file_name = result.info.hub_icon_image_file_name; dirty = true; }
       // Backfill publicTunnelUrl from the API's tunnel_url — handles existing
       // localStorage entries that predate this field, and keeps it current.
       if (result.info?.tunnel_url) {
@@ -1649,6 +1668,17 @@ class HubService {
     return response.json();
   }
 
+  /** Toggle the caller's like on a post. */
+  async toggleLike(hubSlug: string, postId: string): Promise<{ liked: boolean; count: number }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/like`, {
+      method: 'POST',
+      headers,
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
   /** Toggle the caller's RSVP ("going") for an event post. */
   async toggleRsvp(hubSlug: string, postId: string): Promise<{ going: boolean; count: number }> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
@@ -1703,7 +1733,7 @@ class HubService {
    */
   async updateHubInfo(
     slug: string,
-    fields: { name?: string; location?: string; lat?: number; lng?: number; description?: string; enabledApps?: string[] | null },
+    fields: Partial<HubIconFields> & { name?: string; location?: string; lat?: number; lng?: number; description?: string; enabledApps?: string[] | null },
   ): Promise<Hub> {
     const { headers, tunnelUrl } = this.getAuthHeaders(slug);
     const connections = this.getAllHubConnections();
@@ -1717,6 +1747,13 @@ class HubService {
       if (fields.location     !== undefined) body.location     = fields.location;
       if (fields.description  !== undefined) body.description  = fields.description;
       if (fields.enabledApps  !== undefined) body.enabled_apps = fields.enabledApps;
+      if (fields.hub_icon_mode              !== undefined) body.hub_icon_mode              = fields.hub_icon_mode;
+      if (fields.hub_icon_symbol            !== undefined) body.hub_icon_symbol            = fields.hub_icon_symbol;
+      if (fields.hub_icon_bg_mode           !== undefined) body.hub_icon_bg_mode           = fields.hub_icon_bg_mode;
+      if (fields.hub_icon_gradient_from     !== undefined) body.hub_icon_gradient_from     = fields.hub_icon_gradient_from;
+      if (fields.hub_icon_gradient_to       !== undefined) body.hub_icon_gradient_to       = fields.hub_icon_gradient_to;
+      if (fields.hub_icon_solid_color       !== undefined) body.hub_icon_solid_color       = fields.hub_icon_solid_color;
+      if (fields.hub_icon_image_file_name   !== undefined) body.hub_icon_image_file_name   = fields.hub_icon_image_file_name;
       if (Object.keys(body).length > 0) {
         try {
           const res = await fetch(`${tunnelUrl}/api/hub-info`, {
@@ -1741,6 +1778,13 @@ class HubService {
     if (fields.lng         !== undefined) connection.hub.lng         = fields.lng;
     if (fields.description !== undefined) connection.hub.description = fields.description;
     if (fields.enabledApps !== undefined) connection.hub.enabledApps = fields.enabledApps;
+    if (fields.hub_icon_mode            !== undefined) connection.hub.hub_icon_mode            = fields.hub_icon_mode;
+    if (fields.hub_icon_symbol          !== undefined) connection.hub.hub_icon_symbol          = fields.hub_icon_symbol;
+    if (fields.hub_icon_bg_mode         !== undefined) connection.hub.hub_icon_bg_mode         = fields.hub_icon_bg_mode;
+    if (fields.hub_icon_gradient_from   !== undefined) connection.hub.hub_icon_gradient_from   = fields.hub_icon_gradient_from;
+    if (fields.hub_icon_gradient_to     !== undefined) connection.hub.hub_icon_gradient_to     = fields.hub_icon_gradient_to;
+    if (fields.hub_icon_solid_color     !== undefined) connection.hub.hub_icon_solid_color     = fields.hub_icon_solid_color;
+    if (fields.hub_icon_image_file_name !== undefined) connection.hub.hub_icon_image_file_name = fields.hub_icon_image_file_name;
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
     return connection.hub;
   }

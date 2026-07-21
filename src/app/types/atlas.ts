@@ -11,6 +11,7 @@ export interface AtlasPin {
   title: string;
   description?: string;
   category: AtlasPinCategory;
+  imageFileName?: string;
   createdAt: string;
 }
 
