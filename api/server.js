@@ -474,15 +474,26 @@ async function initDb() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Only created on a genuinely fresh DB — once the migration below renames this to
+    // hub_post_poll_votes, this guard stops it from being silently recreated (empty,
+    // and colliding with the rename target) on every subsequent boot.
     await client.query(`
-      CREATE TABLE IF NOT EXISTS hub_poll_votes (
-        id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-        poll_id      UUID        NOT NULL REFERENCES hub_polls(id) ON DELETE CASCADE,
-        voter_id     UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
-        option_index INT         NOT NULL,
-        created_at   TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(poll_id, voter_id)
-      )
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name IN ('hub_poll_votes', 'hub_post_poll_votes')
+        ) THEN
+          CREATE TABLE hub_poll_votes (
+            id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            poll_id      UUID        NOT NULL REFERENCES hub_polls(id) ON DELETE CASCADE,
+            voter_id     UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+            option_index INT         NOT NULL,
+            created_at   TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(poll_id, voter_id)
+          );
+        END IF;
+      END $$
     `);
     // Governance linkage migrations
     await client.query(
@@ -497,6 +508,79 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS poll_id     UUID REFERENCES hub_polls(id)    ON DELETE SET NULL`,
     );
+
+    // ── Polls → Posts migration ──────────────────────────────────────────
+    // Polls become hub_posts rows (category='POLL') plus a 1:1 extension table,
+    // the same pattern hub_post_embeddings already uses for post-only data.
+    // Everything below is written to be safe to re-run on every boot.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_post_polls (
+        post_id     UUID PRIMARY KEY REFERENCES hub_posts(id) ON DELETE CASCADE,
+        options     JSONB NOT NULL DEFAULT '[]',
+        closes_at   TIMESTAMPTZ,
+        closed      BOOLEAN NOT NULL DEFAULT FALSE,
+        request_id  UUID REFERENCES hub_requests(id) ON DELETE SET NULL,
+        quorum_pct  INT NOT NULL DEFAULT 0,
+        pass_pct    INT NOT NULL DEFAULT 50
+      )
+    `);
+    // ID-preserving data copy — reuses hub_polls.id as the new hub_posts.id so every
+    // inbound reference (hub_requests.poll_id, vote rows, old share links) keeps
+    // resolving to the same UUID. ON CONFLICT DO NOTHING makes this safe to re-run.
+    await client.query(`
+      INSERT INTO hub_posts (id, category, title, body, author_id, created_at, updated_at, visibility)
+      SELECT id, 'POLL', LEFT(question, 500),
+             CASE WHEN LENGTH(question) > 500 THEN question ELSE '' END,
+             created_by, created_at, created_at, 'hub'
+      FROM hub_polls
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO hub_post_polls (post_id, options, closes_at, closed, request_id, quorum_pct, pass_pct)
+      SELECT id, options, closes_at, closed, request_id, quorum_pct, pass_pct
+      FROM hub_polls
+      ON CONFLICT (post_id) DO NOTHING
+    `);
+    // Votes table: rename + repoint at hub_posts, matching this codebase's hub_post_*
+    // naming for everything keyed off a post. IF EXISTS makes the rename a no-op once done.
+    await client.query(`ALTER TABLE IF EXISTS hub_poll_votes RENAME TO hub_post_poll_votes`);
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='hub_post_poll_votes' AND column_name='poll_id') THEN
+          ALTER TABLE hub_post_poll_votes RENAME COLUMN poll_id TO post_id;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='hub_poll_votes_poll_id_fkey') THEN
+          ALTER TABLE hub_post_poll_votes DROP CONSTRAINT hub_poll_votes_poll_id_fkey;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='hub_poll_votes_poll_id_voter_id_key') THEN
+          ALTER TABLE hub_post_poll_votes DROP CONSTRAINT hub_poll_votes_poll_id_voter_id_key;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='hub_post_poll_votes_post_id_fkey') THEN
+          ALTER TABLE hub_post_poll_votes ADD CONSTRAINT hub_post_poll_votes_post_id_fkey FOREIGN KEY (post_id) REFERENCES hub_posts(id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name='hub_post_poll_votes_post_id_voter_id_key') THEN
+          ALTER TABLE hub_post_poll_votes ADD CONSTRAINT hub_post_poll_votes_post_id_voter_id_key UNIQUE (post_id, voter_id);
+        END IF;
+      END $$
+    `);
+    // hub_requests.poll_id: same column/values, FK target retargeted from hub_polls to hub_posts.
+    // Must run after the data copy above so existing non-null values validate against the new target.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.constraint_column_usage
+          WHERE constraint_name = 'hub_requests_poll_id_fkey' AND table_name = 'hub_polls'
+        ) THEN
+          ALTER TABLE hub_requests DROP CONSTRAINT hub_requests_poll_id_fkey;
+          ALTER TABLE hub_requests ADD CONSTRAINT hub_requests_poll_id_fkey FOREIGN KEY (poll_id) REFERENCES hub_posts(id) ON DELETE SET NULL;
+        END IF;
+      END $$
+    `);
+    // Post title becomes optional — POLL still requires it (the question) via JS validation;
+    // other categories no longer need a synthetic "first line of body" title.
+    await client.query(`ALTER TABLE hub_posts ALTER COLUMN title DROP NOT NULL`);
     await client.query(
       `ALTER TABLE hub_requests ADD COLUMN IF NOT EXISTS type           TEXT NOT NULL DEFAULT 'feature'`,
     );
@@ -622,6 +706,14 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_files  ADD COLUMN IF NOT EXISTS space_id           UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`,
     );
+    // Unlike space_id, no FK: an initiative may be an externally-proxied one
+    // with a non-UUID id, same reasoning as every other initiative_id column
+    // in this file. Files tagged here are deliberately NOT excluded from the
+    // general file list (unlike space_id ones) — resources uploaded to a
+    // project are shared hub-wide by nature, not scoped away.
+    await client.query(
+      `ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS initiative_id TEXT`,
+    );
     await client.query(
       `ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS banner_mode        TEXT`,
     );
@@ -643,6 +735,243 @@ async function initDb() {
     // Session expiry column (migration for existing installs)
     await client.query(
       `ALTER TABLE hub_sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days'`,
+    );
+    // Initiatives are proxied to an external app — no local table for the initiative
+    // itself. These tables extend it locally (keyed by the external id as TEXT, no
+    // FK — format unverified) for everything the proxy has no support for at all:
+    // resources, open roles, banner, task assignee/due-date, persisted updates +
+    // threaded comments, and a system activity log. Same pattern as hub_post_polls.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_meta (
+        initiative_id           TEXT         PRIMARY KEY,
+        space_id                UUID         REFERENCES hub_spaces(id) ON DELETE SET NULL,
+        banner_mode             TEXT,
+        banner_color            TEXT,
+        banner_gradient_from    TEXT,
+        banner_gradient_to      TEXT,
+        banner_image_file_name  TEXT,
+        created_by              UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at              TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_meta_space ON hub_initiative_meta(space_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_task_meta (
+        task_id          TEXT         PRIMARY KEY,
+        initiative_id    TEXT         NOT NULL,
+        assignee_user_id UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        assignee_name    TEXT,
+        due_date         DATE,
+        updated_at       TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_task_meta_initiative ON hub_initiative_task_meta(initiative_id)`,
+    );
+    // Manual overlay flag — "blocked" can't be inferred from checklist completion
+    // the way not-started/in-progress/done can, so it stays a deliberate toggle.
+    await client.query(
+      `ALTER TABLE hub_initiative_task_meta ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    // Per-task checklist — drives the task's status automatically (not-started/
+    // in-progress/done) the same way task completion drives initiative status.
+    // Tasks with no checklist keep today's simple manual status cycle instead.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_task_checklist (
+        id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        task_id        TEXT         NOT NULL,
+        initiative_id  TEXT         NOT NULL,
+        text           TEXT         NOT NULL,
+        done           BOOLEAN      NOT NULL DEFAULT FALSE,
+        created_by     UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at     TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_task_checklist_task ON hub_initiative_task_checklist(task_id)`,
+    );
+    // Per-task progress notes + threaded replies — a task-scoped discussion,
+    // distinct from the initiative-level Updates feed.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_task_notes (
+        id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        task_id        TEXT         NOT NULL,
+        initiative_id  TEXT         NOT NULL,
+        author_id      UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        author_name    TEXT,
+        content        TEXT         NOT NULL,
+        created_at     TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_task_notes_task ON hub_initiative_task_notes(task_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_task_note_replies (
+        id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        note_id     UUID         NOT NULL REFERENCES hub_initiative_task_notes(id) ON DELETE CASCADE,
+        author_id   UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        author_name TEXT,
+        content     TEXT         NOT NULL,
+        created_at  TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_task_note_replies_note ON hub_initiative_task_note_replies(note_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_resources (
+        id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        initiative_id       TEXT         NOT NULL,
+        item                TEXT         NOT NULL,
+        qty                 TEXT,
+        provided            BOOLEAN      NOT NULL DEFAULT FALSE,
+        provided_by_user_id UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        provided_by_name    TEXT,
+        created_by          UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at          TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_resources_initiative ON hub_initiative_resources(initiative_id)`,
+    );
+    // Resources widened beyond material pledges to also cover shared files
+    // (stored in hub_files, same as everything else in the hub's file system)
+    // and plain links (Drive, a website, etc.) — 'provided/provided_by' only
+    // means anything for kind='material'; file/link rows are simply present
+    // the moment they're added, no pledge-then-fulfill step.
+    await client.query(
+      `ALTER TABLE hub_initiative_resources ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'material'`,
+    );
+    await client.query(
+      `ALTER TABLE hub_initiative_resources ADD COLUMN IF NOT EXISTS file_id UUID REFERENCES hub_files(id) ON DELETE SET NULL`,
+    );
+    await client.query(
+      `ALTER TABLE hub_initiative_resources ADD COLUMN IF NOT EXISTS url TEXT`,
+    );
+    // Distinguishes "this file exists only because of this resource" (uploaded
+    // directly here — deleting the resource should delete the file) from "this
+    // resource merely references a file the owner already had" (attached from
+    // existing hub files — deleting the resource must NOT touch their file).
+    await client.query(
+      `ALTER TABLE hub_initiative_resources ADD COLUMN IF NOT EXISTS owns_file BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_roles (
+        id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        initiative_id     TEXT         NOT NULL,
+        role              TEXT         NOT NULL,
+        skill             TEXT,
+        filled            BOOLEAN      NOT NULL DEFAULT FALSE,
+        filled_by_user_id UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        filled_by_name    TEXT,
+        created_by        UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at        TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_roles_initiative ON hub_initiative_roles(initiative_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_updates (
+        id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        initiative_id TEXT         NOT NULL,
+        author_id     UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        author_name   TEXT,
+        content       TEXT         NOT NULL,
+        created_at    TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_updates_initiative ON hub_initiative_updates(initiative_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_update_comments (
+        id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        update_id   UUID         NOT NULL REFERENCES hub_initiative_updates(id) ON DELETE CASCADE,
+        author_id   UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        author_name TEXT,
+        content     TEXT         NOT NULL,
+        created_at  TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_update_comments_update ON hub_initiative_update_comments(update_id)`,
+    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_activity (
+        id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        initiative_id TEXT         NOT NULL,
+        kind          TEXT         NOT NULL CHECK (kind IN ('task','resource','team','update','member')),
+        text          TEXT         NOT NULL,
+        actor_id      UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        actor_name    TEXT,
+        created_at    TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_activity_initiative ON hub_initiative_activity(initiative_id, created_at DESC)`,
+    );
+    // Gives "Leave" real, reload-surviving semantics despite the external service
+    // having no leave endpoint — suppress membership in the merge layer rather than
+    // pretending to mutate data the proxy doesn't expose a mutation for.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_leaves (
+        initiative_id TEXT        NOT NULL,
+        user_id       UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        left_at       TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (initiative_id, user_id)
+      )
+    `);
+    // Fallback for when no external Initiatives provider is configured at all
+    // (getProvider('initiatives') === null) — rather than hard-503ing every core
+    // route, initiatives work fully locally in that mode. If a provider is later
+    // configured, the external-proxy code path takes over unchanged; these rows
+    // simply stop being read (not migrated — a deliberate, documented limitation).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiatives_local (
+        id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        title       TEXT         NOT NULL,
+        category    TEXT,
+        status      TEXT         NOT NULL DEFAULT 'planning', -- vestigial: actual status is derived from task completion, see deriveInitiativeStatus()
+        goal        TEXT,
+        description TEXT,
+        color       TEXT         NOT NULL DEFAULT 'purple',
+        created_by  UUID         REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at  TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_local_members (
+        initiative_id UUID        REFERENCES hub_initiatives_local(id) ON DELETE CASCADE,
+        user_id       UUID        REFERENCES hub_users(id) ON DELETE CASCADE,
+        role          TEXT        NOT NULL DEFAULT 'Member',
+        joined_at     TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (initiative_id, user_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_initiative_local_tasks (
+        id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        initiative_id UUID        REFERENCES hub_initiatives_local(id) ON DELETE CASCADE,
+        title         TEXT        NOT NULL,
+        status        TEXT        NOT NULL DEFAULT 'todo',
+        created_by    UUID        REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `ALTER TABLE hub_initiative_local_tasks ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES hub_users(id) ON DELETE SET NULL`,
+    );
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_initiative_local_tasks_initiative ON hub_initiative_local_tasks(initiative_id)`,
     );
     // Notes
     await client.query(`
@@ -720,6 +1049,49 @@ async function initDb() {
       SELECT 'hub_node_id', gen_random_uuid()::text
       WHERE NOT EXISTS (SELECT 1 FROM hub_config WHERE key = 'hub_node_id')
     `);
+
+    // ── Full-text search indexes ──────────────────────────────
+    // Expression-based GIN indexes (no maintained column, no triggers — always
+    // fresh). Weight tiers follow ts_rank_cd's native A/B/C/D via a custom
+    // weight vector passed at query time ('{0.25,0.5,0.75,1.0}' = D,C,B,A),
+    // giving Title/Name:Tag:Description:Body = 100:75:50:25.
+    //
+    // array_to_string() is STABLE (not IMMUTABLE) in Postgres's own catalog —
+    // confirmed via pg_proc.provolatile — so it can't be used directly in an
+    // index expression. This thin wrapper re-declares it IMMUTABLE, which is
+    // safe here since joining a text[] with a fixed separator has no actual
+    // session/locale dependency for our use (tags are plain ASCII-ish words).
+    await client.query(`
+      CREATE OR REPLACE FUNCTION immutable_array_to_string(text[], text) RETURNS text AS $body$
+        SELECT array_to_string($1, $2);
+      $body$ LANGUAGE sql IMMUTABLE
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_posts_fts ON hub_posts USING GIN ((
+        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(body,  '')), 'D')
+      ))
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_users_fts ON hub_users USING GIN ((
+        setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
+        setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
+        setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
+        setweight(to_tsvector('english', coalesce(location,'')), 'D')
+      ))
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_spaces_fts ON hub_spaces USING GIN ((
+        setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(description, '')), 'C')
+      ))
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_requests_fts ON hub_requests USING GIN ((
+        setweight(to_tsvector('english', coalesce(problem, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(who_it_helps, '') || ' ' || coalesce(expected_outcome, '')), 'C')
+      ))
+    `);
   } finally {
     client.release();
   }
@@ -791,6 +1163,37 @@ function isMod(user) {
   );
 }
 
+// ── Unified search scoring ─────────────────────────────────
+// Blends text relevance (from ts_rank_cd) with engagement/recency/authority
+// signals into one 0-1 score. Any weight budget a row type has no signal for
+// (e.g. members have no v1 engagement metric) folds back into text relevance
+// rather than penalizing that type structurally.
+const SEARCH_WEIGHTS = { text: 0.60, engagement: 0.20, recency: 0.15, authority: 0.05 };
+
+function saturatingScore(x, k) { return x / (x + k); } // 0→0, k→0.5, →1 asymptotically
+
+function recencyScore(dateStr, halfLifeDays) {
+  const ageDays = Math.max(0, (Date.now() - new Date(dateStr).getTime()) / 86400000);
+  return Math.exp(-Math.LN2 * ageDays / halfLifeDays);
+}
+
+function blendSearchScore({ textRank, engagementRaw, dateStr, halfLifeDays, isAuthority }) {
+  const text = Math.max(0, Math.min(1, textRank));
+  let used = SEARCH_WEIGHTS.text;
+  let sum = SEARCH_WEIGHTS.text * text;
+  if (engagementRaw != null) {
+    sum += SEARCH_WEIGHTS.engagement * saturatingScore(engagementRaw, 10);
+    used += SEARCH_WEIGHTS.engagement;
+  }
+  if (dateStr != null) {
+    sum += SEARCH_WEIGHTS.recency * recencyScore(dateStr, halfLifeDays);
+    used += SEARCH_WEIGHTS.recency;
+  }
+  sum += SEARCH_WEIGHTS.authority * (isAuthority ? 1 : 0);
+  used += SEARCH_WEIGHTS.authority;
+  return sum + (1 - used) * text; // unused budget folds back into text relevance
+}
+
 /** Write an immutable mod-log entry. Fire-and-forget safe. */
 async function logMod(
   actorId,
@@ -829,6 +1232,8 @@ function emailCopyForNotification(type, actorName, hubName) {
       return { subject: `${actorName} replied to your post`, line: `${actorName} replied to your post on ${hubName}.` };
     case 'space_invite':
       return { subject: `${actorName} invited you to a Space`, line: `${actorName} invited you to join a Space on ${hubName}.` };
+    case 'initiative_invite':
+      return { subject: `${actorName} invited you to a project`, line: `${actorName} invited you to join a community project on ${hubName}.` };
     default:
       return { subject: null, line: null };
   }
@@ -2626,7 +3031,60 @@ const POST_CATEGORIES = [
   'PROJECT',
   'REQUEST',
   'EVENT',
+  'POLL',
 ];
+
+// Attaches a nested `poll` object to POLL-category rows from a posts query that
+// joined hub_post_polls (aliased poll_options/poll_closes_at/poll_closed/
+// poll_request_id/poll_quorum_pct/poll_pass_pct/poll_request_problem). Batch-
+// fetches votes for just the POLL rows in the result set — same computation the
+// old GET /api/polls did per-row (computePollOutcome, defined further down but
+// hoisted), just attached to posts now instead of a separate array.
+function stripPollColumns(row) {
+  const { poll_options, poll_closes_at, poll_closed, poll_request_id, poll_quorum_pct, poll_pass_pct, poll_request_problem, ...rest } = row;
+  return rest;
+}
+async function attachPollData(rows, userId) {
+  const pollRows = rows.filter((r) => r.poll_options != null);
+  if (pollRows.length === 0) return rows.map((r) => stripPollColumns(r));
+
+  const pollIds = pollRows.map((r) => r.id);
+  const [{ rows: allVotes }, { rows: members }] = await Promise.all([
+    pool.query(`SELECT post_id, option_index, voter_id FROM hub_post_poll_votes WHERE post_id = ANY($1)`, [pollIds]),
+    pool.query(`SELECT COUNT(*) AS c FROM hub_users`),
+  ]);
+  const memberCount = parseInt(members[0].c, 10);
+
+  return rows.map((r) => {
+    if (r.poll_options == null) return stripPollColumns(r);
+    const votes = allVotes.filter((v) => v.post_id === r.id);
+    const vote_counts = Array.from(
+      { length: r.poll_options.length },
+      (_, i) => votes.filter((v) => v.option_index === i).length,
+    );
+    const myVote = votes.find((v) => v.voter_id === userId);
+    const isClosed = r.poll_closed || (r.poll_closes_at && new Date(r.poll_closes_at) < new Date());
+    const passed = isClosed
+      ? computePollOutcome(vote_counts, votes.length, memberCount, r.poll_quorum_pct, r.poll_pass_pct)
+      : null;
+    const clean = stripPollColumns(r);
+    clean.poll = {
+      options: r.poll_options,
+      closes_at: r.poll_closes_at,
+      closed: r.poll_closed,
+      request_id: r.poll_request_id,
+      request_problem: r.poll_request_problem,
+      quorum_pct: r.poll_quorum_pct,
+      pass_pct: r.poll_pass_pct,
+      vote_counts,
+      total_votes: votes.length,
+      member_count: memberCount,
+      my_vote: myVote != null ? myVote.option_index : null,
+      passed,
+    };
+    return clean;
+  });
+}
 
 // List posts — chronological, newest first, optional category filter
 app.get('/api/posts', authenticate, async (req, res) => {
@@ -2660,20 +3118,217 @@ app.get('/api/posts', authenticate, async (req, res) => {
               (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
               EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $${myUserIdParam}) AS my_rsvp,
               (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
-              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked
+              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked,
+              pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
+              pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
+              rq.problem AS poll_request_problem
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
        LEFT JOIN hub_spaces s ON s.id = p.space_id
+       LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
+       LEFT JOIN hub_requests rq ON rq.id = pp.request_id
        ${combinedWhere}
        ORDER BY p.created_at DESC
        LIMIT $${params.length + 1}`,
       [...params, lim],
     );
-    res.json({ posts: rows });
+    res.json({ posts: await attachPollData(rows, req.user.id) });
   } catch (err) {
     console.error('List posts error:', err);
     res.status(500).json({ error: 'Failed to list posts' });
+  }
+});
+
+// ── Unified search ──────────────────────────────────────────
+// Real relevance-ranked search across everything this hub's own Postgres
+// holds (posts, members, local spaces, and — mod-only — requests). Initiatives,
+// other hubs, and toolkit resources are proxied/external/static data with no
+// local table to index; they stay client-side filtered on the frontend.
+const SEARCH_FTS_WEIGHT_VEC = "'{0.25,0.5,0.75,1.0}'::float4[]"; // D,C,B,A -> A:B:C:D = 100:75:50:25
+
+app.get('/api/search', authenticate, async (req, res) => {
+  const q = (req.query.q || '').toString().trim();
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+  if (q.length < 2) {
+    return res.json({ query: q, results: { posts: [], members: [], spaces: [], requests: [] } });
+  }
+
+  try {
+    const canSeeRequests = isMod(req.user);
+
+    const postsSql = `
+      SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+             p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
+             u.id AS author_id, u.username AS author_username, u.role AS author_role, u.is_admin AS author_is_admin,
+             f.file_name AS media_file_name,
+             s.name AS space_name, s.slug AS space_slug,
+             (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+             (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
+             EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked,
+             pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
+             pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
+             rq.problem AS poll_request_problem,
+             ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
+               setweight(to_tsvector('english', coalesce(p.title,'')), 'A') ||
+               setweight(to_tsvector('english', coalesce(p.body,'')),  'D'),
+               websearch_to_tsquery('english', $1), 32) AS text_rank
+      FROM hub_posts p
+      LEFT JOIN hub_users u ON p.author_id = u.id
+      LEFT JOIN hub_files f ON p.media_file_id = f.id
+      LEFT JOIN hub_spaces s ON s.id = p.space_id
+      LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
+      LEFT JOIN hub_requests rq ON rq.id = pp.request_id
+      WHERE (
+              setweight(to_tsvector('english', coalesce(p.title,'')), 'A') ||
+              setweight(to_tsvector('english', coalesce(p.body,'')),  'D')
+            ) @@ websearch_to_tsquery('english', $1)
+        AND (p.visibility != 'private' OR p.author_id = $2)
+        AND (
+              p.space_id IS NULL
+              OR p.shared_to_feed = TRUE
+              OR EXISTS (SELECT 1 FROM hub_space_members sm
+                         WHERE sm.space_id = p.space_id AND sm.user_id = $2 AND sm.status = 'active')
+            )
+      LIMIT 200`;
+
+    const membersSql = `
+      SELECT id AS user_id, username, display_name, location, bio, tags, is_admin, role, created_at,
+             avatar_url, profile_headline, banner_mode, banner_color, banner_gradient_from,
+             banner_gradient_to, banner_image_file_name, website, profile_visibility, last_seen_at,
+             ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
+               setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
+               setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
+               setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
+               setweight(to_tsvector('english', coalesce(location,'')), 'D'),
+               websearch_to_tsquery('english', $1), 32) AS text_rank
+      FROM hub_users
+      WHERE (
+              setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
+              setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
+              setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
+              setweight(to_tsvector('english', coalesce(location,'')), 'D')
+            ) @@ websearch_to_tsquery('english', $1)
+      LIMIT 200`;
+
+    const spacesSql = `
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to,
+             s.banner_image_file_name, s.web_public,
+             COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+             sm2.role AS my_role, sm2.status AS my_status,
+             ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
+               setweight(to_tsvector('english', coalesce(s.name,'')), 'A') ||
+               setweight(to_tsvector('english', coalesce(s.description,'')), 'C'),
+               websearch_to_tsquery('english', $1), 32) AS text_rank
+      FROM hub_spaces s
+      LEFT JOIN hub_space_members sm  ON sm.space_id = s.id
+      LEFT JOIN hub_space_members sm2 ON sm2.space_id = s.id AND sm2.user_id = $2
+      WHERE (
+              setweight(to_tsvector('english', coalesce(s.name,'')), 'A') ||
+              setweight(to_tsvector('english', coalesce(s.description,'')), 'C')
+            ) @@ websearch_to_tsquery('english', $1)
+      GROUP BY s.id, sm2.role, sm2.status
+      LIMIT 200`;
+
+    const requestsSql = `
+      SELECT r.id, r.author_id, r.problem, r.who_it_helps, r.expected_outcome, r.data_involved,
+             r.scope, r.priority, r.type, r.screen_context, r.status, r.admin_note,
+             r.poll_id, r.created_at, r.updated_at, u.username AS author_username,
+             ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
+               setweight(to_tsvector('english', coalesce(r.problem,'')), 'A') ||
+               setweight(to_tsvector('english', coalesce(r.who_it_helps,'') || ' ' || coalesce(r.expected_outcome,'')), 'C'),
+               websearch_to_tsquery('english', $1), 32) AS text_rank
+      FROM hub_requests r
+      LEFT JOIN hub_users u ON r.author_id = u.id
+      WHERE (
+              setweight(to_tsvector('english', coalesce(r.problem,'')), 'A') ||
+              setweight(to_tsvector('english', coalesce(r.who_it_helps,'') || ' ' || coalesce(r.expected_outcome,'')), 'C')
+            ) @@ websearch_to_tsquery('english', $1)
+      LIMIT 200`;
+
+    const [postsR, membersR, spacesR, requestsR] = await Promise.all([
+      pool.query(postsSql, [q, req.user.id]),
+      pool.query(membersSql, [q]),
+      pool.query(spacesSql, [q, req.user.id]),
+      canSeeRequests ? pool.query(requestsSql, [q]) : Promise.resolve({ rows: [] }),
+    ]);
+
+    const scoredPosts = postsR.rows
+      .map((r) => ({
+        ...r,
+        score: blendSearchScore({
+          textRank: r.text_rank,
+          engagementRaw: (r.like_count || 0) + (r.reply_count || 0) * 1.5,
+          dateStr: r.created_at,
+          halfLifeDays: 14,
+          isAuthority: r.author_role === 'admin' || r.author_role === 'moderator' || r.author_is_admin === true,
+        }),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+    const postsWithPolls = await attachPollData(scoredPosts, req.user.id);
+    // attachPollData strips poll_* columns but preserves the rest, including `score`.
+
+    const scoredMembers = membersR.rows
+      .map((r) => ({
+        ...r,
+        score: blendSearchScore({
+          textRank: r.text_rank,
+          engagementRaw: null,
+          dateStr: r.last_seen_at,
+          halfLifeDays: 30,
+          isAuthority: r.role === 'admin' || r.role === 'moderator' || r.is_admin === true,
+        }),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ text_rank, ...rest }) => rest);
+
+    const scoredSpaces = spacesR.rows
+      .map((r) => ({
+        ...r,
+        member_count: parseInt(r.member_count, 10) || 0,
+        score: blendSearchScore({
+          textRank: r.text_rank,
+          engagementRaw: parseInt(r.member_count, 10) || 0,
+          dateStr: null,
+          halfLifeDays: null,
+          isAuthority: false,
+        }),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ text_rank, ...rest }) => rest);
+
+    const scoredRequests = requestsR.rows
+      .map((r) => ({
+        ...r,
+        score: blendSearchScore({
+          textRank: r.text_rank,
+          engagementRaw: null,
+          dateStr: null,
+          halfLifeDays: null,
+          isAuthority: false,
+        }),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(({ text_rank, ...rest }) => rest);
+
+    res.json({
+      query: q,
+      results: {
+        posts: postsWithPolls.map(({ text_rank, ...rest }) => rest),
+        members: scoredMembers,
+        spaces: scoredSpaces,
+        requests: scoredRequests,
+      },
+    });
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
@@ -2683,14 +3338,20 @@ app.post(
   authenticate,
   upload.single('media'),
   async (req, res) => {
-    const { category, title, body, event_date, event_location, visibility } =
+    const { category, title, body, event_date, event_location, visibility, options, closes_at, request_id, quorum_pct, pass_pct } =
       req.body || {};
     const cat = (category || '').toUpperCase();
     const VALID_VIS = ['inherit', 'hub', 'private'];
-    const vis = VALID_VIS.includes(visibility) ? visibility : 'inherit';
+    // POLL is always hub-wide (governance content), never inherit/private — matches
+    // the old hub_polls system, which had no visibility concept at all.
+    const vis = cat === 'POLL' ? 'hub' : (VALID_VIS.includes(visibility) ? visibility : 'inherit');
 
-    if (!title?.trim())
-      return res.status(400).json({ error: 'Title is required' });
+    // Title is only mandatory for POLL (it's the question) — other categories just
+    // need a non-empty title OR body, never both empty.
+    if (cat === 'POLL' && !title?.trim())
+      return res.status(400).json({ error: 'A poll needs a question' });
+    if (cat !== 'POLL' && !title?.trim() && !body?.trim())
+      return res.status(400).json({ error: 'Add a title or some text' });
     if (!POST_CATEGORIES.includes(cat)) {
       return res.status(400).json({
         error: `category must be one of: ${POST_CATEGORIES.join(', ')}`,
@@ -2700,6 +3361,24 @@ app.post(
       return res
         .status(400)
         .json({ error: 'event_date is required for EVENT posts' });
+    }
+
+    let pollOptions = null;
+    if (cat === 'POLL') {
+      try {
+        pollOptions = typeof options === 'string' ? JSON.parse(options) : options;
+      } catch {
+        return res.status(400).json({ error: 'options must be valid JSON' });
+      }
+      // A poll linked to a governance request can auto-approve it on close — real
+      // moderation power, so only mods can create one. A plain poll (no request_id)
+      // is informal and open to any member, same as any other post category.
+      if (request_id && !isMod(req.user))
+        return res.status(403).json({ error: 'Only moderators can create a poll linked to a governance request' });
+      if (!Array.isArray(pollOptions) || pollOptions.length < 2 || pollOptions.length > 5)
+        return res.status(400).json({ error: 'options must be an array of 2–5 strings' });
+      if (pollOptions.some((o) => typeof o !== 'string' || !o.trim()))
+        return res.status(400).json({ error: 'All options must be non-empty strings' });
     }
 
     try {
@@ -2745,7 +3424,7 @@ app.post(
        RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility`,
         [
           cat,
-          title.trim(),
+          title?.trim() || null,
           body?.trim() || '',
           req.user.id,
           mediaFileId,
@@ -2754,6 +3433,7 @@ app.post(
           vis,
         ],
       );
+      const post = result.rows[0];
 
       // Ensure post-attached media is always publicly readable
       if (mediaFileId) {
@@ -2764,16 +3444,57 @@ app.post(
           .catch(() => {});
       }
 
-      const post = result.rows[0];
+      let pollFields = null;
+      if (cat === 'POLL') {
+        const qPct = typeof quorum_pct === 'number' || (typeof quorum_pct === 'string' && quorum_pct !== '')
+          ? Math.min(100, Math.max(0, Number(quorum_pct))) : 0;
+        const pPct = typeof pass_pct === 'number' || (typeof pass_pct === 'string' && pass_pct !== '')
+          ? Math.min(100, Math.max(1, Number(pass_pct))) : 50;
+        const { rows: pollRows } = await pool.query(
+          `INSERT INTO hub_post_polls (post_id, options, closes_at, request_id, quorum_pct, pass_pct)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING options, closes_at, closed, request_id, quorum_pct, pass_pct`,
+          [post.id, JSON.stringify(pollOptions.map((o) => o.trim())), closes_at || null, request_id || null, qPct, pPct],
+        );
+        pollFields = pollRows[0];
+        if (request_id) {
+          await pool.query(`UPDATE hub_requests SET poll_id = $1 WHERE id = $2`, [post.id, request_id]);
+        }
+        logMod(
+          req.user.id,
+          'create_poll',
+          'poll',
+          post.id,
+          post.title,
+          null,
+          { request_id: request_id || null, quorum_pct: qPct, pass_pct: pPct },
+        );
+      }
+
       res.json({
         ...post,
         author_id: req.user.id,
         author_username: req.user.username,
         media_file_name: req.file?.originalname || null,
         reply_count: 0,
+        ...(pollFields ? {
+          poll: {
+            options: pollFields.options,
+            closes_at: pollFields.closes_at,
+            closed: pollFields.closed,
+            request_id: pollFields.request_id,
+            quorum_pct: pollFields.quorum_pct,
+            pass_pct: pollFields.pass_pct,
+            vote_counts: pollFields.options.map(() => 0),
+            total_votes: 0,
+            member_count: 0,
+            my_vote: null,
+            passed: null,
+          },
+        } : {}),
       });
       // Non-blocking: embed new post for RAG
-      embedPost(post.id, post.title, post.body, post.category).catch(() => {});
+      embedPost(post.id, post.title || '', post.body, post.category).catch(() => {});
     } catch (err) {
       console.error('Create post error:', err);
       res.status(500).json({ error: 'Failed to create post' });
@@ -2795,13 +3516,9 @@ app.patch(
       remove_media,
       visibility,
     } = req.body || {};
-    // title is only required when content fields are being updated
-    const updatingContent = title !== undefined || body !== undefined;
-    if (updatingContent && !title?.trim())
-      return res.status(400).json({ error: 'Title is required' });
     try {
       const { rows } = await pool.query(
-        'SELECT id, author_id, category, media_file_id FROM hub_posts WHERE id = $1',
+        'SELECT id, author_id, category, title, body, media_file_id FROM hub_posts WHERE id = $1',
         [req.params.id],
       );
       if (!rows[0]) return res.status(404).json({ error: 'Post not found' });
@@ -2809,6 +3526,18 @@ app.patch(
         return res.status(403).json({ error: 'Not authorised' });
       }
       const existing = rows[0];
+
+      // Title is only mandatory for POLL (it's the question). Other categories just
+      // need a non-empty title OR body after the edit, never both empty.
+      const updatingContent = title !== undefined || body !== undefined;
+      if (updatingContent) {
+        const nextTitle = title !== undefined ? title : existing.title;
+        const nextBody = body !== undefined ? body : existing.body;
+        if (existing.category === 'POLL' && !nextTitle?.trim())
+          return res.status(400).json({ error: 'A poll needs a question' });
+        if (existing.category !== 'POLL' && !nextTitle?.trim() && !nextBody?.trim())
+          return res.status(400).json({ error: 'Add a title or some text' });
+      }
 
       // Media: keep existing unless removing or replacing
       let mediaFileId = existing.media_file_id;
@@ -3072,15 +3801,21 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
               (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
               EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
               (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
-              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked
+              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked,
+              pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
+              pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
+              rq.problem AS poll_request_problem
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
+       LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
+       LEFT JOIN hub_requests rq ON rq.id = pp.request_id
        WHERE p.id = $1`,
       [req.params.id, req.user.id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Post not found' });
-    res.json(rows[0]);
+    const [withPoll] = await attachPollData(rows, req.user.id);
+    res.json(withPoll);
   } catch (err) {
     console.error('Get post error:', err);
     res.status(500).json({ error: 'Failed to get post' });
@@ -3455,11 +4190,12 @@ app.get('/api/requests', authenticate, async (req, res) => {
               r.data_involved, r.scope, r.priority, r.type, r.screen_context,
               r.status, r.admin_note,
               r.poll_id, r.created_at, r.updated_at, u.username AS author_username,
-              p.question AS poll_question, p.closed AS poll_closed,
-              p.quorum_pct, p.pass_pct
+              pu.title AS poll_question, pp.closed AS poll_closed,
+              pp.quorum_pct, pp.pass_pct
        FROM hub_requests r
        LEFT JOIN hub_users u  ON r.author_id = u.id
-       LEFT JOIN hub_polls p  ON r.poll_id   = p.id
+       LEFT JOIN hub_posts pu ON r.poll_id   = pu.id
+       LEFT JOIN hub_post_polls pp ON pp.post_id = pu.id
        ORDER BY
          CASE r.priority WHEN 'urgent' THEN 0 WHEN 'important' THEN 1 ELSE 2 END,
          r.created_at DESC`,
@@ -3541,7 +4277,9 @@ app.get('/api/mod-log', authenticate, async (req, res) => {
   }
 });
 
-// ── Polls routes ──────────────────────────────────────────
+// ── Poll actions on posts (category='POLL') ───────────────────────
+// Polls are hub_posts rows (title = question) plus a 1:1 hub_post_polls
+// extension table and hub_post_poll_votes — see the migration above.
 
 // Helper: compute outcome of a closed poll (null = no quorum, true = passed, false = failed)
 function computePollOutcome(
@@ -3562,19 +4300,19 @@ function computePollOutcome(
 }
 
 // Helper: after a vote, check thresholds and auto-close + advance request if passed
-async function checkPollThreshold(pollId) {
+async function checkPollThreshold(postId) {
   try {
     const { rows: polls } = await pool.query(
-      `SELECT p.id, p.question, p.options, p.quorum_pct, p.pass_pct, p.request_id, p.closed
-       FROM hub_polls p WHERE p.id = $1`,
-      [pollId],
+      `SELECT p.id, p.title AS question, pp.options, pp.quorum_pct, pp.pass_pct, pp.request_id, pp.closed
+       FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id WHERE p.id = $1`,
+      [postId],
     );
     const poll = polls[0];
     if (!poll || poll.closed) return;
 
     const { rows: votes } = await pool.query(
-      `SELECT option_index FROM hub_poll_votes WHERE poll_id = $1`,
-      [pollId],
+      `SELECT option_index FROM hub_post_poll_votes WHERE post_id = $1`,
+      [postId],
     );
     const { rows: members } = await pool.query(
       `SELECT COUNT(*) AS c FROM hub_users`,
@@ -3601,14 +4339,14 @@ async function checkPollThreshold(pollId) {
     if (outcome === null) return;
 
     // Close the poll
-    await pool.query(`UPDATE hub_polls SET closed = TRUE WHERE id = $1`, [
-      pollId,
+    await pool.query(`UPDATE hub_post_polls SET closed = TRUE WHERE post_id = $1`, [
+      postId,
     ]);
     logMod(
       null,
       'close_poll',
       'poll',
-      pollId,
+      postId,
       poll.question,
       'Auto-closed: quorum reached',
       { outcome, total_votes: totalVotes, member_count: memberCount },
@@ -3627,7 +4365,7 @@ async function checkPollThreshold(pollId) {
         poll.request_id,
         null,
         'Auto-approved: linked poll passed',
-        { poll_id: pollId },
+        { poll_id: postId },
       );
     }
   } catch (err) {
@@ -3635,134 +4373,8 @@ async function checkPollThreshold(pollId) {
   }
 }
 
-// Create a poll (admin or moderator)
-app.post('/api/polls', authenticate, async (req, res) => {
-  if (!isMod(req.user))
-    return res
-      .status(403)
-      .json({ error: 'Admin or moderator access required' });
-  const { question, options, closes_at, request_id, quorum_pct, pass_pct } =
-    req.body || {};
-  if (!question?.trim())
-    return res.status(400).json({ error: 'question is required' });
-  if (!Array.isArray(options) || options.length < 2 || options.length > 5)
-    return res
-      .status(400)
-      .json({ error: 'options must be an array of 2–5 strings' });
-  if (options.some((o) => typeof o !== 'string' || !o.trim()))
-    return res
-      .status(400)
-      .json({ error: 'All options must be non-empty strings' });
-  const qPct =
-    typeof quorum_pct === 'number' ? Math.min(100, Math.max(0, quorum_pct)) : 0;
-  const pPct =
-    typeof pass_pct === 'number' ? Math.min(100, Math.max(1, pass_pct)) : 50;
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO hub_polls (question, options, created_by, closes_at, request_id, quorum_pct, pass_pct)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, question, options, created_by, closes_at, closed, created_at, request_id, quorum_pct, pass_pct`,
-      [
-        question.trim(),
-        JSON.stringify(options.map((o) => o.trim())),
-        req.user.id,
-        closes_at || null,
-        request_id || null,
-        qPct,
-        pPct,
-      ],
-    );
-    // Back-link: update request with this poll_id
-    if (request_id) {
-      await pool.query(`UPDATE hub_requests SET poll_id = $1 WHERE id = $2`, [
-        rows[0].id,
-        request_id,
-      ]);
-    }
-    logMod(
-      req.user.id,
-      'create_poll',
-      'poll',
-      rows[0].id,
-      question.trim(),
-      null,
-      { request_id: request_id || null, quorum_pct: qPct, pass_pct: pPct },
-    );
-    res.status(201).json({
-      ...rows[0],
-      vote_counts: options.map(() => 0),
-      my_vote: null,
-      total_votes: 0,
-      passed: null,
-    });
-  } catch (err) {
-    console.error('Create poll error:', err);
-    res.status(500).json({ error: 'Failed to create poll' });
-  }
-});
-
-// List polls with vote counts + caller's own vote + outcome
-app.get('/api/polls', authenticate, async (req, res) => {
-  try {
-    const { rows: polls } = await pool.query(
-      `SELECT p.id, p.question, p.options, p.created_by, p.closes_at, p.closed,
-              p.created_at, p.request_id, p.quorum_pct, p.pass_pct,
-              u.username AS created_by_username,
-              r.problem  AS request_problem
-       FROM hub_polls p
-       LEFT JOIN hub_users    u ON p.created_by  = u.id
-       LEFT JOIN hub_requests r ON p.request_id  = r.id
-       ORDER BY p.created_at DESC`,
-    );
-    if (polls.length === 0) return res.json({ polls: [] });
-
-    const pollIds = polls.map((p) => p.id);
-    const { rows: allVotes } = await pool.query(
-      `SELECT poll_id, option_index, voter_id FROM hub_poll_votes WHERE poll_id = ANY($1)`,
-      [pollIds],
-    );
-    const { rows: members } = await pool.query(
-      `SELECT COUNT(*) AS c FROM hub_users`,
-    );
-    const memberCount = parseInt(members[0].c, 10);
-
-    const result = polls.map((poll) => {
-      const votes = allVotes.filter((v) => v.poll_id === poll.id);
-      const vote_counts = Array.from(
-        { length: poll.options.length },
-        (_, i) => votes.filter((v) => v.option_index === i).length,
-      );
-      const myVote = votes.find((v) => v.voter_id === req.user.id);
-      const isClosed =
-        poll.closed ||
-        (poll.closes_at && new Date(poll.closes_at) < new Date());
-      const passed = isClosed
-        ? computePollOutcome(
-            vote_counts,
-            votes.length,
-            memberCount,
-            poll.quorum_pct,
-            poll.pass_pct,
-          )
-        : null;
-      return {
-        ...poll,
-        vote_counts,
-        total_votes: votes.length,
-        member_count: memberCount,
-        my_vote: myVote != null ? myVote.option_index : null,
-        passed,
-      };
-    });
-    res.json({ polls: result });
-  } catch (err) {
-    console.error('List polls error:', err);
-    res.status(500).json({ error: 'Failed to list polls' });
-  }
-});
-
-// Vote on a poll (any member, one vote per poll — upsert to allow changing)
-app.post('/api/polls/:id/vote', authenticate, async (req, res) => {
+// Vote on a poll post (any member, one vote per poll — upsert to allow changing)
+app.post('/api/posts/:id/vote', authenticate, async (req, res) => {
   const { option_index } = req.body || {};
   if (typeof option_index !== 'number' || option_index < 0)
     return res
@@ -3770,7 +4382,9 @@ app.post('/api/polls/:id/vote', authenticate, async (req, res) => {
       .json({ error: 'option_index must be a non-negative integer' });
   try {
     const { rows: poll } = await pool.query(
-      'SELECT id, options, closed, closes_at, quorum_pct FROM hub_polls WHERE id = $1',
+      `SELECT p.id, pp.options, pp.closed, pp.closes_at, pp.quorum_pct
+       FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id
+       WHERE p.id = $1 AND p.category = 'POLL'`,
       [req.params.id],
     );
     if (!poll[0]) return res.status(404).json({ error: 'Poll not found' });
@@ -3782,9 +4396,9 @@ app.post('/api/polls/:id/vote', authenticate, async (req, res) => {
     if (option_index >= poll[0].options.length)
       return res.status(400).json({ error: 'Invalid option_index' });
     await pool.query(
-      `INSERT INTO hub_poll_votes (poll_id, voter_id, option_index)
+      `INSERT INTO hub_post_poll_votes (post_id, voter_id, option_index)
        VALUES ($1, $2, $3)
-       ON CONFLICT (poll_id, voter_id) DO UPDATE SET option_index = $3, created_at = NOW()`,
+       ON CONFLICT (post_id, voter_id) DO UPDATE SET option_index = $3, created_at = NOW()`,
       [req.params.id, req.user.id, option_index],
     );
     // Fire-and-forget threshold check
@@ -3796,33 +4410,34 @@ app.post('/api/polls/:id/vote', authenticate, async (req, res) => {
   }
 });
 
-// Close a poll manually (admin or moderator)
-app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
-  if (!isMod(req.user))
-    return res
-      .status(403)
-      .json({ error: 'Admin or moderator access required' });
+// Close a poll post manually (author or moderator/admin)
+app.patch('/api/posts/:id/close', authenticate, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `UPDATE hub_polls SET closed = TRUE WHERE id = $1 RETURNING id, question, request_id, quorum_pct, pass_pct`,
+    const { rows: check } = await pool.query(
+      `SELECT p.author_id, p.title AS question, pp.request_id, pp.quorum_pct, pp.pass_pct
+       FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id
+       WHERE p.id = $1 AND p.category = 'POLL'`,
       [req.params.id],
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Poll not found' });
+    if (!check[0]) return res.status(404).json({ error: 'Poll not found' });
+    if (check[0].author_id !== req.user.id && !isMod(req.user))
+      return res.status(403).json({ error: 'Not authorised' });
+    const poll = check[0];
+
+    await pool.query(`UPDATE hub_post_polls SET closed = TRUE WHERE post_id = $1`, [req.params.id]);
 
     // Compute outcome and advance linked request if passed
     const { rows: votes } = await pool.query(
-      `SELECT option_index FROM hub_poll_votes WHERE poll_id = $1`,
+      `SELECT option_index FROM hub_post_poll_votes WHERE post_id = $1`,
       [req.params.id],
     );
     const { rows: members } = await pool.query(
       `SELECT COUNT(*) AS c FROM hub_users`,
     );
     const memberCount = parseInt(members[0].c, 10);
-    const voteCounts = Array.from({ length: 0 }, () => 0); // placeholder — recomputed below
     const totalVotes = votes.length;
-    const poll = rows[0];
     const optionCountRes = await pool.query(
-      `SELECT options FROM hub_polls WHERE id = $1`,
+      `SELECT options FROM hub_post_polls WHERE post_id = $1`,
       [req.params.id],
     );
     const optionCount = (optionCountRes.rows[0]?.options ?? []).length;
@@ -3871,25 +4486,24 @@ app.patch('/api/polls/:id/close', authenticate, async (req, res) => {
   }
 });
 
-// Edit a poll's content (admin or moderator). Changing the options invalidates
-// existing votes — their option_index no longer means what it used to — so votes
-// are cleared when options actually change; question/date/threshold-only edits
-// leave votes intact.
-app.patch('/api/polls/:id', authenticate, async (req, res) => {
-  if (!isMod(req.user))
-    return res
-      .status(403)
-      .json({ error: 'Admin or moderator access required' });
-
+// Edit a poll post's content (author or moderator/admin). Changing the options
+// invalidates existing votes — their option_index no longer means what it used
+// to — so votes are cleared when options actually change; question/date/
+// threshold-only edits leave votes intact.
+app.patch('/api/posts/:id/poll', authenticate, async (req, res) => {
   const { question, options, closes_at, quorum_pct, pass_pct } = req.body || {};
 
   try {
     const { rows: existingRows } = await pool.query(
-      `SELECT question, options, closes_at, quorum_pct, pass_pct FROM hub_polls WHERE id = $1`,
+      `SELECT p.author_id, p.title AS question, pp.options, pp.closes_at, pp.quorum_pct, pp.pass_pct
+       FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id
+       WHERE p.id = $1 AND p.category = 'POLL'`,
       [req.params.id],
     );
     const existing = existingRows[0];
     if (!existing) return res.status(404).json({ error: 'Poll not found' });
+    if (existing.author_id !== req.user.id && !isMod(req.user))
+      return res.status(403).json({ error: 'Not authorised' });
 
     const nextQuestion = question !== undefined ? question : existing.question;
     if (!nextQuestion?.trim())
@@ -3916,16 +4530,20 @@ app.patch('/api/polls/:id', authenticate, async (req, res) => {
       typeof pass_pct === 'number' ? Math.min(100, Math.max(1, pass_pct)) : existing.pass_pct;
     const nextClosesAt = closes_at !== undefined ? closes_at || null : existing.closes_at;
 
+    await pool.query(`UPDATE hub_posts SET title = $1, updated_at = NOW() WHERE id = $2`, [
+      nextQuestion.trim(),
+      req.params.id,
+    ]);
     const { rows } = await pool.query(
-      `UPDATE hub_polls
-       SET question = $1, options = $2, closes_at = $3, quorum_pct = $4, pass_pct = $5
-       WHERE id = $6
-       RETURNING id, question, options, created_by, closes_at, closed, created_at, request_id, quorum_pct, pass_pct`,
-      [nextQuestion.trim(), JSON.stringify(nextOptions), nextClosesAt, nextQuorum, nextPass, req.params.id],
+      `UPDATE hub_post_polls
+       SET options = $1, closes_at = $2, quorum_pct = $3, pass_pct = $4
+       WHERE post_id = $5
+       RETURNING post_id, options, closes_at, closed, request_id, quorum_pct, pass_pct`,
+      [JSON.stringify(nextOptions), nextClosesAt, nextQuorum, nextPass, req.params.id],
     );
 
     if (optionsChanged) {
-      await pool.query(`DELETE FROM hub_poll_votes WHERE poll_id = $1`, [req.params.id]);
+      await pool.query(`DELETE FROM hub_post_poll_votes WHERE post_id = $1`, [req.params.id]);
     }
 
     logMod(
@@ -3933,39 +4551,43 @@ app.patch('/api/polls/:id', authenticate, async (req, res) => {
       'edit_poll',
       'poll',
       req.params.id,
-      rows[0].question,
+      nextQuestion.trim(),
       optionsChanged ? 'Options changed — votes reset' : null,
       { quorum_pct: nextQuorum, pass_pct: nextPass },
     );
 
-    res.json(rows[0]);
+    res.json({ id: req.params.id, title: nextQuestion.trim(), ...rows[0] });
   } catch (err) {
     console.error('Edit poll error:', err);
     res.status(500).json({ error: 'Failed to edit poll' });
   }
 });
 
-// Reopen a closed poll (admin or moderator) — undoes both explicit closure and an
-// expired closes_at deadline. Without a new closes_at, the poll reopens with no
-// deadline (open until manually closed again) so it doesn't immediately re-close
-// itself against the stale date. If a linked feature request was auto-approved
-// because this poll passed, revert it to "under review" so the request's status
-// stays consistent with the poll being open again.
-app.patch('/api/polls/:id/reopen', authenticate, async (req, res) => {
-  if (!isMod(req.user))
-    return res
-      .status(403)
-      .json({ error: 'Admin or moderator access required' });
-
+// Reopen a closed poll post (author or moderator/admin) — undoes both explicit
+// closure and an expired closes_at deadline. Without a new closes_at, the poll
+// reopens with no deadline (open until manually closed again) so it doesn't
+// immediately re-close itself against the stale date. If a linked feature
+// request was auto-approved because this poll passed, revert it to "under
+// review" so the request's status stays consistent with the poll being open again.
+app.patch('/api/posts/:id/reopen', authenticate, async (req, res) => {
   const { closes_at } = req.body || {};
 
   try {
-    const { rows } = await pool.query(
-      `UPDATE hub_polls SET closed = FALSE, closes_at = $1 WHERE id = $2 RETURNING id, question, request_id`,
+    const { rows: check } = await pool.query(
+      `SELECT p.author_id, p.title AS question, pp.request_id
+       FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id
+       WHERE p.id = $1 AND p.category = 'POLL'`,
+      [req.params.id],
+    );
+    if (!check[0]) return res.status(404).json({ error: 'Poll not found' });
+    if (check[0].author_id !== req.user.id && !isMod(req.user))
+      return res.status(403).json({ error: 'Not authorised' });
+    const poll = check[0];
+
+    await pool.query(
+      `UPDATE hub_post_polls SET closed = FALSE, closes_at = $1 WHERE post_id = $2`,
       [closes_at || null, req.params.id],
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Poll not found' });
-    const poll = rows[0];
 
     if (poll.request_id) {
       const { rows: reverted } = await pool.query(
@@ -5509,14 +6131,156 @@ app.get('/api/initiatives/app-info', async (req, res) => {
   }
 });
 
+// ── Local-only fallback mode ──
+// Used for every core initiative route whenever getProvider('initiatives') is
+// null, instead of hard-503ing. Shapes hub_initiatives_local rows into the same
+// object shape the external proxy would return, so the rest of the pipeline
+// (enrichInitiatives, the frontend) never needs to know which mode produced it.
+// Not a migration path: if a provider is configured later, these rows simply
+// stop being read — a deliberate, documented limitation.
+function shapeLocalInitiative(row, members, tasks, viewerId) {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category || '',
+    status: row.status,
+    goal: row.goal || '',
+    description: row.description || '',
+    progress: 0,
+    color: row.color,
+    createdBy: row.created_by_username || 'Unknown',
+    createdAt: row.created_at,
+    tasks: tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, created_by: t.created_by })),
+    members: members.map((m) => ({ id: m.user_id, name: m.member_username, role: m.role, joinedAt: m.joined_at })),
+    updates: [],
+    viewerIsMember: members.some((m) => m.user_id === viewerId),
+    viewerIsCreator: row.created_by === viewerId,
+  };
+}
+
+async function loadLocalInitiatives(req) {
+  const { rows } = await pool.query(
+    `SELECT il.*, u.username AS created_by_username
+     FROM hub_initiatives_local il
+     LEFT JOIN hub_users u ON u.id = il.created_by
+     ORDER BY il.created_at DESC`,
+  );
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  const [{ rows: memberRows }, { rows: taskRows }] = await Promise.all([
+    pool.query(
+      `SELECT m.initiative_id, m.user_id, m.role, m.joined_at, u.username AS member_username
+       FROM hub_initiative_local_members m JOIN hub_users u ON u.id = m.user_id
+       WHERE m.initiative_id = ANY($1)`,
+      [ids],
+    ),
+    pool.query(
+      `SELECT * FROM hub_initiative_local_tasks WHERE initiative_id = ANY($1) ORDER BY created_at ASC`,
+      [ids],
+    ),
+  ]);
+  return rows.map((row) =>
+    shapeLocalInitiative(
+      row,
+      memberRows.filter((m) => m.initiative_id === row.id),
+      taskRows.filter((t) => t.initiative_id === row.id),
+      req.user.id,
+    ),
+  );
+}
+
+async function loadLocalInitiative(id, req) {
+  const { rows } = await pool.query(
+    `SELECT il.*, u.username AS created_by_username
+     FROM hub_initiatives_local il LEFT JOIN hub_users u ON u.id = il.created_by
+     WHERE il.id = $1`,
+    [id],
+  );
+  if (!rows[0]) return null;
+  const [{ rows: memberRows }, { rows: taskRows }] = await Promise.all([
+    pool.query(
+      `SELECT m.initiative_id, m.user_id, m.role, m.joined_at, u.username AS member_username
+       FROM hub_initiative_local_members m JOIN hub_users u ON u.id = m.user_id
+       WHERE m.initiative_id = $1`,
+      [id],
+    ),
+    pool.query(`SELECT * FROM hub_initiative_local_tasks WHERE initiative_id = $1 ORDER BY created_at ASC`, [id]),
+  ]);
+  return shapeLocalInitiative(rows[0], memberRows, taskRows, req.user.id);
+}
+
+// Status is derived from task completion, not a manually-set field: no tasks
+// or none done yet = planning, some done = active, all done = completed.
+// Applied uniformly to local and external-mode items alike since both carry
+// a `tasks` array by the time they reach here.
+function deriveInitiativeStatus(tasks) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  if (list.length === 0) return 'planning';
+  const done = list.filter((t) => t.status === 'done').length;
+  if (done === 0) return 'planning';
+  if (done === list.length) return 'completed';
+  return 'active';
+}
+
+// Enriches raw initiative rows (from either the external proxy or the local
+// fallback above) with local extension data (banner, linked space, open-role
+// count), a server-computed viewerIsMember flag — the merge layer that
+// replaces the client's fragile, reload-losing joinedIds state — and a
+// task-derived status. Local-mode items arrive with viewerIsMember already
+// set (real membership, not email-matching) and that value is preserved
+// rather than recomputed.
+async function enrichInitiatives(list, req) {
+  if (list.length === 0) return list;
+  const ids = list.map((i) => i.id).filter(Boolean);
+  const [{ rows: metaRows }, { rows: leaveRows }] = await Promise.all([
+    pool.query(
+      `SELECT m.*, s.slug AS space_slug, s.name AS space_name,
+              COALESCE(r.open_roles, 0)::int AS open_roles_count
+       FROM hub_initiative_meta m
+       LEFT JOIN hub_spaces s ON s.id = m.space_id
+       LEFT JOIN (
+         SELECT initiative_id, COUNT(*) FILTER (WHERE NOT filled) AS open_roles
+         FROM hub_initiative_roles GROUP BY initiative_id
+       ) r ON r.initiative_id = m.initiative_id
+       WHERE m.initiative_id = ANY($1)`,
+      [ids],
+    ),
+    pool.query(
+      `SELECT initiative_id FROM hub_initiative_leaves WHERE user_id = $1 AND initiative_id = ANY($2)`,
+      [req.user.id, ids],
+    ),
+  ]);
+  const metaById = Object.fromEntries(metaRows.map((r) => [r.initiative_id, r]));
+  const left = new Set(leaveRows.map((r) => r.initiative_id));
+  const viewerEmail = `${req.user.username}@hub.citinet`;
+  return list.map((i) => {
+    const meta = metaById[i.id] || {};
+    const isMember =
+      i.viewerIsMember !== undefined
+        ? i.viewerIsMember
+        : !left.has(i.id) &&
+          (i.creatorEmail === viewerEmail ||
+            (Array.isArray(i.members) && i.members.some((m) => m.email === viewerEmail)));
+    const isCreator = i.viewerIsCreator !== undefined ? i.viewerIsCreator : i.creatorEmail === viewerEmail;
+    return { ...i, ...meta, viewerIsMember: isMember, viewerIsCreator: isCreator, status: deriveInitiativeStatus(i.tasks) };
+  });
+}
+
 // GET /api/initiatives
 app.get('/api/initiatives', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
   try {
+    if (!p) {
+      const list = await loadLocalInitiatives(req);
+      const enriched = await enrichInitiatives(list, req);
+      return res.json({ initiatives: enriched });
+    }
     const { status, data } = await proxyToApp(p, '/initiatives');
-    res.status(status).json(data);
+    const list = Array.isArray(data) ? data : data?.initiatives ?? [];
+    const enriched = await enrichInitiatives(list, req);
+    res
+      .status(status)
+      .json(Array.isArray(data) ? enriched : { ...data, initiatives: enriched });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -5525,16 +6289,54 @@ app.get('/api/initiatives', authenticate, async (req, res) => {
 // POST /api/initiatives
 app.post('/api/initiatives', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
+  const { space_id, ...rest } = req.body || {}; // space_id is local-only, never proxied
   try {
+    if (!p) {
+      const { title, category, goal, description, color } = rest;
+      if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+      const { rows } = await pool.query(
+        `INSERT INTO hub_initiatives_local (title, category, goal, description, color, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [title.trim(), category || null, goal || null, description || null, color || 'purple', req.user.id],
+      );
+      const newId = rows[0].id;
+      // Auto-join the creator — real local membership, not a proxy round-trip.
+      await pool.query(
+        `INSERT INTO hub_initiative_local_members (initiative_id, user_id, role) VALUES ($1, $2, 'Project lead')
+         ON CONFLICT DO NOTHING`,
+        [newId, req.user.id],
+      );
+      await pool.query(
+        `INSERT INTO hub_initiative_meta (initiative_id, space_id, created_by) VALUES ($1, $2, $3)
+         ON CONFLICT (initiative_id) DO NOTHING`,
+        [newId, space_id || null, req.user.id],
+      );
+      const created = await loadLocalInitiative(newId, req);
+      return res.status(201).json(created);
+    }
     await ensureAppUser(p, req.user.username);
     const body = {
-      ...req.body,
+      ...rest,
       creatorEmail: `${req.user.username}@hub.citinet`,
       creatorName: req.user.username,
     };
     const { status, data } = await proxyToApp(p, '/initiatives', 'POST', body);
+    const newId = data?.id ?? data?.initiative?.id; // exact response shape unverified
+    if (status >= 200 && status < 300 && newId) {
+      // Auto-join the creator — the whole point of this fix is that they should
+      // never have to separately click "Join" on their own just-created project.
+      // Must never fail the create response: the initiative already exists by now.
+      try {
+        await proxyToApp(p, `/initiatives/${newId}/join`, 'POST', {}, req.user.username);
+      } catch (joinErr) {
+        console.warn(`[initiatives] auto-join failed for ${newId}:`, joinErr.message);
+      }
+      await pool.query(
+        `INSERT INTO hub_initiative_meta (initiative_id, space_id, created_by)
+         VALUES ($1, $2, $3) ON CONFLICT (initiative_id) DO NOTHING`,
+        [newId, space_id || null, req.user.id],
+      );
+    }
     res.status(status).json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -5544,13 +6346,21 @@ app.post('/api/initiatives', authenticate, async (req, res) => {
 // GET /api/initiatives/:id
 app.get('/api/initiatives/:id', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
   try {
+    if (!p) {
+      const item = await loadLocalInitiative(req.params.id, req);
+      if (!item) return res.status(404).json({ error: 'Not found' });
+      const [enriched] = await enrichInitiatives([item], req);
+      return res.json(enriched);
+    }
     const { status, data } = await proxyToApp(
       p,
       `/initiatives/${req.params.id}`,
     );
+    if (status >= 200 && status < 300 && data) {
+      const [enriched] = await enrichInitiatives([data], req);
+      return res.status(status).json(enriched);
+    }
     res.status(status).json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -5560,9 +6370,23 @@ app.get('/api/initiatives/:id', authenticate, async (req, res) => {
 // PATCH /api/initiatives/:id
 app.patch('/api/initiatives/:id', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
   try {
+    if (!p) {
+      // status is intentionally not settable here — it's derived from task
+      // completion in enrichInitiatives, not a manually-edited field.
+      const { title, category, goal, description, color } = req.body || {};
+      await pool.query(
+        `UPDATE hub_initiatives_local SET
+           title = COALESCE($1, title), category = COALESCE($2, category),
+           goal = COALESCE($3, goal), description = COALESCE($4, description), color = COALESCE($5, color),
+           updated_at = NOW()
+         WHERE id = $6`,
+        [title, category, goal, description, color, req.params.id],
+      );
+      const updated = await loadLocalInitiative(req.params.id, req);
+      if (!updated) return res.status(404).json({ error: 'Not found' });
+      return res.json(updated);
+    }
     const { status, data } = await proxyToApp(
       p,
       `/initiatives/${req.params.id}`,
@@ -5579,54 +6403,153 @@ app.patch('/api/initiatives/:id', authenticate, async (req, res) => {
 // DELETE /api/initiatives/:id
 app.delete('/api/initiatives/:id', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
+  const id = req.params.id;
   try {
-    const { status, data } = await proxyToApp(
-      p,
-      `/initiatives/${req.params.id}`,
-      'DELETE',
-      undefined,
-      req.user.username,
-    );
-    res.status(status).json(data);
+    if (!p) {
+      await pool.query(`DELETE FROM hub_initiatives_local WHERE id = $1`, [id]); // members/tasks cascade
+    } else {
+      const { status, data } = await proxyToApp(
+        p,
+        `/initiatives/${id}`,
+        'DELETE',
+        undefined,
+        req.user.username,
+      );
+      if (!(status >= 200 && status < 300)) return res.status(status).json(data);
+    }
+    await Promise.all([
+      pool.query(`DELETE FROM hub_initiative_meta WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_resources WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_roles WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_updates WHERE initiative_id = $1`, [id]), // comments cascade
+      pool.query(`DELETE FROM hub_initiative_activity WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_task_meta WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_task_checklist WHERE initiative_id = $1`, [id]),
+      pool.query(`DELETE FROM hub_initiative_task_notes WHERE initiative_id = $1`, [id]), // replies cascade
+      pool.query(`DELETE FROM hub_initiative_leaves WHERE initiative_id = $1`, [id]),
+    ]);
+    res.json({ ok: true });
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/initiatives/:id/goals
 app.post('/api/initiatives/:id/goals', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
+  const { assignee_user_id, due_date, ...proxyBody } = req.body || {};
   try {
+    await assertInitiativeCreator(req.params.id, req);
+    if (!p) {
+      if (!proxyBody.title?.trim()) return res.status(400).json({ error: 'Task title is required' });
+      const { rows } = await pool.query(
+        `INSERT INTO hub_initiative_local_tasks (initiative_id, title, created_by) VALUES ($1, $2, $3) RETURNING id, title, status, created_by`,
+        [req.params.id, proxyBody.title.trim(), req.user.id],
+      );
+      const taskId = rows[0].id;
+      if (assignee_user_id || due_date) {
+        await pool.query(
+          `INSERT INTO hub_initiative_task_meta (task_id, initiative_id, assignee_user_id, due_date)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (task_id) DO UPDATE SET assignee_user_id = $3, due_date = $4, updated_at = NOW()`,
+          [taskId, req.params.id, assignee_user_id || null, due_date || null],
+        );
+      }
+      await pool.query(
+        `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+         VALUES ($1, 'task', $2, $3, $4)`,
+        [req.params.id, `added a new task: "${proxyBody.title.trim()}"`, req.user.id, req.user.username],
+      );
+      return res.status(201).json(rows[0]);
+    }
     const { status, data } = await proxyToApp(
       p,
       `/initiatives/${req.params.id}/goals`,
       'POST',
-      req.body,
+      proxyBody,
       req.user.username,
     );
+    const taskId = data?.id ?? data?.goal?.id; // response shape unverified
+    if (status >= 200 && status < 300 && taskId) {
+      if (assignee_user_id || due_date) {
+        await pool.query(
+          `INSERT INTO hub_initiative_task_meta (task_id, initiative_id, assignee_user_id, due_date)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (task_id) DO UPDATE SET assignee_user_id = $3, due_date = $4, updated_at = NOW()`,
+          [taskId, req.params.id, assignee_user_id || null, due_date || null],
+        );
+      }
+      await pool.query(
+        `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+         VALUES ($1, 'task', $2, $3, $4)`,
+        [req.params.id, `added a new task: "${proxyBody.title || ''}"`, req.user.id, req.user.username],
+      );
+    }
     res.status(status).json(data);
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    res.status(err.status || 502).json({ error: err.message });
   }
 });
 
 // PATCH /api/initiatives/goals/:goalId
+// The external API has no "get goal" endpoint, so the parent initiative id isn't
+// derivable from goalId alone. _initiativeId/_title are accepted here purely to
+// log activity locally when a task is completed — a narrow, documented workaround
+// for that gap, stripped before proxying so the external service never sees them.
+// Local-mode doesn't need the workaround: the initiative_id/title come straight
+// off the real local row.
 app.patch('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
+  const { _initiativeId, _title, ...proxyBody } = req.body || {};
   try {
+    if (!p) {
+      const { rows: taskRows } = await pool.query(
+        `SELECT created_by FROM hub_initiative_local_tasks WHERE id = $1`,
+        [req.params.goalId],
+      );
+      if (!taskRows[0]) return res.status(404).json({ error: 'Task not found' });
+      const { rows: metaRows } = await pool.query(
+        `SELECT assignee_user_id FROM hub_initiative_task_meta WHERE task_id = $1`,
+        [req.params.goalId],
+      );
+      const owns = taskRows[0].created_by === req.user.id || metaRows[0]?.assignee_user_id === req.user.id;
+      if (!owns) return res.status(403).json({ error: 'Only the task creator or assignee can update its status' });
+      if (proxyBody.status) {
+        const { rows: checklistRows } = await pool.query(
+          `SELECT COUNT(*)::int AS total FROM hub_initiative_task_checklist WHERE task_id = $1`,
+          [req.params.goalId],
+        );
+        if (checklistRows[0].total > 0) {
+          return res.status(409).json({ error: 'This task has a checklist — its status follows checklist completion' });
+        }
+      }
+      const { rows } = await pool.query(
+        `UPDATE hub_initiative_local_tasks SET status = COALESCE($1, status) WHERE id = $2 RETURNING *`,
+        [proxyBody.status || null, req.params.goalId],
+      );
+      if (proxyBody.status === 'done') {
+        await pool.query(
+          `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+           VALUES ($1, 'task', $2, $3, $4)`,
+          [rows[0].initiative_id, `completed "${rows[0].title}"`, req.user.id, req.user.username],
+        );
+      }
+      return res.json(rows[0]);
+    }
     const { status, data } = await proxyToApp(
       p,
       `/goals/${req.params.goalId}`,
       'PATCH',
-      req.body,
+      proxyBody,
       req.user.username,
     );
+    if (status >= 200 && status < 300 && proxyBody.status === 'done' && _initiativeId) {
+      await pool.query(
+        `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+         VALUES ($1, 'task', $2, $3, $4)`,
+        [_initiativeId, `completed "${_title || 'a task'}"`, req.user.id, req.user.username],
+      );
+    }
     res.status(status).json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -5636,9 +6559,22 @@ app.patch('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
 // DELETE /api/initiatives/goals/:goalId
 app.delete('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
   try {
+    if (!p) {
+      const { rows } = await pool.query(`SELECT created_by FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId]);
+      if (!rows[0]) return res.status(404).json({ error: 'Task not found' });
+      if (rows[0].created_by !== req.user.id) {
+        return res.status(403).json({ error: 'Only the task creator can remove this task' });
+      }
+      await pool.query(`DELETE FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId]);
+      await pool.query(`DELETE FROM hub_initiative_task_meta WHERE task_id = $1`, [req.params.goalId]);
+      await pool.query(`DELETE FROM hub_initiative_task_checklist WHERE task_id = $1`, [req.params.goalId]);
+      await pool.query(`DELETE FROM hub_initiative_task_notes WHERE task_id = $1`, [req.params.goalId]); // replies cascade
+      return res.json({ ok: true });
+    }
+    // External mode: no local created_by tracking exists for proxied tasks — the
+    // acting username is forwarded so the external service can apply its own
+    // authorization, same trust boundary already used for PATCH on this resource.
     const { status, data } = await proxyToApp(
       p,
       `/goals/${req.params.goalId}`,
@@ -5655,9 +6591,19 @@ app.delete('/api/initiatives/goals/:goalId', authenticate, async (req, res) => {
 // POST /api/initiatives/:id/join
 app.post('/api/initiatives/:id/join', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
-  if (!p)
-    return res.status(503).json({ error: 'Initiatives app not configured' });
   try {
+    if (!p) {
+      await pool.query(
+        `INSERT INTO hub_initiative_local_members (initiative_id, user_id, role) VALUES ($1, $2, 'Member')
+         ON CONFLICT (initiative_id, user_id) DO NOTHING`,
+        [req.params.id, req.user.id],
+      );
+      await pool.query(
+        `DELETE FROM hub_initiative_leaves WHERE initiative_id = $1 AND user_id = $2`,
+        [req.params.id, req.user.id],
+      );
+      return res.json({ ok: true });
+    }
     const { status, data } = await proxyToApp(
       p,
       `/initiatives/${req.params.id}/join`,
@@ -5665,9 +6611,852 @@ app.post('/api/initiatives/:id/join', authenticate, async (req, res) => {
       {},
       req.user.username,
     );
+    if (status >= 200 && status < 300) {
+      await pool.query(
+        `DELETE FROM hub_initiative_leaves WHERE initiative_id = $1 AND user_id = $2`,
+        [req.params.id, req.user.id],
+      );
+    }
     res.status(status).json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
+  }
+});
+
+// POST /api/initiatives/:id/leave — the external service has no leave endpoint at
+// all; this gives "Leave" real, reload-surviving semantics by suppressing viewerIsMember
+// in enrichInitiatives() rather than pretending to mutate data the proxy can't mutate.
+// Also removes real local membership when the initiative is a local-mode one — the
+// UUID-cast is wrapped defensively since :id may be a non-UUID external id.
+app.post('/api/initiatives/:id/leave', authenticate, async (req, res) => {
+  try {
+    await pool.query(
+      `INSERT INTO hub_initiative_leaves (initiative_id, user_id) VALUES ($1, $2)
+       ON CONFLICT (initiative_id, user_id) DO NOTHING`,
+      [req.params.id, req.user.id],
+    );
+    await pool
+      .query(`DELETE FROM hub_initiative_local_members WHERE initiative_id = $1 AND user_id = $2`, [
+        req.params.id,
+        req.user.id,
+      ])
+      .catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Initiatives — local extension routes ────────────────────
+// Everything below is fully local (Postgres-only, never calls proxyToApp) — it
+// works identically whether or not this hub has an Initiatives provider configured,
+// covering everything the external service has no support for at all: resources,
+// open roles, persisted updates + threaded comments, an activity log, and banner
+// upload. All keyed by the external initiative id (TEXT, no FK — format unverified).
+
+function initiativeActorName(req) {
+  return req.user.username;
+}
+
+// Restricts an action to the initiative's creator/lead only — for structural
+// actions (banner, opening new tasks/roles) that shouldn't be open to every
+// member. Fails closed on any lookup error since this is an authorization
+// boundary, not a soft membership gate.
+async function assertInitiativeCreator(id, req) {
+  const p = await getProvider('initiatives');
+  if (!p) {
+    const { rows } = await pool.query(`SELECT created_by FROM hub_initiatives_local WHERE id = $1`, [id]);
+    if (!rows[0]) {
+      const err = new Error('Initiative not found');
+      err.status = 404;
+      throw err;
+    }
+    if (rows[0].created_by !== req.user.id) {
+      const err = new Error('Only the project creator can do this');
+      err.status = 403;
+      throw err;
+    }
+    return;
+  }
+  const { data } = await proxyToApp(p, `/initiatives/${id}`);
+  const email = `${req.user.username}@hub.citinet`;
+  if (data?.creatorEmail !== email) {
+    const err = new Error('Only the project creator can do this');
+    err.status = 403;
+    throw err;
+  }
+}
+
+// Task creator (local mode only — external tasks have no local creator record)
+// and assignee (works in both modes — task_meta is keyed by task_id regardless
+// of where the task itself lives). taskId is defensively try/caught against the
+// local_tasks lookup since external task ids aren't guaranteed to be UUIDs.
+async function getTaskOwnerIds(taskId) {
+  const [{ rows: taskRows }, { rows: metaRows }] = await Promise.all([
+    pool.query(`SELECT created_by FROM hub_initiative_local_tasks WHERE id = $1`, [taskId]).catch(() => ({ rows: [] })),
+    pool.query(`SELECT assignee_user_id FROM hub_initiative_task_meta WHERE task_id = $1`, [taskId]),
+  ]);
+  return { creatorId: taskRows[0]?.created_by ?? null, assigneeId: metaRows[0]?.assignee_user_id ?? null };
+}
+
+async function assertTaskOwner(taskId, req) {
+  const { creatorId, assigneeId } = await getTaskOwnerIds(taskId);
+  if (req.user.id !== creatorId && req.user.id !== assigneeId) {
+    const err = new Error('Only the task creator or assignee can do this');
+    err.status = 403;
+    throw err;
+  }
+}
+
+// Recomputes a task's status from its checklist whenever the checklist changes
+// (item added/toggled/removed) — mirrors deriveInitiativeStatus one level down.
+// A task with no checklist items is left alone: its status stays whatever the
+// simple manual todo/in-progress/done cycle last set, since there's nothing to
+// derive from. Silently no-ops for external-mode tasks (not in the local table).
+async function recomputeTaskStatusFromChecklist(taskId) {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE done)::int AS done
+     FROM hub_initiative_task_checklist WHERE task_id = $1`,
+    [taskId],
+  );
+  const { total, done } = rows[0];
+  if (total === 0) return null;
+  const status = done === total ? 'done' : done === 0 ? 'todo' : 'in-progress';
+  const { rows: updated } = await pool
+    .query(
+      `UPDATE hub_initiative_local_tasks SET status = $1 WHERE id = $2 RETURNING initiative_id, title, status`,
+      [status, taskId],
+    )
+    .catch(() => ({ rows: [] }));
+  return updated[0] || null;
+}
+
+async function logTaskCompletedIfDone(updatedTask, req) {
+  if (!updatedTask || updatedTask.status !== 'done') return;
+  await pool.query(
+    `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+     VALUES ($1, 'task', $2, $3, $4)`,
+    [updatedTask.initiative_id, `completed "${updatedTask.title}"`, req.user.id, req.user.username],
+  );
+}
+
+// ── Task checklist ──
+app.get('/api/initiatives/tasks/:taskId/checklist', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM hub_initiative_task_checklist WHERE task_id = $1 ORDER BY created_at ASC`,
+      [req.params.taskId],
+    );
+    res.json({ checklist: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/tasks/:taskId/checklist', authenticate, async (req, res) => {
+  const { text, initiative_id } = req.body || {};
+  if (!text?.trim()) return res.status(400).json({ error: 'Checklist text is required' });
+  if (!initiative_id) return res.status(400).json({ error: 'initiative_id is required' });
+  try {
+    await assertTaskOwner(req.params.taskId, req);
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_task_checklist (task_id, initiative_id, text, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.taskId, initiative_id, text.trim(), req.user.id],
+    );
+    const updatedTask = await recomputeTaskStatusFromChecklist(req.params.taskId);
+    await logTaskCompletedIfDone(updatedTask, req);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/initiatives/checklist/:itemId', authenticate, async (req, res) => {
+  const { text, done } = req.body || {};
+  try {
+    const { rows: itemRows } = await pool.query(`SELECT task_id FROM hub_initiative_task_checklist WHERE id = $1`, [req.params.itemId]);
+    if (!itemRows[0]) return res.status(404).json({ error: 'Checklist item not found' });
+    await assertTaskOwner(itemRows[0].task_id, req);
+    const { rows } = await pool.query(
+      `UPDATE hub_initiative_task_checklist SET
+         text = COALESCE($1, text), done = COALESCE($2, done), updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [text?.trim() || null, typeof done === 'boolean' ? done : null, req.params.itemId],
+    );
+    const updatedTask = await recomputeTaskStatusFromChecklist(itemRows[0].task_id);
+    await logTaskCompletedIfDone(updatedTask, req);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/checklist/:itemId', authenticate, async (req, res) => {
+  try {
+    const { rows: itemRows } = await pool.query(`SELECT task_id FROM hub_initiative_task_checklist WHERE id = $1`, [req.params.itemId]);
+    if (!itemRows[0]) return res.status(404).json({ error: 'Checklist item not found' });
+    await assertTaskOwner(itemRows[0].task_id, req);
+    await pool.query(`DELETE FROM hub_initiative_task_checklist WHERE id = $1`, [req.params.itemId]);
+    await recomputeTaskStatusFromChecklist(itemRows[0].task_id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// ── Task progress notes + replies ──
+app.get('/api/initiatives/tasks/:taskId/notes', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT n.*,
+              COALESCE(
+                (SELECT json_agg(r ORDER BY r.created_at ASC) FROM hub_initiative_task_note_replies r WHERE r.note_id = n.id),
+                '[]'
+              ) AS replies
+       FROM hub_initiative_task_notes n
+       WHERE n.task_id = $1
+       ORDER BY n.created_at DESC`,
+      [req.params.taskId],
+    );
+    res.json({ notes: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/tasks/:taskId/notes', authenticate, async (req, res) => {
+  const { content, initiative_id } = req.body || {};
+  if (!content?.trim()) return res.status(400).json({ error: 'Note text is required' });
+  if (!initiative_id) return res.status(400).json({ error: 'initiative_id is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_task_notes (task_id, initiative_id, author_id, author_name, content)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.params.taskId, initiative_id, req.user.id, initiativeActorName(req), content.trim()],
+    );
+    res.status(201).json({ ...rows[0], replies: [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/notes/:noteId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT author_id FROM hub_initiative_task_notes WHERE id = $1`, [req.params.noteId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Note not found' });
+    if (rows[0].author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the author can remove this note' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_task_notes WHERE id = $1`, [req.params.noteId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/notes/:noteId/replies', authenticate, async (req, res) => {
+  const { content } = req.body || {};
+  if (!content?.trim()) return res.status(400).json({ error: 'Reply text is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_task_note_replies (note_id, author_id, author_name, content)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.noteId, req.user.id, initiativeActorName(req), content.trim()],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/note-replies/:replyId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT author_id FROM hub_initiative_task_note_replies WHERE id = $1`, [req.params.replyId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Reply not found' });
+    if (rows[0].author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the author can remove this reply' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_task_note_replies WHERE id = $1`, [req.params.replyId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Resources — material pledges, shared files, and links ──
+app.get('/api/initiatives/:id/resources', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.*, f.file_name AS file_display_name, f.mime_type AS file_mime_type, f.size_bytes AS file_size_bytes
+       FROM hub_initiative_resources r
+       LEFT JOIN hub_files f ON f.id = r.file_id
+       WHERE r.initiative_id = $1
+       ORDER BY r.created_at ASC`,
+      [req.params.id],
+    );
+    res.json({ resources: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/:id/resources', authenticate, async (req, res) => {
+  const { item, qty, kind, url } = req.body || {};
+  if (kind === 'link') {
+    if (!url?.trim()) return res.status(400).json({ error: 'A link needs a URL' });
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO hub_initiative_resources (initiative_id, item, kind, url, created_by)
+         VALUES ($1, $2, 'link', $3, $4) RETURNING *`,
+        [req.params.id, item?.trim() || url.trim(), url.trim(), req.user.id],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+    return;
+  }
+  if (!item?.trim()) return res.status(400).json({ error: 'Item is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_resources (initiative_id, item, qty, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, item.trim(), qty?.trim() || null, req.user.id],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shared file resource — stored in the same hub_files table (and same MinIO
+// bucket) as the general Files screen, tagged with initiative_id and always
+// is_public — resources added to a project are shared hub-wide by nature,
+// so they show up in the general Files list automatically (unlike space
+// files, which are deliberately excluded from that list).
+app.post('/api/initiatives/:id/resources/file', authenticate, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+  try {
+    const fileKey = `initiative-resources/${req.params.id}/${crypto.randomUUID()}-${req.file.originalname}`;
+    await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
+      'Content-Type': req.file.mimetype,
+    });
+    const { rows: fileRows } = await pool.query(
+      `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, initiative_id)
+       VALUES ($1, $2, $3, $4, $5, TRUE, $6) RETURNING *`,
+      [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id, req.params.id],
+    );
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_resources (initiative_id, item, kind, file_id, owns_file, created_by)
+       VALUES ($1, $2, 'file', $3, TRUE, $4) RETURNING *`,
+      [req.params.id, req.file.originalname, fileRows[0].id, req.user.id],
+    );
+    res.status(201).json({
+      ...rows[0],
+      file_display_name: fileRows[0].file_name,
+      file_mime_type: fileRows[0].mime_type,
+      file_size_bytes: fileRows[0].size_bytes,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reference a file already sitting in the hub's Files screen instead of
+// re-uploading a duplicate copy — the whole point of self-hosting rather than
+// pointing people at an external Drive link. You can attach any file that's
+// already hub-shared, or your own private file (which this then flips public,
+// since the entire premise of a resource on a project is that it's shared).
+// You can't force someone else's private file public through this.
+app.post('/api/initiatives/:id/resources/attach-file', authenticate, async (req, res) => {
+  const { file_id } = req.body || {};
+  if (!file_id) return res.status(400).json({ error: 'file_id is required' });
+  try {
+    const { rows: fileRows } = await pool.query(`SELECT * FROM hub_files WHERE id = $1`, [file_id]);
+    if (!fileRows[0]) return res.status(404).json({ error: 'File not found' });
+    const file = fileRows[0];
+    if (file.owner_id !== req.user.id && !file.is_public) {
+      return res.status(403).json({ error: "You can only attach your own files or ones already shared with the hub" });
+    }
+    if (file.owner_id === req.user.id && !file.is_public) {
+      await pool.query(
+        `UPDATE hub_files SET is_public = TRUE, initiative_id = $1 WHERE id = $2`,
+        [req.params.id, file_id],
+      );
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_resources (initiative_id, item, kind, file_id, created_by)
+       VALUES ($1, $2, 'file', $3, $4) RETURNING *`,
+      [req.params.id, file.file_name, file_id, req.user.id],
+    );
+    res.status(201).json({
+      ...rows[0],
+      file_display_name: file.file_name,
+      file_mime_type: file.mime_type,
+      file_size_bytes: file.size_bytes,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/initiatives/resources/:resourceId/provide', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_initiative_resources
+       SET provided = TRUE, provided_by_user_id = $1, provided_by_name = $2, updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [req.user.id, initiativeActorName(req), req.params.resourceId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Resource not found' });
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'resource', $2, $3, $4)`,
+      [rows[0].initiative_id, `marked "${rows[0].item}" as provided`, req.user.id, initiativeActorName(req)],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Self-service "oops, not for me" retraction — only the person who pledged it
+// can undo it, mirroring the ownership rule everywhere else in this feature.
+app.patch('/api/initiatives/resources/:resourceId/unprovide', authenticate, async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(`SELECT provided_by_user_id FROM hub_initiative_resources WHERE id = $1`, [req.params.resourceId]);
+    if (!existing[0]) return res.status(404).json({ error: 'Resource not found' });
+    if (existing[0].provided_by_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the person who pledged this can retract it' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE hub_initiative_resources
+       SET provided = FALSE, provided_by_user_id = NULL, provided_by_name = NULL, updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [req.params.resourceId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/resources/:resourceId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT created_by, kind, file_id, owns_file FROM hub_initiative_resources WHERE id = $1`, [req.params.resourceId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Resource not found' });
+    if (rows[0].created_by !== req.user.id) {
+      return res.status(403).json({ error: 'Only the person who added this resource can remove it' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_resources WHERE id = $1`, [req.params.resourceId]);
+    // Only delete the underlying file when this resource is the reason it
+    // exists (uploaded directly here). A resource that merely references a
+    // pre-existing file must never delete someone's actual file out from
+    // under them just because the reference was removed.
+    if (rows[0].kind === 'file' && rows[0].file_id && rows[0].owns_file) {
+      const { rows: fileRows } = await pool.query(`DELETE FROM hub_files WHERE id = $1 RETURNING file_key`, [rows[0].file_id]);
+      if (fileRows[0] && minioClient) {
+        await minioClient.removeObject(STORAGE_BUCKET, fileRows[0].file_key).catch(() => {});
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Roles ──
+app.get('/api/initiatives/:id/roles', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM hub_initiative_roles WHERE initiative_id = $1 ORDER BY created_at ASC`,
+      [req.params.id],
+    );
+    res.json({ roles: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/:id/roles', authenticate, async (req, res) => {
+  const { role, skill } = req.body || {};
+  if (!role?.trim()) return res.status(400).json({ error: 'Role is required' });
+  try {
+    await assertInitiativeCreator(req.params.id, req);
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_roles (initiative_id, role, skill, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, role.trim(), skill?.trim() || 'General', req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'team', $2, $3, $4)`,
+      [req.params.id, `opened a new role: ${role.trim()}`, req.user.id, initiativeActorName(req)],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/roles/:roleId/claim', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_initiative_roles
+       SET filled = TRUE, filled_by_user_id = $1, filled_by_name = $2, updated_at = NOW()
+       WHERE id = $3 RETURNING *`,
+      [req.user.id, initiativeActorName(req), req.params.roleId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
+    // Claiming a role is how the design intends someone to join — mirrors that
+    // intent via the external join proxy when configured, skips gracefully otherwise.
+    const p = await getProvider('initiatives');
+    if (p) {
+      await proxyToApp(p, `/initiatives/${rows[0].initiative_id}/join`, 'POST', {}, req.user.username).catch(() => {});
+      await pool.query(
+        `DELETE FROM hub_initiative_leaves WHERE initiative_id = $1 AND user_id = $2`,
+        [rows[0].initiative_id, req.user.id],
+      );
+    }
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'team', $2, $3, $4)`,
+      [rows[0].initiative_id, `filled the ${rows[0].role} role`, req.user.id, initiativeActorName(req)],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Self-service "oops, not for me" retraction — only the claimant can unclaim.
+// Doesn't touch external join/leave state: unclaiming a role doesn't necessarily
+// mean leaving the whole project, just stepping back from that one commitment.
+app.post('/api/initiatives/roles/:roleId/unclaim', authenticate, async (req, res) => {
+  try {
+    const { rows: existing } = await pool.query(`SELECT filled_by_user_id FROM hub_initiative_roles WHERE id = $1`, [req.params.roleId]);
+    if (!existing[0]) return res.status(404).json({ error: 'Role not found' });
+    if (existing[0].filled_by_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the person who claimed this role can unclaim it' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE hub_initiative_roles
+       SET filled = FALSE, filled_by_user_id = NULL, filled_by_name = NULL, updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [req.params.roleId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/roles/:roleId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM hub_initiative_roles WHERE id = $1`, [req.params.roleId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Role not found' });
+    if (rows[0].created_by !== req.user.id) {
+      return res.status(403).json({ error: 'Only the person who opened this role can remove it' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_roles WHERE id = $1`, [req.params.roleId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Updates + threaded comments ──
+app.get('/api/initiatives/:id/updates', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.*,
+              COALESCE(
+                (SELECT json_agg(c ORDER BY c.created_at ASC)
+                 FROM hub_initiative_update_comments c WHERE c.update_id = u.id),
+                '[]'
+              ) AS comments
+       FROM hub_initiative_updates u
+       WHERE u.initiative_id = $1
+       ORDER BY u.created_at DESC`,
+      [req.params.id],
+    );
+    res.json({ updates: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/:id/updates', authenticate, async (req, res) => {
+  const { content } = req.body || {};
+  if (!content?.trim()) return res.status(400).json({ error: 'Update text is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_updates (initiative_id, author_id, author_name, content)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.id, req.user.id, initiativeActorName(req), content.trim()],
+    );
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'update', 'posted an update', $2, $3)`,
+      [req.params.id, req.user.id, initiativeActorName(req)],
+    );
+    res.status(201).json({ ...rows[0], comments: [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/updates/:updateId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT author_id FROM hub_initiative_updates WHERE id = $1`, [req.params.updateId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Update not found' });
+    if (rows[0].author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the author can remove this update' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_updates WHERE id = $1`, [req.params.updateId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/initiatives/updates/:updateId/comments', authenticate, async (req, res) => {
+  const { content } = req.body || {};
+  if (!content?.trim()) return res.status(400).json({ error: 'Comment text is required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_update_comments (update_id, author_id, author_name, content)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.params.updateId, req.user.id, initiativeActorName(req), content.trim()],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/comments/:commentId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT author_id FROM hub_initiative_update_comments WHERE id = $1`, [req.params.commentId]);
+    if (!rows[0]) return res.status(404).json({ error: 'Comment not found' });
+    if (rows[0].author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only the author can remove this comment' });
+    }
+    await pool.query(`DELETE FROM hub_initiative_update_comments WHERE id = $1`, [req.params.commentId]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Activity log ──
+app.get('/api/initiatives/:id/activity', authenticate, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 5, 50);
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM hub_initiative_activity WHERE initiative_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [req.params.id, limit],
+    );
+    res.json({ activity: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Banner ──
+app.get('/api/initiatives/:id/banner', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT banner_image_file_name FROM hub_initiative_meta WHERE initiative_id = $1`,
+      [req.params.id],
+    );
+    if (!rows[0]?.banner_image_file_name) return res.status(404).json({ error: 'No banner' });
+    if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
+    const fileKey = `initiative-banners/${req.params.id}/${rows[0].banner_image_file_name}`;
+    const stream = await minioClient.getObject(STORAGE_BUCKET, fileKey);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    stream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(
+  '/api/initiatives/:id/banner',
+  authenticate,
+  uploadBg.single('banner'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file provided' });
+    try {
+      await assertInitiativeCreator(req.params.id, req);
+      const fileKey = `initiative-banners/${req.params.id}/${req.file.originalname}`;
+      if (minioClient) {
+        await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
+          'Content-Type': req.file.mimetype,
+        });
+      }
+      await pool.query(
+        `INSERT INTO hub_initiative_meta (initiative_id, banner_mode, banner_image_file_name, created_by)
+         VALUES ($1, 'image', $2, $3)
+         ON CONFLICT (initiative_id) DO UPDATE SET banner_mode = 'image', banner_image_file_name = $2, updated_at = NOW()`,
+        [req.params.id, req.file.originalname, req.user.id],
+      );
+      res.json({ file_name: req.file.originalname, file_key: fileKey });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
+  },
+);
+
+app.patch('/api/initiatives/:id/banner', authenticate, async (req, res) => {
+  const { banner_mode, banner_color, banner_gradient_from, banner_gradient_to } = req.body || {};
+  if (!['gradient', 'solid'].includes(banner_mode)) {
+    return res.status(400).json({ error: 'banner_mode must be gradient or solid' });
+  }
+  try {
+    await assertInitiativeCreator(req.params.id, req);
+    await pool.query(
+      `INSERT INTO hub_initiative_meta (initiative_id, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (initiative_id) DO UPDATE SET
+         banner_mode = $2, banner_color = $3, banner_gradient_from = $4, banner_gradient_to = $5, updated_at = NOW()`,
+      [req.params.id, banner_mode, banner_color || null, banner_gradient_from || null, banner_gradient_to || null, req.user.id],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/initiatives/:id/banner', authenticate, async (req, res) => {
+  try {
+    await assertInitiativeCreator(req.params.id, req);
+    await pool.query(
+      `UPDATE hub_initiative_meta
+       SET banner_mode = NULL, banner_color = NULL, banner_gradient_from = NULL, banner_gradient_to = NULL,
+           banner_image_file_name = NULL, updated_at = NOW()
+       WHERE initiative_id = $1`,
+      [req.params.id],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// ── Task assignee / due date ──
+// Merges task_meta with checklist totals in JS rather than a SQL join — a task
+// can have checklist rows before it ever gets a task_meta row (assignee/due
+// date/blocked all optional), so neither side can be treated as the anchor.
+app.get('/api/initiatives/:id/task-meta', authenticate, async (req, res) => {
+  try {
+    const [{ rows: metaRows }, { rows: checklistRows }] = await Promise.all([
+      pool.query(`SELECT * FROM hub_initiative_task_meta WHERE initiative_id = $1`, [req.params.id]),
+      pool.query(
+        `SELECT task_id, COUNT(*)::int AS total, COUNT(*) FILTER (WHERE done)::int AS done
+         FROM hub_initiative_task_checklist WHERE initiative_id = $1 GROUP BY task_id`,
+        [req.params.id],
+      ),
+    ]);
+    const checklistByTask = Object.fromEntries(checklistRows.map((r) => [r.task_id, r]));
+    const metaByTask = Object.fromEntries(metaRows.map((r) => [r.task_id, r]));
+    const taskIds = new Set([...metaRows.map((r) => r.task_id), ...checklistRows.map((r) => r.task_id)]);
+    const taskMeta = [...taskIds].map((taskId) => {
+      const m = metaByTask[taskId] || {
+        task_id: taskId,
+        initiative_id: req.params.id,
+        assignee_user_id: null,
+        assignee_name: null,
+        due_date: null,
+        blocked: false,
+      };
+      const c = checklistByTask[taskId];
+      return { ...m, checklist_total: c?.total ?? 0, checklist_done: c?.done ?? 0 };
+    });
+    res.json({ taskMeta });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/initiatives/goals/:goalId/meta', authenticate, async (req, res) => {
+  const { initiative_id, assignee_user_id, assign_self, due_date } = req.body || {};
+  if (!initiative_id) return res.status(400).json({ error: 'initiative_id is required' });
+  try {
+    const finalAssignee = assign_self ? req.user.id : assignee_user_id || null;
+    if (finalAssignee === null) {
+      // Clearing an assignment — self-service "oops, not for me" by the current
+      // assignee, or a cleanup by the task creator. No one else may clear it.
+      const { rows: existing } = await pool.query(
+        `SELECT assignee_user_id FROM hub_initiative_task_meta WHERE task_id = $1`,
+        [req.params.goalId],
+      );
+      const currentAssignee = existing[0]?.assignee_user_id ?? null;
+      if (currentAssignee && currentAssignee !== req.user.id) {
+        const { rows: taskRows } = await pool
+          .query(`SELECT created_by FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId])
+          .catch(() => ({ rows: [] }));
+        if (taskRows[0]?.created_by !== req.user.id) {
+          return res.status(403).json({ error: 'Only the assignee or task creator can unassign this task' });
+        }
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO hub_initiative_task_meta (task_id, initiative_id, assignee_user_id, assignee_name, due_date)
+         VALUES ($1, $2, NULL, NULL, $3)
+         ON CONFLICT (task_id) DO UPDATE SET assignee_user_id = NULL, assignee_name = NULL, updated_at = NOW()
+         RETURNING *`,
+        [req.params.goalId, initiative_id, due_date || null],
+      );
+      return res.json(rows[0]);
+    }
+    const assigneeName = assign_self ? initiativeActorName(req) : null;
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_task_meta (task_id, initiative_id, assignee_user_id, assignee_name, due_date)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (task_id) DO UPDATE SET
+         assignee_user_id = $3, assignee_name = COALESCE($4, hub_initiative_task_meta.assignee_name),
+         due_date = COALESCE($5, hub_initiative_task_meta.due_date), updated_at = NOW()
+       RETURNING *`,
+      [req.params.goalId, initiative_id, finalAssignee, assigneeName, due_date || null],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Blocked is the one manual override the checklist can't infer on its own —
+// gated to the task's creator/assignee like the rest of its status handling.
+app.patch('/api/initiatives/tasks/:taskId/blocked', authenticate, async (req, res) => {
+  const { blocked, initiative_id } = req.body || {};
+  if (!initiative_id) return res.status(400).json({ error: 'initiative_id is required' });
+  try {
+    await assertTaskOwner(req.params.taskId, req);
+    const { rows } = await pool.query(
+      `INSERT INTO hub_initiative_task_meta (task_id, initiative_id, blocked)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (task_id) DO UPDATE SET blocked = $3, updated_at = NOW()
+       RETURNING *`,
+      [req.params.taskId, initiative_id, !!blocked],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// ── Invite ──
+app.post('/api/initiatives/:id/invite', authenticate, async (req, res) => {
+  const { user_id } = req.body || {};
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+  try {
+    await notifyUser(user_id, 'initiative_invite', req.user.id, req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -6361,8 +8150,8 @@ app.post(
       }
     }
     const { title, body, category = 'DISCUSSION' } = req.body || {};
-    if (!title?.trim())
-      return res.status(400).json({ error: 'title required' });
+    if (!title?.trim() && !body?.trim())
+      return res.status(400).json({ error: 'Add a title or some text' });
     try {
       const { rows: spaceRows } = await pool.query(
         `SELECT id FROM hub_spaces WHERE slug = $1`,
@@ -6414,7 +8203,7 @@ app.post(
     `,
         [
           category,
-          title.trim(),
+          title?.trim() || null,
           body?.trim() || '',
           req.user.id,
           spaceId,
@@ -7426,27 +9215,32 @@ app.post('/api/ai/action', authenticate, async (req, res) => {
         });
       }
       case 'create_poll': {
+        // This tool never accepts a request_id, so it can only ever create a plain,
+        // non-governance poll — the same kind any member can already create through
+        // the UI, so no separate mod gate is needed here.
         const { question, options, closes_in_hours = 72 } = args;
         if (!question || !Array.isArray(options) || options.length < 2) {
           return res
             .status(400)
             .json({ error: 'Question and at least 2 options required' });
         }
+        const trimmedOptions = options.slice(0, 5).map((o) => String(o).trim());
         const closesAt = new Date(
           Date.now() + Number(closes_in_hours) * 3_600_000,
         );
+        const {
+          rows: [post],
+        } = await pool.query(
+          `INSERT INTO hub_posts (category, title, body, author_id, visibility) VALUES ('POLL',$1,'',$2,'hub') RETURNING id`,
+          [question, req.user.id],
+        );
         await pool.query(
-          `INSERT INTO hub_polls (question, options, created_by, closes_at) VALUES ($1,$2::jsonb,$3,$4)`,
-          [
-            question,
-            JSON.stringify(options.slice(0, 6)),
-            req.user.id,
-            closesAt,
-          ],
+          `INSERT INTO hub_post_polls (post_id, options, closes_at) VALUES ($1,$2::jsonb,$3)`,
+          [post.id, JSON.stringify(trimmedOptions), closesAt],
         );
         return res.json({
           ok: true,
-          result: `Done — poll created: "${question}" with ${options.length} options. Members can vote in the Polls screen.`,
+          result: `Done — poll created: "${question}" with ${trimmedOptions.length} options. Members can vote right in the feed.`,
         });
       }
       default:

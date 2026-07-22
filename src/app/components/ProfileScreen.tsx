@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MapPin, Shield, Calendar, MessageCircle,
-  Loader2, AlertCircle, Tag, Globe,
-  ImagePlus, Palette, Pencil, ArrowLeft,
-  FileText, Pin, Hash, Building2,
+  Loader2, AlertCircle, Globe,
+  ImagePlus, Pencil, ArrowLeft,
+  FileText, Pin, Hash, Building2, Sparkles,
   BookOpen, Map, Share2, Copy, Check, X, Users, Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -11,10 +12,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
+import { getBackLabel } from '../utils/routeLabels';
 import { PostDetailModal } from './PostDetailModal';
 import { NoteDetailModal } from './NoteDetailModal';
 import type { HubMember, HubPost, HubNote } from '../types/hub';
 import type { AtlasPin } from '../types/atlas';
+import type { LucideIcon } from 'lucide-react';
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -63,6 +66,67 @@ const BANNER_GRADIENTS = [
 
 type Tab = 'overview' | 'posts' | 'notes' | 'pins';
 
+// ── Small presentational pieces (mirror the design system's Stat / SkillTag / DetailRow / ListRow) ──
+
+function Stat({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className="w-4 h-4 cn-text-4 shrink-0" />
+      <div>
+        <div className="font-mono text-xl font-bold cn-text-1 leading-tight">{value}</div>
+        <div className="text-[11px] cn-text-3 whitespace-nowrap">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function SkillTag({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full cn-surface-2 border cn-border text-xs font-semibold cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+    >
+      <Sparkles className="w-3 h-3 text-purple-500 dark:text-purple-400 shrink-0" />{children}
+    </button>
+  );
+}
+
+function DetailRow({ icon: Icon, label, children, first, href, onClick }: {
+  icon: LucideIcon; label: string; children: React.ReactNode; first?: boolean; href?: string; onClick?: () => void;
+}) {
+  const row = (
+    <>
+      <span className="w-8 h-8 rounded-lg cn-surface-2 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 cn-text-3" />
+      </span>
+      <span className="text-sm cn-text-3 shrink-0">{label}</span>
+      <span className="text-sm font-semibold cn-text-1 truncate flex-1 text-right">{children}</span>
+    </>
+  );
+  const cls = `w-full flex items-center gap-3 px-3.5 py-3 text-left ${first ? '' : 'border-t cn-border'}`;
+  if (href) {
+    return <a href={href} target="_blank" rel="noopener noreferrer" className={`${cls} hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>{row}</a>;
+  }
+  if (onClick) {
+    return <button onClick={onClick} className={`${cls} hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>{row}</button>;
+  }
+  return <div className={cls}>{row}</div>;
+}
+
+function ListGroup({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-xl border cn-border overflow-hidden">{children}</div>;
+}
+
+function EmptyTab({ icon: Icon, label, action }: { icon: LucideIcon; label: string; action?: React.ReactNode }) {
+  return (
+    <div className="py-10 text-center">
+      <Icon className="w-8 h-8 cn-text-4 mx-auto mb-2" />
+      <p className="text-sm cn-text-3">{label}</p>
+      {action}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────
 
 interface ProfileScreenProps {
@@ -72,9 +136,10 @@ interface ProfileScreenProps {
 }
 
 export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps) {
-  const { currentHub, currentUser, updateUserProfile } = useHub();
+  const { currentHub, currentUser, updateUserProfile, previousPath } = useHub();
   const slug = currentHub?.slug ?? '';
   const hubName = currentHub?.name ?? 'Hub';
+  const backLabel = getBackLabel(previousPath, hubName);
 
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
@@ -88,6 +153,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showBioModal, setShowBioModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [forkingNoteId, setForkingNoteId] = useState<string | null>(null);
   const [forkedNoteId, setForkedNoteId] = useState<string | null>(null);
@@ -101,6 +167,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     if (!slug || !userId) return;
     setLoading(true);
     setError('');
+    setActiveTab('overview');
     Promise.allSettled([
       hubService.getMember(slug, userId),
       hubService.listPosts(slug),
@@ -195,119 +262,147 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   // ── Loading / Error ──────────────────────────────────────
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
     </div>
   );
 
   if (error || !member) return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950 flex flex-col items-center justify-center gap-3">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3">
       <AlertCircle className="w-8 h-8 text-red-400" />
-      <p className="text-sm text-slate-500">{error || 'Profile not found'}</p>
+      <p className="text-sm cn-text-3">{error || 'Profile not found'}</p>
       <button onClick={onBack} className="text-sm text-purple-600 hover:underline">Go back</button>
     </div>
   );
 
+  const bio = member.bio ?? '';
+  const bioClamped = bio.length > 280 ? bio.slice(0, 280).trim() + '…' : bio;
+
+  const TABS: { value: Tab; label: string }[] = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'posts', label: `Posts${posts.length ? ` (${posts.length})` : ''}` },
+    { value: 'notes', label: `Notes${notes.length ? ` (${notes.length})` : ''}` },
+    { value: 'pins', label: `Pins${pins.length ? ` (${pins.length})` : ''}` },
+  ];
+
   // ── Render ───────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-zinc-950">
+    <div className="min-h-screen">
+      <div className="max-w-[760px] mx-auto px-4 sm:px-8 py-5 sm:py-7">
 
-      {/* ── Sticky header ── */}
-      <div className="sticky top-0 z-20 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-zinc-800">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0">
-            <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+        {/* Top bar — back only; Message/Edit/Share live inside the hero card, next to the avatar */}
+        <div className="flex items-center gap-2 mb-6">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> {backLabel}
           </button>
-          <span className="text-base font-semibold text-slate-900 dark:text-white truncate flex-1">
-            {displayName || member.username}
-          </span>
-          {isOwnProfile && (
-            <button onClick={() => onNavigate('account')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-sm font-medium text-slate-700 dark:text-slate-300 transition-colors shrink-0">
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
-          )}
-          {member.profile_visibility !== 'private' && (
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors shrink-0"
-              title="Share profile"
-            >
-              <Share2 className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            </button>
-          )}
         </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-3 pb-12 space-y-3">
-
-        {/* ══ IDENTITY CARD ══════════════════════════════════ */}
+        {/* ══ Hero card — banner, avatar, name, stats, skills ══ */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-sm"
+          className="rounded-2xl overflow-hidden cn-glass mb-6"
         >
-          {/* Banner */}
-          <div className="relative h-28 sm:h-32">
-            <div
-              className={`absolute inset-0 ${hasBannerStyle ? '' : `bg-gradient-to-br ${avatarColor(member.username)}`}`}
-              style={hasBannerStyle ? { ...bannerStyle, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
-            />
+          <div
+            className={`relative h-32 ${isOwnProfile ? 'cursor-pointer group' : ''}`}
+            style={hasBannerStyle ? { ...bannerStyle, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: 'var(--cn-grad-identity)' }}
+            onClick={() => isOwnProfile && setShowBannerEditor(v => !v)}
+          >
+            {!hasBannerStyle && (
+              <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 120% at 80% -20%, rgba(255,255,255,.22), transparent 60%)' }} />
+            )}
             {isOwnProfile && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setShowBannerEditor(v => !v)}
-                  className="absolute top-3 right-3 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 hover:bg-black/55 backdrop-blur-sm text-white text-xs font-semibold transition-colors"
-                >
-                  {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Palette className="w-3.5 h-3.5" />}
-                  Customize
-                </button>
-                <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
-              </>
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
+                  {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Edit banner
+                </span>
+              </div>
             )}
           </div>
+          {isOwnProfile && (
+            <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
+          )}
 
-          {/* Identity body */}
-          <div className="px-5 sm:px-6 pb-5 sm:pb-6">
+          <div className="px-5 sm:px-7 pb-7 pt-3">
             <div className="flex items-start justify-between gap-4">
               {/* Avatar — overlaps banner */}
-              <div className="-mt-11 sm:-mt-12 shrink-0">
+              <div className="relative -mt-12 shrink-0">
                 {member.avatar_url && avatarUrl
                   ? <img src={avatarUrl} alt={displayName}
-                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-4 ring-white dark:ring-zinc-900 shadow-md"
+                      className="w-[88px] h-[88px] rounded-full object-cover ring-4 ring-white dark:ring-zinc-900 shadow-md"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
-                  : <div className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white dark:ring-zinc-900 shadow-md`}>
+                  : <div className={`w-[88px] h-[88px] rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white dark:ring-zinc-900 shadow-md`}>
                       {(displayName || member.username).charAt(0).toUpperCase()}
                     </div>
                 }
               </div>
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-2 pt-3 shrink-0">
+              {/* Action cluster — desktop: Message/Edit + Share, inline next to the avatar */}
+              <div className="hidden sm:flex items-center gap-2 pt-4 shrink-0">
                 {isOwnProfile ? (
                   <button
                     onClick={() => onNavigate('account')}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border cn-border cn-surface hover:bg-black/5 dark:hover:bg-white/5 text-xs font-semibold cn-text-2 transition-colors"
                   >
                     <Pencil className="w-3.5 h-3.5" /> Edit Profile
                   </button>
                 ) : (
                   <button
                     onClick={handleMessage}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm transition-colors"
+                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors"
                   >
                     <MessageCircle className="w-3.5 h-3.5" /> Message
+                  </button>
+                )}
+                {member.profile_visibility !== 'private' && (
+                  <button
+                    onClick={() => setShowShareModal(true)}
+                    title="Share profile"
+                    className="w-9 h-9 rounded-lg border cn-border flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
                   </button>
                 )}
               </div>
             </div>
 
+            {/* Action cluster — mobile, full-width row */}
+            <div className="sm:hidden flex items-center gap-2 mt-3">
+              {isOwnProfile ? (
+                <button
+                  onClick={() => onNavigate('account')}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border cn-border cn-surface text-sm font-semibold cn-text-2 transition-colors"
+                >
+                  <Pencil className="w-4 h-4" /> Edit Profile
+                </button>
+              ) : (
+                <button
+                  onClick={handleMessage}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" /> Message
+                </button>
+              )}
+              {member.profile_visibility !== 'private' && (
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  title="Share profile"
+                  className="w-11 h-11 shrink-0 rounded-xl border cn-border flex items-center justify-center cn-text-2"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
             {/* Name block */}
-            <div className="mt-3">
+            <div className="mt-4">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold text-slate-900 dark:text-white leading-tight truncate">
+                <h1 className="text-xl sm:text-2xl font-bold cn-text-1 leading-tight truncate">
                   {displayName || member.username}
                 </h1>
                 {member.is_admin && (
@@ -316,25 +411,46 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   </span>
                 )}
               </div>
-              <p className="text-xs font-mono text-slate-400 dark:text-slate-500 mt-0.5">@{member.username}</p>
+              <p className="cn-mono text-xs cn-text-3 mt-0.5">@{member.username} · {hubName}</p>
             </div>
+
+            {/* Stats */}
+            <div className="flex gap-7 mt-5">
+              <Stat icon={FileText} value={posts.length} label="Posts" />
+              <Stat icon={BookOpen} value={notes.length} label="Notes" />
+              <Stat icon={Map} value={pins.length} label="Pins" />
+            </div>
+
+            {/* Skills & interests — Community Focus tags */}
+            {(member.tags?.length ?? 0) > 0 && (
+              <div className="mt-5">
+                <span className="cn-eyebrow">Skills &amp; interests</span>
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  {member.tags!.map(tag => (
+                    <SkillTag key={tag} onClick={() => { sessionStorage.setItem('citinet-deeplink-search', tag); onNavigate('discover'); }}>
+                      {tag}
+                    </SkillTag>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Banner editor */}
             {isOwnProfile && showBannerEditor && (
-              <div className="mt-4 rounded-xl border border-slate-200 dark:border-zinc-800 p-3.5 bg-slate-50 dark:bg-zinc-800/60 space-y-3">
+              <div className="mt-4 rounded-xl border cn-border p-3.5 cn-surface-2 space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Banner Style</p>
+                  <p className="text-xs font-semibold cn-text-2">Banner Style</p>
                   <button
                     type="button"
                     onClick={() => bannerInputRef.current?.click()}
                     disabled={savingBanner}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:bg-slate-100 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-600 dark:text-slate-300 transition-colors disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-surface border cn-border hover:bg-black/5 dark:hover:bg-white/5 text-xs font-semibold cn-text-2 transition-colors disabled:opacity-60"
                   >
                     <ImagePlus className="w-3.5 h-3.5" /> Upload Image
                   </button>
                 </div>
                 <div>
-                  <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mb-1.5">Solid Colors</p>
+                  <p className="text-[11px] font-medium cn-text-4 mb-1.5">Solid Colors</p>
                   <div className="flex flex-wrap gap-2">
                     {BANNER_SOLID_COLORS.map(color => (
                       <button key={color} type="button"
@@ -346,7 +462,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   </div>
                 </div>
                 <div>
-                  <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mb-1.5">Gradients</p>
+                  <p className="text-[11px] font-medium cn-text-4 mb-1.5">Gradients</p>
                   <div className="flex flex-wrap gap-2">
                     {BANNER_GRADIENTS.map((g, i) => (
                       <button key={i} type="button"
@@ -367,45 +483,23 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.08 }}
-          className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden"
+          className="rounded-2xl cn-glass overflow-hidden"
         >
-          {/* Tab bar — segmented control */}
-          <div className="p-3 border-b border-slate-100 dark:border-zinc-800">
-            <div className="flex gap-1 p-1 rounded-xl bg-slate-100 dark:bg-zinc-800/60">
-              {(['overview', 'posts', 'notes'] as Tab[]).map(tab => (
+          {/* Scrollable pill tab bar */}
+          <div className="p-4 border-b cn-border">
+            <div className="p-1 rounded-lg cn-surface-3 border cn-border overflow-x-auto no-scrollbar flex gap-1.5 w-full">
+              {TABS.map(t => (
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                    activeTab === tab
-                      ? 'text-slate-900 dark:text-white'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
+                  key={t.value}
+                  onClick={() => setActiveTab(t.value)}
+                  className="relative shrink-0 whitespace-nowrap px-3.5 py-2 rounded-md text-[12.5px] font-semibold transition-colors"
                 >
-                  {activeTab === tab && (
-                    <motion.div layoutId="profile-tab-indicator" className="absolute inset-0 bg-white dark:bg-zinc-700 rounded-lg shadow-sm" />
+                  {activeTab === t.value && (
+                    <motion.div layoutId="profile-tab-indicator" className="absolute inset-0 cn-surface rounded-md shadow-sm" />
                   )}
-                  <span className="relative z-10">
-                    {tab === 'overview' ? 'Overview' : tab === 'posts' ? `Posts${posts.length > 0 ? ` (${posts.length})` : ''}` : `Notes${notes.length > 0 ? ` (${notes.length})` : ''}`}
-                  </span>
+                  <span className={`relative z-10 ${activeTab === t.value ? 'cn-text-1' : 'cn-text-3'}`}>{t.label}</span>
                 </button>
               ))}
-              {pins.length > 0 && (
-                <button
-                  key="pins"
-                  onClick={() => setActiveTab('pins')}
-                  className={`relative flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                    activeTab === 'pins'
-                      ? 'text-slate-900 dark:text-white'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                  }`}
-                >
-                  {activeTab === 'pins' && (
-                    <motion.div layoutId="profile-tab-indicator" className="absolute inset-0 bg-white dark:bg-zinc-700 rounded-lg shadow-sm" />
-                  )}
-                  <span className="relative z-10">{`Pins (${pins.length})`}</span>
-                </button>
-              )}
             </div>
           </div>
 
@@ -422,93 +516,53 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 transition={{ duration: 0.15 }}
                 className="p-5 space-y-5"
               >
-                {/* Identity metadata — civic, local, network */}
-                <div className="rounded-xl border border-slate-100 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800 overflow-hidden">
-                  <button
-                    onClick={() => {
-                      const url = `${window.location.origin}/?hub=${slug}`;
-                      window.open(url, '_blank');
-                    }}
-                    className="w-full flex items-center gap-3 px-3.5 py-3 text-sm hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors text-left"
-                  >
-                    <span className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-500/10 flex items-center justify-center shrink-0">
-                      <Building2 className="w-4 h-4 text-purple-500" />
-                    </span>
-                    <span className="text-slate-500 dark:text-slate-400 shrink-0">Member of</span>
-                    <span className="font-semibold text-slate-900 dark:text-white truncate hover:text-purple-700 dark:hover:text-purple-300 transition-colors">{hubName}</span>
-                  </button>
-                  {member.location && (
-                    <div className="flex items-center gap-3 px-3.5 py-3 text-sm text-slate-600 dark:text-slate-400">
-                      <span className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                        <MapPin className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      </span>
-                      <span className="truncate">{member.location}</span>
-                    </div>
-                  )}
-                  {member.created_at && (
-                    <div className="flex items-center gap-3 px-3.5 py-3 text-sm text-slate-600 dark:text-slate-400">
-                      <span className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                        <Calendar className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      </span>
-                      <span>Joined {formatJoinDate(member.created_at)}</span>
-                    </div>
-                  )}
-                  {member.website && (
-                    <div className="flex items-center gap-3 px-3.5 py-3 text-sm">
-                      <span className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                        <Globe className="w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      </span>
-                      <a
-                        href={member.website.startsWith('http') ? member.website : `https://${member.website}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline truncate"
-                      >
-                        {member.website.replace(/^https?:\/\//, '')}
-                      </a>
-                    </div>
-                  )}
-                </div>
-
                 {/* Bio */}
-                {member.bio ? (
+                {bio ? (
                   <div>
-                    <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">About</p>
-                    <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed bg-slate-50 dark:bg-zinc-800/50 rounded-xl p-4">{member.bio}</p>
+                    <span className="cn-eyebrow">Bio</span>
+                    <p className="mt-2.5 text-[13.5px] leading-relaxed cn-text-2">
+                      {bioClamped}
+                      {bio.length > 280 && (
+                        <button onClick={() => setShowBioModal(true)} className="ml-1.5 font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+                          Read more
+                        </button>
+                      )}
+                    </p>
                   </div>
                 ) : isOwnProfile ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 dark:border-zinc-700 p-5 text-center">
-                    <p className="text-sm text-slate-400 dark:text-slate-500 mb-3">Add a bio to tell your community who you are.</p>
+                  <div className="rounded-xl border border-dashed cn-border p-5 text-center">
+                    <p className="text-sm cn-text-4 mb-3">Add a bio to tell your community who you are.</p>
                     <button onClick={() => onNavigate('account')} className="inline-flex items-center px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors">
                       Complete your profile
                     </button>
                   </div>
                 ) : null}
 
-                {/* Community focus — tags */}
-                {(member.tags?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">Community Focus</p>
-                    <div className="flex flex-wrap gap-2">
-                      {member.tags!.map(tag => (
-                        <button
-                          key={tag}
-                          onClick={() => { sessionStorage.setItem('citinet-filter-tag', tag); onNavigate('discover'); }}
-                          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors font-medium"
-                        >
-                          <Tag className="w-3 h-3" />{tag}
-                        </button>
-                      ))}
-                    </div>
+                {/* About */}
+                <div>
+                  <span className="cn-eyebrow">About</span>
+                  <div className="mt-2.5">
+                    <ListGroup>
+                      <DetailRow icon={Building2} label="Member of" first onClick={() => window.open(`${window.location.origin}/?hub=${slug}`, '_blank')}>
+                        {hubName}
+                      </DetailRow>
+                      {member.location && (
+                        <DetailRow icon={MapPin} label="Lives at">{member.location}</DetailRow>
+                      )}
+                      {member.created_at && (
+                        <DetailRow icon={Calendar} label="Neighbor since">{formatJoinDate(member.created_at)}</DetailRow>
+                      )}
+                      <DetailRow icon={Hash} label="Hub handle">
+                        <span className="cn-mono">@{member.username}</span>
+                      </DetailRow>
+                      {member.website && (
+                        <DetailRow icon={Globe} label="Website" href={member.website.startsWith('http') ? member.website : `https://${member.website}`}>
+                          {member.website.replace(/^https?:\/\//, '')}
+                        </DetailRow>
+                      )}
+                    </ListGroup>
                   </div>
-                )}
-
-                {/* Empty overview */}
-                {!member.bio && (member.tags?.length ?? 0) === 0 && !isOwnProfile && (
-                  <div className="py-6 text-center">
-                    <p className="text-sm text-slate-400 dark:text-slate-500">No overview yet.</p>
-                  </div>
-                )}
+                </div>
               </motion.div>
             )}
 
@@ -520,54 +574,49 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
+                className="p-5"
               >
                 {posts.length > 0 ? (
-                  <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                  <ListGroup>
                     {posts.map((post, i) => (
-                      <motion.button
+                      <button
                         key={post.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: i * 0.04 }}
                         onClick={() => setSelectedPost(post)}
-                        className="w-full text-left px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group"
+                        className={`w-full text-left px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
-                                {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-                              </span>
-                              <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(post.created_at)}</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-                              {post.title}
-                            </p>
-                            {post.body && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
-                            )}
+                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
+                          <FileText className="w-4 h-4 cn-text-3" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
+                              {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
+                            </span>
+                            <span className="text-xs cn-text-4">{formatTimestamp(post.created_at)}</span>
                           </div>
-                          {post.reply_count > 0 && (
-                            <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 shrink-0 mt-0.5">
-                              <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
-                            </div>
+                          <p className="text-sm font-semibold cn-text-1 truncate">{post.title}</p>
+                          {post.body && (
+                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
                           )}
                         </div>
-                      </motion.button>
+                        {post.reply_count > 0 && (
+                          <div className="flex items-center gap-1 text-xs cn-text-4 shrink-0 mt-0.5">
+                            <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
+                          </div>
+                        )}
+                      </button>
                     ))}
-                  </div>
+                  </ListGroup>
                 ) : (
-                  <div className="py-10 text-center">
-                    <FileText className="w-8 h-8 text-slate-200 dark:text-zinc-700 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400 dark:text-slate-500">
-                      {isOwnProfile ? 'You haven\'t posted yet.' : 'No posts yet.'}
-                    </p>
-                    {isOwnProfile && (
+                  <EmptyTab
+                    icon={FileText}
+                    label={isOwnProfile ? "You haven't posted yet." : `${displayName || member.username} hasn't posted yet.`}
+                    action={isOwnProfile && (
                       <button onClick={() => onNavigate('feed')} className="mt-2 text-sm text-purple-600 dark:text-purple-400 font-semibold hover:underline">
                         Start a discussion
                       </button>
                     )}
-                  </div>
+                  />
                 )}
               </motion.div>
             )}
@@ -580,117 +629,107 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
+                className="p-5"
               >
                 {notes.length > 0 ? (
-                  <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+                  <ListGroup>
                     {notes.map((note, i) => (
-                      <motion.div
+                      <div
                         key={note.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: i * 0.04 }}
                         onClick={() => setSelectedNote(note)}
-                        className="px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group cursor-pointer"
+                        className={`px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group cursor-pointer flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              {note.is_pinned && (
-                                <Pin className="w-3.5 h-3.5 text-amber-500" />
-                              )}
-                              <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(note.updated_at)}</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-                              {note.title || 'Untitled'}
-                            </p>
-                            {note.body_plain && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{note.body_plain}</p>
-                            )}
+                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
+                          <BookOpen className="w-4 h-4 cn-text-3" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {note.is_pinned && <Pin className="w-3.5 h-3.5 text-amber-500" />}
+                            <span className="text-xs cn-text-4">{formatTimestamp(note.updated_at)}</span>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {note.color && (
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: note.color }} />
-                            )}
-                            {!isOwnProfile && (
-                              <button
-                                onClick={e => handleForkNote(note.id, e)}
-                                disabled={forkingNoteId === note.id}
-                                title="Copy this note into your own notes"
-                                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all opacity-0 group-hover:opacity-100 ${
-                                  forkedNoteId === note.id
-                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                                    : 'bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-zinc-700 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-800'
-                                }`}
-                              >
-                                {forkingNoteId === note.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : forkedNoteId === note.id ? (
-                                  <><Check className="w-3 h-3" /> Copied!</>
-                                ) : (
-                                  <><Copy className="w-3 h-3" /> Copy</>
-                                )}
-                              </button>
-                            )}
-                          </div>
+                          <p className="text-sm font-semibold cn-text-1 truncate">
+                            {note.title || 'Untitled'}
+                          </p>
+                          {note.body_plain && (
+                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{note.body_plain}</p>
+                          )}
                         </div>
-                      </motion.div>
+                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                          {note.color && (
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: note.color }} />
+                          )}
+                          {!isOwnProfile && (
+                            <button
+                              onClick={e => handleForkNote(note.id, e)}
+                              disabled={forkingNoteId === note.id}
+                              title="Copy this note into your own notes"
+                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all opacity-0 group-hover:opacity-100 ${
+                                forkedNoteId === note.id
+                                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                                  : 'cn-surface-2 cn-text-3 cn-border hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-800'
+                              }`}
+                            >
+                              {forkingNoteId === note.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : forkedNoteId === note.id ? (
+                                <><Check className="w-3 h-3" /> Copied!</>
+                              ) : (
+                                <><Copy className="w-3 h-3" /> Copy</>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     ))}
-                  </div>
+                  </ListGroup>
                 ) : (
-                  <div className="py-10 text-center">
-                    <BookOpen className="w-8 h-8 text-slate-200 dark:text-zinc-700 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400 dark:text-slate-500">
-                      {isOwnProfile ? 'No public notes yet.' : 'No shared notes.'}
-                    </p>
-                  </div>
+                  <EmptyTab icon={BookOpen} label={isOwnProfile ? 'No public notes yet.' : 'No shared notes.'} />
                 )}
               </motion.div>
             )}
 
             {/* ── Pins tab ── */}
-            {activeTab === 'pins' && pins.length > 0 && (
+            {activeTab === 'pins' && (
               <motion.div
                 key="pins"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
+                className="p-5"
               >
-                <div className="divide-y divide-slate-100 dark:divide-zinc-800">
-                  {pins.map((pin, i) => (
-                    <motion.button
-                      key={pin.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.04 }}
-                      onClick={() => {
-                        sessionStorage.setItem('citinet-focus-pin', pin.id);
-                        onNavigate('atlas');
-                      }}
-                      className="w-full text-left px-5 py-4 hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors group"
-                    >
-                      <div className="flex items-start gap-3">
+                {pins.length > 0 ? (
+                  <ListGroup>
+                    {pins.map((pin, i) => (
+                      <button
+                        key={pin.id}
+                        onClick={() => {
+                          sessionStorage.setItem('citinet-focus-pin', pin.id);
+                          onNavigate('atlas');
+                        }}
+                        className={`w-full text-left px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
+                      >
+                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
+                          <Map className="w-4 h-4 cn-text-3" />
+                        </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                               {pin.category}
                             </span>
-                            <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(pin.createdAt)}</span>
+                            <span className="text-xs cn-text-4">{formatTimestamp(pin.createdAt)}</span>
                           </div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate group-hover:text-purple-700 dark:group-hover:text-purple-300 transition-colors">
-                            {pin.title}
-                          </p>
+                          <p className="text-sm font-semibold cn-text-1 truncate">{pin.title}</p>
                           {pin.description && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">{pin.description}</p>
+                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{pin.description}</p>
                           )}
                         </div>
-                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 shrink-0 text-slate-600 dark:text-slate-300">
-                          <Map className="w-4 h-4" />
-                        </div>
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
+                      </button>
+                    ))}
+                  </ListGroup>
+                ) : (
+                  <EmptyTab icon={Map} label="No pins yet." />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -724,7 +763,35 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         />
       )}
 
-      {/* Share profile modal */}
+      {/* Bio modal — portaled to <body>: HubLayout's content area is `position: relative;
+          z-index: 10`, its own stacking context, so nothing inside it can out-rank the
+          chrome (bottom nav included, z-30) no matter its own z-index. */}
+      {showBioModal && createPortal(
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowBioModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              onClick={e => e.stopPropagation()}
+              className="cn-surface rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] pointer-events-auto overflow-y-auto p-5"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold cn-text-1">About {displayName || member.username}</h3>
+                <button onClick={() => setShowBioModal(false)} className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                  <X className="w-4 h-4 cn-text-3" />
+                </button>
+              </div>
+              <p className="text-sm leading-relaxed cn-text-2 whitespace-pre-wrap">{bio}</p>
+            </motion.div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Share profile modal — portaled to <body> for the same reason as the bio modal above. */}
       {showShareModal && member.profile_visibility !== 'private' && (() => {
         const profileUrl = hubService.getPublicProfileUrl(slug, member.username);
         const hasPublicUrl = !!(currentHub?.publicTunnelUrl);
@@ -735,7 +802,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
             setTimeout(() => setCopied(false), 2000);
           });
         };
-        return (
+        return createPortal(
           <>
             <div
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
@@ -748,10 +815,10 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 exit={{ opacity: 0, y: 24 }}
                 transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                 onClick={e => e.stopPropagation()}
-                className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm pointer-events-auto overflow-hidden"
+                className="cn-surface rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] pointer-events-auto overflow-y-auto flex flex-col"
               >
                 {/* Profile identity card */}
-                <div className="relative">
+                <div className="relative shrink-0">
                   {/* Banner strip */}
                   <div
                     className={`h-20 w-full ${hasBannerStyle ? '' : `bg-gradient-to-br ${avatarColor(member.username)}`}`}
@@ -778,10 +845,10 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                           {(displayName || member.username).charAt(0).toUpperCase()}
                         </div>
                     }
-                    <h2 className="mt-3 text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    <h2 className="mt-3 text-base font-bold cn-text-1 leading-tight">
                       {displayName || member.username}
                     </h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="cn-mono text-xs cn-text-3 mt-0.5">
                       @{member.username} · {hubName}
                     </p>
                   </div>
@@ -817,14 +884,14 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   </div>
 
                   {/* URL + copy */}
-                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
-                    <span className="flex-1 text-xs text-slate-600 dark:text-slate-300 truncate font-mono">{profileUrl}</span>
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl cn-surface-2 border cn-border">
+                    <span className="flex-1 text-xs cn-text-2 truncate cn-mono">{profileUrl}</span>
                     <button
                       onClick={handleCopy}
                       className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         copied
                           ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-zinc-600'
+                          : 'cn-surface-3 cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
                       }`}
                     >
                       {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
@@ -833,7 +900,8 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 </div>
               </motion.div>
             </div>
-          </>
+          </>,
+          document.body
         );
       })()}
     </div>

@@ -5,7 +5,8 @@
  * Handles periodic health checks and status updates.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import type { Hub, HubConnectionStatus, HubUser, HubIconFields } from '../types/hub';
 import { hubService } from '../services/hubService';
 import { registryService } from '../services/registryService';
@@ -21,6 +22,10 @@ interface HubContextValue {
   joinedHubs: Hub[];
   /** Whether hub data is loading */
   loading: boolean;
+  /** Pathname the app was on immediately before the current one — lets a
+   * "‹ Back" button label reflect where it's actually going instead of a
+   * hardcoded destination. Null on first load / hard refresh. */
+  previousPath: string | null;
   /** Switch to a different hub */
   switchHub: (slug: string) => void;
   /** Refresh the current hub's connection status */
@@ -57,6 +62,18 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [joinedHubs, setJoinedHubs] = useState<Hub[]>([]);
   const [loading, setLoading] = useState(true);
   const [userPreferences, setUserPreferences] = useState<UserPreferences>({});
+
+  // Track the pathname the app was on right before the current one, so
+  // "‹ Back" buttons elsewhere can show where they're actually headed.
+  const location = useLocation();
+  const [previousPath, setPreviousPath] = useState<string | null>(null);
+  const lastPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastPathRef.current !== location.pathname) {
+      setPreviousPath(lastPathRef.current);
+      lastPathRef.current = location.pathname;
+    }
+  }, [location.pathname]);
 
   const resolveUserAvatar = useCallback((hub: Hub, user: HubUser | null): HubUser | null => {
     if (!user?.hubUserId) return user;
@@ -336,6 +353,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       currentUser,
       joinedHubs,
       loading,
+      previousPath,
       switchHub,
       refreshStatus,
       leaveHub,

@@ -237,7 +237,7 @@ export function ShareSpacePage() {
                         <div className="mt-3 rounded-xl overflow-hidden">
                           {isVideo
                             ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
-                            : <img src={mediaUrl} alt={post.title} className="w-full max-h-64 object-cover rounded-xl" />}
+                            : <img src={mediaUrl} alt={post.title ?? ''} className="w-full max-h-64 object-cover rounded-xl" />}
                         </div>
                       )}
                       <div className="flex items-center gap-3 mt-3 pt-3 border-t border-zinc-700">

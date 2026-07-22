@@ -259,11 +259,31 @@ export interface HubMessage {
   created_at: string;
 }
 
+/** Poll-only mechanics for a POLL-category HubPost — the post's title is its
+ * question, this carries everything else (options, votes, thresholds). */
+export interface HubPostPoll {
+  options: string[];
+  closes_at: string | null;
+  closed: boolean;
+  request_id: string | null;
+  request_problem?: string | null;
+  quorum_pct: number;
+  pass_pct: number;
+  vote_counts: number[];
+  total_votes: number;
+  member_count: number;
+  my_vote: number | null;
+  /** null = quorum not met / still open; true = passed; false = failed */
+  passed: boolean | null;
+}
+
 /** A discussion post on the hub */
 export interface HubPost {
   id: string;
-  category: string;           // 'DISCUSSION' | 'ANNOUNCEMENT' | 'PROJECT' | 'REQUEST'
-  title: string;
+  category: string;           // 'DISCUSSION' | 'ANNOUNCEMENT' | 'PROJECT' | 'REQUEST' | 'EVENT' | 'POLL'
+  /** Optional for most categories (falls back to showing just the body) — always
+   * present and required for POLL, where it's the question. */
+  title: string | null;
   body: string;
   author_id: string;
   author_username: string;
@@ -298,6 +318,8 @@ export interface HubPost {
   my_rsvp?: boolean;
   like_count?: number;
   my_liked?: boolean;
+  /** Present only when category === 'POLL'. */
+  poll?: HubPostPoll;
 }
 
 /** A single RSVP entry for an event post */
@@ -386,6 +408,17 @@ export interface HubSpace {
   my_status?: 'active' | 'pending' | 'invited' | null;
   /** Whether this space is publicly readable on the open web (no account required) */
   web_public?: boolean;
+}
+
+/** Result of GET /api/search — real relevance-ranked results, not client-side
+ * substring filtering. `requests` is always empty for non-mods (server-gated,
+ * matching hub_requests' existing mod-only visibility). */
+export interface SearchResults {
+  query: string;
+  posts: (HubPost & { score: number })[];
+  members: (HubMember & { score: number })[];
+  spaces: (HubSpace & { score: number })[];
+  requests: (Record<string, unknown> & { score: number })[];
 }
 
 /** A file attached to a space post */

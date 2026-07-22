@@ -1,18 +1,19 @@
-import { MessageCircle, Megaphone, Target, HelpCircle, Calendar, MapPin, Play, MoreHorizontal, Bookmark, Heart, ArrowUpRight } from 'lucide-react';
+import { MessageCircle, Megaphone, Target, HelpCircle, Calendar, MapPin, Play, MoreVertical, Bookmark, Heart, ArrowUpRight, Trash2, Loader2, Edit2, Share2, Check } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { AvatarCircle } from './AvatarCircle';
 
 interface CatConfig {
   label: string;
   Icon: React.ElementType;
   iconColor: string;
-  avatarGrad: string;
 }
 
 const CAT_CONFIG: Record<string, CatConfig> = {
-  DISCUSSION:   { label: 'Discussion',   Icon: MessageCircle, iconColor: 'text-blue-400',    avatarGrad: 'from-blue-500 to-blue-600' },
-  ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     iconColor: 'text-rose-400',    avatarGrad: 'from-rose-500 to-pink-600' },
-  PROJECT:      { label: 'Project',      Icon: Target,        iconColor: 'text-emerald-400', avatarGrad: 'from-emerald-500 to-teal-600' },
-  REQUEST:      { label: 'Request',      Icon: HelpCircle,    iconColor: 'text-orange-400',  avatarGrad: 'from-orange-500 to-amber-600' },
-  EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-purple-400',  avatarGrad: 'from-purple-500 to-violet-600' },
+  DISCUSSION:   { label: 'Discussion',   Icon: MessageCircle, iconColor: 'text-blue-400' },
+  ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     iconColor: 'text-rose-400' },
+  PROJECT:      { label: 'Project',      Icon: Target,        iconColor: 'text-emerald-400' },
+  REQUEST:      { label: 'Request',      Icon: HelpCircle,    iconColor: 'text-orange-400' },
+  EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-purple-400' },
 };
 
 export interface PostCardProps {
@@ -39,27 +40,63 @@ export interface PostCardProps {
    * real pin nearby if one exists, or offering to add one if not. */
   onOpenInAtlas?: () => void;
   autoPlay?: boolean;
+  /** Present only when the author has a real hub account — external/imported posts
+   * (email, other platforms) have no profile to navigate to. */
+  authorId?: string;
+  onNavigateToProfile?: () => void;
+  /** Real avatar photo support — same AvatarCircle used by the detail view and polls. */
+  authorAvatarUrl?: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+  /** Whether the caller (author or mod) can delete this post directly from the card. */
+  canDelete?: boolean;
+  onDelete?: () => void;
+  deleting?: boolean;
+  /** Whether the caller (author) can edit this post directly from the card. */
+  canEdit?: boolean;
+  onEdit?: () => void;
+  /** Copies a real permalink to this post — same behavior as PollFeedCard's Share button. */
+  onShare?: () => void;
+  shareCopied?: boolean;
 }
 
 export function PostCard({
   variant, category, author, timestamp, content,
   mediaUrl, replyCount, likeCount, myLiked, onLike, onCommentClick,
   eventDate, eventLocation, onOpenInAtlas, autoPlay,
+  authorId, onNavigateToProfile, canDelete, onDelete, deleting, canEdit, onEdit, onShare, shareCopied,
+  authorAvatarUrl, currentUserId, currentUserAvatarUrl,
 }: PostCardProps) {
   const cat = CAT_CONFIG[category] ?? CAT_CONFIG.DISCUSSION;
-  const { Icon, label, iconColor, avatarGrad } = cat;
+  const { Icon, label, iconColor } = cat;
 
   return (
     <div className="cn-glass rounded-2xl overflow-hidden hover:border-black/15 dark:hover:border-white/15 transition-all duration-200">
       <div className="p-4">
         {/* Header: avatar + author + category + time */}
         <div className="flex items-start gap-3 mb-3">
-          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-white font-semibold text-sm shrink-0 select-none`}>
-            {author.charAt(0).toUpperCase()}
-          </div>
+          <button
+            onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
+            disabled={!authorId || !onNavigateToProfile}
+            className="shrink-0 select-none disabled:cursor-default"
+          >
+            <AvatarCircle
+              authorId={authorId ?? ''}
+              authorUsername={author}
+              authorAvatarUrl={authorAvatarUrl}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+            />
+          </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold cn-text-1">{author}</span>
+              <button
+                onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
+                disabled={!authorId || !onNavigateToProfile}
+                className="text-sm font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+              >
+                {author}
+              </button>
               <span className="cn-mono text-[11px] cn-text-4">· {timestamp}</span>
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
@@ -67,12 +104,43 @@ export function PostCard({
               <span className="text-[11px] cn-text-3">{label}</span>
             </div>
           </div>
-          <button
-            onClick={e => e.stopPropagation()}
-            className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors shrink-0"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
+          {canEdit || canDelete ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  onClick={e => e.stopPropagation()}
+                  title="Post actions"
+                  aria-label="Post actions"
+                  className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors shrink-0"
+                >
+                  <MoreVertical className="w-4 h-4 cn-text-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36" onClick={e => e.stopPropagation()}>
+                {canEdit && (
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Edit2 className="w-4 h-4" />
+                    <span>Edit post</span>
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <DropdownMenuItem variant="destructive" onClick={onDelete} disabled={deleting}>
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    <span>Delete post</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <button
+              onClick={e => e.stopPropagation()}
+              title="Post actions"
+              aria-label="Post actions"
+              className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center transition-colors shrink-0 opacity-0 pointer-events-none"
+            >
+              <MoreVertical className="w-4 h-4 cn-text-3" />
+            </button>
+          )}
         </div>
 
         {/* Event metadata */}
@@ -167,6 +235,15 @@ export function PostCard({
           {typeof replyCount === 'number' && replyCount > 0 && (
             <span className="cn-mono">{replyCount}</span>
           )}
+        </button>
+        <button
+          onClick={() => onShare?.()}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold ${
+            shareCopied ? 'text-emerald-500' : 'cn-text-4 hover:text-emerald-500 dark:hover:text-emerald-400'
+          } hover:bg-black/5 dark:hover:bg-white/5`}
+        >
+          {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+          <span>{shareCopied ? 'Copied' : 'Share'}</span>
         </button>
         <div className="flex-1" />
         <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">

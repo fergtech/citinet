@@ -1,5 +1,7 @@
-import { Vote, Check, Lock, Loader2, Clock, Link2, CheckCircle2, XCircle, Pencil, RotateCcw } from 'lucide-react';
-import type { Poll } from '../types/poll';
+import { Vote, Check, Lock, Loader2, Clock, Link2, CheckCircle2, XCircle, Pencil, RotateCcw, Trash2, MoreVertical, Heart, MessageCircle, Share2, Bookmark } from 'lucide-react';
+import type { HubPost } from '../types/hub';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { AvatarCircle } from './AvatarCircle';
 
 export function timeLeft(closesAt: string | null): string | null {
   if (!closesAt) return null;
@@ -23,21 +25,10 @@ function formatTimestamp(iso: string): string {
   } catch { return ''; }
 }
 
-function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
-const AVATAR_COLORS = [
-  'from-indigo-500 to-purple-600', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-600',
-  'from-pink-500 to-rose-500',
-];
-function avatarColorClass(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
 interface PollFeedCardProps {
-  poll: Poll;
-  isMod: boolean;
+  post: HubPost;
+  /** Whether the caller (mod, or the poll's own author) can edit/close/reopen this poll. */
+  canManage: boolean;
   voting: boolean;
   closing: boolean;
   reopening: boolean;
@@ -45,11 +36,29 @@ interface PollFeedCardProps {
   onClose: () => void;
   onReopen: () => void;
   onEdit: () => void;
+  onDelete: () => void;
+  deleting?: boolean;
   onCopyLink: () => void;
   copyLinkActive: boolean;
+  /** Absent when the poll has no author on record (e.g. legacy/system polls) — nothing to navigate to. */
+  onNavigateToProfile?: () => void;
+  /** Toggles the caller's like on this post — same engagement row as PostCard. */
+  onLike?: () => void;
+  /** Opens the poll's detail view and focuses its reply box, matching PostCard's comment button. */
+  onCommentClick?: () => void;
+  likeCount?: number;
+  myLiked?: boolean;
+  replyCount?: number;
+  /** Real avatar photo support — same AvatarCircle used by regular posts. */
+  authorAvatarUrl?: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
 }
 
-export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onCopyLink, copyLinkActive }: PollFeedCardProps) {
+export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl }: PollFeedCardProps) {
+  // Parent only renders this component when post.category === 'POLL', where the
+  // backend always attaches `poll` — safe to assert non-null here.
+  const poll = post.poll!;
   const isClosed = poll.closed || (poll.closes_at ? new Date(poll.closes_at) < new Date() : false);
   const hasVoted = poll.my_vote != null;
   const showBars = hasVoted || isClosed;
@@ -57,20 +66,36 @@ export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, 
   const totalVotes = poll.total_votes;
   const quorumMet = poll.quorum_pct === 0 || (poll.member_count > 0 && totalVotes >= Math.ceil(poll.member_count * poll.quorum_pct / 100));
   const quorumPct = poll.member_count > 0 ? Math.round((totalVotes / poll.member_count) * 100) : 0;
-  const authorName = poll.created_by_username ?? 'Hub Team';
+  const authorName = post.author_username ?? 'Hub Team';
 
   return (
     <div className="cn-glass rounded-2xl overflow-hidden">
       <div className="p-4">
         {/* Header: avatar + author + category + time — matches feed post cards */}
         <div className="flex items-start gap-3 mb-3">
-          <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColorClass(authorName)} flex items-center justify-center text-white font-semibold text-sm shrink-0 select-none`}>
-            {getInitials(authorName)}
-          </div>
+          <button
+            onClick={() => onNavigateToProfile?.()}
+            disabled={!onNavigateToProfile}
+            className="shrink-0 select-none disabled:cursor-default"
+          >
+            <AvatarCircle
+              authorId={post.author_id ?? ''}
+              authorUsername={authorName}
+              authorAvatarUrl={authorAvatarUrl}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+            />
+          </button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold cn-text-1">{authorName}</span>
-              <span className="cn-mono text-[11px] cn-text-4">· {formatTimestamp(poll.created_at)}</span>
+              <button
+                onClick={() => onNavigateToProfile?.()}
+                disabled={!onNavigateToProfile}
+                className="text-sm font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+              >
+                {authorName}
+              </button>
+              <span className="cn-mono text-[11px] cn-text-4">· {formatTimestamp(post.created_at)}</span>
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <Vote className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
@@ -97,11 +122,27 @@ export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, 
                 <Clock className="w-3 h-3" /> {timeStr}
               </span>
             ) : null}
+            {canManage && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button title="Poll actions" aria-label="Poll actions" className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors shrink-0">
+                    <MoreVertical className="w-4 h-4 cn-text-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-36">
+                  <DropdownMenuItem onClick={onEdit}><Pencil className="w-4 h-4" /><span>Edit poll</span></DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={onDelete} disabled={deleting}>
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    <span>Delete poll</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
 
         {/* Question */}
-        <h3 className="text-sm font-semibold cn-text-1 leading-snug mb-3">{poll.question}</h3>
+        <h3 className="text-sm font-semibold cn-text-1 leading-snug mb-3">{post.title}</h3>
 
         {/* Linked request chip */}
         {poll.request_problem && (
@@ -186,26 +227,41 @@ export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, 
         </div>
       </div>
 
-      {/* Reaction-bar-style footer: share + mod close, matching PostCard's action row */}
+      {/* Reaction bar: like + comment (matching PostCard's engagement row) + share + mod close */}
       <div className="flex items-center gap-1 px-4 pb-3 pt-2 border-t cn-border">
+        <button
+          onClick={() => onLike?.()}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold ${
+            myLiked
+              ? 'text-rose-500 hover:text-rose-600'
+              : 'cn-text-4 hover:text-rose-500 dark:hover:text-rose-400'
+          } hover:bg-black/5 dark:hover:bg-white/5`}
+        >
+          <Heart className={`w-3.5 h-3.5 ${myLiked ? 'fill-rose-500' : ''}`} />
+          {typeof likeCount === 'number' && likeCount > 0 && (
+            <span className="cn-mono">{likeCount}</span>
+          )}
+        </button>
+        <button
+          onClick={() => onCommentClick?.()}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold"
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          {typeof replyCount === 'number' && replyCount > 0 && (
+            <span className="cn-mono">{replyCount}</span>
+          )}
+        </button>
         <button
           onClick={onCopyLink}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold ${
-            copyLinkActive ? 'text-emerald-600 dark:text-emerald-400' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
+            copyLinkActive ? 'text-emerald-600 dark:text-emerald-400' : 'cn-text-4 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-black/5 dark:hover:bg-white/5'
           }`}
         >
-          {copyLinkActive ? '✓ Copied' : 'Share'}
+          {copyLinkActive ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+          <span>{copyLinkActive ? 'Copied' : 'Share'}</span>
         </button>
         <div className="flex-1" />
-        {isMod && (
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-text-4 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-xs font-semibold"
-          >
-            <Pencil className="w-3.5 h-3.5" /> Edit
-          </button>
-        )}
-        {isMod && (isClosed ? (
+        {canManage && (isClosed ? (
           <button
             onClick={onReopen}
             disabled={reopening}
@@ -222,6 +278,9 @@ export function PollFeedCard({ poll, isMod, voting, closing, reopening, onVote, 
             {closing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Close poll'}
           </button>
         ))}
+        <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+          <Bookmark className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );

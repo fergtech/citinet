@@ -296,7 +296,6 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
     setLoading(true);
     try {
       const post = await spacesService.createPost(hubSlug, spaceSlug, {
-        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined
       });
@@ -895,7 +894,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       <div className="mt-3 rounded-xl overflow-hidden">
                         {isVidMedia
                           ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
-                          : <img src={mediaUrl} alt={post.title} className="w-full max-h-64 object-cover rounded-xl" />}
+                          : <img src={mediaUrl} alt={post.title ?? ''} className="w-full max-h-64 object-cover rounded-xl" />}
                       </div>
                     )}
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t cn-border">

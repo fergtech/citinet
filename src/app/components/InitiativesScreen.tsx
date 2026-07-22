@@ -2,191 +2,32 @@ import { useState, useEffect, useCallback } from 'react';
 import { useHub } from '../context/HubContext';
 import {
   Plus, Users, CheckCircle2, Circle, Clock,
-  Lightbulb, X, MessageSquare, TrendingUp, UserPlus, Calendar,
-  ChevronLeft, CheckCheck, AlertCircle, Zap, Hammer, Share2, Check,
+  X, MessageSquare, TrendingUp, Package,
+  ChevronLeft, Hammer, Share2, Check, UserPlus, Loader2, Trash2,
+  Image as ImageIcon, Upload, Activity, FileText, Download, ExternalLink, Link as LinkIcon,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-
-// ── Types ─────────────────────────────────────────────────
-
-interface InitiativeTask {
-  id: string;
-  title: string;
-  status: 'todo' | 'in-progress' | 'done';
-  assignee?: string;
-  dueDate?: string;
-}
-
-interface InitiativeMember {
-  id: string;
-  name: string;
-  role: string;
-  contribution: string;
-  joinedAt: string;
-}
-
-interface InitiativeUpdate {
-  id: string;
-  author: string;
-  content: string;
-  timestamp: string;
-}
-
-interface Initiative {
-  id: string;
-  title: string;
-  category: string;
-  status: 'planning' | 'active' | 'completed';
-  goal: string;
-  description: string;
-  progress: number;
-  color: 'purple' | 'emerald' | 'blue' | 'amber';
-  imageUrl?: string | null;
-  createdBy: string;
-  createdAt: string;
-  tasks: InitiativeTask[];
-  members: InitiativeMember[];
-  updates: InitiativeUpdate[];
-}
-
-// ── Colour maps ────────────────────────────────────────────
-
-const COLOR = {
-  purple:  { gradient: 'from-purple-600 via-pink-600 to-rose-600',   icon: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400', badge: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300', bar: 'from-purple-500 to-pink-500' },
-  emerald: { gradient: 'from-emerald-600 via-teal-500 to-cyan-500',  icon: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300', bar: 'from-emerald-500 to-teal-500' },
-  blue:    { gradient: 'from-blue-600 via-indigo-600 to-violet-600', icon: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400', badge: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300', bar: 'from-blue-500 to-indigo-500' },
-  amber:   { gradient: 'from-amber-500 via-orange-500 to-red-500',   icon: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400', badge: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300', bar: 'from-amber-400 to-orange-500' },
-} as const;
-
-const STATUS_BADGE = {
-  active:    'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
-  planning:  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
-};
-const STATUS_LABEL = { active: 'In progress', planning: 'Planning', completed: 'Completed' };
-
-// ── Mock data (fallback / offline) ────────────────────────
-
-const SEED_INITIATIVES: Initiative[] = [
-  {
-    id: '1',
-    title: 'Community Garden Expansion',
-    category: 'Environment',
-    status: 'active',
-    color: 'emerald',
-    goal: 'Convert the vacant lot on Elm St. into a shared vegetable garden with 40 raised beds available to all residents.',
-    description: "We've secured the land lease and have 14 beds built so far. Next steps: irrigation install and bed assignments. Volunteers needed every weekend.",
-    progress: 62,
-    createdBy: 'Maria S.',
-    createdAt: '2025-11-10',
-    tasks: [
-      { id: 't1', title: 'Secure land lease agreement', status: 'done', assignee: 'Maria S.' },
-      { id: 't2', title: 'Build first 20 raised beds', status: 'done', assignee: 'Build Crew' },
-      { id: 't3', title: 'Install irrigation system', status: 'in-progress', assignee: 'David K.', dueDate: 'Jan 15' },
-      { id: 't4', title: 'Design bed assignment system', status: 'in-progress', assignee: 'Priya N.' },
-      { id: 't5', title: 'Source compost suppliers', status: 'todo' },
-      { id: 't6', title: 'Organise opening day event', status: 'todo', dueDate: 'Feb 1' },
-      { id: 't7', title: 'Apply for community grant', status: 'todo', assignee: 'Maria S.' },
-    ],
-    members: [
-      { id: 'm1', name: 'Maria S.',  role: 'Organiser',          contribution: 'Leading the project and coordinating volunteers', joinedAt: '2025-11-10' },
-      { id: 'm2', name: 'David K.',  role: 'Irrigation Lead',    contribution: 'Designing and installing the water system',        joinedAt: '2025-11-14' },
-      { id: 'm3', name: 'Priya N.',  role: 'Logistics',          contribution: 'Managing bed assignments and signups',             joinedAt: '2025-11-20' },
-      { id: 'm4', name: 'James T.',  role: 'Volunteer',          contribution: 'Weekend build days and soil prep',                 joinedAt: '2025-12-01' },
-      { id: 'm5', name: 'Lin C.',    role: 'Volunteer',          contribution: 'Plant sourcing and composting',                    joinedAt: '2025-12-03' },
-    ],
-    updates: [
-      { id: 'u1', author: 'David K.', content: "Irrigation pipes delivered — starting install this weekend. Looking for 2 more hands if anyone's free.", timestamp: '2026-01-03T14:30:00' },
-      { id: 'u2', author: 'Maria S.', content: 'Land lease signed and notarised! We officially have the lot for 3 years. Big thank you to everyone who helped push this through.', timestamp: '2025-12-15T09:00:00' },
-      { id: 'u3', author: 'Priya N.', content: 'Bed signup form is live — 28 of 40 spots already claimed in the first 24 hours!', timestamp: '2025-12-10T11:15:00' },
-    ],
-  },
-  {
-    id: '2',
-    title: 'Local Tool Library',
-    category: 'Shared Resources',
-    status: 'planning',
-    color: 'blue',
-    goal: 'Establish a lending library of tools and equipment so neighbours can borrow instead of buy.',
-    description: 'Inventory catalogue underway with 80+ tools donated so far. Looking for a space to host and a volunteer coordinator.',
-    progress: 28,
-    createdBy: 'James T.',
-    createdAt: '2025-12-01',
-    tasks: [
-      { id: 't1', title: 'Catalogue all donated tools', status: 'in-progress', assignee: 'James T.' },
-      { id: 't2', title: 'Find a hosting location',     status: 'todo' },
-      { id: 't3', title: 'Build borrowing platform',   status: 'todo' },
-      { id: 't4', title: 'Recruit volunteer coordinator', status: 'todo' },
-      { id: 't5', title: 'Draft borrowing policy',     status: 'todo' },
-    ],
-    members: [
-      { id: 'm1', name: 'James T.', role: 'Initiator',    contribution: 'Collecting and cataloguing donated tools', joinedAt: '2025-12-01' },
-      { id: 'm2', name: 'Sofia R.', role: 'Tech Support', contribution: 'Building the borrowing platform',          joinedAt: '2025-12-05' },
-    ],
-    updates: [
-      { id: 'u1', author: 'James T.', content: "We've collected 80+ tools from 12 households. Catalogue halfway done. Anyone know of a space we could use for storage?", timestamp: '2025-12-20T16:00:00' },
-    ],
-  },
-  {
-    id: '3',
-    title: 'Neighbourhood Safety Watch',
-    category: 'Safety',
-    status: 'active',
-    color: 'amber',
-    goal: 'Coordinate a resident-led neighbourhood watch across 7 zones to reduce crime and build community trust.',
-    description: 'Monthly patrols, an alert channel, and direct liaison with the local precinct. Currently active in 3 of 7 planned zones.',
-    progress: 44,
-    createdBy: 'Robert M.',
-    createdAt: '2025-10-05',
-    tasks: [
-      { id: 't1', title: 'Establish zone coordinators (3 of 7)', status: 'in-progress', assignee: 'Robert M.' },
-      { id: 't2', title: 'Set up alert communication channel',   status: 'done' },
-      { id: 't3', title: 'Meet with precinct liaison officer',   status: 'done', assignee: 'Robert M.' },
-      { id: 't4', title: 'Design patrol schedule template',      status: 'done' },
-      { id: 't5', title: 'Recruit zone 4 coordinator',           status: 'todo' },
-      { id: 't6', title: 'Recruit zones 5–7 coordinators',       status: 'todo' },
-      { id: 't7', title: 'Host community safety Q&A event',      status: 'todo', dueDate: 'Feb 10' },
-    ],
-    members: [
-      { id: 'm1', name: 'Robert M.',   role: 'Programme Lead',       contribution: 'Zone coordination and police liaison',       joinedAt: '2025-10-05' },
-      { id: 'm2', name: 'Deborah L.',  role: 'Zone 1 Coordinator',   contribution: 'Managing patrols in the Oak St. area',      joinedAt: '2025-10-12' },
-      { id: 'm3', name: 'Ahmed K.',    role: 'Zone 2 Coordinator',   contribution: 'Coverage for the Central Ave. block',       joinedAt: '2025-10-20' },
-    ],
-    updates: [
-      { id: 'u1', author: 'Robert M.', content: 'Zone 3 is now active — welcome Lin! That brings us to 3 zones covered. Next meeting Jan 12, Community Center.', timestamp: '2026-01-02T10:00:00' },
-    ],
-  },
-  {
-    id: '4',
-    title: 'Community Broadband Advocacy',
-    category: 'Infrastructure',
-    status: 'planning',
-    color: 'purple',
-    goal: 'Push for municipal fibre infrastructure to guarantee fast, affordable internet access as a public utility.',
-    description: 'Building a petition, attending city council meetings, and partnering with other neighbourhoods facing the same issues.',
-    progress: 15,
-    createdBy: 'Sam P.',
-    createdAt: '2025-12-20',
-    tasks: [
-      { id: 't1', title: 'Draft petition and talking points',        status: 'in-progress', assignee: 'Sam P.' },
-      { id: 't2', title: 'Connect with other neighbourhood groups',  status: 'todo' },
-      { id: 't3', title: 'Attend January city council meeting',      status: 'todo', dueDate: 'Jan 21' },
-      { id: 't4', title: 'Research municipal broadband case studies', status: 'todo' },
-    ],
-    members: [
-      { id: 'm1', name: 'Sam P.', role: 'Advocate', contribution: 'Drafting petition and leading advocacy effort', joinedAt: '2025-12-20' },
-    ],
-    updates: [
-      { id: 'u1', author: 'Sam P.', content: "Starting this initiative after seeing internet costs rise 40% this year. If this resonates with you, please join — we need voices.", timestamp: '2025-12-20T18:00:00' },
-    ],
-  },
-];
+import { motion } from 'motion/react';
+import { hubService } from '../services/hubService';
+import { spacesService } from '../services/spacesService';
+import {
+  initiativesService,
+  type Initiative, type InitiativeTask, type InitiativeResource, type InitiativeRole,
+  type InitiativeUpdate, type InitiativeActivityEntry, type TaskMeta, type ChecklistItem, type TaskNote,
+} from '../services/initiativesService';
+import type { HubSpace, HubMember, HubFile } from '../types/hub';
+import {
+  InitiativeCard, COLOR, STATUS_BADGE, STATUS_LABEL, CATEGORY_OPTIONS, categoryMeta,
+  AvatarStack, ProgressBar, SpaceChip, avatarColor, initials,
+  TASK_STATUS_META, effectiveTaskStatus, type TaskDisplayStatus,
+} from './InitiativeCard';
+import { InitiativeBannerUpload } from './InitiativeBannerUpload';
 
 // ── Helpers ────────────────────────────────────────────────
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60_000);
+  if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
@@ -195,60 +36,20 @@ function timeAgo(iso: string) {
   return `${Math.floor(d / 30)}mo ago`;
 }
 
-function initials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+function formatBytes(bytes?: number | null) {
+  if (!bytes || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0, n = bytes;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-const AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500',  'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',     'from-violet-500 to-purple-500',
-];
-function avatarColor(name: string) {
-  let h = 0;
-  for (const c of name) h = name.charCodeAt(name.indexOf(c)) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+function taskCount(tasks: InitiativeTask[]) {
+  const done = tasks.filter(t => t.status === 'done').length;
+  return { done, total: tasks.length || 0 };
 }
 
-function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
-  const shown = names.slice(0, max);
-  const extra = names.length - shown.length;
-  return (
-    <div className="flex items-center">
-      {shown.map((n, i) => (
-        <span key={n + i} className={`${i === 0 ? '' : '-ml-2'} rounded-full ring-2 ring-white dark:ring-zinc-950`}>
-          <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(n)} flex items-center justify-center text-white text-[9.5px] font-bold`}>
-            {initials(n)}
-          </span>
-        </span>
-      ))}
-      {extra > 0 && (
-        <span className="-ml-2 w-6 h-6 rounded-full cn-surface-3 ring-2 ring-white dark:ring-zinc-950 flex items-center justify-center text-[9.5px] font-bold cn-text-2">
-          +{extra}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function ProgressBar({ done, total, pct, tone }: { done: number; total: number; pct: number; tone: 'ok' | 'brand' }) {
-  return (
-    <div>
-      <div className="h-1.5 rounded-full cn-surface-3 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${tone === 'ok' ? 'bg-emerald-500' : 'bg-gradient-to-r from-rose-500 to-pink-600'}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <div className="flex justify-between mt-1.5">
-        <span className="cn-mono text-[11px] cn-text-3">{done}/{total} tasks done</span>
-        <span className="cn-mono text-[11px] cn-text-4">{pct}%</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Overlay (shared shell for New / Share modals) ───────────
+// ── Overlay (shared shell) ───────────────────────────────────
 
 function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -272,13 +73,32 @@ function Overlay({ title, onClose, children }: { title: string; onClose: () => v
 const fieldLabelClass = 'text-[11.5px] font-semibold cn-text-3 block mb-1.5';
 const fieldClass = 'w-full px-3 py-2.5 rounded-lg border cn-border cn-surface-2 text-[13.5px] cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/40';
 
-function NewInitiativeModal({ onClose, onSubmit }: {
+// ── Modals ─────────────────────────────────────────────────
+
+function NewInitiativeModal({ onClose, onSubmit, mySpaces }: {
   onClose: () => void;
-  onSubmit: (title: string, goal: string, color: Initiative['color']) => void;
+  onSubmit: (data: { title: string; goal: string; category: string; color: Initiative['color']; space_id: string | null; bannerFile: File | null }) => void;
+  mySpaces: HubSpace[];
 }) {
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
+  const [category, setCategory] = useState(CATEGORY_OPTIONS[0]?.value ?? '');
   const [color, setColor] = useState<Initiative['color']>('purple');
+  const [spaceId, setSpaceId] = useState('');
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+
+  const pickBanner = (file: File) => {
+    if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+    setBannerFile(file);
+    setBannerPreview(URL.createObjectURL(file));
+  };
+  const clearBanner = () => {
+    if (bannerPreview) URL.revokeObjectURL(bannerPreview);
+    setBannerFile(null);
+    setBannerPreview(null);
+  };
+
   return (
     <Overlay title="Start a project" onClose={onClose}>
       <div>
@@ -286,9 +106,41 @@ function NewInitiativeModal({ onClose, onSubmit }: {
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Repaint the community mural" className={fieldClass} />
       </div>
       <div>
+        <label className={fieldLabelClass}>Cover image (optional)</label>
+        {bannerPreview ? (
+          <div className="relative rounded-xl overflow-hidden bg-black">
+            <img src={bannerPreview} alt="" className="w-full max-h-32 object-cover" />
+            <button type="button" onClick={clearBanner} className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/60 hover:bg-black/80 flex items-center justify-center transition-colors">
+              <X className="w-3.5 h-3.5 text-white" />
+            </button>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
+            <ImageIcon className="w-4 h-4" /><Upload className="w-4 h-4" />
+            <span>Add a cover image</span>
+            <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) pickBanner(e.target.files[0]); }} />
+          </label>
+        )}
+      </div>
+      <div>
+        <label className={fieldLabelClass}>Category</label>
+        <select value={category} onChange={e => setCategory(e.target.value)} className={fieldClass}>
+          {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
+      <div>
         <label className={fieldLabelClass}>What is this project about?</label>
         <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={3} placeholder="Describe the goal…" className={`${fieldClass} resize-none`} />
       </div>
+      {mySpaces.length > 0 && (
+        <div>
+          <label className={fieldLabelClass}>Belongs to a space?</label>
+          <select value={spaceId} onChange={e => setSpaceId(e.target.value)} className={fieldClass}>
+            <option value="">Not tied to a space — open to the whole hub</option>
+            {mySpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+      )}
       <div>
         <label className={fieldLabelClass}>Color</label>
         <div className="flex gap-2">
@@ -304,7 +156,7 @@ function NewInitiativeModal({ onClose, onSubmit }: {
         </div>
       </div>
       <button
-        onClick={() => { if (title.trim()) { onSubmit(title.trim(), goal.trim(), color); onClose(); } }}
+        onClick={() => { if (title.trim()) { onSubmit({ title: title.trim(), goal: goal.trim(), category, color, space_id: spaceId || null, bannerFile }); onClose(); } }}
         disabled={!title.trim()}
         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
@@ -314,9 +166,11 @@ function NewInitiativeModal({ onClose, onSubmit }: {
   );
 }
 
-function ShareModal({ item, onClose }: { item: Initiative; onClose: () => void }) {
+function ShareModal({ item, hubSlug, onClose }: { item: Initiative; hubSlug: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
-  const link = window.location.href;
+  const link = initiativesService.getShareLink(hubSlug, item.id);
+  const cat = categoryMeta(item.category);
+  const CatIcon = cat.icon;
   const c = COLOR[item.color];
   const handleCopy = async () => {
     try {
@@ -329,7 +183,7 @@ function ShareModal({ item, onClose }: { item: Initiative; onClose: () => void }
     <Overlay title="Share this project" onClose={onClose}>
       <div className="rounded-xl cn-surface-2 border cn-border p-3 flex items-center gap-2.5">
         <span className={`w-8 h-8 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0`}>
-          <Lightbulb className="w-4 h-4 text-white" />
+          <CatIcon className="w-4 h-4 text-white" />
         </span>
         <span className="text-[13px] font-semibold cn-text-1 truncate">{item.title}</span>
       </div>
@@ -349,6 +203,1243 @@ function ShareModal({ item, onClose }: { item: Initiative; onClose: () => void }
   );
 }
 
+function AddTaskModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (title: string) => void }) {
+  const [title, setTitle] = useState('');
+  return (
+    <Overlay title="Add a task" onClose={onClose}>
+      <div>
+        <label className={fieldLabelClass}>Task</label>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Pick up lumber from hardware store" className={fieldClass} autoFocus />
+      </div>
+      <button
+        onClick={() => { if (title.trim()) { onSubmit(title.trim()); onClose(); } }}
+        disabled={!title.trim()}
+        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+      >
+        Add task
+      </button>
+    </Overlay>
+  );
+}
+
+function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, onSubmitFile, onSubmitExistingFile }: {
+  hubSlug: string;
+  onClose: () => void;
+  onSubmitMaterial: (item: string, qty: string) => void;
+  onSubmitLink: (item: string, url: string) => void;
+  onSubmitFile: (file: File) => void;
+  onSubmitExistingFile: (fileId: string) => void;
+}) {
+  const [tab, setTab] = useState<'material' | 'file' | 'link'>('material');
+  const [fileMode, setFileMode] = useState<'upload' | 'existing'>('upload');
+  const [item, setItem] = useState('');
+  const [qty, setQty] = useState('');
+  const [linkTitle, setLinkTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [existingFiles, setExistingFiles] = useState<HubFile[] | null>(null);
+  const [fileSearch, setFileSearch] = useState('');
+  const [selectedFileId, setSelectedFileId] = useState('');
+
+  useEffect(() => {
+    if (tab === 'file' && fileMode === 'existing' && existingFiles === null) {
+      hubService.listFiles(hubSlug).then(setExistingFiles).catch(() => setExistingFiles([]));
+    }
+  }, [tab, fileMode, existingFiles, hubSlug]);
+
+  const filteredFiles = (existingFiles ?? []).filter(f => f.name.toLowerCase().includes(fileSearch.toLowerCase()));
+
+  return (
+    <Overlay title="Add a resource" onClose={onClose}>
+      <div className="flex gap-1 p-1 rounded-xl cn-surface-2">
+        {([['material', 'Material'], ['file', 'File'], ['link', 'Link']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-purple-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'material' && (
+        <>
+          <div>
+            <label className={fieldLabelClass}>Item</label>
+            <input value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. Cedar for 6 raised beds" className={fieldClass} autoFocus />
+          </div>
+          <div>
+            <label className={fieldLabelClass}>Quantity (optional)</label>
+            <input value={qty} onChange={e => setQty(e.target.value)} placeholder="e.g. 2x6x8, ~40 boards" className={fieldClass} />
+          </div>
+          <button
+            onClick={() => { if (item.trim()) { onSubmitMaterial(item.trim(), qty.trim()); onClose(); } }}
+            disabled={!item.trim()}
+            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+          >
+            Add resource
+          </button>
+        </>
+      )}
+
+      {tab === 'link' && (
+        <>
+          <div>
+            <label className={fieldLabelClass}>Title (optional)</label>
+            <input value={linkTitle} onChange={e => setLinkTitle(e.target.value)} placeholder="e.g. Shared budget spreadsheet" className={fieldClass} autoFocus />
+          </div>
+          <div>
+            <label className={fieldLabelClass}>URL</label>
+            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." className={fieldClass} />
+          </div>
+          <p className="text-[11.5px] cn-text-4">For an external website or reference — for anything you have as a file, upload or attach it instead.</p>
+          <button
+            onClick={() => { if (url.trim()) { onSubmitLink(linkTitle.trim(), url.trim()); onClose(); } }}
+            disabled={!url.trim()}
+            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+          >
+            Add link
+          </button>
+        </>
+      )}
+
+      {tab === 'file' && (
+        <>
+          <div className="flex gap-1 p-1 rounded-xl cn-surface-2">
+            {([['upload', 'Upload new'], ['existing', 'From hub files']] as const).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setFileMode(id)}
+                className={`flex-1 py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors ${fileMode === id ? 'bg-purple-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {fileMode === 'upload' ? (
+            <>
+              <div>
+                <label className={fieldLabelClass}>File</label>
+                <input
+                  type="file"
+                  onChange={e => setFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-[13px] cn-text-2 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-purple-600 file:text-white file:text-xs file:font-semibold file:cursor-pointer hover:file:bg-purple-700 cn-surface-2 rounded-lg cursor-pointer"
+                />
+              </div>
+              <p className="text-[11.5px] cn-text-4">Shared with the whole hub, same as the Files screen — not private.</p>
+              <button
+                onClick={() => { if (file) { onSubmitFile(file); onClose(); } }}
+                disabled={!file}
+                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+              >
+                Upload file
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                value={fileSearch}
+                onChange={e => setFileSearch(e.target.value)}
+                placeholder="Search your files..."
+                className={fieldClass}
+                autoFocus
+              />
+              <div className="max-h-52 overflow-y-auto space-y-1 rounded-lg cn-surface-2 p-1.5">
+                {existingFiles === null ? (
+                  <div className="flex items-center justify-center py-6"><Loader2 className="w-4 h-4 animate-spin cn-text-4" /></div>
+                ) : filteredFiles.length === 0 ? (
+                  <p className="text-[12.5px] cn-text-4 text-center py-4">No files found.</p>
+                ) : (
+                  filteredFiles.map(f => (
+                    <button
+                      key={f.id}
+                      onClick={() => setSelectedFileId(f.id)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${selectedFileId === f.id ? 'bg-purple-100 dark:bg-purple-900/30' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+                    >
+                      <FileText className="w-3.5 h-3.5 shrink-0 cn-text-4" />
+                      <span className="flex-1 min-w-0 text-[13px] cn-text-1 truncate">{f.name}</span>
+                      {!f.is_public && <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-4">Private — will be shared</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+              <button
+                onClick={() => { if (selectedFileId) { onSubmitExistingFile(selectedFileId); onClose(); } }}
+                disabled={!selectedFileId}
+                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+              >
+                Attach file
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </Overlay>
+  );
+}
+
+function AddRoleModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (role: string, skill: string) => void }) {
+  const [role, setRole] = useState('');
+  const [skill, setSkill] = useState('');
+  return (
+    <Overlay title="Add an open role" onClose={onClose}>
+      <div>
+        <label className={fieldLabelClass}>Role</label>
+        <input value={role} onChange={e => setRole(e.target.value)} placeholder="e.g. Weekend paint crew" className={fieldClass} autoFocus />
+      </div>
+      <div>
+        <label className={fieldLabelClass}>Skill needed</label>
+        <input value={skill} onChange={e => setSkill(e.target.value)} placeholder="e.g. General labor" className={fieldClass} />
+      </div>
+      <button
+        onClick={() => { if (role.trim()) { onSubmit(role.trim(), skill.trim()); onClose(); } }}
+        disabled={!role.trim()}
+        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+      >
+        Add role
+      </button>
+    </Overlay>
+  );
+}
+
+function InviteModal({ hubSlug, initiativeId, shareLink, onClose }: { hubSlug: string; initiativeId: string; shareLink: string; onClose: () => void }) {
+  const [members, setMembers] = useState<HubMember[]>([]);
+  const [invited, setInvited] = useState<Set<string>>(new Set());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => { hubService.listMembers(hubSlug).then(setMembers).catch(() => {}); }, [hubSlug]);
+
+  const invite = async (userId: string) => {
+    try {
+      await initiativesService.invite(hubSlug, initiativeId, userId);
+      setInvited(prev => new Set([...prev, userId]));
+    } catch { /* non-critical */ }
+  };
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(shareLink); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+  };
+
+  return (
+    <Overlay title="Invite people" onClose={onClose}>
+      <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+        {members.map(m => (
+          <div key={m.user_id} className="flex items-center gap-2.5">
+            <span className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatarColor(m.username)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+              {initials(m.display_name || m.username)}
+            </span>
+            <span className="flex-1 min-w-0 text-[13px] cn-text-1 truncate">{m.display_name || m.username}</span>
+            <button
+              onClick={() => invite(m.user_id)}
+              disabled={invited.has(m.user_id)}
+              className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${invited.has(m.user_id) ? 'cn-surface-2 cn-text-4' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+            >
+              {invited.has(m.user_id) ? 'Invited' : 'Invite'}
+            </button>
+          </div>
+        ))}
+      </div>
+      <div>
+        <label className={fieldLabelClass}>Or share an invite link</label>
+        <div className="flex gap-2">
+          <input readOnly value={shareLink} className={`${fieldClass} cn-text-3 truncate`} />
+          <button onClick={copyLink} className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
+            {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+// ── Detail tab panes ─────────────────────────────────────────
+
+const ACTIVITY_ICON: Record<InitiativeActivityEntry['kind'], React.ElementType> = {
+  task: CheckCircle2, resource: Package, team: Users, update: MessageSquare, member: UserPlus,
+};
+
+function ActivityStream({ hubSlug, initiativeId }: { hubSlug: string; initiativeId: string }) {
+  const [entries, setEntries] = useState<InitiativeActivityEntry[] | null>(null);
+  useEffect(() => {
+    initiativesService.getActivity(hubSlug, initiativeId, 5).then(setEntries).catch(() => setEntries([]));
+  }, [hubSlug, initiativeId]);
+  return (
+    <div>
+      <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2.5">Recent activity</h3>
+      {entries === null ? (
+        <div className="flex items-center justify-center py-6 cn-text-4"><Loader2 className="w-4 h-4 animate-spin" /></div>
+      ) : entries.length === 0 ? (
+        <p className="text-xs cn-text-4">No activity yet on this project.</p>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {entries.map((a, i) => {
+            const Icon = ACTIVITY_ICON[a.kind] ?? CheckCircle2;
+            return (
+              <div key={a.id} className={`flex items-center gap-2.5 py-2.5 ${i ? 'border-t cn-border' : ''}`}>
+                <span className="w-7 h-7 rounded-lg cn-surface-2 flex items-center justify-center shrink-0">
+                  <Icon className="w-3.5 h-3.5 cn-text-3" />
+                </span>
+                <div className="flex-1 min-w-0 text-[13px] cn-text-2">
+                  <b className="cn-text-1 font-semibold">{a.actor_name}</b> {a.text}
+                </div>
+                <span className="cn-mono text-[11px] cn-text-4 shrink-0">{timeAgo(a.created_at)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OverviewPane({ initiative, hubSlug, onSeeUpdates }: { initiative: Initiative; hubSlug: string; onSeeUpdates: () => void }) {
+  return (
+    <div className="space-y-3.5">
+      <div className="cn-glass rounded-2xl p-4">
+        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2">Goal</h3>
+        <p className="text-sm cn-text-1 leading-relaxed font-medium">{initiative.goal}</p>
+        {initiative.description && <p className="text-sm cn-text-3 leading-relaxed mt-2">{initiative.description}</p>}
+      </div>
+      <div className="cn-glass rounded-2xl p-4">
+        <ActivityStream hubSlug={hubSlug} initiativeId={initiative.id} />
+      </div>
+      {initiative.updates[0] && (
+        <div
+          className="cn-glass rounded-2xl p-4 cursor-pointer hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+          onClick={onSeeUpdates}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Latest update</h3>
+            <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">See all →</span>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(initiative.updates[0].author_name)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
+              {initials(initiative.updates[0].author_name)}
+            </div>
+            <div>
+              <p className="text-xs font-semibold cn-text-2">{initiative.updates[0].author_name} · <span className="font-normal cn-text-4">{timeAgo(initiative.updates[0].created_at)}</span></p>
+              <p className="text-sm cn-text-3 mt-0.5 line-clamp-2">{initiative.updates[0].content}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiative: Initiative; hubSlug: string; onChanged: () => void; currentUserId?: string }) {
+  const [tasks, setTasks] = useState(initiative.tasks);
+  const [taskMeta, setTaskMeta] = useState<Record<string, TaskMeta>>({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [trackingTaskId, setTrackingTaskId] = useState<string | null>(null);
+  const { currentUser } = useHub();
+
+  const loadTaskMeta = useCallback(() => {
+    initiativesService.getTaskMeta(hubSlug, initiative.id).then(setTaskMeta).catch(() => {});
+  }, [hubSlug, initiative.id]);
+  useEffect(() => { setTasks(initiative.tasks); }, [initiative.tasks]);
+  useEffect(() => { loadTaskMeta(); }, [loadTaskMeta]);
+
+  const cycleTask = async (task: InitiativeTask) => {
+    const next: InitiativeTask['status'] = task.status === 'todo' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'todo';
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: next } : t));
+    try {
+      await initiativesService.updateTaskStatus(hubSlug, task.id, next, initiative.id, task.title);
+      if (next === 'done') onChanged();
+    } catch { /* optimistic update stays regardless */ }
+  };
+
+  const assignToMe = async (task: InitiativeTask) => {
+    setBusyId(task.id);
+    try {
+      await initiativesService.assignTask(hubSlug, task.id, initiative.id, true);
+      setTaskMeta(prev => ({
+        ...prev,
+        [task.id]: {
+          task_id: task.id, initiative_id: initiative.id,
+          assignee_user_id: currentUser?.hubUserId ?? null,
+          assignee_name: currentUser?.displayName ?? currentUser?.username ?? 'You',
+          due_date: prev[task.id]?.due_date ?? null,
+          blocked: prev[task.id]?.blocked ?? false,
+          checklist_total: prev[task.id]?.checklist_total ?? 0,
+          checklist_done: prev[task.id]?.checklist_done ?? 0,
+        },
+      }));
+    } finally { setBusyId(null); }
+  };
+
+  const unassignMe = async (task: InitiativeTask) => {
+    setBusyId(task.id);
+    try {
+      await initiativesService.unassignTask(hubSlug, task.id, initiative.id);
+      setTaskMeta(prev => ({ ...prev, [task.id]: { ...prev[task.id], assignee_user_id: null, assignee_name: null } }));
+    } finally { setBusyId(null); }
+  };
+
+  const addTask = async (title: string) => {
+    const tempId = `local-${Date.now()}`;
+    setTasks(prev => [...prev, { id: tempId, title, status: 'todo', created_by: currentUserId }]);
+    try {
+      const created = await initiativesService.addTask(hubSlug, initiative.id, { title });
+      setTasks(prev => prev.map(t => t.id === tempId ? { ...created, status: created.status ?? 'todo' } : t));
+    } catch {
+      setTasks(prev => prev.filter(t => t.id !== tempId));
+    }
+  };
+
+  const removeTask = async (task: InitiativeTask) => {
+    setDeletingId(task.id);
+    try {
+      await initiativesService.deleteTask(hubSlug, task.id);
+      setTasks(prev => prev.filter(t => t.id !== task.id));
+    } catch { /* non-critical — row stays if the delete failed */ }
+    finally { setDeletingId(null); }
+  };
+
+  const trackingTask = trackingTaskId ? tasks.find(t => t.id === trackingTaskId) ?? null : null;
+  if (trackingTask) {
+    return (
+      <TaskTrackerView
+        initiative={initiative}
+        task={trackingTask}
+        meta={taskMeta[trackingTask.id]}
+        hubSlug={hubSlug}
+        currentUserId={currentUserId}
+        onBack={() => { setTrackingTaskId(null); loadTaskMeta(); onChanged(); }}
+        onMetaChanged={loadTaskMeta}
+      />
+    );
+  }
+
+  const groups = {
+    'in-progress': tasks.filter(t => t.status === 'in-progress'),
+    'todo': tasks.filter(t => t.status === 'todo'),
+    'done': tasks.filter(t => t.status === 'done'),
+  };
+  const tc = taskCount(tasks);
+
+  return (
+    <div className="space-y-5">
+      <ProgressBar {...tc} pct={tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0} tone={initiative.status === 'completed' ? 'ok' : 'brand'} />
+      {(['in-progress', 'todo', 'done'] as const).map(status => {
+        const group = groups[status];
+        if (group.length === 0) return null;
+        const labels = { 'in-progress': 'In Progress', todo: 'To Do', done: 'Done' };
+        return (
+          <div key={status}>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">{labels[status]}</h3>
+              <span className="text-xs px-1.5 py-0.5 rounded-full cn-surface-2 cn-text-3">{group.length}</span>
+            </div>
+            <div className="space-y-2">
+              {group.map(task => {
+                const meta = taskMeta[task.id];
+                const ownsTask = task.created_by === currentUserId || meta?.assignee_user_id === currentUserId;
+                const hasChecklist = (meta?.checklist_total ?? 0) > 0;
+                const canCycle = ownsTask && !hasChecklist;
+                const disp = effectiveTaskStatus(task, meta);
+                const isSelfAssigned = !!meta?.assignee_user_id && meta.assignee_user_id === currentUserId;
+                return (
+                  <div key={task.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+                    <button
+                      onClick={() => canCycle && cycleTask(task)}
+                      disabled={!canCycle}
+                      title={hasChecklist ? 'This task has a checklist — status follows checklist completion' : (ownsTask ? undefined : 'Only the task creator or assignee can update its status')}
+                      className="shrink-0 w-5 h-5 flex items-center justify-center transition-transform enabled:hover:scale-110 disabled:cursor-default disabled:opacity-60"
+                      aria-label="Toggle task status"
+                    >
+                      {task.status === 'done' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                      {task.status === 'in-progress' && <Clock className="w-5 h-5 text-amber-500" />}
+                      {task.status === 'todo' && <Circle className="w-5 h-5 cn-text-4" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${task.status === 'done' ? 'line-through cn-text-4' : 'cn-text-1'}`}>{task.title}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TASK_STATUS_META[disp].badge}`}>{TASK_STATUS_META[disp].label}</span>
+                        {hasChecklist && <span className="text-[11px] cn-text-4">{meta!.checklist_done}/{meta!.checklist_total} steps</span>}
+                      </div>
+                    </div>
+                    {meta?.assignee_name ? (
+                      <div className="shrink-0 flex items-center gap-1">
+                        <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(meta.assignee_name)} flex items-center justify-center text-white text-[9.5px] font-bold`} title={meta.assignee_name}>
+                          {initials(meta.assignee_name)}
+                        </span>
+                        {isSelfAssigned && (
+                          <button
+                            onClick={() => unassignMe(task)}
+                            disabled={busyId === task.id}
+                            title="Not for me — unassign"
+                            aria-label="Unassign yourself"
+                            className="w-5 h-5 rounded-full flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                          >
+                            {busyId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => assignToMe(task)}
+                        disabled={busyId === task.id}
+                        className="shrink-0 px-2.5 py-1 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+                      >
+                        {busyId === task.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Assign to me'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setTrackingTaskId(task.id)}
+                      title="Track progress"
+                      aria-label="Track progress"
+                      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                    </button>
+                    {task.created_by === currentUserId && (
+                      <button
+                        onClick={() => removeTask(task)}
+                        disabled={deletingId === task.id}
+                        title="Remove task"
+                        aria-label="Remove task"
+                        className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                      >
+                        {deletingId === task.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {initiative.viewerIsCreator && (
+        <button
+          onClick={() => setShowAdd(true)}
+          className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Add task
+        </button>
+      )}
+      {showAdd && <AddTaskModal onClose={() => setShowAdd(false)} onSubmit={addTask} />}
+    </div>
+  );
+}
+
+// ── Task tracker — inline detail view (Atlas pin-detail pattern: back button,
+// not a modal) for a single task's status, checklist, and progress notes. ──
+function TaskTrackerView({
+  initiative, task, meta, hubSlug, currentUserId, onBack, onMetaChanged,
+}: {
+  initiative: Initiative;
+  task: InitiativeTask;
+  meta?: TaskMeta;
+  hubSlug: string;
+  currentUserId?: string;
+  onBack: () => void;
+  onMetaChanged: () => void;
+}) {
+  const [checklist, setChecklist] = useState<ChecklistItem[] | null>(null);
+  const [newItem, setNewItem] = useState('');
+  const [addingItem, setAddingItem] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [notes, setNotes] = useState<TaskNote[] | null>(null);
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [openReplyFor, setOpenReplyFor] = useState<string | null>(null);
+  const [busyBlocked, setBusyBlocked] = useState(false);
+
+  const ownsTask = task.created_by === currentUserId || meta?.assignee_user_id === currentUserId;
+
+  const loadChecklist = useCallback(() => {
+    initiativesService.getChecklist(hubSlug, task.id).then(setChecklist).catch(() => setChecklist([]));
+  }, [hubSlug, task.id]);
+  const loadNotes = useCallback(() => {
+    initiativesService.getTaskNotes(hubSlug, task.id).then(setNotes).catch(() => setNotes([]));
+  }, [hubSlug, task.id]);
+  useEffect(() => { loadChecklist(); }, [loadChecklist]);
+  useEffect(() => { loadNotes(); }, [loadNotes]);
+
+  const addItem = async () => {
+    if (!newItem.trim()) return;
+    setAddingItem(true);
+    try {
+      await initiativesService.addChecklistItem(hubSlug, task.id, initiative.id, newItem.trim());
+      setNewItem('');
+      loadChecklist();
+      onMetaChanged();
+    } finally { setAddingItem(false); }
+  };
+
+  const toggleItem = async (item: ChecklistItem) => {
+    setChecklist(prev => prev?.map(i => i.id === item.id ? { ...i, done: !i.done } : i) ?? null);
+    try {
+      await initiativesService.updateChecklistItem(hubSlug, item.id, { done: !item.done });
+      onMetaChanged();
+    } catch { loadChecklist(); }
+  };
+
+  const saveItemText = async (item: ChecklistItem) => {
+    const text = editingText.trim();
+    setEditingItemId(null);
+    if (!text || text === item.text) return;
+    setChecklist(prev => prev?.map(i => i.id === item.id ? { ...i, text } : i) ?? null);
+    try { await initiativesService.updateChecklistItem(hubSlug, item.id, { text }); } catch { loadChecklist(); }
+  };
+
+  const removeItem = async (item: ChecklistItem) => {
+    setChecklist(prev => prev?.filter(i => i.id !== item.id) ?? null);
+    try { await initiativesService.deleteChecklistItem(hubSlug, item.id); onMetaChanged(); } catch { loadChecklist(); }
+  };
+
+  const toggleBlocked = async () => {
+    setBusyBlocked(true);
+    try { await initiativesService.setTaskBlocked(hubSlug, task.id, initiative.id, !meta?.blocked); onMetaChanged(); }
+    finally { setBusyBlocked(false); }
+  };
+
+  const postNote = async () => {
+    if (!draft.trim()) return;
+    setPosting(true);
+    try { await initiativesService.postTaskNote(hubSlug, task.id, initiative.id, draft.trim()); setDraft(''); loadNotes(); }
+    finally { setPosting(false); }
+  };
+  const removeNote = async (id: string) => { try { await initiativesService.deleteTaskNote(hubSlug, id); loadNotes(); } catch { /* non-critical */ } };
+  const postReply = async (noteId: string) => {
+    const text = replyDrafts[noteId]?.trim();
+    if (!text) return;
+    await initiativesService.replyToNote(hubSlug, noteId, text);
+    setReplyDrafts(prev => ({ ...prev, [noteId]: '' }));
+    setOpenReplyFor(null);
+    loadNotes();
+  };
+  const removeReply = async (id: string) => { try { await initiativesService.deleteNoteReply(hubSlug, id); loadNotes(); } catch { /* non-critical */ } };
+
+  const total = checklist?.length ?? 0;
+  const done = checklist?.filter(i => i.done).length ?? 0;
+  const hasChecklist = total > 0;
+  const disp: TaskDisplayStatus = meta?.blocked
+    ? 'blocked'
+    : !hasChecklist
+      ? (task.status === 'done' ? 'done' : task.status === 'in-progress' ? 'in-progress' : 'not-started')
+      : done === total ? 'done' : done === 0 ? 'not-started' : 'in-progress';
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors">
+          <ChevronLeft className="w-3.5 h-3.5" />All tasks
+        </button>
+        <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 mt-3">{initiative.title}</p>
+        <h2 className="text-lg font-bold cn-text-1">{task.title}</h2>
+      </div>
+
+      <div className="cn-glass rounded-2xl p-4">
+        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-3">Status</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {(['not-started', 'in-progress', 'blocked', 'done'] as const).map(s => {
+            const m = TASK_STATUS_META[s];
+            const active = disp === s;
+            const clickable = s === 'blocked' && ownsTask;
+            return (
+              <button
+                key={s}
+                disabled={!clickable || busyBlocked}
+                onClick={() => clickable && toggleBlocked()}
+                title={s === 'blocked' ? (ownsTask ? undefined : 'Only the task creator or assignee can do this') : 'Determined automatically'}
+                className={`px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition-colors disabled:cursor-default ${active ? m.badge : 'cn-surface-2 cn-text-4'} ${clickable ? 'hover:opacity-80' : ''}`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+        {hasChecklist && !meta?.blocked && (
+          <p className="text-[11px] cn-text-4 mt-3">Status updates automatically as checklist steps are completed.</p>
+        )}
+      </div>
+
+      <div className="cn-glass rounded-2xl p-4">
+        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-3">Checklist ({done}/{total})</h3>
+        {checklist === null ? (
+          <div className="flex items-center justify-center py-4 cn-text-4"><Loader2 className="w-4 h-4 animate-spin" /></div>
+        ) : (
+          <div className="space-y-1.5">
+            {checklist.map(item => (
+              <div key={item.id} className="flex items-center gap-2 group">
+                <button
+                  onClick={() => ownsTask && toggleItem(item)}
+                  disabled={!ownsTask}
+                  aria-label="Toggle checklist item"
+                  className={`shrink-0 w-5 h-5 rounded-md flex items-center justify-center border transition-colors disabled:cursor-default ${item.done ? 'bg-emerald-500 border-emerald-500' : 'cn-border'}`}
+                >
+                  {item.done && <Check className="w-3.5 h-3.5 text-white" />}
+                </button>
+                {editingItemId === item.id ? (
+                  <input
+                    autoFocus
+                    value={editingText}
+                    onChange={e => setEditingText(e.target.value)}
+                    onBlur={() => saveItemText(item)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveItemText(item); if (e.key === 'Escape') setEditingItemId(null); }}
+                    className="flex-1 min-w-0 px-2 py-1 rounded-lg cn-surface-2 text-sm cn-text-1 outline-none"
+                  />
+                ) : (
+                  <span
+                    onClick={() => { if (ownsTask) { setEditingItemId(item.id); setEditingText(item.text); } }}
+                    className={`flex-1 min-w-0 text-sm ${item.done ? 'line-through cn-text-4' : 'cn-text-2'} ${ownsTask ? 'cursor-text' : ''}`}
+                  >
+                    {item.text}
+                  </span>
+                )}
+                {ownsTask && (
+                  <button
+                    onClick={() => removeItem(item)}
+                    aria-label="Remove checklist item"
+                    className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center cn-text-4 opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-opacity"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {checklist.length === 0 && <p className="text-[12.5px] cn-text-4">No checklist steps yet.</p>}
+          </div>
+        )}
+        {ownsTask && (
+          <div className="flex items-center gap-2 mt-3">
+            <input
+              value={newItem}
+              onChange={e => setNewItem(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
+              placeholder="Add a checklist step..."
+              className="flex-1 min-w-0 px-3 py-2 rounded-lg cn-surface-2 text-sm cn-text-1 placeholder:cn-text-4 outline-none"
+            />
+            <button
+              onClick={addItem}
+              disabled={addingItem || !newItem.trim()}
+              className="shrink-0 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+            >
+              {addingItem ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Add'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="cn-glass rounded-2xl p-4">
+        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-3">Progress notes</h3>
+        <textarea
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          placeholder="What's the latest?"
+          rows={2}
+          className="w-full px-3 py-2 rounded-lg cn-surface-2 text-sm cn-text-1 placeholder:cn-text-4 outline-none resize-none"
+        />
+        <button
+          onClick={postNote}
+          disabled={posting || !draft.trim()}
+          className="mt-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+        >
+          {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Post note'}
+        </button>
+
+        {notes === null ? (
+          <div className="flex items-center justify-center py-4 cn-text-4"><Loader2 className="w-4 h-4 animate-spin" /></div>
+        ) : notes.length === 0 ? (
+          <p className="text-[12.5px] cn-text-4 mt-4">No progress notes yet.</p>
+        ) : (
+          <div className="space-y-3 mt-4">
+            {notes.map((note, idx) => (
+              <div key={note.id} className={idx > 0 ? 'pt-3 border-t cn-border' : ''}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold cn-text-1">{note.author_name} <span className="font-normal cn-text-4">{timeAgo(note.created_at)}</span></p>
+                    <p className="text-sm cn-text-2 mt-0.5">{note.content}</p>
+                    <button onClick={() => setOpenReplyFor(openReplyFor === note.id ? null : note.id)} className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline mt-1">
+                      Reply
+                    </button>
+                  </div>
+                  {note.author_id === currentUserId && (
+                    <button
+                      onClick={() => removeNote(note.id)}
+                      aria-label="Remove note"
+                      className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                {note.replies.length > 0 && (
+                  <div className="mt-2 pl-4 space-y-2 border-l cn-border">
+                    {note.replies.map(reply => (
+                      <div key={reply.id} className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-semibold cn-text-1">{reply.author_name} <span className="font-normal cn-text-4">{timeAgo(reply.created_at)}</span></p>
+                          <p className="text-[12.5px] cn-text-2">{reply.content}</p>
+                        </div>
+                        {reply.author_id === currentUserId && (
+                          <button
+                            onClick={() => removeReply(reply.id)}
+                            aria-label="Remove reply"
+                            className="shrink-0 w-5 h-5 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {openReplyFor === note.id && (
+                  <div className="mt-2 pl-4 flex items-center gap-2">
+                    <input
+                      value={replyDrafts[note.id] ?? ''}
+                      onChange={e => setReplyDrafts(prev => ({ ...prev, [note.id]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') postReply(note.id); }}
+                      placeholder="Reply..."
+                      autoFocus
+                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg cn-surface-2 text-xs cn-text-1 placeholder:cn-text-4 outline-none"
+                    />
+                    <button onClick={() => postReply(note.id)} className="shrink-0 text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+                      Send
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResourcesPane({ initiative, hubSlug, onChanged, currentUserId }: { initiative: Initiative; hubSlug: string; onChanged: () => void; currentUserId?: string }) {
+  const [resources, setResources] = useState<InitiativeResource[] | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = useCallback(() => { initiativesService.getResources(hubSlug, initiative.id).then(setResources).catch(() => setResources([])); }, [hubSlug, initiative.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const addResource = async (item: string, qty: string) => {
+    await initiativesService.addResource(hubSlug, initiative.id, { item, qty: qty || undefined });
+    load();
+  };
+  const addLink = async (item: string, url: string) => {
+    await initiativesService.addResourceLink(hubSlug, initiative.id, { item: item || undefined, url });
+    load();
+  };
+  const [uploading, setUploading] = useState(false);
+  const addFile = async (file: File) => {
+    setUploading(true);
+    try { await initiativesService.uploadResourceFile(hubSlug, initiative.id, file); load(); }
+    finally { setUploading(false); }
+  };
+  const addExistingFile = async (fileId: string) => {
+    setUploading(true);
+    try { await initiativesService.attachResourceFile(hubSlug, initiative.id, fileId); load(); }
+    finally { setUploading(false); }
+  };
+  const provide = async (id: string) => {
+    setBusyId(id);
+    try { await initiativesService.provideResource(hubSlug, id); load(); onChanged(); } finally { setBusyId(null); }
+  };
+  const unprovide = async (id: string) => {
+    setBusyId(id);
+    try { await initiativesService.unprovideResource(hubSlug, id); load(); onChanged(); } finally { setBusyId(null); }
+  };
+  const remove = async (id: string) => {
+    setDeletingId(id);
+    try { await initiativesService.deleteResource(hubSlug, id); load(); } catch { /* non-critical */ }
+    finally { setDeletingId(null); }
+  };
+
+  if (resources === null) return <div className="flex items-center justify-center py-10 cn-text-4"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+
+  return (
+    <div className="space-y-2.5">
+      {resources.length === 0 && <p className="text-[12.5px] cn-text-4">No resources shared for this project yet — material needs, files, or links.</p>}
+      {resources.map(r => (
+        <div key={r.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+          {r.kind === 'file' && <FileText className="w-4 h-4 shrink-0 text-blue-500" />}
+          {r.kind === 'link' && <LinkIcon className="w-4 h-4 shrink-0 text-blue-500" />}
+          {r.kind === 'material' && <Package className={`w-4 h-4 shrink-0 ${r.provided ? 'text-emerald-500' : 'cn-text-4'}`} />}
+
+          {r.kind === 'link' ? (
+            <a href={r.url ?? '#'} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 group">
+              <p className="text-sm cn-text-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 truncate inline-flex items-center gap-1">
+                {r.item} <ExternalLink className="w-3 h-3 shrink-0" />
+              </p>
+              <p className="text-xs cn-text-4 truncate">{r.url}</p>
+            </a>
+          ) : r.kind === 'file' ? (
+            <button onClick={() => hubService.downloadFile(hubSlug, r.file_display_name || r.item)} className="flex-1 min-w-0 text-left group">
+              <p className="text-sm cn-text-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 truncate">{r.file_display_name || r.item}</p>
+              <p className="text-xs cn-text-4">{formatBytes(r.file_size_bytes)}</p>
+            </button>
+          ) : (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm cn-text-1">{r.item}</p>
+              {r.qty && <p className="text-xs cn-text-4">{r.qty}</p>}
+            </div>
+          )}
+
+          {r.kind === 'file' && (
+            <button
+              onClick={() => hubService.downloadFile(hubSlug, r.file_display_name || r.item)}
+              title="Download"
+              aria-label="Download"
+              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {r.kind === 'material' && (
+            r.provided ? (
+              r.provided_by_user_id === currentUserId ? (
+                <button
+                  onClick={() => unprovide(r.id)}
+                  disabled={busyId === r.id}
+                  title="Not me anymore — retract"
+                  className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50"
+                >
+                  {busyId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <>Provided by you <X className="w-3 h-3" /></>}
+                </button>
+              ) : (
+                <span className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Provided by {r.provided_by_name}</span>
+              )
+            ) : (
+              <button
+                onClick={() => provide(r.id)}
+                disabled={busyId === r.id}
+                className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+              >
+                {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'I can provide this'}
+              </button>
+            )
+          )}
+
+          {r.created_by === currentUserId && (
+            <button
+              onClick={() => remove(r.id)}
+              disabled={deletingId === r.id}
+              title="Remove resource"
+              aria-label="Remove resource"
+              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+            >
+              {deletingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        onClick={() => setShowAdd(true)}
+        disabled={uploading}
+        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors disabled:opacity-50"
+      >
+        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+        {uploading ? 'Uploading…' : 'Add a resource'}
+      </button>
+      {showAdd && (
+        <AddResourceModal
+          hubSlug={hubSlug}
+          onClose={() => setShowAdd(false)}
+          onSubmitMaterial={addResource}
+          onSubmitLink={addLink}
+          onSubmitFile={addFile}
+          onSubmitExistingFile={addExistingFile}
+        />
+      )}
+    </div>
+  );
+}
+
+function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiative: Initiative; hubSlug: string; onChanged: () => void; currentUserId?: string }) {
+  const [roles, setRoles] = useState<InitiativeRole[] | null>(null);
+  const [showAddRole, setShowAddRole] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = useCallback(() => { initiativesService.getRoles(hubSlug, initiative.id).then(setRoles).catch(() => setRoles([])); }, [hubSlug, initiative.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const addRole = async (role: string, skill: string) => {
+    await initiativesService.addRole(hubSlug, initiative.id, { role, skill: skill || undefined });
+    load();
+  };
+  const claim = async (id: string) => {
+    setBusyId(id);
+    try { await initiativesService.claimRole(hubSlug, id); load(); onChanged(); } finally { setBusyId(null); }
+  };
+  const unclaim = async (id: string) => {
+    setBusyId(id);
+    try { await initiativesService.unclaimRole(hubSlug, id); load(); onChanged(); } finally { setBusyId(null); }
+  };
+  const remove = async (id: string) => {
+    setDeletingId(id);
+    try { await initiativesService.deleteRole(hubSlug, id); load(); } catch { /* non-critical */ }
+    finally { setDeletingId(null); }
+  };
+
+  const openRoles = roles?.filter(r => !r.filled) ?? [];
+  const filledRoles = roles?.filter(r => r.filled) ?? [];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Contributors ({initiative.members.length})</h3>
+          <button onClick={() => setShowInvite(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+            <UserPlus className="w-3.5 h-3.5" /> Invite
+          </button>
+        </div>
+        <div className="space-y-2">
+          {initiative.members.map((m, i) => (
+            <div key={m.id ?? i} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+              <span className={`w-8 h-8 rounded-full bg-gradient-to-br ${avatarColor(m.name)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials(m.name)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold cn-text-1">{m.name}</p>
+                {m.role && <p className="text-xs cn-text-4">{m.role}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2">Open roles</h3>
+        {roles === null ? (
+          <div className="flex items-center justify-center py-6 cn-text-4"><Loader2 className="w-4 h-4 animate-spin" /></div>
+        ) : (
+          <div className="space-y-2">
+            {openRoles.length === 0 && <p className="text-[12.5px] cn-text-4">All roles are filled — thank you!</p>}
+            {openRoles.map(r => (
+              <div key={r.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold cn-text-1">{r.role}</p>
+                  {r.skill && <span className="inline-block mt-1 text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-2 cn-text-3">{r.skill}</span>}
+                </div>
+                <button
+                  onClick={() => claim(r.id)}
+                  disabled={busyId === r.id}
+                  className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+                >
+                  {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'I can help'}
+                </button>
+                {r.created_by === currentUserId && (
+                  <button
+                    onClick={() => remove(r.id)}
+                    disabled={deletingId === r.id}
+                    title="Remove role"
+                    aria-label="Remove role"
+                    className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {initiative.viewerIsCreator && (
+          <button
+            onClick={() => setShowAddRole(true)}
+            className="w-full mt-2 flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Add role
+          </button>
+        )}
+      </div>
+
+      {filledRoles.length > 0 && (
+        <div>
+          <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2">Filled roles</h3>
+          <div className="space-y-2">
+            {filledRoles.map(r => (
+              <div key={r.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
+                <span className={`w-8 h-8 rounded-full bg-gradient-to-br ${avatarColor(r.filled_by_name || '?')} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials(r.filled_by_name || '?')}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm cn-text-1">{r.role}</p>
+                  <p className="text-xs cn-text-4">{r.filled_by_name}</p>
+                </div>
+                {r.filled_by_user_id === currentUserId ? (
+                  <button
+                    onClick={() => unclaim(r.id)}
+                    disabled={busyId === r.id}
+                    title="Not for me anymore — unclaim"
+                    className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50"
+                  >
+                    {busyId === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <>Filled by you <X className="w-3 h-3" /></>}
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Filled</span>
+                )}
+                {r.created_by === currentUserId && (
+                  <button
+                    onClick={() => remove(r.id)}
+                    disabled={deletingId === r.id}
+                    title="Remove role"
+                    aria-label="Remove role"
+                    className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showAddRole && <AddRoleModal onClose={() => setShowAddRole(false)} onSubmit={addRole} />}
+      {showInvite && <InviteModal hubSlug={hubSlug} initiativeId={initiative.id} shareLink={initiativesService.getShareLink(hubSlug, initiative.id)} onClose={() => setShowInvite(false)} />}
+    </div>
+  );
+}
+
+function UpdatesPane({ initiative, hubSlug, canPost, currentUserId }: { initiative: Initiative; hubSlug: string; canPost: boolean; currentUserId?: string }) {
+  const [updates, setUpdates] = useState<InitiativeUpdate[] | null>(null);
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = useCallback(() => { initiativesService.getUpdates(hubSlug, initiative.id).then(setUpdates).catch(() => setUpdates([])); }, [hubSlug, initiative.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const post = async () => {
+    if (!draft.trim()) return;
+    setPosting(true);
+    try { await initiativesService.postUpdate(hubSlug, initiative.id, draft.trim()); setDraft(''); load(); }
+    finally { setPosting(false); }
+  };
+  const comment = async (updateId: string) => {
+    const text = commentDrafts[updateId]?.trim();
+    if (!text) return;
+    await initiativesService.addComment(hubSlug, updateId, text);
+    setCommentDrafts(prev => ({ ...prev, [updateId]: '' }));
+    load();
+  };
+  const removeUpdate = async (id: string) => {
+    setDeletingId(id);
+    try { await initiativesService.deleteUpdate(hubSlug, id); load(); } catch { /* non-critical */ }
+    finally { setDeletingId(null); }
+  };
+  const removeComment = async (id: string) => {
+    setDeletingId(id);
+    try { await initiativesService.deleteComment(hubSlug, id); load(); } catch { /* non-critical */ }
+    finally { setDeletingId(null); }
+  };
+
+  return (
+    <div className="space-y-3.5">
+      {canPost && (
+        <div className="cn-glass rounded-2xl p-4">
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder="Share a progress update with the team…"
+            rows={3}
+            className="w-full text-sm bg-transparent cn-text-1 placeholder:cn-text-4 focus:outline-none resize-none"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={post}
+              disabled={!draft.trim() || posting}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40"
+            >
+              {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageSquare className="w-3.5 h-3.5" />} Post Update
+            </button>
+          </div>
+        </div>
+      )}
+
+      {updates === null ? (
+        <div className="flex items-center justify-center py-10 cn-text-4"><Loader2 className="w-5 h-5 animate-spin" /></div>
+      ) : updates.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 cn-text-4">
+          <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
+          <p className="text-sm">No updates yet — be the first to post one.</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {updates.map((update, idx) => (
+            <motion.div key={update.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }} className="cn-glass rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColor(update.author_name)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                  {initials(update.author_name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-semibold cn-text-1">{update.author_name}</span>
+                    <span className="text-xs cn-text-4">{timeAgo(update.created_at)}</span>
+                  </div>
+                  <p className="text-sm cn-text-3 leading-relaxed">{update.content}</p>
+                </div>
+                {update.author_id === currentUserId && (
+                  <button
+                    onClick={() => removeUpdate(update.id)}
+                    disabled={deletingId === update.id}
+                    title="Remove update"
+                    aria-label="Remove update"
+                    className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    {deletingId === update.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+              {update.comments.length > 0 && (
+                <div className="flex flex-col gap-2 mt-3 pl-11">
+                  {update.comments.map(c => (
+                    <div key={c.id} className="flex items-start gap-2">
+                      <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(c.author_name)} flex items-center justify-center text-white text-[9px] font-bold shrink-0`}>{initials(c.author_name)}</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-xs font-semibold cn-text-1">{c.author_name}</span>
+                        <span className="text-[10px] cn-text-4 ml-1.5">{timeAgo(c.created_at)}</span>
+                        <p className="text-[12.5px] cn-text-3 mt-0.5">{c.content}</p>
+                      </div>
+                      {c.author_id === currentUserId && (
+                        <button
+                          onClick={() => removeComment(c.id)}
+                          disabled={deletingId === c.id}
+                          title="Remove comment"
+                          aria-label="Remove comment"
+                          className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                        >
+                          {deletingId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canPost && (
+                <div className="flex items-center gap-2 mt-3 pl-11">
+                  <input
+                    value={commentDrafts[update.id] ?? ''}
+                    onChange={e => setCommentDrafts(prev => ({ ...prev, [update.id]: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') comment(update.id); }}
+                    placeholder="Reply…"
+                    className="flex-1 text-xs bg-transparent border-b cn-border cn-text-1 placeholder:cn-text-4 focus:outline-none py-1"
+                  />
+                  <button onClick={() => comment(update.id)} disabled={!commentDrafts[update.id]?.trim()} className="text-xs font-semibold text-purple-600 dark:text-purple-400 disabled:opacity-40 shrink-0">Reply</button>
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────
 
 interface InitiativesScreenProps {
@@ -356,275 +1447,122 @@ interface InitiativesScreenProps {
   initialId?: string;
   onOpenDetail?: (id: string) => void;
   onBackToList?: () => void;
+  onOpenSpace?: (spaceSlug: string) => void;
 }
 
-type TabId = 'overview' | 'tasks' | 'members' | 'updates';
+type TabId = 'overview' | 'tasks' | 'resources' | 'team' | 'updates';
 type StatusFilter = 'all' | 'planning' | 'active' | 'completed';
 
-export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToList }: InitiativesScreenProps) {
+export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToList, onOpenSpace }: InitiativesScreenProps) {
   const { currentHub, currentUser } = useHub();
-  const [view, setView] = useState<'list' | 'detail'>('list');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const hubSlug = currentHub?.slug ?? '';
+  const currentUserId = currentUser?.hubUserId;
+
+  const [selectedId, setSelectedId] = useState<string | null>(initialId ?? null);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [joinedOnly, setJoinedOnly] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  // Remote data
-  const [remoteInitiatives, setRemoteInitiatives] = useState<Initiative[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notConfigured, setNotConfigured] = useState(false);
+  const [mySpaces, setMySpaces] = useState<HubSpace[]>([]);
 
-  // Locally created initiatives (optimistic, best-effort persisted)
-  const [localInitiatives, setLocalInitiatives] = useState<Initiative[]>([]);
   const [showNewModal, setShowNewModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
 
-  // Participation state
-  const [joinedIds, setJoinedIds] = useState<string[]>([]);
-  const [memberRoles, setMemberRoles] = useState<Record<string, { role: string; contribution: string }>>({});
-
-  // Join panel state
-  const [showJoinPanel, setShowJoinPanel] = useState(false);
-  const [joinRole, setJoinRole] = useState('');
-  const [joinContribution, setJoinContribution] = useState('');
-
-  // Task overrides (status toggles — optimistic while API call is in flight)
-  const [taskOverrides, setTaskOverrides] = useState<Record<string, InitiativeTask['status']>>({});
-
-  // Locally added tasks per initiative (optimistic, replaced on next fetch)
-  const [localTasks, setLocalTasks] = useState<Record<string, InitiativeTask[]>>({});
-  const [newTaskText, setNewTaskText] = useState('');
-  const [showAddTask, setShowAddTask] = useState(false);
-
-  // Locally added updates
-  const [localUpdates, setLocalUpdates] = useState<Record<string, InitiativeUpdate[]>>({});
-  const [newUpdateText, setNewUpdateText] = useState('');
-
-  // ── API helpers ─────────────────────────────────────────
-
-  const apiBase = currentHub?.tunnelUrl ?? '';
-  const authHeaders = useCallback((): Record<string, string> => ({
-    'Content-Type': 'application/json',
-    ...(currentUser?.authToken ? { Authorization: `Bearer ${currentUser.authToken}` } : {}),
-  }), [currentUser?.authToken]);
-
-  const fetchInitiatives = useCallback(async () => {
-    if (!apiBase) return;
+  const load = useCallback(async () => {
+    if (!hubSlug) return;
+    setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/initiatives`, { headers: authHeaders() });
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      setRemoteInitiatives(data.initiatives ?? data);
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
+      const list = await initiativesService.listAll(hubSlug);
+      setInitiatives(list);
+      setNotConfigured(false);
+    } catch (err) {
+      // The service's error message is the server's human-readable body.error text
+      // (e.g. "Initiatives app not configured"), not the raw HTTP status.
+      setNotConfigured(err instanceof Error && err.message.toLowerCase().includes('not configured'));
+      setInitiatives([]);
+    } finally {
+      setLoading(false);
     }
-  }, [apiBase, authHeaders]);
+  }, [hubSlug]);
 
-  useEffect(() => { fetchInitiatives(); }, [fetchInitiatives]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (hubSlug) spacesService.listMine(hubSlug).then(setMySpaces).catch(() => {}); }, [hubSlug]);
 
-  // Sync view state with URL-driven initialId
   useEffect(() => {
-    if (!initialId) {
-      setView('list');
-      setSelectedId(null);
-      return;
-    }
-    const source = [...localInitiatives, ...(remoteInitiatives ?? SEED_INITIATIVES)];
-    const found = source.find(i => String(i.id) === String(initialId));
-    if (found) {
-      setSelectedId(String(found.id));
-      setView('detail');
-      setActiveTab('overview');
-      setShowJoinPanel(false);
-      setShowAddTask(false);
-    }
-  }, [initialId, remoteInitiatives, localInitiatives]);
-
-  const baseInitiatives = !loadError && remoteInitiatives !== null ? remoteInitiatives : SEED_INITIATIVES;
-
-  const initiatives = [...localInitiatives, ...baseInitiatives].map(ini => ({
-    ...ini,
-    tasks: [...ini.tasks, ...(localTasks[ini.id] ?? [])],
-    updates: [...(localUpdates[ini.id] ?? []), ...ini.updates],
-  }));
+    if (!initialId) { setSelectedId(null); return; }
+    setSelectedId(initialId);
+    setActiveTab('overview');
+  }, [initialId]);
 
   const current = initiatives.find(i => i.id === selectedId) ?? null;
 
-  const isJoined = (id: string) => joinedIds.includes(id);
-
   const filtered = initiatives.filter(ini => {
-    if (joinedOnly && !isJoined(ini.id)) return false;
     if (statusFilter !== 'all' && ini.status !== statusFilter) return false;
+    if (categoryFilter !== 'all' && ini.category?.toLowerCase() !== categoryFilter) return false;
     return true;
   });
 
-  // ── navigation ─────────────────────────────────────────
-
   const backToList = () => {
-    setView('list');
     setSelectedId(null);
-    setShowJoinPanel(false);
-    setShowAddTask(false);
     onBackToList ? onBackToList() : onBack();
   };
 
   const openDetail = (id: string) => {
     setSelectedId(id);
-    setView('detail');
     setActiveTab('overview');
-    setShowJoinPanel(false);
-    setShowAddTask(false);
-    setNewTaskText('');
-    setNewUpdateText('');
     onOpenDetail?.(id);
   };
 
-  // ── create ──────────────────────────────────────────────
-
-  const handleCreateInitiative = (title: string, goal: string, color: Initiative['color']) => {
-    const tempId = `local-${Date.now()}`;
-    const item: Initiative = {
-      id: tempId, title, category: '', status: 'planning', color,
-      goal: goal || 'New community project — details coming soon.',
-      description: '', progress: 0, imageUrl: null,
-      createdBy: 'You', createdAt: new Date().toISOString(),
-      tasks: [], members: [], updates: [],
-    };
-    setLocalInitiatives(prev => [item, ...prev]);
-    openDetail(tempId);
-    if (apiBase) {
-      fetch(`${apiBase}/api/initiatives`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ title, goal }),
-      }).then(r => {
-        if (r.ok) {
-          setLocalInitiatives(prev => prev.filter(i => i.id !== tempId));
-          fetchInitiatives();
-        }
-      }).catch(() => {});
-    }
+  const handleCreate = async (data: { title: string; goal: string; category: string; color: Initiative['color']; space_id: string | null; bannerFile: File | null }) => {
+    const { bannerFile, ...createData } = data;
+    try {
+      const created = await initiativesService.create(hubSlug, createData);
+      // The creator is auto-joined synchronously as part of create, so this upload
+      // is already authorized by the time it fires — no race with membership.
+      if (bannerFile) {
+        await initiativesService.uploadBanner(hubSlug, created.id, bannerFile).catch(() => {});
+      }
+      await load();
+      openDetail(created.id);
+    } catch { /* surfaced implicitly via unchanged list — non-critical for now */ }
   };
 
-  // ── join / leave ────────────────────────────────────────
-
-  const handleJoinConfirm = () => {
-    if (!selectedId || !joinRole.trim()) return;
-    // Optimistic local update
-    setJoinedIds(prev => [...prev, selectedId]);
-    setMemberRoles(prev => ({ ...prev, [selectedId]: { role: joinRole.trim(), contribution: joinContribution.trim() } }));
-    setShowJoinPanel(false);
-    setJoinRole('');
-    setJoinContribution('');
-    // Persist to Society+ (creates membership record)
-    if (apiBase) {
-      fetch(`${apiBase}/api/initiatives/${selectedId}/join`, {
-        method: 'POST',
-        headers: authHeaders(),
-      }).catch(() => {});
-    }
+  const handleJoin = async () => {
+    if (!current) return;
+    try { await initiativesService.join(hubSlug, current.id); load(); } catch { /* non-critical */ }
+  };
+  const handleLeave = async () => {
+    if (!current) return;
+    try { await initiativesService.leave(hubSlug, current.id); load(); } catch { /* non-critical */ }
   };
 
-  const handleLeave = () => {
-    if (!selectedId) return;
-    setJoinedIds(prev => prev.filter(id => id !== selectedId));
-    setMemberRoles(prev => { const n = { ...prev }; delete n[selectedId]; return n; });
+  const handleBannerUpload = async (file: File) => {
+    if (!current) return;
+    try { await initiativesService.uploadBanner(hubSlug, current.id, file); load(); } catch { /* non-critical */ }
+  };
+  const handleBannerRemove = async () => {
+    if (!current) return;
+    try { await initiativesService.removeBanner(hubSlug, current.id); load(); } catch { /* non-critical */ }
   };
 
-  // ── tasks ───────────────────────────────────────────────
+  const bannerUrlFor = (ini: Initiative) =>
+    ini.banner_mode === 'image' && ini.banner_image_file_name ? initiativesService.getBannerUrl(hubSlug, ini.id) : null;
 
-  const getTaskStatus = (task: InitiativeTask): InitiativeTask['status'] =>
-    taskOverrides[task.id] ?? task.status;
-
-  const cycleTask = (task: InitiativeTask) => {
-    const cur = getTaskStatus(task);
-    const next: InitiativeTask['status'] = cur === 'todo' ? 'in-progress' : cur === 'in-progress' ? 'done' : 'todo';
-    // Optimistic update
-    setTaskOverrides(prev => ({ ...prev, [task.id]: next }));
-    // Persist to API (best-effort; optimistic update stays regardless)
-    if (apiBase && !task.id.startsWith('local-')) {
-      fetch(`${apiBase}/api/initiatives/goals/${task.id}`, {
-        method: 'PATCH',
-        headers: authHeaders(),
-        body: JSON.stringify({ status: next }),
-      }).then(r => { if (r.ok) fetchInitiatives(); }).catch(() => {});
-    }
-  };
-
-  const handleAddTask = () => {
-    if (!newTaskText.trim() || !selectedId) return;
-    const title = newTaskText.trim();
-    // Optimistic
-    const tempId = `local-${Date.now()}`;
-    const task: InitiativeTask = { id: tempId, title, status: 'todo' };
-    setLocalTasks(prev => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), task] }));
-    setNewTaskText('');
-    setShowAddTask(false);
-    // Persist to API
-    if (apiBase) {
-      fetch(`${apiBase}/api/initiatives/${selectedId}/goals`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ title }),
-      }).then(r => {
-        if (r.ok) {
-          // Remove optimistic entry and reload from server
-          setLocalTasks(prev => {
-            const n = { ...prev };
-            n[selectedId] = (n[selectedId] ?? []).filter(t => t.id !== tempId);
-            return n;
-          });
-          fetchInitiatives();
-        }
-      }).catch(() => {});
-    }
-  };
-
-  // ── updates ─────────────────────────────────────────────
-
-  const handlePostUpdate = () => {
-    if (!newUpdateText.trim() || !selectedId) return;
-    const update: InitiativeUpdate = {
-      id: `u-${Date.now()}`,
-      author: 'You',
-      content: newUpdateText.trim(),
-      timestamp: new Date().toISOString(),
-    };
-    setLocalUpdates(prev => ({ ...prev, [selectedId]: [update, ...(prev[selectedId] ?? [])] }));
-    setNewUpdateText('');
-  };
-
-  // ── task counts for badge ───────────────────────────────
-
-  const taskCount = (ini: Initiative) => {
-    const tasks = [...ini.tasks, ...(localTasks[ini.id] ?? [])];
-    const done = tasks.filter(t => (taskOverrides[t.id] ?? t.status) === 'done').length;
-    return { done, total: tasks.length };
-  };
-
-  // ──────────────────────────────────────────────────────────
-  // Render
-  // ──────────────────────────────────────────────────────────
+  const canEditBanner = !!current?.viewerIsCreator;
 
   const listPane = (
     <div className="flex flex-col gap-3.5">
-      {/* Status tabs */}
       <div className="flex overflow-x-auto no-scrollbar border-b cn-border">
         {([
-          { value: 'all',       label: 'All' },
-          { value: 'planning',  label: 'Planning' },
-          { value: 'active',    label: 'In progress' },
-          { value: 'completed', label: 'Completed' },
+          { value: 'all', label: 'All' }, { value: 'planning', label: 'Planning' },
+          { value: 'active', label: 'In progress' }, { value: 'completed', label: 'Completed' },
         ] as { value: StatusFilter; label: string }[]).map(t => {
           const active = statusFilter === t.value;
           return (
-            <button
-              key={t.value}
-              onClick={() => setStatusFilter(t.value)}
-              className={`shrink-0 relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'
-              }`}
-            >
+            <button key={t.value} onClick={() => setStatusFilter(t.value)} className={`shrink-0 relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'}`}>
               {t.label}
               {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
             </button>
@@ -632,479 +1570,145 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
         })}
       </div>
 
-      {/* Joined filter */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setJoinedOnly(v => !v)}
-          className={`inline-flex items-center gap-1.5 shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-            joinedOnly
-              ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent'
-              : 'cn-surface-2 cn-text-2 cn-border'
-          }`}
-        >
-          <CheckCheck className="w-3 h-3" /> Joined ({joinedIds.length})
-        </button>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        {[{ value: 'all', label: 'All categories' }, ...CATEGORY_OPTIONS].map(c => (
+          <button
+            key={c.value}
+            onClick={() => setCategoryFilter(c.value)}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              categoryFilter === c.value ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent' : 'cn-surface-2 cn-text-2 cn-border'
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
 
-      {/* Cards */}
-      {filtered.length === 0 ? (
+      {notConfigured ? (
+        <div className="cn-glass rounded-2xl px-6 py-14 text-center cn-text-3 text-sm">
+          Initiatives aren't set up for this hub yet.
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="cn-glass rounded-2xl px-6 py-14 text-center cn-text-3 text-sm">
           No projects match this filter.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
-          {filtered.map((ini, idx) => {
-            const c = COLOR[ini.color];
-            const tc = taskCount(ini);
-            return (
-              <motion.button
-                key={ini.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-                onClick={() => openDetail(ini.id)}
-                className="cn-glass rounded-2xl p-4 flex flex-col gap-3 text-left hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
-              >
-                <div className="flex items-start gap-2.5">
-                  <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0 overflow-hidden`}>
-                    {ini.imageUrl
-                      ? <img src={ini.imageUrl} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      : <Lightbulb className="w-4 h-4 text-white" />
-                    }
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold cn-text-1 leading-tight">{ini.title}</div>
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[ini.status]}`}>{STATUS_LABEL[ini.status]}</span>
-                      {isJoined(ini.id) && (
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">You're in</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <p className="text-[12.5px] leading-relaxed cn-text-3 line-clamp-2">{ini.goal}</p>
-
-                <ProgressBar {...tc} pct={ini.progress} tone={ini.status === 'completed' ? 'ok' : 'brand'} />
-
-                <div className="flex items-center justify-between">
-                  <AvatarStack names={ini.members.map(m => m.name)} />
-                  <span className="text-[11px] cn-text-4">by {ini.createdBy}</span>
-                </div>
-              </motion.button>
-            );
-          })}
+          {filtered.map((ini, idx) => (
+            <motion.div key={ini.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
+              <InitiativeCard
+                initiative={ini}
+                bannerUrl={bannerUrlFor(ini)}
+                taskCount={taskCount(ini.tasks)}
+                onOpen={() => openDetail(ini.id)}
+                onOpenSpace={ini.space_slug ? () => onOpenSpace?.(ini.space_slug!) : undefined}
+              />
+            </motion.div>
+          ))}
         </div>
       )}
     </div>
   );
 
-  const mainColumn = current
-    ? (() => {
-      const tc = taskCount(current);
-      const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
-        { id: 'overview', label: 'Overview',  icon: TrendingUp },
-        { id: 'tasks',    label: `Tasks (${tc.total})`, icon: CheckCircle2 },
-        { id: 'members',  label: `Members (${current.members.length + (isJoined(current.id) ? 1 : 0)})`, icon: Users },
-        { id: 'updates',  label: `Updates (${current.updates.length})`, icon: MessageSquare },
-      ];
+  const mainColumn = current ? (() => {
+    const tc = taskCount(current.tasks);
+    const cat = categoryMeta(current.category);
+    const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
+      { id: 'overview', label: 'Overview', icon: TrendingUp },
+      { id: 'tasks', label: `Tasks (${tc.total})`, icon: CheckCircle2 },
+      { id: 'resources', label: 'Resources', icon: Package },
+      { id: 'team', label: `Team (${current.members.length})`, icon: Users },
+      // Unlike tasks/members, updates aren't embedded on the initiative object
+      // (UpdatesPane fetches them lazily on its own) — no count to show here that
+      // wouldn't be stale, matching the design reference's plain "Updates" label.
+      { id: 'updates', label: 'Updates', icon: MessageSquare },
+    ];
 
-      const groupedTasks = {
-        'in-progress': current.tasks.filter(t => getTaskStatus(t) === 'in-progress'),
-        'todo':        current.tasks.filter(t => getTaskStatus(t) === 'todo'),
-        'done':        current.tasks.filter(t => getTaskStatus(t) === 'done'),
-      };
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <button onClick={backToList} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 transition-colors">
+            <ChevronLeft className="w-3.5 h-3.5" /> All projects
+          </button>
+          <button onClick={() => setShowShareModal(true)} title="Share this project" className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors">
+            <Share2 className="w-4 h-4 cn-text-3" />
+          </button>
+        </div>
 
-      return (
-        <div className="flex flex-col gap-4">
-          {/* Back + share */}
-          <div className="flex items-center justify-between">
-            <button onClick={backToList} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 transition-colors">
-              <ChevronLeft className="w-3.5 h-3.5" /> All projects
-            </button>
-            <button onClick={() => setShowShareModal(true)} title="Share this project" className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center transition-colors">
-              <Share2 className="w-4 h-4 cn-text-3" />
-            </button>
+        <InitiativeBannerUpload
+          initiative={current}
+          bannerUrl={bannerUrlFor(current)}
+          canEdit={canEditBanner}
+          onUpload={handleBannerUpload}
+          onRemove={handleBannerRemove}
+        />
+
+        <div>
+          <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[current.status]}`}>{STATUS_LABEL[current.status]}</span>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-2 cn-text-3">{cat.label}</span>
           </div>
-
-          {/* Title block */}
-          <div>
-            <div className="flex items-center gap-2 mb-2.5 flex-wrap">
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[current.status]}`}>{STATUS_LABEL[current.status]}</span>
-            </div>
-            <h1 className="text-xl md:text-[22px] font-bold cn-text-1 leading-tight tracking-tight">{current.title}</h1>
-            <div className="flex items-center gap-2.5 mt-2 flex-wrap">
-              <span className="flex items-center gap-1.5">
-                <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(current.createdBy)} flex items-center justify-center text-white text-[9.5px] font-bold shrink-0`}>
-                  {initials(current.createdBy)}
-                </span>
-                <span className="text-[12.5px] cn-text-3">Led by <b className="cn-text-1 font-semibold">{current.createdBy}</b></span>
-              </span>
-              <AvatarStack names={current.members.map(m => m.name)} />
-            </div>
+          <h1 className="text-xl md:text-[22px] font-bold cn-text-1 leading-tight tracking-tight">{current.title}</h1>
+          <div className="flex items-center gap-2.5 mt-2 flex-wrap">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(current.createdBy)} flex items-center justify-center text-white text-[9.5px] font-bold shrink-0`}>{initials(current.createdBy)}</span>
+              <span className="text-[12.5px] cn-text-3">Led by <b className="cn-text-1 font-semibold">{current.createdBy}</b></span>
+            </span>
+            <AvatarStack names={current.members.map(m => m.name)} />
           </div>
-
-          {/* Progress card */}
-          <div className="cn-glass rounded-2xl p-4">
-            <ProgressBar {...tc} pct={current.progress} tone={current.status === 'completed' ? 'ok' : 'brand'} />
-          </div>
-
-          {/* Join panel */}
-          <AnimatePresence>
-            {showJoinPanel && !isJoined(current.id) && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="cn-surface border border-purple-200 dark:border-purple-800/50 rounded-2xl p-5 shadow-lg">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold cn-text-1 text-sm">Join this initiative</h3>
-                    <button onClick={() => setShowJoinPanel(false)} className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                      <X className="w-4 h-4 cn-text-4" />
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className={fieldLabelClass}>Your role <span className="text-red-400">*</span></label>
-                      <input
-                        type="text"
-                        value={joinRole}
-                        onChange={e => setJoinRole(e.target.value)}
-                        placeholder="e.g. Volunteer, Coordinator, Advisor…"
-                        className={fieldClass}
-                      />
-                    </div>
-                    <div>
-                      <label className={fieldLabelClass}>How you'll contribute</label>
-                      <textarea
-                        value={joinContribution}
-                        onChange={e => setJoinContribution(e.target.value)}
-                        placeholder="Briefly describe what you'll bring to this effort…"
-                        rows={2}
-                        className={`${fieldClass} resize-none`}
-                      />
-                    </div>
-                    <button
-                      onClick={handleJoinConfirm}
-                      disabled={!joinRole.trim()}
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Confirm — Join Initiative
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {!isJoined(current.id) && !showJoinPanel && (
-            <button
-              onClick={() => setShowJoinPanel(true)}
-              className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all"
-            >
-              <UserPlus className="w-3.5 h-3.5" /> Join
-            </button>
-          )}
-          {isJoined(current.id) && (
-            <button
-              onClick={handleLeave}
-              className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg cn-surface-2 cn-text-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 text-sm font-semibold transition-colors"
-            >
-              <CheckCheck className="w-3.5 h-3.5" /> Joined
-            </button>
-          )}
-
-          {/* Tab strip */}
-          <div className="flex overflow-x-auto no-scrollbar border-b cn-border -mb-1">
-            {tabs.map(tab => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                    active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {tab.label}
-                  {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Tab content */}
-          <div className="pt-1">
-
-            {/* ── OVERVIEW ── */}
-            {activeTab === 'overview' && (
-              <div className="space-y-3.5">
-                <div className="cn-glass rounded-2xl p-4">
-                  <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider mb-2">Goal</h3>
-                  <p className="text-sm cn-text-1 leading-relaxed font-medium">{current.goal}</p>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2.5">
-                  {[
-                    { label: 'Participants', value: current.members.length + (isJoined(current.id) ? 1 : 0), icon: Users },
-                    { label: 'Tasks',        value: `${tc.done}/${tc.total}`, icon: CheckCircle2 },
-                    { label: 'Updates',      value: current.updates.length, icon: MessageSquare },
-                  ].map(stat => (
-                    <div key={stat.label} className="cn-glass rounded-2xl p-3.5 flex flex-col items-center gap-1">
-                      <stat.icon className="w-4 h-4 text-purple-500 dark:text-purple-400" />
-                      <span className="text-lg font-bold cn-text-1">{stat.value}</span>
-                      <span className="text-[11px] cn-text-3">{stat.label}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {isJoined(current.id) && memberRoles[current.id] && (
-                  <div className="rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 p-4">
-                    <h3 className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">Your contribution</h3>
-                    <p className="text-sm font-semibold cn-text-1">{memberRoles[current.id].role}</p>
-                    {memberRoles[current.id].contribution && (
-                      <p className="text-xs cn-text-3 mt-1">{memberRoles[current.id].contribution}</p>
-                    )}
-                  </div>
-                )}
-
-                {current.updates[0] && (
-                  <div
-                    className="cn-glass rounded-2xl p-4 cursor-pointer hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
-                    onClick={() => setActiveTab('updates')}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Latest update</h3>
-                      <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">See all →</span>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(current.updates[0].author)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-                        {initials(current.updates[0].author)}
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold cn-text-2">{current.updates[0].author} · <span className="font-normal cn-text-4">{timeAgo(current.updates[0].timestamp)}</span></p>
-                        <p className="text-sm cn-text-3 mt-0.5 line-clamp-2">{current.updates[0].content}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── TASKS ── */}
-            {activeTab === 'tasks' && (
-              <div className="space-y-5">
-                {(['in-progress', 'todo', 'done'] as const).map(status => {
-                  const group = groupedTasks[status];
-                  if (group.length === 0) return null;
-                  const labels = { 'in-progress': 'In Progress', todo: 'To Do', done: 'Done' };
-                  return (
-                    <div key={status}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">{labels[status]}</h3>
-                        <span className="text-xs px-1.5 py-0.5 rounded-full cn-surface-2 cn-text-3">{group.length}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {group.map(task => {
-                          const ts = getTaskStatus(task);
-                          return (
-                            <div key={task.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
-                              <button
-                                onClick={() => cycleTask(task)}
-                                className="shrink-0 w-5 h-5 flex items-center justify-center transition-transform hover:scale-110"
-                                aria-label="Toggle task status"
-                              >
-                                {ts === 'done'        && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
-                                {ts === 'in-progress' && <Clock className="w-5 h-5 text-amber-500" />}
-                                {ts === 'todo'        && <Circle className="w-5 h-5 cn-text-4" />}
-                              </button>
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium ${ts === 'done' ? 'line-through cn-text-4' : 'cn-text-1'}`}>
-                                  {task.title}
-                                </p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  {task.assignee && <span className="text-xs cn-text-3">{task.assignee}</span>}
-                                  {task.dueDate && (
-                                    <span className="flex items-center gap-1 text-xs cn-text-4">
-                                      <Calendar className="w-3 h-3" />{task.dueDate}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Add task */}
-                <AnimatePresence>
-                  {showAddTask ? (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="cn-surface border border-purple-200 dark:border-purple-800/50 rounded-xl p-4 flex gap-2">
-                        <input
-                          autoFocus
-                          type="text"
-                          value={newTaskText}
-                          onChange={e => setNewTaskText(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); if (e.key === 'Escape') setShowAddTask(false); }}
-                          placeholder="Describe the task…"
-                          className="flex-1 text-sm bg-transparent cn-text-1 placeholder:cn-text-4 focus:outline-none"
-                        />
-                        <button onClick={handleAddTask} disabled={!newTaskText.trim()} className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors">Add</button>
-                        <button onClick={() => setShowAddTask(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X className="w-4 h-4 cn-text-4" /></button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <button
-                      onClick={() => setShowAddTask(true)}
-                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" /> Add task
-                    </button>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
-
-            {/* ── MEMBERS ── */}
-            {activeTab === 'members' && (
-              <div className="space-y-2.5">
-                {isJoined(current.id) && memberRoles[current.id] && (
-                  <div className="rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                      You
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold cn-text-1">You</p>
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">You</span>
-                      </div>
-                      <p className="text-xs font-medium cn-text-3 mt-0.5">{memberRoles[current.id].role}</p>
-                      {memberRoles[current.id].contribution && (
-                        <p className="text-xs cn-text-4 mt-0.5 line-clamp-1">{memberRoles[current.id].contribution}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {current.members.map(member => (
-                  <div key={member.id} className="cn-glass rounded-2xl p-4 flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${avatarColor(member.name)} flex items-center justify-center text-white text-sm font-bold shrink-0`}>
-                      {initials(member.name)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold cn-text-1">{member.name}</p>
-                        {member.id === 'm1' && (
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">Lead</span>
-                        )}
-                      </div>
-                      <p className="text-xs font-medium cn-text-3 mt-0.5">{member.role}</p>
-                      <p className="text-xs cn-text-4 mt-0.5 line-clamp-1">{member.contribution}</p>
-                    </div>
-                  </div>
-                ))}
-
-                {!isJoined(current.id) && (
-                  <button
-                    onClick={() => setShowJoinPanel(true)}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                  >
-                    <UserPlus className="w-4 h-4" /> Join to add yourself
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* ── UPDATES ── */}
-            {activeTab === 'updates' && (
-              <div className="space-y-3.5">
-                {isJoined(current.id) && (
-                  <div className="cn-glass rounded-2xl p-4">
-                    <textarea
-                      value={newUpdateText}
-                      onChange={e => setNewUpdateText(e.target.value)}
-                      placeholder="Share a progress update with the team…"
-                      rows={3}
-                      className="w-full text-sm bg-transparent cn-text-1 placeholder:cn-text-4 focus:outline-none resize-none"
-                    />
-                    <div className="flex justify-end mt-2">
-                      <button
-                        onClick={handlePostUpdate}
-                        disabled={!newUpdateText.trim()}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Zap className="w-3.5 h-3.5" /> Post Update
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {current.updates.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 cn-text-4">
-                    <MessageSquare className="w-8 h-8 mb-2 opacity-40" />
-                    <p className="text-sm">No updates yet — be the first to post one.</p>
-                  </div>
-                )}
-
-                <div className="space-y-2.5">
-                  {current.updates.map((update, idx) => (
-                    <motion.div
-                      key={update.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.03 }}
-                      className="cn-glass rounded-2xl p-4"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColor(update.author)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
-                          {update.author === 'You' ? 'You' : initials(update.author)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-semibold cn-text-1">{update.author}</span>
-                            <span className="text-xs cn-text-4">{timeAgo(update.timestamp)}</span>
-                          </div>
-                          <p className="text-sm cn-text-3 leading-relaxed">{update.content}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {!isJoined(current.id) && (
-                  <div className="flex items-center gap-3 cn-surface-2 border cn-border rounded-xl px-4 py-3">
-                    <AlertCircle className="w-4 h-4 cn-text-4 shrink-0" />
-                    <p className="text-xs cn-text-3 flex-1">Join this initiative to post updates.</p>
-                    <button onClick={() => setShowJoinPanel(true)} className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline shrink-0">Join →</button>
-                  </div>
-                )}
-              </div>
+          <div className="mt-2.5">
+            {current.space_name ? (
+              <SpaceChip name={current.space_name} onClick={current.space_slug ? () => onOpenSpace?.(current.space_slug!) : undefined} />
+            ) : (
+              <span className="text-[11.5px] cn-text-4">Independent project — not tied to a space</span>
             )}
           </div>
         </div>
-      );
-    })()
-    : listPane;
+
+        <div className="cn-glass rounded-2xl p-4">
+          <ProgressBar {...tc} pct={tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0} tone={current.status === 'completed' ? 'ok' : 'brand'} />
+        </div>
+
+        {current.viewerIsMember ? (
+          <button onClick={handleLeave} className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg cn-surface-2 cn-text-2 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 text-sm font-semibold transition-colors">
+            <Check className="w-3.5 h-3.5" /> Joined
+          </button>
+        ) : (
+          <button onClick={handleJoin} className="inline-flex items-center justify-center gap-1.5 self-start px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all">
+            <UserPlus className="w-3.5 h-3.5" /> Join
+          </button>
+        )}
+
+        <div className="flex overflow-x-auto no-scrollbar border-b cn-border -mb-1">
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`shrink-0 relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'}`}>
+                <Icon className="w-3.5 h-3.5" />{tab.label}
+                {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="pt-1">
+          {activeTab === 'overview' && <OverviewPane initiative={current} hubSlug={hubSlug} onSeeUpdates={() => setActiveTab('updates')} />}
+          {activeTab === 'tasks' && <TasksPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
+          {activeTab === 'resources' && <ResourcesPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
+          {activeTab === 'team' && <TeamPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
+          {activeTab === 'updates' && <UpdatesPane initiative={current} hubSlug={hubSlug} canPost={!!current.viewerIsMember} currentUserId={currentUserId} />}
+        </div>
+      </div>
+    );
+  })() : listPane;
 
   return (
     <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 md:py-7">
         <div className="md:grid md:grid-cols-[1fr_300px] md:gap-7 md:items-start">
           <div className="flex flex-col gap-4 md:gap-5 min-w-0">
-            {view === 'list' && (
+            {!current && (
               <div>
                 <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors">
                   <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
@@ -1117,29 +1721,23 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
                     <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Initiatives</h1>
                     <p className="text-[13px] cn-text-3 mt-0.5">Community projects residents are building together</p>
                   </div>
-                  <button
-                    onClick={() => setShowNewModal(true)}
-                    className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all shrink-0"
-                  >
+                  <button onClick={() => setShowNewModal(true)} className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all shrink-0">
                     <Plus className="w-4 h-4" /> Start a project
                   </button>
-                  <button
-                    onClick={() => setShowNewModal(true)}
-                    title="Start a project"
-                    className="md:hidden w-9 h-9 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 flex items-center justify-center text-white shrink-0"
-                  >
+                  <button onClick={() => setShowNewModal(true)} title="Start a project" className="md:hidden w-9 h-9 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 flex items-center justify-center text-white shrink-0">
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             )}
-            {mainColumn}
+            {loading ? (
+              <div className="flex items-center justify-center py-20 cn-text-4"><Loader2 className="w-6 h-6 animate-spin" /></div>
+            ) : mainColumn}
           </div>
 
-          {/* Summary rail */}
           <div className="hidden md:block mt-1">
             <div className="cn-glass rounded-2xl p-4 flex flex-col gap-3 sticky top-4">
-              <span className="text-xs font-semibold cn-text-3">Overview</span>
+              <span className="text-xs font-semibold cn-text-3">This month</span>
               <div className="flex justify-between">
                 <div>
                   <div className="cn-mono text-[22px] font-bold cn-text-1">{initiatives.filter(i => i.status === 'active').length}</div>
@@ -1150,8 +1748,8 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
                   <div className="text-[11.5px] cn-text-4">Completed</div>
                 </div>
                 <div>
-                  <div className="cn-mono text-[22px] font-bold text-amber-500">{initiatives.filter(i => i.status === 'planning').length}</div>
-                  <div className="text-[11.5px] cn-text-4">Planning</div>
+                  <div className="cn-mono text-[22px] font-bold text-amber-500">{initiatives.reduce((sum, i) => sum + (i.open_roles_count ?? 0), 0)}</div>
+                  <div className="text-[11.5px] cn-text-4">Open roles</div>
                 </div>
               </div>
             </div>
@@ -1159,8 +1757,8 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
         </div>
       </div>
 
-      {showNewModal && <NewInitiativeModal onClose={() => setShowNewModal(false)} onSubmit={handleCreateInitiative} />}
-      {showShareModal && current && <ShareModal item={current} onClose={() => setShowShareModal(false)} />}
+      {showNewModal && <NewInitiativeModal onClose={() => setShowNewModal(false)} onSubmit={handleCreate} mySpaces={mySpaces} />}
+      {showShareModal && current && <ShareModal item={current} hubSlug={hubSlug} onClose={() => setShowShareModal(false)} />}
     </div>
   );
 }

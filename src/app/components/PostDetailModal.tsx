@@ -287,7 +287,6 @@ export function PostDetailModal({
     setSaving(true);
     try {
       const updated = await hubService.updatePost(hubSlug, post.id, {
-        title: editBody.trim().split('\n')[0].substring(0, 100) || post.title,
         body: editBody.trim(),
         mediaFile: editMediaFile ?? undefined,
         removeMedia: editRemoveMedia,
@@ -407,7 +406,7 @@ export function PostDetailModal({
                       className="absolute inset-0 scale-110 blur-xl opacity-60"
                       style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
                     />
-                    <img src={mediaUrl} alt={post.title} className="relative w-full h-full object-contain" />
+                    <img src={mediaUrl} alt={post.title ?? ''} className="relative w-full h-full object-contain" />
                   </div>
                 )}
                 {variant === 'video' && mediaUrl && (

@@ -332,6 +332,7 @@ function HubInitiativesRoute() {
       initialId={id}
       onOpenDetail={detailId => navigate(hubPath(`/initiatives/${detailId}`))}
       onBackToList={() => navigate(hubPath('/initiatives'), { replace: true })}
+      onOpenSpace={spaceSlug => navigate(hubPath(`/spaces/${spaceSlug}`))}
     />
   );
 }

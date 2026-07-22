@@ -145,10 +145,10 @@ class SpacesService {
     return res.json();
   }
 
-  async createPost(hubSlug: string, spaceSlug: string, data: { title: string; body?: string; category?: string; mediaFile?: File }): Promise<HubPost> {
+  async createPost(hubSlug: string, spaceSlug: string, data: { title?: string; body?: string; category?: string; mediaFile?: File }): Promise<HubPost> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const formData = new FormData();
-    formData.append('title', data.title);
+    if (data.title) formData.append('title', data.title);
     if (data.body) formData.append('body', data.body);
     if (data.category) formData.append('category', data.category);
     if (data.mediaFile) formData.append('media', data.mediaFile);

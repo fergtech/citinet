@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { PostCard } from './PostCard';
 import { PollFeedCard } from './PollFeedCard';
 import { LocationSearchInput } from './LocationSearchInput';
+import { AvatarCircle } from './AvatarCircle';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
@@ -15,10 +16,8 @@ import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
 import { openLocationInAtlas } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
-import { pollsService } from '../services/pollsService';
 import { requestsService, type HubRequest } from '../services/requestsService';
 import type { HubPost, HubPostReply, HubEventAttendee } from '../types/hub';
-import type { Poll } from '../types/poll';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,11 +75,12 @@ const RAIL_CAT_COLORS: Record<string, string> = {
   PROJECT:      'text-emerald-400',
   REQUEST:      'text-orange-400',
   EVENT:        'text-purple-400',
+  POLL:         'text-indigo-400',
 };
 
 const RAIL_CAT_LABELS: Record<string, string> = {
   DISCUSSION: 'Discussions', ANNOUNCEMENT: 'Announcements',
-  PROJECT: 'Projects', REQUEST: 'Requests', EVENT: 'Events',
+  PROJECT: 'Projects', REQUEST: 'Requests', EVENT: 'Events', POLL: 'Polls',
 };
 
 function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
@@ -136,33 +136,6 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
 
 // ── Post Detail Helpers ───────────────────────────────────────
 
-function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
-const AVATAR_COLORS_LIST = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',
-];
-function avatarColorClass(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS_LIST[Math.abs(h) % AVATAR_COLORS_LIST.length];
-}
-
-function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId, currentUserAvatarUrl, size = 'md' }: {
-  authorId: string;
-  authorUsername: string;
-  authorAvatarUrl?: string;
-  currentUserId?: string;
-  currentUserAvatarUrl?: string;
-  size?: 'sm' | 'md';
-}) {
-  const [failed, setFailed] = useState(false);
-  const dim = size === 'sm' ? 'w-7 h-7 text-[10px]' : 'w-8 h-8 text-xs';
-  const url = authorId === currentUserId ? (currentUserAvatarUrl || authorAvatarUrl) : authorAvatarUrl;
-  useEffect(() => { setFailed(false); }, [url]);
-  if (url && !failed) return <img src={url} alt={authorUsername} className={`${dim} rounded-full object-cover shrink-0`} onError={() => setFailed(true)} />;
-  return <div className={`${dim} rounded-full bg-gradient-to-br ${avatarColorClass(authorUsername)} flex items-center justify-center text-white font-semibold shrink-0`}>{getInitials(authorUsername)}</div>;
-}
 
 /** Real, shared RSVP row for an EVENT post — same hub_event_rsvps backend the
  * dashboard's compact event overlay uses, so "going" stays consistent everywhere. */
@@ -292,9 +265,26 @@ interface PostDetailViewProps {
   onLike: (post: HubPost) => void;
   onNavigateToProfile?: (userId: string) => void;
   onNavigate?: (screen: string) => void;
+  // Poll-only — passed through to PollFeedCard when post.category === 'POLL'
+  canManagePoll?: boolean;
+  pollVoting?: boolean;
+  pollClosing?: boolean;
+  pollReopening?: boolean;
+  pollDeleting?: boolean;
+  onPollVote?: (post: HubPost, idx: number) => void;
+  onPollClose?: (postId: string) => void;
+  onPollReopen?: (postId: string) => void;
+  onPollEdit?: (post: HubPost) => void;
+  onPollDelete?: (postId: string) => void;
+  // Copy-permalink — not poll-specific; shared by the regular post Share button too.
+  onCopyLink: (postId: string) => void;
+  copyLinkActive: boolean;
 }
 
-function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onLike, onNavigateToProfile, onNavigate }: PostDetailViewProps) {
+function PostDetailView({
+  post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onLike, onNavigateToProfile, onNavigate,
+  canManagePoll, pollVoting, pollClosing, pollReopening, pollDeleting, onPollVote, onPollClose, onPollReopen, onPollEdit, onPollDelete, onCopyLink, copyLinkActive,
+}: PostDetailViewProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
   const [replyText, setReplyText] = useState('');
@@ -339,6 +329,14 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
     if (sessionStorage.getItem('citinet-focus-reply') !== post.id) return;
     sessionStorage.removeItem('citinet-focus-reply');
     setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [post.id]);
+
+  // Arrived here via the list view's Edit action — enter edit mode immediately,
+  // same sessionStorage-flag handoff as the comment-focus case above.
+  useEffect(() => {
+    if (sessionStorage.getItem('citinet-focus-edit') !== post.id) return;
+    sessionStorage.removeItem('citinet-focus-edit');
+    setIsEditing(true);
   }, [post.id]);
 
   function scrollToReply(replyId: string) {
@@ -397,7 +395,6 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
     setSaving(true);
     try {
       const updated = await hubService.updatePost(hubSlug, post.id, {
-        title: editBody.trim().split('\n')[0].substring(0, 100) || post.title,
         body: editBody.trim(),
         mediaFile: editMediaFile ?? undefined,
         removeMedia: editRemoveMedia,
@@ -457,14 +454,45 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
       {/* Centered content */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-8">
 
-        {/* Post card */}
+        {/* Poll post — reuse the feed card's vote UI/quorum bar/mod actions wholesale
+            rather than duplicating poll rendering here; comments below still apply
+            generically (hub_post_replies isn't category-restricted). */}
+        {post.category === 'POLL' ? (
+          <div className="mb-5">
+            <PollFeedCard
+              post={post}
+              canManage={!!canManagePoll}
+              voting={!!pollVoting}
+              closing={!!pollClosing}
+              reopening={!!pollReopening}
+              onVote={idx => onPollVote?.(post, idx)}
+              onClose={() => onPollClose?.(post.id)}
+              onReopen={() => onPollReopen?.(post.id)}
+              onEdit={() => onPollEdit?.(post)}
+              onDelete={() => onPollDelete?.(post.id)}
+              deleting={!!pollDeleting}
+              onCopyLink={() => onCopyLink(post.id)}
+              copyLinkActive={copyLinkActive}
+              onNavigateToProfile={post.author_id && onNavigateToProfile ? () => onNavigateToProfile(post.author_id) : undefined}
+              onLike={() => onLike(post)}
+              onCommentClick={() => textareaRef.current?.focus()}
+              likeCount={post.like_count}
+              myLiked={post.my_liked}
+              replyCount={post.reply_count}
+              authorAvatarUrl={post.author_id ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+            />
+          </div>
+        ) : (
+        /* Post card */
         <div className="cn-glass rounded-2xl overflow-hidden mb-5">
 
           {/* Media */}
           {!isEditing && variant === 'image' && mediaUrl && (
             <div className="relative w-full aspect-video cn-surface overflow-hidden">
               <div className="absolute inset-0 scale-110 blur-xl opacity-60" style={{ backgroundImage: `url(${mediaUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
-              <img src={mediaUrl} alt={post.title} className="relative w-full h-full object-contain" />
+              <img src={mediaUrl} alt={post.title ?? ''} className="relative w-full h-full object-contain" />
             </div>
           )}
           {!isEditing && variant === 'video' && mediaUrl && (
@@ -570,13 +598,19 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                       {(sourceBrand.name ?? 'S').charAt(0).toUpperCase()}
                     </div>
                   ) : (
-                    <AvatarCircle
-                      authorId={post.author_id}
-                      authorUsername={post.author_username}
-                      authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
-                      currentUserId={currentUserId}
-                      currentUserAvatarUrl={currentUserAvatarUrl}
-                    />
+                    <button
+                      onClick={() => onNavigateToProfile && post.author_id && onNavigateToProfile(post.author_id)}
+                      disabled={!onNavigateToProfile || !post.author_id}
+                      className="shrink-0 disabled:cursor-default"
+                    >
+                      <AvatarCircle
+                        authorId={post.author_id}
+                        authorUsername={post.author_username}
+                        authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                        currentUserId={currentUserId}
+                        currentUserAvatarUrl={currentUserAvatarUrl}
+                      />
+                    </button>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -675,8 +709,14 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
                   <button title="Comment" aria-label={`Comment, ${post.reply_count} comments`} className="flex items-center gap-1.5 cn-text-4 hover:text-blue-400 transition-colors text-sm" onClick={() => textareaRef.current?.focus()}>
                     <MessageCircle className="w-4 h-4" /><span>{post.reply_count}</span>
                   </button>
-                  <button title="Share" aria-label="Share post" className="flex items-center gap-1.5 cn-text-4 hover:text-emerald-400 transition-colors text-sm">
-                    <Share2 className="w-4 h-4" /><span>Share</span>
+                  <button
+                    title="Share"
+                    aria-label="Share post"
+                    onClick={() => onCopyLink(post.id)}
+                    className={`flex items-center gap-1.5 transition-colors text-sm ${copyLinkActive ? 'text-emerald-500' : 'cn-text-4 hover:text-emerald-400'}`}
+                  >
+                    {copyLinkActive ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                    <span>{copyLinkActive ? 'Copied' : 'Share'}</span>
                   </button>
                   <div className="flex-1" />
                   <button title="Bookmark" aria-label="Bookmark post" className="cn-text-4 hover:text-purple-400 transition-colors">
@@ -687,6 +727,7 @@ function PostDetailView({ post, hubSlug, currentUserId, currentUserAvatarUrl, is
             )}
           </div>
         </div>
+        )}
 
         {/* Comments section */}
         <div className="cn-glass rounded-2xl overflow-hidden">
@@ -844,7 +885,6 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
     try {
       const post = await hubService.createPost(hubSlug, {
         category,
-        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventDate: category === 'EVENT' && eventDate ? new Date(eventDate).toISOString() : undefined,
@@ -1012,19 +1052,20 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
 
 interface ComposePollModalProps {
   hubSlug: string;
-  editingPoll?: Poll;
+  editingPoll?: HubPost;
+  isMod: boolean;
   onClose: () => void;
-  onCreated: (poll: Poll) => void;
-  onUpdated: (poll: Poll) => void;
+  onCreated: (post: HubPost) => void;
+  onUpdated: (post: HubPost) => void;
 }
 
-function ComposePollModal({ hubSlug, editingPoll, onClose, onCreated, onUpdated }: ComposePollModalProps) {
+function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onUpdated }: ComposePollModalProps) {
   const isEditing = !!editingPoll;
-  const [question, setQuestion] = useState(editingPoll?.question ?? '');
-  const [options, setOptions] = useState(editingPoll ? [...editingPoll.options] : ['', '']);
-  const [closesAt, setClosesAt] = useState(editingPoll?.closes_at ? toDatetimeLocal(editingPoll.closes_at) : '');
-  const [quorumPct, setQuorumPct] = useState(editingPoll?.quorum_pct ?? 0);
-  const [passPct, setPassPct] = useState(editingPoll?.pass_pct ?? 50);
+  const [question, setQuestion] = useState(editingPoll?.title ?? '');
+  const [options, setOptions] = useState(editingPoll?.poll ? [...editingPoll.poll.options] : ['', '']);
+  const [closesAt, setClosesAt] = useState(editingPoll?.poll?.closes_at ? toDatetimeLocal(editingPoll.poll.closes_at) : '');
+  const [quorumPct, setQuorumPct] = useState(editingPoll?.poll?.quorum_pct ?? 0);
+  const [passPct, setPassPct] = useState(editingPoll?.poll?.pass_pct ?? 50);
   const [linkedRequestId, setLinkedRequestId] = useState('');
   const [openRequests, setOpenRequests] = useState<HubRequest[]>([]);
   const [showGovernance, setShowGovernance] = useState(false);
@@ -1032,11 +1073,11 @@ function ComposePollModal({ hubSlug, editingPoll, onClose, onCreated, onUpdated 
   const [createError, setCreateError] = useState('');
 
   useEffect(() => {
-    if (isEditing) return; // editing doesn't support (re)linking a request
+    if (isEditing || !isMod) return; // editing doesn't support (re)linking a request; linking is mod-only
     requestsService.list(hubSlug).then(reqs =>
       setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
     ).catch(() => {});
-  }, [hubSlug, isEditing]);
+  }, [hubSlug, isEditing, isMod]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1055,24 +1096,26 @@ function ComposePollModal({ hubSlug, editingPoll, onClose, onCreated, onUpdated 
     setCreateError('');
     try {
       if (isEditing) {
-        const poll = await pollsService.update(hubSlug, editingPoll.id, {
+        const post = await hubService.updatePoll(hubSlug, editingPoll.id, {
           question: question.trim(),
           options: validOptions,
-          closes_at: closesAt || null,
-          quorum_pct: quorumPct,
-          pass_pct: passPct,
+          closesAt: closesAt || undefined,
+          quorumPct,
+          passPct,
         });
-        onUpdated(poll);
+        onUpdated(post);
       } else {
-        const poll = await pollsService.create(hubSlug, {
-          question: question.trim(),
+        const post = await hubService.createPost(hubSlug, {
+          category: 'POLL',
+          title: question.trim(),
+          body: '',
           options: validOptions,
-          closes_at: closesAt || undefined,
-          request_id: linkedRequestId || undefined,
-          quorum_pct: quorumPct,
-          pass_pct: passPct,
+          closesAt: closesAt || undefined,
+          requestId: isMod ? (linkedRequestId || undefined) : undefined,
+          quorumPct,
+          passPct,
         });
-        onCreated(poll);
+        onCreated(post);
       }
       onClose();
     } catch (e) {
@@ -1241,11 +1284,10 @@ interface InlineComposerProps {
   isMod: boolean;
   displayInitial: string;
   onPostCreated: (post: HubPost) => void;
-  onPollCreated: (poll: Poll) => void;
   onOpenFullComposer: (initialBody: string) => void;
 }
 
-function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onPollCreated, onOpenFullComposer }: InlineComposerProps) {
+function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onOpenFullComposer }: InlineComposerProps) {
   const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
@@ -1275,11 +1317,11 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
   const [showGovernance, setShowGovernance] = useState(false);
 
   useEffect(() => {
-    if (mode !== 'poll') return;
+    if (mode !== 'poll' || !isMod) return; // linking a poll to a request is mod-only
     requestsService.list(hubSlug).then(reqs =>
       setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
     ).catch(() => {});
-  }, [hubSlug, mode]);
+  }, [hubSlug, mode, isMod]);
 
   const reset = () => {
     setMode('idle'); setBody(''); setPostError('');
@@ -1311,7 +1353,6 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
     try {
       const post = await hubService.createPost(hubSlug, {
         category: 'DISCUSSION',
-        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventLocation: place?.label,
@@ -1334,8 +1375,8 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
     try {
       const post = await hubService.createPost(hubSlug, {
         category: 'EVENT',
-        title: body.trim().split('\n')[0].substring(0, 100) || 'Untitled',
         body: body.trim(),
+        mediaFile: mediaFile ?? undefined,
         eventDate: new Date(eventDate).toISOString(),
         eventLocation: eventLocation || undefined,
         eventLat: eventCoords?.lat,
@@ -1356,15 +1397,18 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
     setPosting(true);
     setPostError('');
     try {
-      const poll = await pollsService.create(hubSlug, {
-        question: body.trim(),
+      const post = await hubService.createPost(hubSlug, {
+        category: 'POLL',
+        title: body.trim(),
+        body: '',
+        mediaFile: mediaFile ?? undefined,
         options: validOptions,
-        closes_at: closesAt || undefined,
-        request_id: linkedRequestId || undefined,
-        quorum_pct: quorumPct,
-        pass_pct: passPct,
+        closesAt: closesAt || undefined,
+        requestId: isMod ? (linkedRequestId || undefined) : undefined,
+        quorumPct,
+        passPct,
       });
-      onPollCreated(poll);
+      onPostCreated(post);
       reset();
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to create poll');
@@ -1374,6 +1418,28 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
   }
 
   const fieldCls = 'w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
+
+  const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
+  const mediaChipsRow = (
+    <div className="flex items-center gap-1">
+      <button onClick={() => photoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+        <Image className="w-3.5 h-3.5" />Photo
+      </button>
+      <button onClick={() => videoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+        <Film className="w-3.5 h-3.5" />Video
+      </button>
+    </div>
+  );
+  const mediaPreviewBlock = mediaPreview && (
+    <div className="relative rounded-xl overflow-hidden bg-black">
+      {isVideoFile
+        ? <video src={mediaPreview} controls className="w-full max-h-56 object-contain" />
+        : <img src={mediaPreview} alt="Preview" className="w-full max-h-56 object-cover" />}
+      <button onClick={removeMedia} className="absolute top-2 right-2 w-7 h-7 rounded-lg bg-black/50 hover:bg-black/70 flex items-center justify-center transition-colors">
+        <X className="w-3.5 h-3.5 text-white" />
+      </button>
+    </div>
+  );
 
   if (mode === 'poll') {
     const validCount = options.filter(o => o.trim()).length;
@@ -1425,6 +1491,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
           <input type="datetime-local" value={closesAt} onChange={e => setClosesAt(e.target.value)} className="cn-surface-2 border cn-border rounded-lg px-2.5 py-1.5 text-xs cn-text-1 focus:outline-none focus:border-purple-400" />
           <span className="text-xs cn-text-4">(optional)</span>
         </div>
+
+        {mediaPreviewBlock}
+        {mediaChipsRow}
 
         <div className="border-t cn-border pt-2.5">
           <button type="button" onClick={() => setShowGovernance(v => !v)} className="flex items-center gap-1.5 text-xs font-medium cn-text-3 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors">
@@ -1515,6 +1584,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
         />
         {eventCoords && <p className="text-[11px] text-emerald-500">Linked to Atlas — this exact spot will be clickable on the post.</p>}
 
+        {mediaPreviewBlock}
+        {mediaChipsRow}
+
         {postError && <p className="text-xs text-rose-500">{postError}</p>}
 
         <div className="flex justify-end gap-2">
@@ -1530,8 +1602,6 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
       </div>
     );
   }
-
-  const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
 
   return (
     <div className="cn-glass rounded-2xl overflow-hidden">
@@ -1614,11 +1684,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
           >
             <Calendar className="w-3.5 h-3.5" />Event
           </button>
-          {isMod && (
-            <button onClick={() => setMode('poll')} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-              <BarChart2 className="w-3.5 h-3.5" />Poll
-            </button>
-          )}
+          <button onClick={() => setMode('poll')} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <BarChart2 className="w-3.5 h-3.5" />Poll
+          </button>
         </div>
         <div className="flex-1" />
         <button
@@ -1646,7 +1714,6 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const { postId: urlPostId } = useParams<{ postId?: string }>();
 
   const [posts, setPosts] = useState<HubPost[]>([]);
-  const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
@@ -1654,10 +1721,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [composing, setComposing] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
   const [composingPoll, setComposingPoll] = useState(false);
-  const [editingPoll, setEditingPoll] = useState<Poll | null>(null);
+  const [editingPoll, setEditingPoll] = useState<HubPost | null>(null);
   const [pollVoting, setPollVoting] = useState<string | null>(null);
   const [pollClosing, setPollClosing] = useState<string | null>(null);
   const [pollReopening, setPollReopening] = useState<string | null>(null);
+  const [pollDeleting, setPollDeleting] = useState<string | null>(null);
+  const [postDeleting, setPostDeleting] = useState<string | null>(null);
   const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
 
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
@@ -1697,6 +1766,15 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setActiveFilter(cat);
   }, []);
 
+  // Compatibility redirect for old poll share links (#poll=<id>, from before polls had
+  // a real /feed/:id detail route) — land on the real route instead.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith('#poll=')) return;
+    const id = hash.slice('#poll='.length);
+    if (id) navigate(hubPath(`/feed/${id}`), { replace: true });
+  }, [navigate]);
+
   // /feed/:postId — the URL is the single source of truth for which post's detail view
   // (if any) is showing; selectedPost is only ever written here, never optimistically by
   // openPost/closePost, so there's no race between a state clear and the URL catching up.
@@ -1721,12 +1799,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const [postData, pollData] = await Promise.all([
-        hubService.listPosts(hubSlug),
-        pollsService.list(hubSlug),
-      ]);
+      const postData = await hubService.listPosts(hubSlug);
       setPosts(postData);
-      setPolls(pollData);
     } catch (err) {
       if (!silent) {
         const msg = err instanceof Error ? err.message : 'Could not load posts';
@@ -1743,22 +1817,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     return () => clearInterval(id);
   }, [load]);
 
-  // Unified, chronologically-sorted feed of posts + polls (polls are just another post type, client-side only)
-  type FeedItem = { kind: 'post'; sortAt: string; post: HubPost } | { kind: 'poll'; sortAt: string; poll: Poll };
-  const feedItems = useMemo<FeedItem[]>(() => {
-    const items: FeedItem[] = [
-      ...posts.map(post => ({ kind: 'post' as const, sortAt: post.created_at, post })),
-      ...polls.map(poll => ({ kind: 'poll' as const, sortAt: poll.created_at, poll })),
-    ];
-    items.sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime());
-    return items;
-  }, [posts, polls]);
-
-  const filteredItems = useMemo(() => {
-    if (!activeFilter) return feedItems;
-    if (activeFilter === 'POLL') return feedItems.filter(i => i.kind === 'poll');
-    return feedItems.filter(i => i.kind === 'post' && i.post.category === activeFilter);
-  }, [feedItems, activeFilter]);
+  // Posts already come back chronologically sorted from the API — polls are just
+  // another post category now, no separate fetch/merge needed.
+  const filteredPosts = useMemo(() => {
+    if (!activeFilter) return posts;
+    return posts.filter(p => p.category === activeFilter);
+  }, [posts, activeFilter]);
 
   // A post's detail view lives at /feed/:postId — real, shareable, survives refresh/back.
   // These only ever touch the URL; the effect above is solely responsible for reacting
@@ -1778,6 +1842,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
    * in PostDetailView, keyed off the same sessionStorage flag). */
   function handleCommentClick(post: HubPost) {
     sessionStorage.setItem('citinet-focus-reply', post.id);
+    openPost(post);
+  }
+
+  /** Opens the post and flags that we got here specifically to edit, so the
+   * detail view enters edit mode once it mounts (see the matching effect
+   * in PostDetailView, keyed off the same sessionStorage flag). */
+  function handleEditClick(post: HubPost) {
+    sessionStorage.setItem('citinet-focus-edit', post.id);
     openPost(post);
   }
 
@@ -1806,56 +1878,78 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setPosts(prev => prev.filter(p => p.id !== postId));
     if (selectedPost?.id === postId) closePost();
   }
-  function handlePollCreated(poll: Poll) { setPolls(prev => [poll, ...prev]); }
-
-  async function handlePollVote(poll: Poll, optionIndex: number) {
-    if (poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
-    setPollVoting(poll.id);
-    const prev = polls;
-    setPolls(ps => ps.map(p => {
-      if (p.id !== poll.id) return p;
-      const newCounts = [...p.vote_counts];
-      if (p.my_vote != null) newCounts[p.my_vote] = Math.max(0, newCounts[p.my_vote] - 1);
-      newCounts[optionIndex]++;
-      const totalDelta = p.my_vote != null ? 0 : 1;
-      return { ...p, vote_counts: newCounts, my_vote: optionIndex, total_votes: p.total_votes + totalDelta };
-    }));
+  async function handlePostDelete(postId: string) {
+    if (!confirm('Delete this post? This cannot be undone.')) return;
+    setPostDeleting(postId);
     try {
-      await pollsService.vote(hubSlug, poll.id, optionIndex);
+      await hubService.deletePost(hubSlug, postId);
+      handlePostDeleted(postId);
+    } catch { /* non-critical */ }
+    setPostDeleting(null);
+  }
+  function handlePollUpdated(post: HubPost) {
+    setPosts(prev => prev.map(p => (p.id === post.id ? { ...p, ...post } : p)));
+    setSelectedPost(sp => (sp && sp.id === post.id ? { ...sp, ...post } : sp));
+  }
+
+  async function handlePollVote(post: HubPost, optionIndex: number) {
+    const poll = post.poll;
+    if (!poll || poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
+    setPollVoting(post.id);
+    const prevPosts = posts;
+    const optimistic = (p: HubPost): HubPost => {
+      if (!p.poll) return p;
+      const newCounts = [...p.poll.vote_counts];
+      if (p.poll.my_vote != null) newCounts[p.poll.my_vote] = Math.max(0, newCounts[p.poll.my_vote] - 1);
+      newCounts[optionIndex]++;
+      const totalDelta = p.poll.my_vote != null ? 0 : 1;
+      return { ...p, poll: { ...p.poll, vote_counts: newCounts, my_vote: optionIndex, total_votes: p.poll.total_votes + totalDelta } };
+    };
+    setPosts(ps => ps.map(p => (p.id === post.id ? optimistic(p) : p)));
+    setSelectedPost(sp => (sp && sp.id === post.id ? optimistic(sp) : sp));
+    try {
+      await hubService.votePoll(hubSlug, post.id, optionIndex);
       load(true);
     } catch {
-      setPolls(prev);
+      setPosts(prevPosts);
+      setSelectedPost(sp => (sp && sp.id === post.id ? prevPosts.find(p => p.id === post.id) ?? sp : sp));
     } finally {
       setPollVoting(null);
     }
   }
 
-  async function handlePollClose(pollId: string) {
-    setPollClosing(pollId);
+  async function handlePollClose(postId: string) {
+    setPollClosing(postId);
     try {
-      await pollsService.close(hubSlug, pollId);
+      await hubService.closePoll(hubSlug, postId);
       load(true);
     } catch { /* non-critical */ }
     setPollClosing(null);
   }
 
-  async function handlePollReopen(pollId: string) {
-    setPollReopening(pollId);
+  async function handlePollReopen(postId: string) {
+    setPollReopening(postId);
     try {
-      await pollsService.reopen(hubSlug, pollId);
+      await hubService.reopenPoll(hubSlug, postId);
       load(true); // refetch so the poll, and any request it's linked to, reflect the reopened state everywhere
     } catch { /* non-critical */ }
     setPollReopening(null);
   }
 
-  function handlePollUpdated() {
-    load(true); // votes may have reset if options changed — refetch for accurate counts
+  async function handlePollDelete(postId: string) {
+    if (!confirm('Delete this poll? This cannot be undone.')) return;
+    setPollDeleting(postId);
+    try {
+      await hubService.deletePost(hubSlug, postId);
+      handlePostDeleted(postId);
+    } catch { /* non-critical */ }
+    setPollDeleting(null);
   }
 
-  function handleCopyPollLink(pollId: string) {
-    const link = `${window.location.href.split('#')[0]}#poll=${pollId}`;
+  function handleCopyPostLink(postId: string) {
+    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
     navigator.clipboard.writeText(link).then(() => {
-      setCopyLinkFeedback(pollId);
+      setCopyLinkFeedback(postId);
       setTimeout(() => setCopyLinkFeedback(null), 2000);
     });
   }
@@ -1876,6 +1970,18 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           onLike={handlePostLike}
           onNavigateToProfile={onNavigate ? (userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); } : undefined}
           onNavigate={onNavigate}
+          canManagePoll={isMod || selectedPost.author_id === currentUser?.hubUserId}
+          pollVoting={pollVoting === selectedPost.id}
+          pollClosing={pollClosing === selectedPost.id}
+          pollReopening={pollReopening === selectedPost.id}
+          pollDeleting={pollDeleting === selectedPost.id}
+          onPollVote={handlePollVote}
+          onPollClose={handlePollClose}
+          onPollReopen={handlePollReopen}
+          onPollEdit={post => setEditingPoll(post)}
+          onPollDelete={handlePollDelete}
+          onCopyLink={handleCopyPostLink}
+          copyLinkActive={copyLinkFeedback === selectedPost.id}
         />
       ) : (
       <>
@@ -1903,7 +2009,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           {/* Category tabs */}
           <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar -mx-1 px-1 border-b cn-border">
             {CAT_TABS.map(({ value, label }) => {
-              const count = value === 'POLL' ? polls.length : value ? posts.filter(p => p.category === value).length : 0;
+              const count = value ? posts.filter(p => p.category === value).length : 0;
               return (
                 <button
                   key={value ?? 'all'}
@@ -1941,7 +2047,6 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 isMod={isMod}
                 displayInitial={currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
                 onPostCreated={handleCreated}
-                onPollCreated={handlePollCreated}
                 onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
               />
 
@@ -1964,17 +2069,15 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               )}
 
               {/* Empty */}
-              {!loading && !error && filteredItems.length === 0 && (
+              {!loading && !error && filteredPosts.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center cn-glass rounded-2xl">
                   <p className="cn-text-3 text-sm mb-3">
                     {activeFilter === 'POLL' ? 'No polls yet.' : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
                   </p>
                   {activeFilter === 'POLL' ? (
-                    isMod && (
-                      <button onClick={() => setComposingPoll(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
-                        Create the first poll →
-                      </button>
-                    )
+                    <button onClick={() => setComposingPoll(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
+                      Create the first poll →
+                    </button>
                   ) : (
                     <button onClick={() => setComposing(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
                       Be the first to post →
@@ -1983,28 +2086,37 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 </div>
               )}
 
-              {/* Feed items — posts and polls, chronologically merged */}
-              {!loading && !error && filteredItems.map(item => {
-                if (item.kind === 'poll') {
-                  const poll = item.poll;
+              {/* Feed items — posts and polls, chronologically merged (polls are just another post category now) */}
+              {!loading && !error && filteredPosts.map(post => {
+                if (post.category === 'POLL') {
                   return (
                     <PollFeedCard
-                      key={poll.id}
-                      poll={poll}
-                      isMod={isMod}
-                      voting={pollVoting === poll.id}
-                      closing={pollClosing === poll.id}
-                      reopening={pollReopening === poll.id}
-                      onVote={idx => handlePollVote(poll, idx)}
-                      onClose={() => handlePollClose(poll.id)}
-                      onReopen={() => handlePollReopen(poll.id)}
-                      onEdit={() => setEditingPoll(poll)}
-                      onCopyLink={() => handleCopyPollLink(poll.id)}
-                      copyLinkActive={copyLinkFeedback === poll.id}
+                      key={post.id}
+                      post={post}
+                      canManage={isMod || post.author_id === currentUser?.hubUserId}
+                      voting={pollVoting === post.id}
+                      closing={pollClosing === post.id}
+                      reopening={pollReopening === post.id}
+                      onVote={idx => handlePollVote(post, idx)}
+                      onClose={() => handlePollClose(post.id)}
+                      onReopen={() => handlePollReopen(post.id)}
+                      onEdit={() => setEditingPoll(post)}
+                      onDelete={() => handlePollDelete(post.id)}
+                      deleting={pollDeleting === post.id}
+                      onCopyLink={() => handleCopyPostLink(post.id)}
+                      copyLinkActive={copyLinkFeedback === post.id}
+                      onNavigateToProfile={post.author_id && !isExternalSourcePost(post) && onNavigate ? () => onNavigate(`profile/${post.author_id}`) : undefined}
+                      onLike={() => handlePostLike(post)}
+                      onCommentClick={() => handleCommentClick(post)}
+                      likeCount={post.like_count}
+                      myLiked={post.my_liked}
+                      replyCount={post.reply_count}
+                      authorAvatarUrl={post.author_id ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
+                      currentUserId={currentUser?.hubUserId}
+                      currentUserAvatarUrl={currentUser?.avatarUrl}
                     />
                   );
                 }
-                const post = item.post;
                 const mediaUrl = post.media_file_name
                   ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
                   : undefined;
@@ -2018,7 +2130,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       id={post.id}
                       variant={getVariant(post.media_file_name)}
                       category={post.category}
-                      title={post.title}
+                      title={post.title ?? ''}
                       author={post.author_username}
                       timestamp={formatTimestamp(post.created_at)}
                       content={post.body}
@@ -2033,6 +2145,18 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       eventLocation={post.event_location}
                       onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location) : undefined}
                       autoPlay={false}
+                      authorId={post.author_id && !isExternalSourcePost(post) ? post.author_id : undefined}
+                      onNavigateToProfile={post.author_id && !isExternalSourcePost(post) && onNavigate ? () => onNavigate(`profile/${post.author_id}`) : undefined}
+                      canDelete={currentUser?.isAdmin === true || post.author_id === currentUser?.hubUserId}
+                      onDelete={() => handlePostDelete(post.id)}
+                      deleting={postDeleting === post.id}
+                      canEdit={post.author_id === currentUser?.hubUserId}
+                      onEdit={() => handleEditClick(post)}
+                      onShare={() => handleCopyPostLink(post.id)}
+                      shareCopied={copyLinkFeedback === post.id}
+                      authorAvatarUrl={post.author_id && !isExternalSourcePost(post) ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
+                      currentUserId={currentUser?.hubUserId}
+                      currentUserAvatarUrl={currentUser?.avatarUrl}
                     />
                   </div>
                 );
@@ -2068,8 +2192,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         <ComposePollModal
           hubSlug={hubSlug}
           editingPoll={editingPoll ?? undefined}
+          isMod={isMod}
           onClose={() => { setComposingPoll(false); setEditingPoll(null); }}
-          onCreated={handlePollCreated}
+          onCreated={handleCreated}
           onUpdated={handlePollUpdated}
         />
       )}

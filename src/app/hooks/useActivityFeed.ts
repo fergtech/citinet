@@ -122,7 +122,7 @@ export function useActivityFeed(hubSlug: string) {
           actor,
           actorAvatarUrl: avatarUrlForUsername(actor),
           summary: 'posted',
-          title: post.title,
+          title: post.title || post.body?.slice(0, 80) || 'Untitled',
           timestamp: new Date(post.created_at),
           navigateTo: 'feed',
           itemId: post.id,

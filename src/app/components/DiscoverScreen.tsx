@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Compass, Layers, Target, Wrench, Calendar, Users, Hexagon,
   ChevronLeft, ChevronRight, MessageCircle, Loader2,
@@ -11,7 +11,7 @@ import { toolkitService } from '../services/toolkitService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
 import { HubIcon } from './HubIcon';
-import type { HubPost, HubMember, HubSpace } from '../types/hub';
+import type { HubPost, HubMember, HubSpace, SearchResults } from '../types/hub';
 import type { Tool } from '../types/toolkit';
 
 type FilterId = 'all' | 'spaces' | 'initiatives' | 'resources' | 'events' | 'people' | 'hubs';
@@ -240,6 +240,8 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
   const [otherHubs, setOtherHubs] = useState<RegistryHub[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  const searchRequestId = useRef(0);
 
   const tools = useMemo(() => toolkitService.getAllTools(), []);
 
@@ -290,11 +292,39 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
   }, [slug, tunnelUrl, currentUser?.authToken]);
 
   const needle = query.trim().toLowerCase();
+  // Real backend relevance-ranked search kicks in at 2+ chars (see GET /api/search) —
+  // below that, English stemming makes results unreliable anyway, so we fall back to
+  // today's local substring filtering, unchanged, exactly as before this feature.
+  const searching = needle.length >= 2 && searchResults != null && searchResults.query === needle;
 
-  const filteredSpaces = useMemo(
-    () => spaces.filter(s => s.my_status !== 'active' && (!needle || s.name.toLowerCase().includes(needle))),
-    [spaces, needle]
-  );
+  useEffect(() => {
+    if (!slug || needle.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    const myRequestId = ++searchRequestId.current;
+    const timer = setTimeout(() => {
+      hubService.search(slug, needle)
+        .then(results => {
+          if (searchRequestId.current === myRequestId) setSearchResults(results);
+        })
+        .catch(() => {
+          if (searchRequestId.current === myRequestId) setSearchResults(null);
+        });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [slug, needle]);
+
+  // Spaces/members/events: once a real search is active (2+ chars, backend responded),
+  // source from GET /api/search's relevance-ranked results instead of local substring
+  // filtering. Below that threshold, behavior is unchanged from before this feature.
+  const filteredSpaces = useMemo(() => {
+    if (searching) return searchResults!.spaces;
+    return spaces.filter(s => s.my_status !== 'active' && (!needle || s.name.toLowerCase().includes(needle)));
+  }, [spaces, needle, searching, searchResults]);
+  // Initiatives/Toolkit/Other-hubs have no local Postgres table to search (proxied to
+  // an external service, a separate central registry, and static/localStorage data,
+  // respectively) — they keep their existing client-side filtering, unchanged.
   const filteredInitiatives = useMemo(
     () => initiatives.filter(i => !needle || i.title.toLowerCase().includes(needle)),
     [initiatives, needle]
@@ -304,33 +334,53 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     [tools, needle]
   );
   const filteredEvents = useMemo(() => {
+    if (searching) return searchResults!.posts.filter(p => p.category === 'EVENT');
     const cutoff = Date.now() - 86400000;
     return posts
-      .filter(p => !!p.event_date && new Date(p.event_date!).getTime() >= cutoff && (!needle || p.title.toLowerCase().includes(needle)))
+      .filter(p => !!p.event_date && new Date(p.event_date!).getTime() >= cutoff && (!needle || (p.title ?? p.body).toLowerCase().includes(needle)))
       .sort((a, b) => new Date(a.event_date!).getTime() - new Date(b.event_date!).getTime());
-  }, [posts, needle]);
-  const filteredMembers = useMemo(
-    () => members.filter(m => !needle || m.username.toLowerCase().includes(needle) || (m.display_name?.toLowerCase().includes(needle) ?? false)),
-    [members, needle]
-  );
+  }, [posts, needle, searching, searchResults]);
+  const filteredMembers = useMemo(() => {
+    if (searching) return searchResults!.members;
+    return members.filter(m => !needle
+      || m.username.toLowerCase().includes(needle)
+      || (m.display_name?.toLowerCase().includes(needle) ?? false)
+      || (m.tags?.some(t => t.toLowerCase().includes(needle)) ?? false));
+  }, [members, needle, searching, searchResults]);
   const filteredHubs = useMemo(
     () => otherHubs.filter(h => !needle || h.name.toLowerCase().includes(needle)),
     [otherHubs, needle]
   );
 
+  // Self is excluded from passive "people you might know" browsing, but an active
+  // search term is a real query — if it matches your own handle, you should see
+  // yourself in the results, same as searching your own @handle on any other app.
+  const visibleMembers = useMemo(
+    () => (needle ? filteredMembers : filteredMembers.filter(m => m.user_id !== currentUserId)),
+    [filteredMembers, needle, currentUserId]
+  );
+
   // "Active neighbors" — members who authored something in the recent posts
   // list (a real activity signal), backfilled with the most recently joined
-  // members when there aren't enough active ones to fill the rail.
+  // members when there aren't enough active ones to fill the rail. During an
+  // active search, `visibleMembers` is already relevance-ranked by the backend —
+  // re-sorting by activity here would throw that ranking away, so just take it as-is.
   const activeNeighbors = useMemo(() => {
+    if (searching) return visibleMembers.slice(0, 4);
     const activeIds = new Set(posts.map(p => p.author_id));
-    const active = filteredMembers.filter(m => activeIds.has(m.user_id) && m.user_id !== currentUserId);
-    const rest = filteredMembers
-      .filter(m => !activeIds.has(m.user_id) && m.user_id !== currentUserId)
+    const active = visibleMembers.filter(m => activeIds.has(m.user_id));
+    const rest = visibleMembers
+      .filter(m => !activeIds.has(m.user_id))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return [...active, ...rest].slice(0, 4);
-  }, [filteredMembers, posts, currentUserId]);
+  }, [visibleMembers, posts, searching]);
 
-  const suggestedSpaces = useMemo(() => [...filteredSpaces].sort((a, b) => (b.member_count ?? 0) - (a.member_count ?? 0)).slice(0, 4), [filteredSpaces]);
+  // Same reasoning as activeNeighbors — preserve real search ranking instead of
+  // re-sorting by member_count once a search is active.
+  const suggestedSpaces = useMemo(() => {
+    if (searching) return filteredSpaces.slice(0, 4);
+    return [...filteredSpaces].sort((a, b) => (b.member_count ?? 0) - (a.member_count ?? 0)).slice(0, 4);
+  }, [filteredSpaces, searching]);
   const featuredInitiatives = useMemo(
     () => [...filteredInitiatives].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active')).slice(0, 3),
     [filteredInitiatives]
@@ -348,7 +398,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     const topPost = [...posts].sort((a, b) => ((b.reply_count ?? 0) + (b.like_count ?? 0)) - ((a.reply_count ?? 0) + (a.like_count ?? 0)))[0];
     if (topPost) {
       items.push({
-        id: `p-${topPost.id}`, title: topPost.title,
+        id: `p-${topPost.id}`, title: topPost.title || topPost.body.slice(0, 60) || 'Untitled',
         meta: `Feed · ${topPost.reply_count} ${topPost.reply_count === 1 ? 'reply' : 'replies'}`,
         gradient: 'var(--cn-grad-feed)', icon: MessageCircle, onClick: () => setSelectedPost(topPost),
       });
@@ -377,8 +427,42 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     return needle ? items.filter(i => i.title.toLowerCase().includes(needle)) : items;
   }, [posts, spaces, initiatives, tools, needle, onNavigate]);
 
+  // Real, cross-type relevance-ranked results — one interleaved list ordered by
+  // `score`, replacing "Trending" (a browse-mode recommendation concept) once an
+  // actual search is active. This is the single ranked list real search engines
+  // return, built from GET /api/search's already-scored posts/members/spaces.
+  const unifiedResults = useMemo(() => {
+    if (!searching) return [];
+    type Row = { key: string; title: string; meta: string; gradient: string; icon: LucideIcon; score: number; onClick: () => void };
+    const rows: Row[] = [];
+    for (const p of searchResults!.posts) {
+      rows.push({
+        key: `p-${p.id}`, title: p.title || p.body?.slice(0, 60) || 'Untitled',
+        meta: `${p.category.charAt(0)}${p.category.slice(1).toLowerCase()} · ${p.author_username ?? 'Unknown'}`,
+        gradient: p.category === 'EVENT' ? 'var(--cn-grad-atlas)' : 'var(--cn-grad-feed)',
+        icon: p.category === 'EVENT' ? Calendar : MessageCircle,
+        score: p.score, onClick: () => setSelectedPost(p),
+      });
+    }
+    for (const m of searchResults!.members) {
+      rows.push({
+        key: `m-${m.user_id}`, title: m.display_name || m.username,
+        meta: m.bio ? `Person · ${m.bio}` : 'Person',
+        gradient: 'var(--cn-grad-identity)', icon: Users, score: m.score,
+        onClick: () => (m.user_id === currentUserId ? onNavigate('account') : onViewProfile?.(m.user_id)),
+      });
+    }
+    for (const s of searchResults!.spaces) {
+      rows.push({
+        key: `sp-${s.id}`, title: s.name, meta: `Space · ${s.member_count ?? 0} members`,
+        gradient: 'var(--cn-grad-spaces)', icon: Layers, score: s.score, onClick: () => onNavigate('spaces'),
+      });
+    }
+    return rows.sort((a, b) => b.score - a.score);
+  }, [searching, searchResults, currentUserId, onNavigate, onViewProfile]);
+
   const showAll = filter === 'all';
-  const hasAnyResults = trending.length > 0 || suggestedSpaces.length > 0 || featuredInitiatives.length > 0
+  const hasAnyResults = trending.length > 0 || unifiedResults.length > 0 || suggestedSpaces.length > 0 || featuredInitiatives.length > 0
     || popularResources.length > 0 || upcomingEvents.length > 0 || activeNeighbors.length > 0 || otherHubsSlice.length > 0;
 
   return (
@@ -451,7 +535,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           </div>
         )}
 
-        {!loading && showAll && trending.length > 0 && (
+        {!loading && showAll && !searching && trending.length > 0 && (
           <section>
             <SectionHeading title="Trending in your hub" />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -462,9 +546,23 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           </section>
         )}
 
-        {!loading && (showAll || filter === 'spaces') && suggestedSpaces.length > 0 && (
+        {!loading && showAll && searching && unifiedResults.length > 0 && (
           <section>
-            <SectionHeading title="Spaces you might like" sub="Based on activity across your hub" onSeeAll={showAll ? () => setFilter('spaces') : undefined} />
+            <SectionHeading title="Search results" sub={`Ranked by relevance to "${query}"`} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {unifiedResults.map(r => (
+                <TrendingRow key={r.key} icon={r.icon} gradient={r.gradient} title={r.title} meta={r.meta} onClick={r.onClick} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* In showAll mode, an active search already shows spaces inside the unified
+            "Search results" list above — this section would just duplicate them, so
+            it only appears here in browse mode or on the dedicated Spaces tab. */}
+        {!loading && (filter === 'spaces' || (showAll && !searching)) && suggestedSpaces.length > 0 && (
+          <section>
+            <SectionHeading title={searching ? `Spaces matching "${query}"` : 'Spaces you might like'} sub={searching ? undefined : 'Based on activity across your hub'} onSeeAll={showAll ? () => setFilter('spaces') : undefined} />
             <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
               {(showAll ? suggestedSpaces : filteredSpaces).map(s => (
                 <SpaceCard key={s.id} space={s} tunnelUrl={tunnelUrl} onClick={() => onNavigate('spaces')} />
@@ -495,9 +593,9 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           </section>
         )}
 
-        {!loading && (showAll || filter === 'events') && upcomingEvents.length > 0 && (
+        {!loading && (filter === 'events' || (showAll && !searching)) && upcomingEvents.length > 0 && (
           <section>
-            <SectionHeading title="Upcoming events" />
+            <SectionHeading title={searching ? `Events matching "${query}"` : 'Upcoming events'} />
             <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
               {(showAll ? upcomingEvents : filteredEvents).map(e => (
                 <EventCard key={e.id} post={e} onClick={() => setSelectedPost(e)} />
@@ -506,11 +604,11 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           </section>
         )}
 
-        {!loading && (showAll || filter === 'people') && activeNeighbors.length > 0 && (
+        {!loading && (filter === 'people' || (showAll && !searching)) && (showAll ? activeNeighbors : visibleMembers).length > 0 && (
           <section>
-            <SectionHeading title="Active neighbors" sub="People to know in your hub" />
+            <SectionHeading title={searching ? `People matching "${query}"` : 'Active neighbors'} sub={searching ? undefined : 'People to know in your hub'} />
             <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-              {(showAll ? activeNeighbors : filteredMembers.filter(m => m.user_id !== currentUserId)).map(m => (
+              {(showAll ? activeNeighbors : visibleMembers).map(m => (
                 <PersonCard
                   key={m.user_id}
                   member={m}

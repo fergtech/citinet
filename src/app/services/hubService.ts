@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 
@@ -902,9 +902,22 @@ class HubService {
     return rawMembers.map((m: any) => ({
       user_id:   m.user_id || m.id || m.userId || '',
       username:  m.username || m.name || m.display_name || 'Unknown',
+      display_name: m.display_name ?? null,
+      location: m.location ?? null,
+      bio: m.bio ?? null,
+      tags: m.tags ?? null,
       is_admin:  Boolean(m.is_admin || m.isAdmin || false),
       role:      (m.role as 'admin' | 'moderator' | 'member') ?? (m.is_admin ? 'admin' : 'member'),
       created_at: m.created_at || m.createdAt || m.joined_at || '',
+      avatar_url: m.avatar_url ?? null,
+      profile_headline: m.profile_headline ?? null,
+      banner_mode: m.banner_mode ?? null,
+      banner_color: m.banner_color ?? null,
+      banner_gradient_from: m.banner_gradient_from ?? null,
+      banner_gradient_to: m.banner_gradient_to ?? null,
+      banner_image_file_name: m.banner_image_file_name ?? null,
+      website: m.website ?? null,
+      profile_visibility: m.profile_visibility ?? null,
     }));
   }
 
@@ -1559,6 +1572,25 @@ class HubService {
     return Array.isArray(data) ? data : (data.posts || []);
   }
 
+  /** Real relevance-ranked search across posts/members/local spaces (and, for
+   * mods, requests) — see GET /api/search. Initiatives/toolkit/other-hubs have
+   * no local table to search and aren't part of this; callers keep filtering
+   * those client-side. */
+  async search(hubSlug: string, query: string, limit = 20): Promise<SearchResults> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    const response = await fetch(`${tunnelUrl}/api/search?${params}`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return {
+      query: data.query ?? query,
+      posts: data.results?.posts ?? [],
+      members: data.results?.members ?? [],
+      spaces: data.results?.spaces ?? [],
+      requests: data.results?.requests ?? [],
+    };
+  }
+
   /** Fetch a single post by ID. */
   async getPost(hubSlug: string, postId: string): Promise<HubPost> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
@@ -1567,17 +1599,23 @@ class HubService {
     return response.json();
   }
 
-  /** Create a new post. Optionally attach an image file. */
+  /** Create a new post. Optionally attach an image file. For category 'POLL',
+   * title is the question (required) and the poll-only fields apply. */
   async createPost(
     hubSlug: string,
-    post: { category: string; title: string; body: string; mediaFile?: File; eventDate?: string; eventLocation?: string; eventLat?: number; eventLng?: number; visibility?: 'inherit' | 'hub' | 'private' }
+    post: {
+      category: string; title?: string; body: string; mediaFile?: File;
+      eventDate?: string; eventLocation?: string; eventLat?: number; eventLng?: number;
+      visibility?: 'inherit' | 'hub' | 'private';
+      options?: string[]; closesAt?: string; requestId?: string; quorumPct?: number; passPct?: number;
+    }
   ): Promise<HubPost> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection?.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
 
     const formData = new FormData();
     formData.append('category', post.category);
-    formData.append('title', post.title);
+    if (post.title) formData.append('title', post.title);
     formData.append('body', post.body);
     if (post.mediaFile) formData.append('media', post.mediaFile);
     if (post.eventDate) formData.append('event_date', post.eventDate);
@@ -1585,6 +1623,11 @@ class HubService {
     if (post.eventLat !== undefined) formData.append('event_lat', String(post.eventLat));
     if (post.eventLng !== undefined) formData.append('event_lng', String(post.eventLng));
     if (post.visibility && post.visibility !== 'inherit') formData.append('visibility', post.visibility);
+    if (post.options) formData.append('options', JSON.stringify(post.options));
+    if (post.closesAt) formData.append('closes_at', post.closesAt);
+    if (post.requestId) formData.append('request_id', post.requestId);
+    if (post.quorumPct !== undefined) formData.append('quorum_pct', String(post.quorumPct));
+    if (post.passPct !== undefined) formData.append('pass_pct', String(post.passPct));
 
     const headers: Record<string, string> = {};
     if (connection.user?.authToken) headers['Authorization'] = `Bearer ${connection.user.authToken}`;
@@ -1593,6 +1636,58 @@ class HubService {
       method: 'POST',
       headers,
       body: formData,
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** Cast (or change) a vote on a POLL-category post. */
+  async votePoll(hubSlug: string, postId: string, optionIndex: number): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/vote`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_index: optionIndex }),
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+  }
+
+  /** Close a POLL-category post (author or moderator/admin). */
+  async closePoll(hubSlug: string, postId: string): Promise<{ passed: boolean | null }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/close`, { method: 'PATCH', headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return response.json();
+  }
+
+  /** Reopen a closed POLL-category post (author or moderator/admin). */
+  async reopenPoll(hubSlug: string, postId: string, closesAt?: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/reopen`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closes_at: closesAt || undefined }),
+    });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+  }
+
+  /** Edit a POLL-category post's question/options/threshold fields (author or moderator/admin). */
+  async updatePoll(
+    hubSlug: string,
+    postId: string,
+    updates: { question?: string; options?: string[]; closesAt?: string; quorumPct?: number; passPct?: number }
+  ): Promise<HubPost> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/posts/${postId}/poll`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: updates.question,
+        options: updates.options,
+        closes_at: updates.closesAt,
+        quorum_pct: updates.quorumPct,
+        pass_pct: updates.passPct,
+      }),
     });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     return response.json();
