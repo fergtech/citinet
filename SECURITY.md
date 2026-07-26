@@ -85,6 +85,18 @@ MinIO object keys use `{userId}/{uuid}` — original filenames never appear in t
 - Bearer token auth — no cookies, so CSRF via `<form>` submission cannot include the
   Authorization header.
 
+### Join approval (added 2026-07-26)
+Registration is no longer instant-access. `hub_users.status` (`approved` /
+`pending` / `rejected`) gates every protected route via `authenticate()` —
+a newly registered account gets a working session token, but every API call
+it makes is rejected with 403 until a hub admin approves it via the new
+Members-tab queue (`GET/POST /api/admin/pending-users/...`). The hub's
+founding admin (first registration ever) is auto-approved, since there's no
+one else yet to approve them. This is the direct mitigation for the
+"any stranger who joins the Wi-Fi instantly gets a working account" scenario
+raised when extending physical/wireless hub reach — see
+[`hub-wireless-reach-standard.md`](docs/hub-wireless-reach-standard.md).
+
 ### `/api/featured` image_url validation (added 2026-07-26)
 `isSafeMediaUrl()` rejects any `image_url` that isn't an `http:`/`https:` URL, applied
 to both the create (`POST`) and edit (`PATCH`) routes — blocks `javascript:`/`data:`
@@ -195,6 +207,7 @@ hijacking" confusion in the first place.
 - [x] `javascript:` URL blocked in featured `image_url` (create and edit)
 - [x] Content-Disposition filenames sanitized
 - [x] Token expiration (30-day sliding sessions) + periodic purge
+- [x] Join approval — new accounts are `pending` until a hub admin approves them (founding admin auto-approved)
 - [ ] `CORS_ORIGIN` env var is currently inert — either wire it up or remove it from `.env.example`/`docker-compose.yml` to stop implying it does something
 - [ ] Resolve unused `citinet-redis` container (wire up or remove)
 - [ ] Input length limits on posts, pins, descriptions

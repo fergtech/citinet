@@ -601,11 +601,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           {isAdmin && (
             <button
-              onClick={() => handleNavigate('hub-management')}
+              onClick={() => { clearBadge('hub_management'); notificationsService.markRead(hubSlug, 'hub_management').catch(() => {}); handleNavigate('hub-management'); }}
               title="Hub Admin"
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
+              className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-all active:scale-95 shrink-0"
             >
               <Shield className="w-5 h-5" />
+              {notifCounts.hub_management > 0 && (
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                  {notifCounts.hub_management > 9 ? '9+' : notifCounts.hub_management}
+                </span>
+              )}
             </button>
           )}
           <button
@@ -699,11 +704,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           {isAdmin && (
             <button
-              onClick={() => handleNavigate('hub-management')}
+              onClick={() => { clearBadge('hub_management'); notificationsService.markRead(hubSlug, 'hub_management').catch(() => {}); handleNavigate('hub-management'); }}
               title="Hub Admin"
               className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-purple-500/15 dark:hover:bg-purple-400/15 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
             >
-              <span className="w-16 h-12 flex items-center justify-center shrink-0"><Shield className="w-5 h-5" /></span>
+              <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
+                <Shield className="w-5 h-5" />
+                {notifCounts.hub_management > 0 && (
+                  <span className="absolute top-1.5 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                    {notifCounts.hub_management > 9 ? '9+' : notifCounts.hub_management}
+                  </span>
+                )}
+              </span>
               <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Hub Admin</span>
             </button>
           )}

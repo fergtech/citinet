@@ -28,6 +28,7 @@ import { ModLogScreen } from './components/ModLogScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
 import { AssistantScreen } from './components/AssistantScreen';
+import { PendingApprovalScreen } from './components/PendingApprovalScreen';
 import { ShareFilePage } from './components/ShareFilePage';
 import { ShareNotePage } from './components/ShareNotePage';
 import { ShareSpacePage } from './components/ShareSpacePage';
@@ -187,6 +188,49 @@ function HubDashboardRoute() {
   }
 
   return <Dashboard userName={userName} onNavigate={handleNavigate} />;
+}
+
+function HubPendingApprovalRoute() {
+  const { currentHub, currentUser, onHubJoined } = useHub();
+  const hubSlug = getSubdomain() ?? '';
+  const navigate = useNavigate();
+
+  // Once accountStatus flips away from pending/rejected (checked below, or via
+  // the periodic health check elsewhere refreshing currentUser), leave for the
+  // dashboard instead of rendering nothing.
+  useEffect(() => {
+    if (currentUser && currentUser.accountStatus !== 'pending' && currentUser.accountStatus !== 'rejected') {
+      navigate(hubPath('/'), { replace: true });
+    }
+  }, [currentUser, navigate]);
+
+  const handleCheckAgain = async () => {
+    const status = await hubService.checkAccountStatus(hubSlug);
+    if (status === 'approved' && currentHub) {
+      onHubJoined(currentHub); // re-reads the now-updated user record from storage into context
+      return true;
+    }
+    return false;
+  };
+
+  const handleSignOut = () => {
+    hubService.leaveHub(hubSlug);
+    clearSubdomainCache();
+    window.location.href = window.location.origin + '/';
+  };
+
+  if (currentUser?.accountStatus !== 'pending' && currentUser?.accountStatus !== 'rejected') {
+    return null; // brief flash while the redirect effect above fires
+  }
+
+  return (
+    <PendingApprovalScreen
+      status={currentUser.accountStatus}
+      hubName={currentHub?.name || hubSlug}
+      onCheckAgain={handleCheckAgain}
+      onSignOut={handleSignOut}
+    />
+  );
 }
 
 function HubFeedRoute() {
@@ -407,6 +451,12 @@ function HubGuard({ children }: { children: React.ReactNode }) {
       const sessionExpired = currentUser === null || !currentUser.authToken;
       if (sessionExpired && hubSlug && hubService.getHubConnection(hubSlug)) {
         navigate('/onboard', { replace: true });
+        return;
+      }
+      // Account created but not yet approved (or declined) by the hub admin —
+      // hold here instead of letting them into the dashboard/onboard loop.
+      if (currentUser && (currentUser.accountStatus === 'pending' || currentUser.accountStatus === 'rejected')) {
+        navigate('/pending-approval', { replace: true });
       }
       return;
     }
@@ -447,6 +497,7 @@ function HubModeRoutes() {
     <HubBackground />
     <Routes>
       <Route path="/onboard" element={<HubGuard><HubOnboardRoute /></HubGuard>} />
+      <Route path="/pending-approval" element={<HubPendingApprovalRoute />} />
       <Route path="/" element={<HubGuard><HubLayout><HubDashboardRoute /></HubLayout></HubGuard>} />
       <Route path="/feed" element={<HubGuard><HubLayout><HubFeedRoute /></HubLayout></HubGuard>} />
       <Route path="/feed/:postId" element={<HubGuard><HubLayout><HubFeedRoute /></HubLayout></HubGuard>} />

@@ -1,7 +1,7 @@
 import { hubService } from './hubService';
 
-export type NotificationFeature = 'feed' | 'messages';
-export interface NotificationCounts { feed: number; messages: number }
+export type NotificationFeature = 'feed' | 'messages' | 'hub_management';
+export interface NotificationCounts { feed: number; messages: number; hub_management: number }
 export interface UnreadNotification {
   id: number;
   type: string;
@@ -20,11 +20,11 @@ class NotificationsService {
 
   async getCounts(hubSlug: string): Promise<NotificationCounts> {
     const auth = this.getAuth(hubSlug);
-    if (!auth?.token) return { feed: 0, messages: 0 };
+    if (!auth?.token) return { feed: 0, messages: 0, hub_management: 0 };
     const res = await fetch(`${auth.baseUrl}/api/notifications/counts`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
-    if (!res.ok) return { feed: 0, messages: 0 };
+    if (!res.ok) return { feed: 0, messages: 0, hub_management: 0 };
     return res.json();
   }
 

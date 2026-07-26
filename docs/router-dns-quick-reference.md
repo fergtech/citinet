@@ -17,6 +17,28 @@ Map the hostname `citinet` to the hub machine's fixed LAN IP, for example:
 
 That lets devices on your main Wi-Fi open `http://citinet:9090` instead of typing the raw IP.
 
+## A Real Limitation of Plain HTTP
+
+Everything in this doc gets `citinet` or `citinet.local` to resolve, but the
+connection is still plain HTTP once the browser gets there. Two concrete
+consequences — not theoretical ones:
+
+- **E2E encryption breaks.** The app's message/note/file encryption runs
+  entirely on the browser's Web Crypto API (`crypto.subtle`), which browsers
+  only expose on secure contexts: HTTPS, or the exact hostnames `localhost` /
+  `127.0.0.1`. `http://citinet.local` and `http://<lan-ip>` don't qualify, so
+  encryption silently fails for anyone who isn't on the hub machine itself.
+- **Auth tokens travel in the clear over the air.** Every authenticated
+  request sends a Bearer token over plain HTTP. On an open Wi-Fi network,
+  anyone else in range can capture it with a packet sniffer; on WPA2-PSK,
+  anyone who knows the shared password and captures a handshake can too.
+
+Nothing in this doc fixes either of those — they're inherent to plain HTTP,
+not a missing setting. See [`SECURITY.md`](../SECURITY.md) for the current
+state and mitigation options (a self-signed/local CA certificate, or treating
+this as a known limitation of LAN-only access and reserving Tailscale/HTTPS
+access for anything that needs encryption or credential protection).
+
 ## Before You Start
 
 1. Make sure the hub has a stable LAN IP.

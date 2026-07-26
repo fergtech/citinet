@@ -4,7 +4,7 @@ import { notificationsService, type NotificationCounts, type NotificationFeature
 const POLL_INTERVAL = 30_000; // 30 seconds
 
 export function useNotificationCounts(hubSlug: string) {
-  const [counts, setCounts] = useState<NotificationCounts>({ feed: 0, messages: 0 });
+  const [counts, setCounts] = useState<NotificationCounts>({ feed: 0, messages: 0, hub_management: 0 });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetch = useCallback(async () => {

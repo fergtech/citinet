@@ -235,9 +235,15 @@ async function initDb() {
         email         VARCHAR(255),
         password_hash VARCHAR(255) NOT NULL,
         is_admin      BOOLEAN     DEFAULT FALSE,
+        status        VARCHAR(20) NOT NULL DEFAULT 'approved',
         created_at    TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Join-approval column (migration for existing installs) — existing users
+    // are grandfathered in as 'approved' so this never locks out a running hub.
+    await client.query(
+      `ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'approved'`,
+    );
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_sessions (
         token      VARCHAR(64) PRIMARY KEY,
@@ -1188,7 +1194,7 @@ async function authenticate(req, res, next) {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.username, u.is_admin, u.role
+      `SELECT u.id, u.username, u.is_admin, u.role, u.status
        FROM hub_sessions s
        JOIN hub_users u ON s.user_id = u.id
        WHERE s.token = $1 AND s.expires_at > NOW()`,
@@ -1196,6 +1202,15 @@ async function authenticate(req, res, next) {
     );
     if (!result.rows[0])
       return res.status(401).json({ error: 'Invalid or expired token' });
+    if (result.rows[0].status !== 'approved') {
+      return res.status(403).json({
+        error:
+          result.rows[0].status === 'rejected'
+            ? 'Your access request was declined by the hub admin.'
+            : 'Your account is awaiting admin approval.',
+        accountStatus: result.rows[0].status,
+      });
+    }
     req.user = result.rows[0];
     // Fire-and-forget: presence heartbeat + slide the session window so active
     // members never see a login prompt — session only expires after 30 days idle.
@@ -1296,6 +1311,10 @@ function emailCopyForNotification(type, actorName, hubName) {
       return { subject: `${actorName} invited you to a Space`, line: `${actorName} invited you to join a Space on ${hubName}.` };
     case 'initiative_invite':
       return { subject: `${actorName} invited you to a project`, line: `${actorName} invited you to join a community project on ${hubName}.` };
+    case 'account_approved':
+      return { subject: `You're in — welcome to ${hubName}`, line: `Your account on ${hubName} has been approved. You can log in now.` };
+    case 'join_request':
+      return { subject: `${actorName} wants to join ${hubName}`, line: `${actorName} requested access to ${hubName}. Approve or decline it from Hub Management → Members.` };
     default:
       return { subject: null, line: null };
   }
@@ -1593,16 +1612,21 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     const countRes = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
     const isFirst = parseInt(countRes.rows[0].c, 10) === 0;
 
+    // The hub's founding admin is auto-approved (no one else exists to approve
+    // them yet); everyone after that needs the admin to approve their account.
+    const status = isFirst ? 'approved' : 'pending';
+
     const result = await pool.query(
-      `INSERT INTO hub_users (username, email, password_hash, is_admin, role)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, username, email, is_admin, role, avatar_url`,
+      `INSERT INTO hub_users (username, email, password_hash, is_admin, role, status)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, username, email, is_admin, role, avatar_url, status`,
       [
         username.trim().toLowerCase(),
         email || '',
         hash,
         isFirst,
         isFirst ? 'admin' : 'member',
+        status,
       ],
     );
 
@@ -1613,6 +1637,19 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       [token, user.id],
     );
 
+    if (status === 'pending') {
+      // Let every admin know a new account is waiting on them — fire-and-forget,
+      // never blocks the registration response.
+      pool
+        .query(`SELECT id FROM hub_users WHERE is_admin = true`)
+        .then(({ rows: admins }) => {
+          for (const admin of admins) {
+            notifyUser(admin.id, 'join_request', user.id, user.id).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
     res.json({
       token,
       userId: user.id,
@@ -1620,6 +1657,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       email: user.email || null,
       isAdmin: user.is_admin,
       role: user.role,
+      status: user.status,
       avatar_url: user.avatar_url || null,
       display_name: user.display_name || null,
       location: user.location || null,
@@ -1672,6 +1710,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       email: user.email || null,
       isAdmin: user.is_admin,
       role: user.role ?? (user.is_admin ? 'admin' : 'member'),
+      status: user.status,
       avatar_url: user.avatar_url || null,
       display_name: user.display_name || null,
       location: user.location || null,
@@ -1681,6 +1720,91 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Lightweight status check for a pending/rejected account — deliberately does
+// NOT go through authenticate() (which blocks non-approved users outright),
+// so a pending user's client can poll whether they've been approved yet
+// without needing to re-enter credentials.
+app.get('/api/auth/session-status', async (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : header;
+  if (!token) return res.status(401).json({ error: 'Authorization required' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.status FROM hub_sessions s
+       JOIN hub_users u ON s.user_id = u.id
+       WHERE s.token = $1 AND s.expires_at > NOW()`,
+      [token],
+    );
+    if (!rows[0])
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    res.json({ status: rows[0].status });
+  } catch (err) {
+    console.error('Session status error:', err);
+    res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+// ── Join approval (admin) ─────────────────────────────────
+
+// List accounts waiting on admin approval
+app.get('/api/admin/pending-users', authenticate, async (req, res) => {
+  if (!req.user.is_admin)
+    return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT id AS user_id, username, email, created_at
+       FROM hub_users WHERE status = 'pending' ORDER BY created_at ASC`,
+    );
+    res.json({ pending: rows });
+  } catch (err) {
+    console.error('List pending users error:', err);
+    res.status(500).json({ error: 'Failed to load pending users' });
+  }
+});
+
+// Approve a pending account
+app.post('/api/admin/pending-users/:id/approve', authenticate, async (req, res) => {
+  if (!req.user.is_admin)
+    return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_users SET status = 'approved' WHERE id = $1 AND status = 'pending'
+       RETURNING id, username`,
+      [req.params.id],
+    );
+    if (!rows[0])
+      return res.status(404).json({ error: 'Pending user not found' });
+    logMod(req.user.id, 'approve_member', 'user', rows[0].id, rows[0].username, null, null);
+    notifyUser(rows[0].id, 'account_approved', req.user.id, null).catch(() => {});
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Approve user error:', err);
+    res.status(500).json({ error: 'Failed to approve user' });
+  }
+});
+
+// Reject a pending account — the account can no longer log in, but the row
+// is kept (not deleted) so the username stays reserved and there's an audit trail.
+app.post('/api/admin/pending-users/:id/reject', authenticate, async (req, res) => {
+  if (!req.user.is_admin)
+    return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_users SET status = 'rejected' WHERE id = $1 AND status = 'pending'
+       RETURNING id, username`,
+      [req.params.id],
+    );
+    if (!rows[0])
+      return res.status(404).json({ error: 'Pending user not found' });
+    logMod(req.user.id, 'reject_member', 'user', rows[0].id, rows[0].username, null, null);
+    // No notifyUser here — a rejected account can't authenticate to see it anyway.
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Reject user error:', err);
+    res.status(500).json({ error: 'Failed to reject user' });
   }
 });
 
@@ -2830,7 +2954,7 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
 
 // ── Notifications ─────────────────────────────────────────
 
-const FEATURE_TYPES = { feed: ['reply'], messages: ['message'] };
+const FEATURE_TYPES = { feed: ['reply'], messages: ['message'], hub_management: ['join_request'] };
 
 // Get unread counts grouped by feature
 app.get('/api/notifications/counts', authenticate, async (req, res) => {
@@ -2841,12 +2965,11 @@ app.get('/api/notifications/counts', authenticate, async (req, res) => {
        GROUP BY type`,
       [req.user.id],
     );
-    const counts = { feed: 0, messages: 0 };
+    const counts = Object.fromEntries(Object.keys(FEATURE_TYPES).map((k) => [k, 0]));
     for (const row of result.rows) {
-      if (FEATURE_TYPES.feed.includes(row.type))
-        counts.feed += parseInt(row.count, 10);
-      if (FEATURE_TYPES.messages.includes(row.type))
-        counts.messages += parseInt(row.count, 10);
+      for (const [feature, types] of Object.entries(FEATURE_TYPES)) {
+        if (types.includes(row.type)) counts[feature] += parseInt(row.count, 10);
+      }
     }
     res.json(counts);
   } catch (err) {

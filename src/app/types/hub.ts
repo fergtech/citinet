@@ -114,6 +114,8 @@ export interface HubUser {
   isAdmin?: boolean;
   /** Platform governance role: 'admin' | 'moderator' | 'member' */
   hubRole?: 'admin' | 'moderator' | 'member';
+  /** Join-approval status. Absent on hubs running an older API build (treat as approved). */
+  accountStatus?: 'approved' | 'pending' | 'rejected';
   /** User's email address */
   email?: string;
   /** User's location/neighborhood */

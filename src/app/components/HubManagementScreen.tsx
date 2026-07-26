@@ -25,6 +25,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [membersError, setMembersError] = useState('');
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
 
+  // Pending join-approval queue (admin only)
+  const [pendingUsers, setPendingUsers] = useState<Array<{ user_id: string; username: string; email: string | null; created_at: string }>>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+
   // Name editing
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
@@ -488,6 +493,47 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     }
   };
 
+  const loadPendingUsers = async () => {
+    if (!currentHub?.slug || !currentUser?.isAdmin) return;
+    setPendingLoading(true);
+    try {
+      const list = await hubService.listPendingUsers(currentHub.slug);
+      setPendingUsers(list);
+    } catch {
+      // Non-fatal — admins without a rebuilt hub API just won't see this section.
+    } finally {
+      setPendingLoading(false);
+    }
+  };
+
+  const handleApprovePending = async (userId: string) => {
+    if (!currentHub?.slug) return;
+    setPendingActionId(userId);
+    try {
+      await hubService.approvePendingUser(currentHub.slug, userId);
+      setPendingUsers(prev => prev.filter(u => u.user_id !== userId));
+      loadMembers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to approve');
+    } finally {
+      setPendingActionId(null);
+    }
+  };
+
+  const handleRejectPending = async (userId: string, username: string) => {
+    if (!currentHub?.slug) return;
+    if (!confirm(`Decline @${username}'s access request?`)) return;
+    setPendingActionId(userId);
+    try {
+      await hubService.rejectPendingUser(currentHub.slug, userId);
+      setPendingUsers(prev => prev.filter(u => u.user_id !== userId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to decline');
+    } finally {
+      setPendingActionId(null);
+    }
+  };
+
   const handleSetRole = async (member: HubMember, role: 'member' | 'moderator' | 'admin') => {
     if (!currentHub?.slug) return;
     setMemberActionId(member.user_id);
@@ -654,7 +700,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   };
 
   useEffect(() => {
-    if (activeTab === 'members') loadMembers();
+    if (activeTab === 'members') {
+      loadMembers();
+      loadPendingUsers();
+    }
     if (activeTab === 'featured') { loadFeatured(); loadRecentPosts(); }
   }, [activeTab]);
 
@@ -1361,6 +1410,65 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 Maximum of 5 featured items reached. Remove one to add another.
               </p>
             )}
+          </div>
+        )}
+
+        {/* ─── Pending Approval (admin only) ─── */}
+        {activeTab === 'members' && currentUser?.isAdmin && (pendingLoading || pendingUsers.length > 0) && (
+          <div className="cn-glass rounded-2xl overflow-hidden mb-4">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
+              <span className="text-sm font-medium text-slate-900 dark:text-white">
+                {pendingLoading ? 'Checking for requests...' : `${pendingUsers.length} waiting for approval`}
+              </span>
+              <button
+                onClick={loadPendingUsers}
+                disabled={pendingLoading}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                aria-label="Refresh pending requests"
+              >
+                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${pendingLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-zinc-800">
+              {pendingUsers.map(u => {
+                const busy = pendingActionId === u.user_id;
+                return (
+                  <div key={u.user_id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                      {u.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-slate-900 dark:text-white truncate block">{u.username}</span>
+                      {u.created_at && (
+                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                          Requested {new Date(u.created_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {busy ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />
+                    ) : (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => handleApprovePending(u.user_id)}
+                          title="Approve"
+                          className="p-1.5 rounded-lg text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleRejectPending(u.user_id, u.username)}
+                          title="Decline"
+                          className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

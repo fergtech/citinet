@@ -216,6 +216,7 @@ class HubService {
       authToken: result.token,
       isAdmin: result.isAdmin === true,
       hubRole: result.role ?? (result.isAdmin ? 'admin' : 'member'),
+      accountStatus: result.status || undefined,
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
@@ -265,6 +266,7 @@ class HubService {
       authToken: result.token,
       isAdmin: result.isAdmin === true,
       hubRole: result.role ?? (result.isAdmin ? 'admin' : 'member'),
+      accountStatus: result.status || undefined,
       avatarUrl: result.avatar_url || undefined,
       location: result.location || undefined,
       bio: result.bio || undefined,
@@ -273,6 +275,57 @@ class HubService {
 
     await this.completeOnboarding(hubSlug, userData);
     return userData;
+  }
+
+  /** Re-checks join-approval status for the current hub without needing to
+   * re-enter credentials. Used by the pending-approval screen's "Check again". */
+  async checkAccountStatus(hubSlug: string): Promise<'approved' | 'pending' | 'rejected' | null> {
+    const connection = this.getHubConnection(hubSlug);
+    const token = connection?.user?.authToken;
+    if (!connection?.hub.tunnelUrl || !token) return null;
+    try {
+      const res = await fetch(`${connection.hub.tunnelUrl}/api/auth/session-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const { status } = await res.json();
+      if (connection.user) {
+        connection.user.accountStatus = status;
+        await this.completeOnboarding(hubSlug, connection.user);
+      }
+      return status ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** List accounts awaiting join approval (admin only). */
+  async listPendingUsers(hubSlug: string): Promise<Array<{ user_id: string; username: string; email: string | null; created_at: string }>> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/admin/pending-users`, { headers });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+    const { pending } = await res.json();
+    return pending;
+  }
+
+  /** Approve a pending account (admin only). */
+  async approvePendingUser(hubSlug: string, userId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/admin/pending-users/${encodeURIComponent(userId)}/approve`, {
+      method: 'POST',
+      headers,
+    });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+  }
+
+  /** Reject a pending account (admin only). */
+  async rejectPendingUser(hubSlug: string, userId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/admin/pending-users/${encodeURIComponent(userId)}/reject`, {
+      method: 'POST',
+      headers,
+    });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
   }
 
   /** Toggle admin status for a hub member (admin only). */

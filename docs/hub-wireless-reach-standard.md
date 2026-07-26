@@ -2,9 +2,9 @@
 
 A standard any hub creator can follow to let people nearby join a network and
 reach their hub from a browser — no internet connection, no app install, no
-per-visitor setup. This is the physical-layer companion to the **"Local
-Network Only"** access mode in the `/create` wizard ("share with neighbors on
-your Wi-Fi").
+router-admin work required of the visitor. This is the physical-layer
+companion to the **"Local Network Only"** access mode in the `/create` wizard
+("share with neighbors on your Wi-Fi").
 
 It does not assume any specific router, access point brand, or operating
 system. It describes the requirements every setup must satisfy, then gives
@@ -12,12 +12,15 @@ tiers of hardware to meet them depending on what you already own.
 
 ## The Goal
 
-> Someone walks into range, joins a Wi-Fi network, opens a browser, and lands
-> on your hub. That's it.
+> Someone walks into range, joins a Wi-Fi network, opens a browser, and
+> requests access to your hub. Once the admin approves them, they're in.
 
 No Tailscale, no public URL, no domain, no port forwarding, no ISP
-involvement. If your hub never needs to be reachable from outside your own
-radio range, this is all you need.
+involvement. As of 2026-07-26, registration is no longer instant: the hub's
+founding admin is auto-approved, but every account after that sits as
+`pending` until approved from the Members tab — see the join-approval entry
+in [`SECURITY.md`](../SECURITY.md). That's a deliberate trade for exactly this
+scenario: reachability no longer implies automatic account access.
 
 ## The Three Requirements
 
@@ -46,6 +49,30 @@ three are true, the standard is met.
 Nothing about internet access, ISP terms of service, port forwarding, or
 public DNS applies here. That's what makes this simpler than the Tailscale
 access mode, not a lesser version of it.
+
+## A Real Limitation: Plain HTTP
+
+Meeting the three requirements above gets a visitor's browser to the hub, but
+over plain HTTP — which has two concrete consequences worth knowing before
+telling people "just join the Wi-Fi":
+
+- **E2E encryption (messages, notes, file encryption) doesn't work off the
+  hub machine.** It depends on the browser's Web Crypto API, which requires a
+  secure context (HTTPS, or exactly `localhost` / `127.0.0.1`). `citinet.local`
+  and LAN IPs don't qualify, so anyone connecting over Wi-Fi gets these
+  features silently failing rather than degraded.
+- **Login credentials and session tokens are sniffable over the air** by
+  anyone else on the same Wi-Fi network — more relevant here than almost
+  anywhere else in this project, since the whole point of this standard is
+  letting strangers join that network.
+
+This isn't something any tier below fixes — it's a property of serving over
+plain HTTP, not a hardware or configuration gap. Current options are a
+self-signed/local CA certificate (requires installing trust on every visiting
+device — a poor fit for "walk in and it just works"), or treating
+wireless-reach hubs as intentionally lower-trust and steering anything
+encryption-sensitive toward the Tailscale access mode instead. See
+[`SECURITY.md`](../SECURITY.md) for the full picture.
 
 ## Pick a Tier Based On What You Already Own
 
@@ -99,9 +126,12 @@ Run through this for any hub, regardless of which tier applies:
 - [ ] The `citinet` hostname resolves on that network (or the raw IP is what
       gets shared instead)
 - [ ] **The no-internet test**: put a phone in airplane mode, turn Wi-Fi back
-      on, join the network, and confirm the dashboard still loads. If it does,
-      you've proven this hub needs zero internet dependency to serve people in
-      range.
+      on, join the network, and confirm the dashboard (or, for a brand-new
+      account, the "waiting for approval" screen) still loads. Either one
+      proves this hub needs zero internet dependency to serve people in range.
+- [ ] You've read [A Real Limitation: Plain HTTP](#a-real-limitation-plain-http)
+      above and made a deliberate call on whether encryption-sensitive use is
+      steered elsewhere.
 
 ## What This Standard Deliberately Ignores
 
