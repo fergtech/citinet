@@ -82,14 +82,76 @@ if (process.env.STORAGE_URL && process.env.STORAGE_ACCESS_KEY) {
   }
 }
 
+// Shared across registration and password-change so one path can't be used
+// to downgrade an account below the other's policy.
+const MIN_PASSWORD_LENGTH = 8;
+
+// Blocked at upload time regardless of declared MIME type — classic
+// executable/script delivery extensions with no legitimate use on this platform.
+const BLOCKED_UPLOAD_EXTENSIONS = new Set([
+  '.exe', '.bat', '.sh', '.ps1', '.cmd', '.msi', '.dmg',
+  '.scr', '.com', '.vbs', '.js', '.jar', '.jse', '.wsf',
+]);
+
+function hasBlockedExtension(filename) {
+  return BLOCKED_UPLOAD_EXTENSIONS.has(path.extname(String(filename || '')).toLowerCase());
+}
+
+function multerFileFilter(req, file, cb) {
+  if (hasBlockedExtension(file.originalname)) {
+    return cb(new Error('File type not allowed'));
+  }
+  cb(null, true);
+}
+
+// ── File-serving safety (defense-in-depth against stored XSS via uploads) ──
+// Only content types a browser cannot execute as script/markup are ever served
+// with an inline (render-in-browser) disposition. Everything else — including
+// a spoofed or attacker-declared MIME type — is forced to a plain octet-stream
+// download, so an uploaded HTML/SVG/XML file can never run script in the hub's
+// own origin, whether the request is authenticated or hits a public route.
+const INLINE_SAFE_MIME_PREFIXES = ['image/', 'video/', 'audio/'];
+const INLINE_SAFE_MIME_EXACT = new Set(['application/pdf']);
+const INLINE_UNSAFE_MIME_EXACT = new Set(['image/svg+xml', 'image/svg']);
+
+function getSafeInlineContentType(rawMimeType) {
+  const mt = (rawMimeType || '').toLowerCase().split(';')[0].trim();
+  const isSafe =
+    !INLINE_UNSAFE_MIME_EXACT.has(mt) &&
+    (INLINE_SAFE_MIME_EXACT.has(mt) ||
+      INLINE_SAFE_MIME_PREFIXES.some((prefix) => mt.startsWith(prefix)));
+  return isSafe
+    ? { contentType: rawMimeType || 'application/octet-stream', disposition: 'inline' }
+    : { contentType: 'application/octet-stream', disposition: 'attachment' };
+}
+
+// Strips path components and anything unsafe inside a quoted
+// Content-Disposition filename="..." parameter.
+function sanitizeFilename(name) {
+  const base = path.basename(String(name || 'file'));
+  return base.replace(/[^\w.\- ]/g, '_') || 'file';
+}
+
+// Rejects javascript:/data:/etc. URIs — only http(s) is a valid image_url.
+function isSafeMediaUrl(url) {
+  if (!url) return true; // empty/absent means "no image", not a value to validate
+  try {
+    return ['http:', 'https:'].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB
+  fileFilter: multerFileFilter,
 });
 
 const uploadBg = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB cap for background images
+  fileFilter: multerFileFilter,
 });
 
 // ── Middleware ────────────────────────────────────────────
@@ -1520,10 +1582,10 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       .status(400)
       .json({ error: 'Username must be at least 2 characters' });
   }
-  if (password.length < 8) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
     return res
       .status(400)
-      .json({ error: 'Password must be at least 8 characters' });
+      .json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
 
   try {
@@ -1642,10 +1704,10 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
       .status(400)
       .json({ error: 'current_password and new_password are required' });
   }
-  if (new_password.length < 4) {
+  if (new_password.length < MIN_PASSWORD_LENGTH) {
     return res
       .status(400)
-      .json({ error: 'New password must be at least 4 characters' });
+      .json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters` });
   }
   try {
     const result = await pool.query(
@@ -2439,6 +2501,13 @@ app.post('/api/files', authenticate, (req, res) => {
     fileHandled = true;
     const filename = info.filename || 'upload';
     const mimeType = info.mimeType || 'application/octet-stream';
+
+    if (hasBlockedExtension(filename)) {
+      fileStream.resume(); // drain so busboy can finish and release the request
+      if (!res.headersSent) res.status(400).json({ error: 'File type not allowed' });
+      return;
+    }
+
     const fileKey = `${req.user.id}/${crypto.randomUUID()}`;
 
     const putToStorage = (body, size) => {
@@ -2544,13 +2613,13 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
-    const mimeType = file.mime_type || 'application/octet-stream';
+    const { contentType, disposition } = getSafeInlineContentType(file.mime_type);
     const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
 
-    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${file.file_name}"`,
+      `${disposition}; filename="${sanitizeFilename(file.file_name)}"`,
     );
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'private, max-age=3600');
@@ -2656,7 +2725,7 @@ app.get('/api/files/:filename/download', async (req, res) => {
     // "attachment" forces the browser to download rather than display
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${file.file_name}"`,
+      `attachment; filename="${sanitizeFilename(file.file_name)}"`,
     );
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'private, no-store');
@@ -2900,13 +2969,13 @@ app.get('/api/public/files/:filename', async (req, res) => {
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
-    const mimeType = file.mime_type || 'application/octet-stream';
+    const { contentType, disposition } = getSafeInlineContentType(file.mime_type);
     const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
 
-    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${file.file_name}"`,
+      `${disposition}; filename="${sanitizeFilename(file.file_name)}"`,
     );
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
@@ -2988,10 +3057,11 @@ app.get('/api/spaces/:slug/files/:filename', async (req, res) => {
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
     const file = rows[0];
-    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    const { contentType, disposition } = getSafeInlineContentType(file.mime_type);
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${file.file_name}"`,
+      `${disposition}; filename="${sanitizeFilename(file.file_name)}"`,
     );
     res.setHeader('Cache-Control', 'private, max-age=3600');
     if (file.size_bytes) res.setHeader('Content-Length', file.size_bytes);
@@ -3954,6 +4024,10 @@ app.post('/api/featured', authenticate, async (req, res) => {
     image_url,
   } = req.body || {};
 
+  if (image_url && !isSafeMediaUrl(image_url)) {
+    return res.status(400).json({ error: 'image_url must be an http or https URL' });
+  }
+
   try {
     const countResult = await pool.query('SELECT COUNT(*) FROM hub_featured');
     if (parseInt(countResult.rows[0].count, 10) >= 5) {
@@ -4088,6 +4162,9 @@ app.patch('/api/featured/:id', authenticate, async (req, res) => {
       .status(403)
       .json({ error: 'Admin or moderator access required' });
   const { title, caption, category_label, image_url } = req.body || {};
+  if (image_url && !isSafeMediaUrl(image_url)) {
+    return res.status(400).json({ error: 'image_url must be an http or https URL' });
+  }
   try {
     const { rows } = await pool.query(
       `UPDATE hub_featured
@@ -5142,15 +5219,17 @@ app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
     if (!spaceRows[0])
       return res.status(404).json({ error: 'Space not found or not public' });
     const { rows } = await pool.query(
-      `SELECT file_key, mime_type, size_bytes FROM hub_files WHERE file_name = $1 AND space_id = $2 LIMIT 1`,
+      `SELECT file_key, file_name, mime_type, size_bytes FROM hub_files WHERE file_name = $1 AND space_id = $2 LIMIT 1`,
       [fileName, spaceRows[0].id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'File not found' });
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
+    const { contentType, disposition } = getSafeInlineContentType(rows[0].mime_type);
+    res.setHeader('Content-Type', contentType);
     res.setHeader(
-      'Content-Type',
-      rows[0].mime_type || 'application/octet-stream',
+      'Content-Disposition',
+      `${disposition}; filename="${sanitizeFilename(rows[0].file_name)}"`,
     );
     res.setHeader('Cache-Control', 'public, max-age=86400');
     if (rows[0].size_bytes) res.setHeader('Content-Length', rows[0].size_bytes);
@@ -9469,6 +9548,15 @@ async function backfillAppCapabilities() {
     console.warn('[hub-app] capability backfill failed:', err.message);
   }
 }
+
+// Catches multer's fileFilter rejections (and other multer errors) so
+// blocked uploads return a clean 400 instead of an unhandled 500.
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError || err?.message === 'File type not allowed') {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+});
 
 // ── Start ─────────────────────────────────────────────────
 
