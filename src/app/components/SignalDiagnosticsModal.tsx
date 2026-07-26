@@ -78,7 +78,7 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
   const tType = tunnelType(tunnelUrl);
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="cn-surface border cn-border rounded-2xl max-w-md w-full max-h-[85vh] shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Header */}

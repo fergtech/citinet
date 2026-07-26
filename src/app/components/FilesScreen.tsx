@@ -979,7 +979,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
         {droppedFile && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm"
             onClick={() => setDroppedFile(null)}
           >
             <motion.div
@@ -1015,7 +1015,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
         {previewFile && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 dark:bg-black/85 backdrop-blur-sm"
             onClick={closePreview}
           >
             <button onClick={closePreview} className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors" aria-label="Close">

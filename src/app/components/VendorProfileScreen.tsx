@@ -490,7 +490,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
 
       {/* Banner editor */}
       {isOwner && showBannerEditor && (
-        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowBannerEditor(false)}>
+        <div className="fixed inset-0 z-40 bg-slate-900/40 dark:bg-black/50 flex items-center justify-center p-4" onClick={() => setShowBannerEditor(false)}>
           <div onClick={e => e.stopPropagation()} className="cn-surface border cn-border rounded-2xl p-6 max-w-sm w-full space-y-4">
             <h3 className="font-bold cn-text-1">Banner Style</h3>
 

@@ -1490,7 +1490,6 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'feed',        label: 'Feed',         emoji: '💬' },
                     { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
                     { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
-                    { screen: 'neighbors',   label: 'Neighbors',    emoji: '👥' },
                     { screen: 'notes',       label: 'Notes',        emoji: '📓' },
                     { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
                     { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
@@ -2199,7 +2198,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
       {/* Hub Icon editor */}
       {showIconEditor && (
-        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowIconEditor(false)}>
+        <div className="fixed inset-0 z-40 bg-slate-900/40 dark:bg-black/50 flex items-center justify-center p-4" onClick={() => setShowIconEditor(false)}>
           <div onClick={e => e.stopPropagation()} className="cn-surface border cn-border rounded-2xl p-6 max-w-sm w-full space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={48} variant="badge" />

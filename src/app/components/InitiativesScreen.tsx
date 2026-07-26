@@ -53,7 +53,7 @@ function taskCount(tasks: InitiativeTask[]) {
 
 function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
         className="cn-surface border cn-border rounded-2xl w-full max-w-[420px] max-h-[85vh] overflow-y-auto shadow-2xl p-5 flex flex-col gap-4"
         onClick={e => e.stopPropagation()}

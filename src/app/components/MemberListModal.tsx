@@ -55,7 +55,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
   const adminCount = members.filter(m => m.is_admin).length;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="cn-surface border cn-border rounded-2xl max-w-lg w-full max-h-[80vh] shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="p-6 pb-4 border-b cn-border">

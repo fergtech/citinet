@@ -133,7 +133,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
         key="backdrop"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/55 backdrop-blur-sm z-50"
+        className="fixed inset-0 bg-slate-900/40 dark:bg-black/55 backdrop-blur-sm z-50"
       />
       <div key="panel-wrap" className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <motion.div
@@ -796,7 +796,7 @@ const ACTIVITY_LOCATION: Record<string, string> = {
   feed:        'in Feed',
   files:       'in Files',
   atlas:       'in Atlas',
-  neighbors:   'in Neighbors',
+  discover:    'in Discover',
   marketplace: 'in Exchange',
 };
 

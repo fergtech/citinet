@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import {
   Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, ArrowRightLeft, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
-  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub, useHubStatus } from '../context/HubContext';
@@ -21,6 +21,10 @@ import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache } from '../utils/subdomain';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
 import type { HubVendor } from '../types/hub';
+
+// Screens pinned to the desktop sidebar/dock out of the box — users can repin
+// and reorder from the "More" overlay's Edit mode, persisted per-browser.
+const DEFAULT_PINNED_NAV = ['feed', 'messages', 'atlas', 'marketplace', 'toolkit'];
 
 export function HubLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -40,6 +44,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return 'sidebar';
     return localStorage.getItem('citinet-desktop-nav-layout') === 'dock' ? 'dock' : 'sidebar';
   });
+  const [pinnedNavScreens, setPinnedNavScreens] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PINNED_NAV;
+    try {
+      const parsed = JSON.parse(localStorage.getItem('citinet-pinned-nav') ?? 'null');
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PINNED_NAV;
+    } catch {
+      return DEFAULT_PINNED_NAV;
+    }
+  });
+  const [navEditMode, setNavEditMode] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -107,9 +121,24 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     .map(screen => visibleTiles.find(t => t.screen === screen))
     .filter(Boolean) as typeof APP_TILES;
 
-  const desktopNavItems = visibleTiles.filter(t =>
-    ['feed', 'messages', 'atlas', 'marketplace', 'neighbors', 'toolkit'].includes(t.screen)
-  );
+  const desktopNavItems = pinnedNavScreens
+    .map(screen => visibleTiles.find(t => t.screen === screen))
+    .filter(Boolean) as typeof APP_TILES;
+
+  const updatePinnedNav = (next: string[]) => {
+    setPinnedNavScreens(next);
+    localStorage.setItem('citinet-pinned-nav', JSON.stringify(next));
+  };
+  const pinApp = (screen: string) => updatePinnedNav([...pinnedNavScreens, screen]);
+  const unpinApp = (screen: string) => updatePinnedNav(pinnedNavScreens.filter(s => s !== screen));
+  const movePinnedApp = (screen: string, direction: 'up' | 'down') => {
+    const idx = pinnedNavScreens.indexOf(screen);
+    const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx === -1 || swapWith < 0 || swapWith >= pinnedNavScreens.length) return;
+    const next = [...pinnedNavScreens];
+    [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
+    updatePinnedNav(next);
+  };
 
   const pinnedScreens = new Set(desktopNavItems.map(i => i.screen));
   const moreNavItems = [
@@ -890,7 +919,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-40 bg-slate-900/30 dark:bg-black/45 backdrop-blur-sm md:hidden"
               onClick={() => setShowMobileAccountMenu(false)}
             />
             <motion.div
@@ -1017,7 +1046,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/55 backdrop-blur-sm"
               onClick={() => setShowSupportMenu(false)}
             />
             <motion.div
@@ -1075,7 +1104,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
+              className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/55 backdrop-blur-sm"
               onClick={() => setShowHubInfoModal(false)}
             />
             <motion.div
@@ -1142,8 +1171,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm"
-              onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
+              className="fixed inset-0 z-50 bg-slate-900/40 dark:bg-black/55 backdrop-blur-sm"
+              onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); setNavEditMode(false); }}
             />
             <motion.div
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -1153,15 +1182,108 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[calc(100vw-2rem)] max-w-lg rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
             >
               <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">{showMobileAppsMenu ? 'Apps' : 'More'}</h3>
-                <button
-                  onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); }}
-                  className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
-                >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                </button>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                  {showMobileAppsMenu ? 'Apps' : navEditMode ? 'Customize navigation' : 'More'}
+                </h3>
+                <div className="flex items-center gap-1">
+                  {!showMobileAppsMenu && (
+                    <button
+                      onClick={() => setNavEditMode(v => !v)}
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 dark:hover:bg-purple-400/10 transition-colors shrink-0"
+                    >
+                      {navEditMode ? 'Done' : 'Edit'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); setNavEditMode(false); }}
+                    className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
+                  >
+                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  </button>
+                </div>
               </div>
-              <div className="p-5 grid grid-cols-4 gap-3 max-h-[70vh] overflow-y-auto no-scrollbar">
+              {!showMobileAppsMenu && navEditMode ? (
+                <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+                      Pinned in navigation
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {desktopNavItems.length === 0 && (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 italic px-3 py-2">
+                          Nothing pinned — tap an app below to add it.
+                        </p>
+                      )}
+                      {desktopNavItems.map((app, idx) => (
+                        <div key={app.screen} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60">
+                          <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
+                            <app.Icon className="w-4 h-4" />
+                          </div>
+                          <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+                          <button
+                            onClick={() => movePinnedApp(app.screen, 'up')}
+                            disabled={idx === 0}
+                            title="Move up"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-500/10 disabled:opacity-30 disabled:pointer-events-none transition-colors shrink-0"
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => movePinnedApp(app.screen, 'down')}
+                            disabled={idx === desktopNavItems.length - 1}
+                            title="Move down"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-500/10 disabled:opacity-30 disabled:pointer-events-none transition-colors shrink-0"
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => unpinApp(app.screen)}
+                            title="Remove from navigation"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {moreNavItems.filter(a => a.screen !== 'suggest').length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+                        Tap to pin
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {moreNavItems.filter(a => a.screen !== 'suggest').map(app => (
+                          <button
+                            key={app.screen}
+                            onClick={() => pinApp(app.screen)}
+                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-purple-500/10 dark:hover:bg-purple-400/10 transition-colors text-left"
+                          >
+                            <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
+                              <app.Icon className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <div className="p-5 max-h-[70vh] overflow-y-auto no-scrollbar">
+                {!showMobileAppsMenu && moreNavItems.filter(a => a.screen !== 'suggest').length === 0 && (
+                  <div className="flex flex-col items-center text-center gap-2 py-5 mb-2">
+                    <Grid3x3 className="w-7 h-7 text-slate-300 dark:text-zinc-600" />
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Everything's pinned to your navigation</p>
+                    <button
+                      onClick={() => setNavEditMode(true)}
+                      className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+                    >
+                      Tap Edit to rearrange or unpin apps
+                    </button>
+                  </div>
+                )}
+                <div className="grid grid-cols-4 gap-3">
                 {(showMobileAppsMenu ? mobileLaunchpadItems : moreNavItems).map(app => {
                   const isSuggest = app.screen === 'suggest';
                   return (
@@ -1189,7 +1311,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     </button>
                   );
                 })}
+                </div>
               </div>
+              )}
             </motion.div>
           </>
         )}

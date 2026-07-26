@@ -782,7 +782,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 dark:bg-black/80 backdrop-blur-sm p-4"
               onClick={closeLightbox}
             >
               <img
@@ -811,7 +811,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 dark:bg-black/40 backdrop-blur-sm p-4"
             onClick={() => setShowNewConvo(false)}
           >
             <motion.div
@@ -925,7 +925,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 dark:bg-black/40 backdrop-blur-sm p-4"
             onClick={() => setShowGroupMembers(false)}
           >
             <motion.div

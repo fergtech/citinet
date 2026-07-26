@@ -29,7 +29,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
   const isInfrastructure = node.type === 'infrastructure';
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 dark:border-zinc-800 overflow-hidden">
         {/* Header */}
         <div className="relative p-6 bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-zinc-800 dark:to-zinc-800/50 border-b border-slate-200 dark:border-zinc-700">

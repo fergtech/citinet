@@ -170,7 +170,7 @@ export function useActivityFeed(hubSlug: string) {
           summary: 'joined the community',
           title: `@${member.username} is a new neighbor`,
           timestamp: new Date(member.created_at),
-          navigateTo: 'neighbors',
+          navigateTo: 'discover',
           cta: 'Say Welcome',
         });
       }

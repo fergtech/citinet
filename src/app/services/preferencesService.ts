@@ -1,7 +1,9 @@
 import { hubService } from './hubService';
 
 export interface UserPreferences {
-  background_type?: 'default' | 'color' | 'image' | 'preset';
+  /** 'solid' is the true default — a theme-aware plain color. 'default' names the
+   *  classic dot-grid wallpaper, kept as an explicit opt-in rather than the fallback. */
+  background_type?: 'solid' | 'default' | 'color' | 'image' | 'preset';
   background_value?: string;
   background_brightness?: string;
   /** Absence means enabled — mirrors the server's opt-out default. */

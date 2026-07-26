@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Compass, Layers, Target, Wrench, Calendar, Users, Hexagon,
-  ChevronLeft, ChevronRight, MessageCircle, Loader2,
+  ChevronLeft, ChevronRight, MessageCircle, Loader2, Crown, Shield, Send,
   type LucideIcon,
 } from 'lucide-react';
 import { hubService } from '../services/hubService';
@@ -49,6 +49,14 @@ function avatarColor(username: string): string {
   let h = 0;
   for (let i = 0; i < username.length; i++) h = username.charCodeAt(i) + ((h << 5) - h);
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+function formatJoinDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  try {
+    return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 // Minimal local shape + status styling for initiatives — the full Initiative
@@ -179,24 +187,65 @@ function EventCard({ post, onClick }: { post: HubPost; onClick: () => void }) {
   );
 }
 
-function PersonCard({ member, slug, isYou, onClick }: { member: HubMember; slug: string; isYou: boolean; onClick: () => void }) {
+function PersonCard({ member, slug, isYou, onClick, onMessage }: { member: HubMember; slug: string; isYou: boolean; onClick: () => void; onMessage: () => void }) {
   const avatarUrl = hubService.getAvatarUrl(slug, member.user_id);
+  const blurb = member.profile_headline || member.bio || '';
   return (
-    <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-2.5`}>
-      <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-xs shrink-0 relative overflow-hidden`}>
-        {member.username.slice(0, 2).toUpperCase()}
-        {avatarUrl && (
-          <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      className={`${RAIL_CARD} p-4 flex flex-col gap-2.5 cursor-pointer`}
+    >
+      <div className="flex items-center gap-2.5">
+        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shrink-0 relative overflow-hidden`}>
+          {member.username.slice(0, 2).toUpperCase()}
+          {avatarUrl && (
+            <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13.5px] font-semibold cn-text-1 truncate">{member.display_name || member.username}</span>
+            {member.role === 'admin' && <Crown className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+            {member.role === 'moderator' && <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+            {isYou && (
+              <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-medium rounded-full shrink-0">
+                You
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <Calendar className="w-3 h-3 cn-text-4 shrink-0" />
+            <span className="text-[11px] cn-text-4 truncate">Joined {formatJoinDate(member.created_at)}</span>
+          </div>
+        </div>
+      </div>
+
+      {blurb && <p className="text-[11.5px] leading-relaxed cn-text-3 line-clamp-2">{blurb}</p>}
+
+      {member.tags && member.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {member.tags.slice(0, 4).map(t => (
+            <span key={t} className="px-2 py-0.5 rounded-full text-[10.5px] font-medium cn-surface-2 cn-text-3">{t}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-0.5">
+        <span className="text-[11px] cn-text-4 truncate">{member.location ?? ''}</span>
+        {!isYou && (
+          <button
+            onClick={e => { e.stopPropagation(); onMessage(); }}
+            title={`Message @${member.username}`}
+            className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors shrink-0"
+          >
+            <Send className="w-3.5 h-3.5 cn-text-3" />
+          </button>
         )}
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold cn-text-1 truncate">
-          {member.display_name || member.username}
-          {isYou && <span className="ml-1.5 text-[10px] font-medium text-purple-600 dark:text-purple-400">(you)</span>}
-        </div>
-        {member.bio && <p className="text-[11.5px] cn-text-3 line-clamp-2 leading-snug mt-0.5">{member.bio}</p>}
-      </div>
-    </button>
+    </div>
   );
 }
 
@@ -461,6 +510,11 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     return rows.sort((a, b) => b.score - a.score);
   }, [searching, searchResults, currentUserId, onNavigate, onViewProfile]);
 
+  const handleMessage = (member: HubMember) => {
+    sessionStorage.setItem('citinet-deeplink-message-peer', JSON.stringify({ userId: member.user_id, username: member.username }));
+    onNavigate('messages');
+  };
+
   const showAll = filter === 'all';
   const hasAnyResults = trending.length > 0 || unifiedResults.length > 0 || suggestedSpaces.length > 0 || featuredInitiatives.length > 0
     || popularResources.length > 0 || upcomingEvents.length > 0 || activeNeighbors.length > 0 || otherHubsSlice.length > 0;
@@ -607,7 +661,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
         {!loading && (filter === 'people' || (showAll && !searching)) && (showAll ? activeNeighbors : visibleMembers).length > 0 && (
           <section>
             <SectionHeading title={searching ? `People matching "${query}"` : 'Active neighbors'} sub={searching ? undefined : 'People to know in your hub'} />
-            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+            <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
               {(showAll ? activeNeighbors : visibleMembers).map(m => (
                 <PersonCard
                   key={m.user_id}
@@ -615,6 +669,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
                   slug={slug}
                   isYou={m.user_id === currentUserId}
                   onClick={() => (m.user_id === currentUserId ? onNavigate('account') : onViewProfile?.(m.user_id))}
+                  onMessage={() => handleMessage(m)}
                 />
               ))}
             </div>

@@ -907,7 +907,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
       />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <motion.div
@@ -1130,7 +1130,7 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+        className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
       />
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
         <motion.div
@@ -1285,13 +1285,21 @@ interface InlineComposerProps {
   displayInitial: string;
   onPostCreated: (post: HubPost) => void;
   onOpenFullComposer: (initialBody: string) => void;
+  autoFocus?: boolean;
 }
 
-function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onOpenFullComposer }: InlineComposerProps) {
+function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onOpenFullComposer, autoFocus }: InlineComposerProps) {
   const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
+  const bodyInputRef = useRef<HTMLInputElement>(null);
+
+  // Dashboard's "Share something with your neighbors" deep-links here instead of
+  // popping the full modal — just put the cursor where neighbors already know to type.
+  useEffect(() => {
+    if (autoFocus) bodyInputRef.current?.focus();
+  }, [autoFocus]);
 
   // Idle-mode attachments — a plain post can carry a photo/video and/or a place
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -1610,6 +1618,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
           {displayInitial}
         </div>
         <input
+          ref={bodyInputRef}
           value={body}
           onChange={e => setBody(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && canQuickPost) submitQuickPost(); }}
@@ -1719,6 +1728,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
+  const [focusComposer, setFocusComposer] = useState(false);
   const [composeInitial, setComposeInitial] = useState<{ title: string; body: string } | null>(null);
   const [composingPoll, setComposingPoll] = useState(false);
   const [editingPoll, setEditingPoll] = useState<HubPost | null>(null);
@@ -1751,11 +1761,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     } catch { /* ignore */ }
   }, []);
 
-  // Deep-link: open compose directly
+  // Deep-link: focus the inline composer directly, rather than popping the full modal —
+  // neighbors can already attach a photo/poll/event from the inline row once they start typing.
   useEffect(() => {
     if (!sessionStorage.getItem('citinet-deeplink-compose')) return;
     sessionStorage.removeItem('citinet-deeplink-compose');
-    setComposing(true);
+    setFocusComposer(true);
   }, []);
 
   // Deep-link: preset the category filter (e.g. "See all" from the dashboard's Upcoming events)
@@ -1985,8 +1996,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         />
       ) : (
       <>
+      <div className="max-w-6xl lg:max-w-[944px] mx-auto px-4 sm:px-6">
       {/* ── Header ── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-0">
+      <div className="pt-3 pb-0">
           {/* Breadcrumb */}
           <button onClick={onBack} className="flex items-center gap-0.5 mb-2 group">
             <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
@@ -2035,8 +2047,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         </div>
 
       {/* ── Main content ── */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6 items-start">
+      <div className="pt-5 pb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[600px_320px] gap-6 items-start">
 
             {/* Feed column */}
             <div className="flex flex-col gap-4 min-w-0">
@@ -2048,6 +2060,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 displayInitial={currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
                 onPostCreated={handleCreated}
                 onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
+                autoFocus={focusComposer}
               />
 
               {/* Loading */}
@@ -2172,6 +2185,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
             </div>
           </div>
         </div>
+      </div>
       </>
       )}
 

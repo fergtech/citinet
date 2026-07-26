@@ -142,7 +142,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
         </div>
 
         {/* Question */}
-        <h3 className="text-sm font-semibold cn-text-1 leading-snug mb-3">{post.title}</h3>
+        <h3 className="text-sm font-normal cn-text-2 leading-relaxed mb-3">{post.title}</h3>
 
         {/* Linked request chip */}
         {poll.request_problem && (

@@ -768,7 +768,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           chrome (bottom nav included, z-30) no matter its own z-index. */}
       {showBioModal && createPortal(
         <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowBioModal(false)} />
+          <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowBioModal(false)} />
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
@@ -805,7 +805,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         return createPortal(
           <>
             <div
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+              className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
               onClick={() => setShowShareModal(false)}
             />
             <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 pointer-events-none">

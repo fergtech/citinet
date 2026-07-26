@@ -337,6 +337,12 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   };
 
   const handleResetBg = async () => {
+    await updateUserPreferences({ background_type: 'solid', background_value: '' });
+    setBgSaved(true);
+    setTimeout(() => setBgSaved(false), 1500);
+  };
+
+  const handleSetClassic = async () => {
     await updateUserPreferences({ background_type: 'default', background_value: '' });
     setBgSaved(true);
     setTimeout(() => setBgSaved(false), 1500);
@@ -650,6 +656,28 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-xs font-medium transition-colors shrink-0">Apply</button>
       </div>
       <div className="mb-4">
+        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Classic</p>
+        <button
+          onClick={handleSetClassic}
+          className={`relative w-full rounded-xl overflow-hidden aspect-[3/1] border-2 transition-all hover:scale-[1.01] active:scale-95 focus:outline-none ${
+            userPreferences.background_type === 'default'
+              ? 'border-purple-500 ring-2 ring-purple-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600'
+          }`}
+          style={{ background: 'var(--cn-wallpaper)' }}
+        >
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5">
+            <span className="text-[11px] font-medium text-white/90">Citinet dot grid — the original look</span>
+          </div>
+          {userPreferences.background_type === 'default' && (
+            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          )}
+        </button>
+      </div>
+      <div className="mb-4">
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Default Backgrounds</p>
         <div className="grid grid-cols-3 gap-2">
           {[
@@ -711,9 +739,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </div>
       </div>
       {bgError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{bgError}</p>}
-      {userPreferences.background_type && userPreferences.background_type !== 'default' && (
+      {userPreferences.background_type && userPreferences.background_type !== 'solid' && (
         <button onClick={handleResetBg} className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-          <RotateCcw className="w-3.5 h-3.5" /> Reset to default (dot grid)
+          <RotateCcw className="w-3.5 h-3.5" /> Reset to default (solid)
         </button>
       )}
     </div>

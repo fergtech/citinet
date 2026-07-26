@@ -1,5 +1,5 @@
 import {
-  Layers, Newspaper, MessageCircle, Compass, Map, Store, Users, FolderOpen,
+  Layers, Newspaper, MessageCircle, Compass, Map, Store, FolderOpen,
   Target, Package, Radio, ScrollText, NotebookPen,
 } from 'lucide-react';
 import type { NotificationFeature } from '../services/notificationsService';
@@ -10,7 +10,6 @@ export const APP_TILES: { Icon: React.ElementType; label: string; screen: string
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
   { Icon: Map,           label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
-  { Icon: Users,         label: 'Neighbors',   screen: 'neighbors',   gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' },
   { Icon: FolderOpen,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
   { Icon: Target,        label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
   { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
@@ -29,5 +28,5 @@ export const DOCK_PRIORITY_SCREENS = ['feed'];
 // Apps enabled on a fresh hub with no admin configuration yet.
 // null enabledApps on the Hub object means "all apps" (backward compat).
 export const DEFAULT_ENABLED_APPS: string[] = [
-  'feed', 'messages', 'atlas', 'neighbors', 'notes',
+  'feed', 'messages', 'atlas', 'notes',
 ];

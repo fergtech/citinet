@@ -47,7 +47,7 @@ export function EmergencySignalModal({ isOpen, onClose }: EmergencySignalModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={handleClose}>
+    <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={handleClose}>
       <div className="cn-surface border cn-border rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
         {!broadcasted ? (
           <>

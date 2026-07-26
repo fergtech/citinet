@@ -443,7 +443,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <>
-          <button onClick={() => setSidebarOpen(false)} title="Close history" aria-label="Close history" className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[1px] md:hidden" />
+          <button onClick={() => setSidebarOpen(false)} title="Close history" aria-label="Close history" className="fixed inset-0 z-30 bg-slate-900/30 dark:bg-black/40 backdrop-blur-[1px] md:hidden" />
           <div className="fixed inset-y-0 left-0 z-40 w-72 bg-white dark:bg-zinc-900 border-r border-slate-200 dark:border-zinc-800 flex flex-col md:hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-zinc-800 shrink-0">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Conversations</p>
@@ -611,7 +611,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       {/* Delete confirmation */}
       {deleteId && (
         <>
-          <button onClick={() => setDeleteId(null)} title="Cancel delete" aria-label="Cancel delete" className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]" />
+          <button onClick={() => setDeleteId(null)} title="Cancel delete" aria-label="Cancel delete" className="fixed inset-0 z-50 bg-slate-900/30 dark:bg-black/40 backdrop-blur-[1px]" />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 w-full max-w-xs space-y-4 shadow-xl">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Delete conversation?</p>
