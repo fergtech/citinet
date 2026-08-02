@@ -255,6 +255,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     setPwSaving(true);
     try {
       await hubService.changePassword(currentHub!.slug, currentPassword, newPassword);
+      // Re-wrap this device's keys under the new password so future logins
+      // (on this or any other device) can still recover them automatically.
+      hubService.storeKeyBackup(currentHub!.slug, newPassword).catch(() => {});
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');

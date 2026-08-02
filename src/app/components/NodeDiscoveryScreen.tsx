@@ -188,6 +188,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
         });
       }
 
+      // Recover (or generate) encryption keys in the background — never blocks auth
+      hubService.ensureUserKeys(hub.slug, password).catch(() => {});
+
       onNodeFound(hub.slug, hub.name, hub);
     } catch (err) {
       // If auth failed after joinHub already saved a partial connection,

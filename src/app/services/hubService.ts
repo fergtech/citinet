@@ -8,7 +8,7 @@
  */
 
 import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults } from '../types/hub';
-import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
+import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, getStoredContentKeyJwk, setContentKey, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, decryptKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 
 const STORAGE_KEYS = {
@@ -1974,42 +1974,67 @@ class HubService {
 
   /**
    * Ensure this device has encryption keys for the given hub.
-   * Called silently after login/register — generates keys if missing,
-   * then uploads the public key to the hub server.
-   * Fire-and-forget: errors are swallowed so they never block auth.
+   * Called silently after login/register — never blocks auth.
+   *
+   * If this device already has keys, just re-syncs the public key.
+   * Otherwise, tries to recover the account's existing keys from the
+   * server-side backup, wrapped with the account password (so any device
+   * that can log in can also decrypt — no separate passphrase to manage).
+   * Only generates a brand-new keypair if no backup exists yet, then backs
+   * it up immediately under the same password for future devices.
    */
-  async ensureUserKeys(hubSlug: string): Promise<void> {
+  async ensureUserKeys(hubSlug: string, password?: string): Promise<void> {
     try {
       const alreadyHasKeys = await hasKeys(hubSlug);
-      let publicKeyJwk: string;
+      console.info('[e2e-keys] ensureUserKeys start', { hubSlug, alreadyHasKeys, hasPassword: !!password });
 
       if (alreadyHasKeys) {
         // Keys exist on this device — re-upload the public key so server stays in sync
         // (e.g. server was reset, or first upload failed).
         const storedJwk = await getStoredPublicKeyJwk(hubSlug);
-        if (!storedJwk) return;
-        const conn = this.getHubConnection(hubSlug);
-        if (!conn?.user?.authToken) return;
-        await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
-          body: JSON.stringify({ publicKeyJwk: storedJwk }),
-        });
+        if (storedJwk) await this.registerPublicKey(hubSlug, storedJwk);
+
+        if (password) {
+          const backupExists = await this.hasKeyBackup(hubSlug);
+          console.info('[e2e-keys] alreadyHasKeys branch', { backupExists });
+          if (!backupExists) {
+            // No backup exists yet for this account (e.g. an existing
+            // single-device user logging in for the first time after
+            // cross-device recovery shipped) — create one now so the *next*
+            // new device can restore this key instead of generating its own
+            // and re-fragmenting.
+            const ok = await this.storeKeyBackup(hubSlug, password);
+            console.info('[e2e-keys] created initial backup', { ok });
+          } else {
+            // A canonical backup already exists — this device may have
+            // generated its own (different) key before recovery existed.
+            // Reconcile its notes onto the canonical key if so.
+            await this.reconcileNotesIfDivergent(hubSlug, password);
+          }
+        }
         return;
       }
 
-      // No keys on this device — generate a fresh set
-      const result = await generateUserKeys(hubSlug);
-      publicKeyJwk = result.publicKeyJwk;
+      // No keys on this device — try recovering the account's existing keys first.
+      if (password) {
+        const restored = await this.restoreFromKeyBackup(hubSlug, password);
+        console.info('[e2e-keys] no local keys — restore attempt', { restored });
+        if (restored) {
+          const storedJwk = await getStoredPublicKeyJwk(hubSlug);
+          if (storedJwk) await this.registerPublicKey(hubSlug, storedJwk);
+          return;
+        }
+      }
 
-      const conn = this.getHubConnection(hubSlug);
-      if (!conn?.user?.authToken) return;
-      await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
-        body: JSON.stringify({ publicKeyJwk }),
-      });
-    } catch { /* never block auth */ }
+      // No backup available (first device ever for this account) — generate
+      // a fresh set and immediately back it up under the account password.
+      console.info('[e2e-keys] no local keys, restore unavailable — generating new keypair');
+      const result = await generateUserKeys(hubSlug);
+      await this.registerPublicKey(hubSlug, result.publicKeyJwk);
+      if (password) await this.storeKeyBackup(hubSlug, password);
+    } catch (err) {
+      console.error('[e2e-keys] ensureUserKeys failed', err); // never block auth, but never hide it either
+    }
   }
 
   /** Upload or refresh the user's public key on the hub server. */
@@ -2069,18 +2094,93 @@ class HubService {
     } catch { return false; }
   }
 
-  /** Retrieve encrypted key backup from server and restore using passphrase. */
-  async restoreFromKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
+  /** Fetch the raw encrypted key backup blob from the server, or null if none exists. */
+  private async fetchKeyBackup(hubSlug: string): Promise<KeyBackupPayload | null> {
     try {
       const conn = this.getHubConnection(hubSlug);
-      if (!conn?.user?.authToken) return false;
+      if (!conn?.user?.authToken) return null;
       const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
         headers: { Authorization: `Bearer ${conn.user.authToken}` },
       });
-      if (!res.ok) return false;
-      const backup = await res.json() as KeyBackupPayload;
-      return restoreKeyBackup(hubSlug, backup, passphrase);
-    } catch { return false; }
+      if (!res.ok) return null;
+      return await res.json() as KeyBackupPayload;
+    } catch { return null; }
+  }
+
+  /** Retrieve encrypted key backup from server and restore using passphrase. */
+  async restoreFromKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
+    const backup = await this.fetchKeyBackup(hubSlug);
+    if (!backup) return false;
+    return restoreKeyBackup(hubSlug, backup, passphrase);
+  }
+
+  /**
+   * If this device's content key has diverged from the account's canonical
+   * backup (e.g. it generated its own key before cross-device recovery
+   * existed), reconcile: decrypt this device's own notes with its current
+   * key, adopt the canonical content key, then re-encrypt and re-save each
+   * note under it. Leaves the ECDH identity key untouched (DM reconciliation
+   * is a separate follow-up), so this device's own message history stays
+   * readable in the meantime.
+   */
+  private async reconcileNotesIfDivergent(hubSlug: string, passphrase: string): Promise<void> {
+    const backup = await this.fetchKeyBackup(hubSlug);
+    if (!backup) { console.info('[e2e-keys] reconcile: no backup found'); return; }
+
+    const canonical = await decryptKeyBackup(backup, passphrase);
+    if (!canonical) { console.info('[e2e-keys] reconcile: backup exists but failed to decrypt with this password'); return; }
+
+    const localJwk = await getStoredContentKeyJwk(hubSlug);
+    console.info('[e2e-keys] reconcile: comparing keys', {
+      localK: localJwk?.k?.slice(0, 12), canonicalK: canonical.content_key.k?.slice(0, 12),
+    });
+    if (localJwk && localJwk.k === canonical.content_key.k) { console.info('[e2e-keys] reconcile: already in sync, nothing to do'); return; }
+
+    // Diverged — decrypt this device's own encrypted notes with its current key first.
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return;
+    const authHeader = { Authorization: `Bearer ${conn.user.authToken}` };
+
+    const toReconcile: Array<{ id: string; body_plain: string; body_rich: object | null }> = [];
+    for (const archived of [false, true]) {
+      const res = await fetch(
+        `${conn.hub.tunnelUrl}/api/notes${archived ? '?archived=true' : ''}`,
+        { headers: authHeader },
+      ).catch((err) => { console.error('[e2e-keys] reconcile: notes fetch threw', err); return null; });
+
+      if (!res?.ok) {
+        // We can't be sure we've read out everything this device can still
+        // decrypt with its current key. Aborting here (never adopting the
+        // canonical key on incomplete information) is critical — otherwise a
+        // note only this device could decrypt becomes permanently unreadable
+        // everywhere, since the old key gets overwritten without ever being
+        // used to migrate that note first.
+        console.error('[e2e-keys] reconcile: aborting — notes fetch failed, local key left untouched', { archived, status: res?.status });
+        return;
+      }
+      const { notes } = await res.json() as { notes: HubNote[] };
+      for (const note of notes ?? []) {
+        if (!isNoteEncrypted(note.body_plain ?? '')) continue;
+        const decrypted = await decryptNoteBody(hubSlug, note.body_plain!);
+        if (decrypted) toReconcile.push({ id: note.id, ...decrypted });
+      }
+    }
+    console.info('[e2e-keys] reconcile: notes to migrate onto canonical key', { count: toReconcile.length });
+
+    // Only now — once every note this device can decrypt has been safely
+    // read out under its current key — adopt the canonical content key.
+    await setContentKey(hubSlug, canonical.content_key);
+
+    let migrated = 0;
+    for (const note of toReconcile) {
+      await this.updateNote(hubSlug, note.id, {
+        body_plain: note.body_plain,
+        body_rich: note.body_rich ?? undefined,
+      }).then(() => { migrated++; }).catch((err) => {
+        console.error('[e2e-keys] reconcile: failed to re-save note', note.id, err);
+      }); // best-effort — one bad note shouldn't block the rest
+    }
+    console.info('[e2e-keys] reconcile: done', { migrated, attempted: toReconcile.length });
   }
 
   /** Whether a key backup exists on the server for this user. */

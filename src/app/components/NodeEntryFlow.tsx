@@ -128,8 +128,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
         username: loginUsername.trim().toLowerCase(),
         password: loginPassword,
       });
-      // Generate/refresh encryption keys in the background — never blocks login
-      hubService.ensureUserKeys(hubSlug).catch(() => {});
+      // Recover (or generate) encryption keys in the background — never blocks login
+      hubService.ensureUserKeys(hubSlug, loginPassword).catch(() => {});
       onComplete(userData);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
@@ -154,7 +154,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
         agreedToManifesto: true,
       };
       // Generate encryption keys in the background — never blocks registration
-      hubService.ensureUserKeys(hubSlug).catch(() => {});
+      hubService.ensureUserKeys(hubSlug, password).catch(() => {});
       onComplete(merged);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed');

@@ -66,13 +66,14 @@ telling people "just join the Wi-Fi":
   anywhere else in this project, since the whole point of this standard is
   letting strangers join that network.
 
-This isn't something any tier below fixes — it's a property of serving over
-plain HTTP, not a hardware or configuration gap. Current options are a
-self-signed/local CA certificate (requires installing trust on every visiting
-device — a poor fit for "walk in and it just works"), or treating
-wireless-reach hubs as intentionally lower-trust and steering anything
-encryption-sensitive toward the Tailscale access mode instead. See
-[`SECURITY.md`](../SECURITY.md) for the full picture.
+This isn't something any tier below fixes on its own — it's a property of
+serving over plain HTTP, not a hardware or configuration gap. **Fixed as of
+2026-07-31**: see [`hub-https-bridge.md`](./hub-https-bridge.md) for a real,
+publicly-trusted certificate (via Cloudflare DNS-01, issued whenever the hub
+has internet, served fine fully offline afterward) that needs no trust
+installation on visiting devices at all — unlike a self-signed/local CA cert,
+which remains the fallback if you'd rather not set up the Cloudflare bridge.
+See [`SECURITY.md`](../SECURITY.md) for the full picture.
 
 ## Pick a Tier Based On What You Already Own
 
@@ -103,6 +104,25 @@ one brand:
 The only hard requirement is bridging, not the specific box. If it creates
 its own isolated subnet instead, you must also configure DHCP and the `citinet`
 DNS override *on that device*, since it won't inherit the main network's.
+
+**Windows-native variant (no second device):** if the hub machine itself runs
+Windows, it can broadcast the guest network *itself* — no Raspberry Pi, no
+dedicated hardware, using nothing but Windows' own built-in Mobile Hotspot.
+Live-verified end to end on 2026-07-31: Windows' Mobile Hotspot
+(`NetworkOperatorTetheringManager`) plus disabling Internet Connection
+Sharing's own DNS proxy (`EnableDNS=0` under
+`HKLM:\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters`) lets a
+small bundled DNS responder take over answering the hub's one hostname on the
+hotspot's fixed gateway IP (`192.168.137.1`), while still forwarding every
+other query upstream normally. Since the hub's own Docker port mapping
+already binds all host interfaces, that same gateway IP reaches Caddy with no
+extra plumbing — the hub machine ends up serving both roles at once. This is
+the more "universal for non-technical admins" option whenever the hub already
+runs Windows, and doesn't require Hyper-V (not available on Windows Home) or
+any USB Wi-Fi passthrough. Generated and downloaded from the hub's admin
+screen — see the "Network Reach" tab, which offers this alongside the
+Raspberry Pi option above with a guessed-with-override platform picker (the
+same pattern software download pages use to guess your OS).
 
 ### Tier 2 — Dedicated outdoor / long-range coverage
 
@@ -141,10 +161,18 @@ Run through this for any hub, regardless of which tier applies:
 - A single prescribed hardware vendor — the requirements are protocol-level,
   not brand-level.
 
-## Later, Not Now
+## Automated Setup (Built 2026-07-31)
 
-Turning this into an automated setup script (parallel to `scriptGenerator.ts`
-for OS setup) is a reasonable next step once this manual standard has been
-proven across a couple of real hubs on different hardware. Until then, treat
-this doc as the source of truth and update it as edge cases turn up in the
-field.
+Tier 1 now has two generated setup scripts, both downloadable from the hub's
+admin screen ("Network Reach" tab): `apScriptGenerator.ts` for a Raspberry
+Pi / Linux device (NetworkManager + dnsmasq + nftables), and
+`windowsApScriptGenerator.ts` for running the access point directly on a
+Windows hub machine with no second device (Mobile Hotspot + a small DNS
+bridge — the Windows-native variant noted under Tier 1 above). The tab
+guesses which one you need the same way software download pages guess your
+OS, with a manual override. The Windows path was live-verified end to end;
+the Pi path is code-complete with verification deferred until real hardware
+is available — see the approved plan and `hub_wireless_reach_https_bridge`
+memory for the full trail. Treat this doc as the source of truth for the
+underlying requirements either script must satisfy, and update it as edge
+cases turn up in the field.

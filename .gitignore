@@ -45,3 +45,6 @@ CLAUDE_CONTEXT.md
 # Ignore the per-developer Claude settings file so it isn't committed
 .claude/settings.local.json
 .claude/*.local.json
+
+# mkcert-generated local dev TLS cert/key (per-machine, never shared)
+.certs/

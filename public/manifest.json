@@ -1,7 +1,7 @@
 {
-  "name": "Citinet - Community Cloud",
+  "name": "Citinet",
   "short_name": "citinet",
-  "description": "A decentralized community network platform. Connect with your neighbors, share resources, build local resilience and individual digital sovereignty.",
+  "description": "A community-owned technology initiative that helps local communities build and manage their own digital infrastructure. It promotes privacy, local control, and democratic governance through decentralized, people-powered networks.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

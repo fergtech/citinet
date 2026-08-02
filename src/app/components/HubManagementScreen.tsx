@@ -12,6 +12,7 @@ import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import { registryService } from '../services/registryService';
 import { JoinQrCard } from './JoinQrCard';
 import { HubIcon, hubIconRegistryFields, HUB_ICON_SYMBOLS, HUB_ICON_SOLID_COLORS, HUB_ICON_GRADIENTS } from './HubIcon';
+import { NetworkReachTab } from './NetworkReachTab';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -19,7 +20,7 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription, updateHubIcon, refreshStatus } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -258,8 +259,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   };
 
   useEffect(() => {
-    if (activeTab === 'ai') loadAiStatus();
-  }, [activeTab]);
+    loadAiStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentHub?.slug]);
+
+  // Hubs aren't provisioned with the Ollama container by default — only show
+  // the AI tab once we've confirmed it's actually reachable (or was enabled
+  // before), so admins on plain hubs don't see a tab that can never work.
+  const aiTabAvailable = aiStatus != null && (aiStatus.ollamaReady || aiStatus.enabled);
 
   const handleAiToggle = async () => {
     if (!aiStatus) return;
@@ -758,13 +765,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         <nav className="w-full md:w-[210px] shrink-0 md:sticky md:top-4">
           <div className="flex md:flex-col gap-2 md:gap-[3px] overflow-x-auto md:overflow-visible no-scrollbar">
             {([
-              { id: 'info',     icon: <Settings className="w-[15px] h-[15px] md:w-4 md:h-4" />,      label: 'Hub Info' },
-              { id: 'featured', icon: <Star className="w-[15px] h-[15px] md:w-4 md:h-4" />,          label: 'Featured' },
-              { id: 'members',  icon: <Users className="w-[15px] h-[15px] md:w-4 md:h-4" />,         label: 'Members' },
-              { id: 'apps',     icon: <LayoutGrid className="w-[15px] h-[15px] md:w-4 md:h-4" />,    label: 'Apps' },
-              { id: 'requests', icon: <ClipboardList className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Requests' },
-              { id: 'ai',       icon: <Bot className="w-[15px] h-[15px] md:w-4 md:h-4" />,           label: 'AI' },
-            ] as const).map(tab => (
+              { id: 'info' as const,     icon: <Settings className="w-[15px] h-[15px] md:w-4 md:h-4" />,      label: 'Hub Info' },
+              { id: 'featured' as const, icon: <Star className="w-[15px] h-[15px] md:w-4 md:h-4" />,          label: 'Featured' },
+              { id: 'members' as const,  icon: <Users className="w-[15px] h-[15px] md:w-4 md:h-4" />,         label: 'Members' },
+              { id: 'apps' as const,     icon: <LayoutGrid className="w-[15px] h-[15px] md:w-4 md:h-4" />,    label: 'Apps' },
+              { id: 'requests' as const, icon: <ClipboardList className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Requests' },
+              ...(aiTabAvailable ? [{ id: 'ai' as const, icon: <Bot className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'AI' }] : []),
+              ...(isLocalHub ? [{ id: 'reach' as const, icon: <Wifi className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Network Reach' }] : []),
+            ]).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -2296,6 +2304,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               </div>
             )}
           </div>
+        )}
+
+        {/* ─── Network Reach Tab ─── */}
+        {activeTab === 'reach' && (
+          <NetworkReachTab hubSlug={hubSlug} hubName={currentHub?.name ?? ''} />
         )}
         </div>
       </div>

@@ -37,6 +37,7 @@ const busboy = require('busboy');
 const { PassThrough } = require('stream');
 const Minio = require('minio');
 const { sendEmail } = require('./mailer');
+const { startCertAgent } = require('./certAgent');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -9720,6 +9721,8 @@ async function start() {
       console.log(`  Tunnel:     ${process.env.TUNNEL_URL}`);
     }
   });
+
+  startCertAgent();
 }
 
 start();

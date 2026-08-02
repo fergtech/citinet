@@ -164,6 +164,22 @@ export async function loadContentKey(hubSlug: string): Promise<CryptoKey | null>
   return crypto.subtle.importKey('jwk', jwk, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
 }
 
+/** Returns the stored content-key JWK for this device/hub, or null if not found. */
+export async function getStoredContentKeyJwk(hubSlug: string): Promise<JsonWebKey | null> {
+  const jwk = await idbGet(slot(hubSlug, 'content_key')) as JsonWebKey | undefined;
+  return jwk ?? null;
+}
+
+/**
+ * Overwrite just the content key for this hub (leaves the ECDH identity key
+ * untouched). Used when reconciling a device whose content key has diverged
+ * from the account's canonical backup, without disrupting DM decryption
+ * (which depends on the ECDH key) until that's reconciled separately.
+ */
+export async function setContentKey(hubSlug: string, jwk: JsonWebKey): Promise<void> {
+  await idbSet(slot(hubSlug, 'content_key'), jwk);
+}
+
 /** Remove all keys for this hub from IndexedDB (on logout / account deletion). */
 export async function clearKeys(hubSlug: string): Promise<void> {
   await Promise.all([
@@ -459,6 +475,32 @@ export async function createKeyBackup(
   return { encrypted_payload: b64enc(ct), salt: b64enc(salt), iv: b64enc(iv) };
 }
 
+export interface BackedUpKeys {
+  ecdh_private: JsonWebKey;
+  content_key: JsonWebKey;
+}
+
+/**
+ * Decrypt a server-stored backup with a passphrase, without touching IndexedDB.
+ * Returns the raw key material, or null if the passphrase is wrong / backup is corrupt.
+ * Used both by `restoreKeyBackup` (commit to this device) and by callers that
+ * need to inspect/compare a backup before deciding whether to adopt it.
+ */
+export async function decryptKeyBackup(
+  backup: KeyBackupPayload,
+  passphrase: string,
+): Promise<BackedUpKeys | null> {
+  try {
+    const salt = b64dec(backup.salt);
+    const iv   = b64dec(backup.iv);
+    const wk   = await deriveWrappingKey(passphrase, salt);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wk, b64dec(backup.encrypted_payload));
+    return JSON.parse(new TextDecoder().decode(plain)) as BackedUpKeys;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Decrypt a server-stored backup with the user's passphrase and load keys into IndexedDB.
  * Returns true on success, false if passphrase is wrong or backup is corrupt.
@@ -468,21 +510,11 @@ export async function restoreKeyBackup(
   backup: KeyBackupPayload,
   passphrase: string,
 ): Promise<boolean> {
-  try {
-    const salt = b64dec(backup.salt);
-    const iv   = b64dec(backup.iv);
-    const wk   = await deriveWrappingKey(passphrase, salt);
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wk, b64dec(backup.encrypted_payload));
-    const { ecdh_private, content_key } = JSON.parse(new TextDecoder().decode(plain)) as {
-      ecdh_private: JsonWebKey;
-      content_key: JsonWebKey;
-    };
-    await Promise.all([
-      idbSet(slot(hubSlug, 'ecdh_private'), ecdh_private),
-      idbSet(slot(hubSlug, 'content_key'),  content_key),
-    ]);
-    return true;
-  } catch {
-    return false;
-  }
+  const keys = await decryptKeyBackup(backup, passphrase);
+  if (!keys) return false;
+  await Promise.all([
+    idbSet(slot(hubSlug, 'ecdh_private'), keys.ecdh_private),
+    idbSet(slot(hubSlug, 'content_key'),  keys.content_key),
+  ]);
+  return true;
 }

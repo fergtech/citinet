@@ -38,6 +38,18 @@ export interface HubScriptConfig {
    * Omit or null = all apps enabled. Array = only listed apps are shown.
    */
   enabledApps?: string[] | null;
+  /**
+   * Returned by the cert broker's `claim` call (see certBrokerService.ts) —
+   * not client-generated like the other secrets, since the broker itself
+   * verifies it later against a hash it stores. The hub proves ownership of
+   * its slug with this on every cert issue/renewal request.
+   */
+  certSecret: string;
+}
+
+/** Every hub's automatic HTTPS hostname — derived from its slug, never asked of the creator. */
+export function hubHttpsHostname(hubSlug: string): string {
+  return `${hubSlug}.hub.citinet.cloud`;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -121,6 +133,17 @@ function generateEnvContent(config: HubScriptConfig): string {
     '# Tunnel URL -- auto-filled by setup script if using Tailscale',
     'TUNNEL_URL=',
     '',
+    '# LAN IP -- auto-filled by setup script, used by the automatic HTTPS',
+    '# bridge to point your hub\'s hostname at this machine for anyone on',
+    '# your own network',
+    'LAN_IP=',
+    '',
+    '# Automatic HTTPS -- issued for you, no Cloudflare/DNS/certs to manage.',
+    '# HUB_CERT_SECRET proves this hub owns its hostname on every renewal --',
+    '# treat it like any other secret in this file, never share it.',
+    'HUB_CERT_SECRET=' + config.certSecret,
+    'HUB_HTTPS_HOSTNAME=' + hubHttpsHostname(config.hubSlug),
+    '',
     '# Registry -- leave empty for local/private hubs',
     'REGISTRY_URL=',
     '',
@@ -164,6 +187,7 @@ function getComposeYaml(): string {
   const dbVol      = vd('DATA_DIR', './data') + '/db';
   const storageVol = vd('FILES_DIR', './data/storage');
   const redisVol   = vd('DATA_DIR', './data') + '/redis';
+  const caddyVol   = vd('DATA_DIR', './data') + '/caddy';
 
   return [
     'services:',
@@ -192,8 +216,13 @@ function getComposeYaml(): string {
     '      - CORS_ORIGIN=' + vd('CORS_ORIGIN', '*'),
     '      - REGISTRY_URL=' + vd('REGISTRY_URL', ''),
     '      - TUNNEL_URL=' + vd('TUNNEL_URL', ''),
+    '      - LAN_IP=' + vd('LAN_IP', ''),
+    '      - HUB_CERT_SECRET=' + v('HUB_CERT_SECRET'),
+    '      - HUB_HTTPS_HOSTNAME=' + v('HUB_HTTPS_HOSTNAME'),
     '      - ADMIN_USERNAME=' + v('ADMIN_USERNAME'),
     '      - ADMIN_PASSWORD=' + v('ADMIN_PASSWORD'),
+    '    volumes:',
+    '      - ' + caddyVol + ':/app/caddy-data',
     '    depends_on:',
     '      citinet-db:',
     '        condition: service_healthy',
@@ -266,9 +295,47 @@ function getComposeYaml(): string {
     '    networks:',
     '      - citinet-network',
     '',
+    '  citinet-caddy:',
+    '    image: caddy:2',
+    '    container_name: citinet-caddy',
+    '    restart: unless-stopped',
+    '    ports:',
+    '      - "443:443"',
+    '    volumes:',
+    '      - ./Caddyfile:/etc/caddy/Caddyfile:ro',
+    '      - ' + caddyVol + ':/data/certs',
+    '    depends_on:',
+    '      citinet-api:',
+    '        condition: service_healthy',
+    '    networks:',
+    '      - citinet-network',
+    '',
     'networks:',
     '  citinet-network:',
     '    driver: bridge',
+  ].join('\n');
+}
+
+/**
+ * Caddyfile for the automatic HTTPS bridge. Caddy just loads a plain cert
+ * file here -- it never talks to Cloudflare or does its own ACME. The
+ * cert/key are fetched by citinet-api (see api/certAgent.js) from the
+ * central cert broker and written to this same shared volume.
+ */
+function getCaddyfileContent(config: HubScriptConfig): string {
+  return [
+    '{',
+    '    # Reachable only from other containers on the Docker network (not',
+    '    # published to the host) -- lets citinet-api trigger a reload after',
+    '    # fetching a freshly-issued cert, without Docker-socket access.',
+    '    admin 0.0.0.0:2019',
+    '}',
+    '',
+    hubHttpsHostname(config.hubSlug) + ' {',
+    '    tls /data/certs/cert.pem /data/certs/key.pem',
+    '    reverse_proxy citinet-api:9090',
+    '}',
+    '',
   ].join('\n');
 }
 
@@ -340,6 +407,7 @@ function buildBashTailscaleSection(config: HubScriptConfig): string[] {
 function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
   const composeYaml = getComposeYaml();
+  const caddyfileContent = getCaddyfileContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
   const tailscaleLines = isTailscale
@@ -388,7 +456,7 @@ function generateBashScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     'DATA_DIR="' + (config.dataDir ?? '$HUB_DIR/data') + '"',
-    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/redis"',
+    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/redis" "$DATA_DIR/caddy"',
     'ok "DB + cache at: $DATA_DIR"',
     'FILES_DIR="$DATA_DIR/storage"',
     'mkdir -p "$FILES_DIR"',
@@ -410,6 +478,25 @@ function generateBashScript(config: HubScriptConfig): string {
     composeYaml,
     'CITINET_COMPOSE_END',
     'ok "docker-compose.yml written"',
+    '',
+    '# === Write Caddyfile (always update -- no secrets, safe to overwrite) ===',
+    "cat > \"$HUB_DIR/Caddyfile\" << 'CITINET_CADDYFILE_END'",
+    caddyfileContent,
+    'CITINET_CADDYFILE_END',
+    'ok "Caddyfile written"',
+    '',
+    '# === Detect LAN IP -- lets the automatic HTTPS bridge point your',
+    '# hub hostname at this machine for anyone on your own network ===',
+    'step "Detecting local network address"',
+    'LAN_IP="$(ip route get 1.1.1.1 2>/dev/null | awk \'{print $7; exit}\')"',
+    '[ -z "$LAN_IP" ] && LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || true)"',
+    '[ -z "$LAN_IP" ] && LAN_IP="$(hostname -I 2>/dev/null | awk \'{print $1}\')"',
+    'if [ -n "$LAN_IP" ]; then',
+    '  sed -i.bak "s|^LAN_IP=.*|LAN_IP=$LAN_IP|" "$HUB_DIR/.env" && rm -f "$HUB_DIR/.env.bak"',
+    '  ok "LAN IP: $LAN_IP"',
+    'else',
+    '  warn "Could not auto-detect LAN IP -- the automatic HTTPS bridge will retry on next restart"',
+    'fi',
     '',
     '# === Check / install Docker ===',
     'step "Checking Docker"',
@@ -631,6 +718,7 @@ function buildPsTailscaleSection(config: HubScriptConfig): string[] {
 function generatePowerShellScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
   const composeYaml = getComposeYaml();
+  const caddyfileContent = getCaddyfileContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
   // Escape single quotes in content for PS array literal ('...' -> '..''...')
@@ -642,6 +730,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
   // Base64-encode the compose YAML for safe embedding in PowerShell
   // (avoids heredoc issues with single quotes in YAML version string, etc.)
   const composeB64 = btoa(unescape(encodeURIComponent(composeYaml)));
+  const caddyfileB64 = btoa(unescape(encodeURIComponent(caddyfileContent)));
 
   const tailscaleLines = isTailscale
     ? buildPsTailscaleSection(config)
@@ -677,7 +766,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     '$DataDir = "' + (config.dataDir ?? '$HubDir\\data') + '"',
-    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\redis" | Out-Null',
+    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\redis","$DataDir\\caddy" | Out-Null',
     'Ok "DB + cache at: $DataDir"',
     '$FilesDir = "$DataDir\\storage"',
     'New-Item -ItemType Directory -Force -Path $FilesDir | Out-Null',
@@ -702,6 +791,32 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '$ComposeContent = [System.Text.Encoding]::UTF8.GetString($ComposeBytes)',
     '[System.IO.File]::WriteAllText("$HubDir\\docker-compose.yml", $ComposeContent, [System.Text.Encoding]::UTF8)',
     'Ok "docker-compose.yml written"',
+    '',
+    '# === Write Caddyfile (always update -- no secrets, safe to overwrite) ===',
+    '$CaddyfileB64 = "' + caddyfileB64 + '"',
+    '$CaddyfileBytes = [System.Convert]::FromBase64String($CaddyfileB64)',
+    '$CaddyfileContent = [System.Text.Encoding]::UTF8.GetString($CaddyfileBytes)',
+    '[System.IO.File]::WriteAllText("$HubDir\\Caddyfile", $CaddyfileContent, [System.Text.Encoding]::UTF8)',
+    'Ok "Caddyfile written"',
+    '',
+    '# === Detect LAN IP -- lets the automatic HTTPS bridge point your',
+    '# hub hostname at this machine for anyone on your own network ===',
+    'Step "Detecting local network address"',
+    'try {',
+    '  $LanIp = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |',
+    '    Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet|Tailscale|VPN" -and $_.IPAddress -notmatch "^169\\.254\\." } |',
+    '    Select-Object -First 1 -ExpandProperty IPAddress',
+    '  if ($LanIp) {',
+    '    $EnvText = [System.IO.File]::ReadAllText("$HubDir\\.env")',
+    '    $EnvText = $EnvText -replace "(?m)^LAN_IP=.*$", "LAN_IP=$LanIp"',
+    '    [System.IO.File]::WriteAllText("$HubDir\\.env", $EnvText, [System.Text.Encoding]::UTF8)',
+    '    Ok "LAN IP: $LanIp"',
+    '  } else {',
+    '    Warn "Could not auto-detect LAN IP -- the automatic HTTPS bridge will retry on next restart"',
+    '  }',
+    '} catch {',
+    '  Warn "Could not auto-detect LAN IP -- the automatic HTTPS bridge will retry on next restart"',
+    '}',
     '',
     '# === Check / install Docker ===',
     'Step "Checking Docker"',

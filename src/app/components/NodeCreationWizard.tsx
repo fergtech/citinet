@@ -174,9 +174,17 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
 
   // Generated once when the user reaches the download step
   const secretsRef = useRef<HubSecrets | null>(null);
+  const certSecretRef = useRef<string | null>(null);
   const detectedOS = useRef<'windows' | 'mac' | 'linux'>(detectOS());
   const [scriptDownloaded, setScriptDownloaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  // Live slug-availability check against the cert broker, debounced as the
+  // creator types a hub name — instant "available"/"taken" feedback instead
+  // of discovering a conflict only when the setup script runs later.
+  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null);
+  const [slugChecking, setSlugChecking] = useState(false);
 
   // Waiting step state
   const [pollAttempt, setPollAttempt] = useState(0);
@@ -184,11 +192,32 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
 
   const set = (patch: Partial<WizardData>) => setData(d => ({ ...d, ...patch }));
 
+  // ── Live slug availability (debounced) ─────────────────
+  useEffect(() => {
+    const slug = generateSlug(data.hubName);
+    if (slug.length < 2) { setSlugAvailable(null); setSlugChecking(false); return; }
+
+    setSlugChecking(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/cert-broker?slug=${encodeURIComponent(slug)}`);
+        const body = await res.json();
+        setSlugAvailable(res.ok ? body.available : null);
+      } catch {
+        setSlugAvailable(null); // broker unreachable — never block creation on this
+      } finally {
+        setSlugChecking(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [data.hubName]);
+
   // ── Validation per step ────────────────────────────────
   const canProceed: Record<WizardStep, boolean> = {
     identity:
       data.hubName.trim().length >= 2 &&
-      data.hubLat !== undefined,
+      data.hubLat !== undefined &&
+      slugAvailable !== false,
     access:
       data.visibility === 'local' ||
       (data.visibility === 'tailscale' && data.tailscaleAuthKey.trim().length >= 10),
@@ -203,8 +232,31 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   };
 
   // ── Build config object ────────────────────────────────
-  function buildConfig(): HubScriptConfig {
+  // Async because the first call claims this hub's slug with the cert
+  // broker (see api/cert-broker.js) — the creator never sees Cloudflare,
+  // DNS, or a token; they just get a working hostname. Claimed once and
+  // cached, same pattern as secretsRef for the locally-generated secrets.
+  async function buildConfig(): Promise<HubScriptConfig> {
     if (!secretsRef.current) secretsRef.current = generateSecrets();
+
+    if (!certSecretRef.current) {
+      const slug = generateSlug(data.hubName);
+      const res = await fetch('/api/cert-broker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'claim', slug }),
+      });
+      if (res.status === 409) {
+        setSlugAvailable(false);
+        throw new Error(`"${slug}" was just claimed by someone else — try a different name.`);
+      }
+      if (!res.ok) throw new Error('Could not reach the hub registry — try again in a moment.');
+      const body = await res.json();
+      certSecretRef.current = body.secret;
+    }
+    const certSecret = certSecretRef.current;
+    if (!certSecret) throw new Error('Could not prepare your hub\'s certificate — try again.');
+
     return {
       hubName: data.hubName.trim(),
       hubSlug: generateSlug(data.hubName),
@@ -218,6 +270,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       generatedAt: new Date().toISOString(),
       dataDir: data.dataDir.trim() || undefined,
       enabledApps: data.enabledApps.length > 0 ? data.enabledApps : null,
+      certSecret,
     };
   }
 
@@ -238,10 +291,19 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   };
 
   // ── Download script ────────────────────────────────────
-  const handleDownload = () => {
-    const config = buildConfig();
-    downloadSetupScript(config, detectedOS.current);
-    setScriptDownloaded(true);
+  const [claiming, setClaiming] = useState(false);
+  const handleDownload = async () => {
+    setDownloadError('');
+    setClaiming(true);
+    try {
+      const config = await buildConfig();
+      downloadSetupScript(config, detectedOS.current);
+      setScriptDownloaded(true);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Failed to prepare your hub — try again.');
+    } finally {
+      setClaiming(false);
+    }
   };
 
   // ── Poll localhost:9090/health when on waiting step ────
@@ -501,6 +563,21 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         autoFocus
                         maxLength={60}
                       />
+                      {generateSlug(data.hubName).length >= 2 && (
+                        <p className="text-xs mt-1.5">
+                          {slugChecking ? (
+                            <span className="text-slate-400 dark:text-slate-500">Checking availability…</span>
+                          ) : slugAvailable === false ? (
+                            <span className="text-rose-600 dark:text-rose-400">
+                              "{generateSlug(data.hubName)}" is already taken — try a different name.
+                            </span>
+                          ) : slugAvailable === true ? (
+                            <span className="text-green-600 dark:text-green-400">
+                              ✓ {generateSlug(data.hubName)}.hub.citinet.cloud is available
+                            </span>
+                          ) : null}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <FieldLabel label="Neighborhood / City" />
@@ -921,8 +998,9 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     {/* Download button */}
                     <button
                       onClick={handleDownload}
+                      disabled={claiming}
                       className={`w-full py-4 rounded-xl font-bold flex items-center justify-center
-                        gap-2 transition-all ${
+                        gap-2 transition-all disabled:opacity-60 disabled:cursor-wait ${
                         scriptDownloaded
                           ? 'bg-green-600 text-white cursor-default'
                           : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
@@ -933,6 +1011,11 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <CheckCircle className="w-5 h-5" />
                           Downloaded — citinet-setup.{os === 'windows' ? 'ps1' : 'sh'}
                         </>
+                      ) : claiming ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Preparing your hub…
+                        </>
                       ) : (
                         <>
                           <Download className="w-5 h-5" />
@@ -940,6 +1023,9 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         </>
                       )}
                     </button>
+                    {downloadError && (
+                      <p className="text-xs text-rose-600 dark:text-rose-400 text-center">{downloadError}</p>
+                    )}
 
                     {/* Run command */}
                     {scriptDownloaded && (
