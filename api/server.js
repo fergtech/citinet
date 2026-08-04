@@ -38,6 +38,7 @@ const { PassThrough } = require('stream');
 const Minio = require('minio');
 const { sendEmail } = require('./mailer');
 const { startCertAgent } = require('./certAgent');
+const { startRegistryHeartbeat } = require('./registryHeartbeat');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -1474,6 +1475,13 @@ app.get('/api/info', async (_req, res) => {
   const name = cfg.hub_name || process.env.HUB_NAME || '';
   const location = cfg.hub_location || process.env.HUB_LOCATION || '';
   const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+  let memberCount = 0;
+  try {
+    const r = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
+    memberCount = parseInt(r.rows[0].c, 10);
+  } catch {
+    /* db may not be ready yet */
+  }
   let enabledApps = null;
   if (cfg.enabled_apps) {
     try {
@@ -1493,6 +1501,7 @@ app.get('/api/info', async (_req, res) => {
     name: name,
     hub_name: name,
     hub_slug: process.env.HUB_SLUG || '',
+    member_count: memberCount,
     location: location,
     hub_location: location,
     description: description,
@@ -9723,6 +9732,7 @@ async function start() {
   });
 
   startCertAgent();
+  startRegistryHeartbeat();
 }
 
 start();

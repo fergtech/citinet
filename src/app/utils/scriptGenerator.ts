@@ -1013,7 +1013,15 @@ export function downloadSetupScript(
     : generateBashScript(config);
   const filename = isWindows ? 'citinet-setup.ps1' : 'citinet-setup.sh';
 
-  const blob = new Blob([content], { type: 'text/plain' });
+  // Windows PowerShell 5.1 (unlike pwsh/bash) reads a .ps1 file using the
+  // system's ANSI codepage rather than UTF-8 unless the file starts with a
+  // UTF-8 BOM -- without it, any literal non-ASCII character embedded in the
+  // script (e.g. an em dash inside a here-string) gets misread the moment
+  // PowerShell parses the file, producing mojibake in whatever it writes out.
+  // Never add this to the bash script: a BOM before the #! shebang breaks it.
+  const utf8Bom = '﻿';
+  const blobParts = isWindows ? [utf8Bom, content] : [content];
+  const blob = new Blob(blobParts, { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

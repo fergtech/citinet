@@ -111,6 +111,12 @@ export default async function handler(req, res) {
       let info = null;
       try { info = await verifyHub(tunnel_url); } catch { /* soft fail */ }
 
+      // member_count is authoritative from the hub's own live /api/info response
+      // (a real-time DB count) whenever it's reachable -- never trust the
+      // client-submitted value, which is only as fresh as whenever the caller
+      // last happened to fire this request. If unreachable, keep whatever was
+      // already on file rather than reverting to a possibly-stale client value.
+      const previousCount = existingIndex >= 0 ? content.hubs[existingIndex].member_count : undefined;
       const hubEntry = {
         id:            id || slug,
         name,
@@ -118,7 +124,7 @@ export default async function handler(req, res) {
         location:      location || (info?.location) || (info?.hub_location) || '',
         description:   description || (info?.description) || (info?.hub_description) || '',
         tunnel_url,
-        member_count:  member_count ?? 0,
+        member_count:  info?.member_count ?? previousCount ?? member_count ?? 0,
         online:        info !== null,
         registered_at: existingIndex >= 0 ? content.hubs[existingIndex].registered_at : now,
         last_seen:     now,
