@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const forge = require('node-forge');
 
 const CERT_DIR = '/app/caddy-data';
@@ -70,25 +71,76 @@ function daysUntilExpiry() {
 async function reloadCaddy(hostname) {
   const caddyfile = [
     '{',
-    '    admin 0.0.0.0:2019',
+    '    admin 0.0.0.0:2019 {',
+    '        origins citinet-caddy:2019',
+    '    }',
     '}',
     '',
     hostname + ' {',
+    // Caddy diffs the adapted config and silently no-ops a /load whose
+    // config is byte-identical to what's already running -- it will NOT
+    // re-read cert_file/key_file from disk in that case, even though their
+    // contents changed. This header's value differs on every call, forcing
+    // Caddy to see a real change and actually reload the certificate files.
+    '    header X-Cert-Refreshed "' + new Date().toISOString() + '"',
     '    tls /data/certs/cert.pem /data/certs/key.pem',
     '    reverse_proxy citinet-api:9090',
     '}',
     '',
   ].join('\n');
   try {
+    // Caddy's admin API checks the request's Origin header against its
+    // configured `origins` list regardless of enforce_origin -- without
+    // this, every reload gets a 403 "client is not allowed to access from
+    // origin ''" since a plain server-side fetch() sends no Origin header
+    // by default.
     await fetch('http://citinet-caddy:2019/load', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/caddyfile' },
+      headers: { 'Content-Type': 'text/caddyfile', Origin: 'http://citinet-caddy:2019' },
       body: caddyfile,
     });
     console.log('[certAgent] Caddy reloaded with the new certificate');
   } catch (err) {
     console.error('[certAgent] Caddy reload failed (it will pick up the new cert on its own next restart):', err.message);
   }
+}
+
+/**
+ * POST JSON over HTTPS using Node's own https module rather than fetch().
+ * Node 18's bundled undici throws RequestContentLengthMismatchError on
+ * some HTTPS POSTs through Vercel's edge (reproduced consistently against
+ * the live broker; GETs and plain-HTTP POSTs are unaffected) -- https.request
+ * sidesteps it entirely. Follows the 307 citinet.cloud -> www.citinet.cloud
+ * redirect, since https.request doesn't follow redirects on its own.
+ */
+function postJson(urlStr, payload, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    const body = Buffer.from(JSON.stringify(payload));
+    const u = new URL(urlStr);
+    const req = https.request({
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': body.length },
+    }, res => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
+        res.resume();
+        resolve(postJson(new URL(res.headers.location, urlStr).toString(), payload, redirectsLeft - 1));
+        return;
+      }
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(data); } catch { /* non-JSON error body */ }
+        resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, body: parsed });
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 async function ensureCert() {
@@ -107,17 +159,12 @@ async function ensureCert() {
   }
 
   try {
-    const res = await fetch(BROKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ op: 'issue', slug, secret, lanIp }),
-    });
+    const res = await postJson(BROKER_URL, { op: 'issue', slug, secret, lanIp });
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      console.error('[certAgent] issue failed:', res.status, body.error || '');
+      console.error('[certAgent] issue failed:', res.status, res.body.error || '');
       return;
     }
-    const { cert, key } = await res.json();
+    const { cert, key } = res.body;
     fs.mkdirSync(CERT_DIR, { recursive: true });
     fs.writeFileSync(CERT_PATH, cert, { mode: 0o600 });
     fs.writeFileSync(KEY_PATH, key, { mode: 0o600 });
