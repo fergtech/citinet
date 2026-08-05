@@ -206,10 +206,10 @@ function getComposeYaml(): string {
     '    restart: unless-stopped',
     '    ports:',
     // Loopback-only: Caddy (443/80) is the only intended path in from the LAN --
-    // this binding exists purely so the setup script and tray app can poll
-    // /health from the same machine. Publishing it on 0.0.0.0 would let anyone
-    // on the LAN hit the API in plaintext HTTP, bypassing TLS entirely
-    // (including credentials sent to /api/auth/login).
+    // this binding exists purely so the setup script can poll /health from the
+    // same machine. Publishing it on 0.0.0.0 would let anyone on the LAN hit
+    // the API in plaintext HTTP, bypassing TLS entirely (including
+    // credentials sent to /api/auth/login).
     '      - "127.0.0.1:' + vd('API_PORT', '9090') + ':9090"',
     '    environment:',
     '      - NODE_ENV=production',
@@ -1062,23 +1062,6 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Write-Host "  Data is stored at: $DataDir"',
     'Write-Host "  To move to a new drive: stop the hub, copy that folder to the new location,"',
     'Write-Host "  then edit $HubDir\\.env (change DATA_DIR=) and start again."',
-    'Write-Host ""',
-    '',
-    '# ── Install Citinet Hub Tray Agent ───────────────────────────────────────────',
-    'Step "Installing Citinet Hub Tray"',
-    '$TrayInstaller = "$env:TEMP\\CitinetHub-Setup.exe"',
-    '$TrayUrl = "https://github.com/fergtech/citinet-hub-tray/releases/latest/download/CitinetHub-Setup.exe"',
-    'try {',
-    '  Write-Host "  Downloading tray agent..."',
-    '  Invoke-WebRequest -Uri $TrayUrl -OutFile $TrayInstaller -UseBasicParsing -ErrorAction Stop',
-    '  Write-Host "  Installing (silent)..."',
-    '  Start-Process -FilePath $TrayInstaller -ArgumentList "/S" -Wait',
-    '  Remove-Item $TrayInstaller -Force -ErrorAction SilentlyContinue',
-    '  Ok "Citinet Hub Tray installed -- look for the icon in your system tray"',
-    '} catch {',
-    '  Warn "Could not download tray agent (internet required). You can install it later from:"',
-    '  Write-Host "  https://github.com/fergtech/citinet-hub-tray/releases" -ForegroundColor Blue',
-    '}',
     'Write-Host ""',
   ];
 
