@@ -6,13 +6,12 @@ How to get a Citinet hub running on your hardware, what to expect, and how to ma
 
 ## What a Hub Is
 
-A hub is four Docker containers running as a single unit:
+A hub is several Docker containers running as a single unit:
 
 ```
 citinet-api       (port 9090)  — API, auth, posts, messages, files, atlas
 citinet-db        (internal)   — PostgreSQL 16 — all structured data
 citinet-storage   (internal)   — MinIO — file and media object storage
-citinet-redis     (internal)   — Redis — sessions and cache
 ```
 
 Everything lives in a directory on a drive you choose. Moving the hub to a different drive means changing one line in a file and restarting.
@@ -81,7 +80,7 @@ The first account you register on the hub becomes the **admin**. Sign up with wh
 All hub data is controlled by two variables in `~/citinet-hub/.env`:
 
 ```env
-DATA_DIR=./data         # database and cache
+DATA_DIR=./data         # database
 FILES_DIR=./data/storage  # uploaded user files (MinIO)
 ```
 
@@ -92,7 +91,6 @@ By default both point to subdirectories under `~/citinet-hub/data/`. You can poi
 ```bash
 docker compose -f ~/citinet-hub/docker-compose.yml down
 sudo rsync -aHAX ~/citinet-hub/data/db /mnt/new-drive/citinet/db
-sudo rsync -aHAX ~/citinet-hub/data/redis /mnt/new-drive/citinet/redis
 nano ~/citinet-hub/.env   # set DATA_DIR=/mnt/new-drive/citinet
 docker compose -f ~/citinet-hub/docker-compose.yml up -d
 ```
@@ -222,17 +220,46 @@ sudo nmcli connection up "Wired connection 1"
 
 ## Backups
 
-The safest backup approach: stop the hub, copy `DATA_DIR` and `FILES_DIR` to a backup location, then restart.
+Every hub runs a `citinet-backup` container automatically (as of 2026-08-05) — no setup
+required. Once a day it writes a fresh database dump and a full snapshot of uploaded
+files to `BACKUP_DIR`, and deletes anything older than `BACKUP_RETENTION_DAYS` (both
+set in `.env`, defaulting to `$DATA_DIR/backups` and 7 days).
+
+**This protects against**: accidental or malicious mass-deletion, a bad update, a
+corrupted migration — anything that damages the *data*, not the *machine*.
+
+**This does not protect against**: the machine itself dying, being lost, or its disk
+failing — `BACKUP_DIR` defaults to a subfolder of the same `DATA_DIR` the live database
+lives in, so a dead disk takes both down together. For real protection against losing
+the machine entirely, point `BACKUP_DIR` at a different physical drive or a mounted
+external/network volume in `.env`, then restart:
+
+```bash
+docker compose -f ~/citinet-hub/docker-compose.yml up -d citinet-backup
+```
+
+Because it re-packages the entire storage directory every run (not incrementally), a
+hub with a large amount of uploaded file content will see backups that take
+proportionally longer and use real CPU/disk I/O while running — expected, not a bug,
+and why this runs once a day rather than more often.
+
+### Restoring from a backup
+
+```bash
+# Database
+gunzip -c db-YYYYMMDD-HHMMSS.sql.gz | docker exec -i citinet-db psql -U citinet citinet
+
+# Files (stop the hub first so nothing writes to storage mid-restore)
+docker compose -f ~/citinet-hub/docker-compose.yml down
+tar -xzf storage-YYYYMMDD-HHMMSS.tar.gz -C "$FILES_DIR"
+docker compose -f ~/citinet-hub/docker-compose.yml up -d
+```
+
+### Manual backup, if you want one outside the daily schedule
 
 ```bash
 docker compose -f ~/citinet-hub/docker-compose.yml down
 sudo rsync -aHAX ~/citinet-hub/data/ /backup/citinet-$(date +%Y%m%d)/
 docker compose -f ~/citinet-hub/docker-compose.yml up -d
-```
-
-Database-only backup (without stopping):
-
-```bash
-docker exec citinet-db pg_dump -U citinet citinet > backup-$(date +%Y%m%d).sql
 ```
 

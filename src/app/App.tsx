@@ -156,9 +156,12 @@ function HubOnboardRoute() {
     navigate(hubPath('/'));
   };
 
-  // A connection with a saved username already completed profile setup once —
-  // landing here again means their session expired, not a fresh signup.
-  const defaultMode: 'login' | 'signup' = connection?.user?.username ? 'login' : 'signup';
+  // Only the hub creator's very first visit (fresh from the setup wizard, no
+  // account yet) should default to signup. Everyone else -- returning members,
+  // and any other guest landing on the hub for the first time -- sees sign in
+  // first, with "Create account" one click away.
+  const isCreator = hubSlug ? sessionStorage.getItem('citinet-creator-for') === hubSlug : false;
+  const defaultMode: 'login' | 'signup' = isCreator ? 'signup' : 'login';
 
   return <NodeEntryFlow onComplete={handleOnboardingComplete} locationName={hubName} hubSlug={hubSlug} hub={connection?.hub} defaultMode={defaultMode} />;
 }

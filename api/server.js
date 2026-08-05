@@ -85,8 +85,39 @@ if (process.env.STORAGE_URL && process.env.STORAGE_ACCESS_KEY) {
 }
 
 // Shared across registration and password-change so one path can't be used
-// to downgrade an account below the other's policy.
-const MIN_PASSWORD_LENGTH = 8;
+// to downgrade an account below the other's policy. Mirrors
+// src/app/utils/passwordStrength.ts -- client-side is UX, this is the actual
+// boundary, since a scripted registration bypasses the frontend entirely.
+const MIN_PASSWORD_LENGTH = 10;
+
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'password123', '12345678', '123456789', '1234567890',
+  'qwerty123', 'qwertyuiop', 'letmein123', 'iloveyou123', 'admin1234', 'welcome123',
+  'sunshine123', 'football123', 'baseball123', 'dragon1234', 'monkey1234', 'trustno1',
+  'abc123456', 'password!', 'p@ssword', 'p@ssw0rd', 'changeme123', 'temppassword',
+]);
+
+function isTrivialPasswordPattern(password) {
+  const lower = password.toLowerCase();
+  if (/^(.)\1+$/.test(password)) return true;
+  const isSequential = (s, step) =>
+    [...s].every((ch, i) => i === 0 || s.charCodeAt(i) === s.charCodeAt(i - 1) + step);
+  return isSequential(lower, 1) || isSequential(lower, -1);
+}
+
+/** Returns an error string if the password fails the strength policy, or null if it passes. */
+function passwordStrengthError(password) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+    return 'That password is too common -- please choose something less guessable';
+  }
+  if (isTrivialPasswordPattern(password)) {
+    return 'Avoid repeated or sequential characters';
+  }
+  return null;
+}
 
 // Blocked at upload time regardless of declared MIME type — classic
 // executable/script delivery extensions with no legitimate use on this platform.
@@ -230,6 +261,10 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 async function initDb() {
   const client = await pool.connect();
   try {
+    // Trigram matching for search -- lets member/name lookup tolerate typos,
+    // partial words, and word-order/spacing differences (e.g. "tom anderson"
+    // finding username "tomanderson") without a separate search service.
+    await client.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_users (
         id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -490,6 +525,13 @@ async function initDb() {
     );
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_hub_users_last_seen ON hub_users(last_seen_at)`,
+    );
+    // Trigram indexes for fuzzy/partial name search (see GET /api/search)
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_users_username_trgm ON hub_users USING GIN (username gin_trgm_ops)`,
+    );
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_users_display_name_trgm ON hub_users USING GIN (display_name gin_trgm_ops)`,
     );
     // Governance — role system
     await client.query(
@@ -1606,15 +1648,17 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       .status(400)
       .json({ error: 'username and password are required' });
   }
-  if (username.trim().length < 2) {
+  // Letters/digits/underscore/hyphen only. Not just hygiene -- usernames flow
+  // unsanitized into email subject lines (emailCopyForNotification), so an
+  // unrestricted charset is a header-injection surface via a crafted username.
+  if (!/^[a-zA-Z0-9_-]{2,30}$/.test(username.trim())) {
     return res
       .status(400)
-      .json({ error: 'Username must be at least 2 characters' });
+      .json({ error: 'Username must be 2-30 characters: letters, numbers, underscore, or hyphen only' });
   }
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return res
-      .status(400)
-      .json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+  const pwError = passwordStrengthError(password);
+  if (pwError) {
+    return res.status(400).json({ error: pwError });
   }
 
   try {
@@ -1838,10 +1882,9 @@ app.post('/api/auth/change-password', authenticate, async (req, res) => {
       .status(400)
       .json({ error: 'current_password and new_password are required' });
   }
-  if (new_password.length < MIN_PASSWORD_LENGTH) {
-    return res
-      .status(400)
-      .json({ error: `New password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+  const newPwError = passwordStrengthError(new_password);
+  if (newPwError) {
+    return res.status(400).json({ error: newPwError });
   }
   try {
     const result = await pool.query(
@@ -3361,6 +3404,21 @@ app.get('/api/search', authenticate, async (req, res) => {
   try {
     const canSeeRequests = isMod(req.user);
 
+    // Full-text search AND-matches every word in the query against the document's
+    // lexemes, so "tom anderson" (two lexemes) never matches a username stored as
+    // one word, "tomanderson" (one lexeme) -- and vice versa. People search this by
+    // name far more than any other field, so members also get a pg_trgm similarity
+    // fallback against the whitespace-normalized name -- it closes that gap and, as
+    // a bonus, tolerates typos and partial/prefix words too (e.g. "ander" while
+    // still typing "anderson"), not just the spacing difference.
+    const normalizedNameNeedle = q.toLowerCase().replace(/\s+/g, '');
+    // strict_word_similarity (word-boundary-aware) separates real fuzzy matches from
+    // coincidental substrings far better than plain word_similarity -- tuned against
+    // this hub's live data: true matches (exact/typo/partial-word) score 0.2-1.0,
+    // while the closest unrelated-name coincidence tops out at 0.174. 0.18 sits
+    // just above that, on real observed data rather than a guessed default.
+    const NAME_SIMILARITY_THRESHOLD = 0.18;
+
     const postsSql = `
       SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
              p.space_id, p.shared_to_feed, p.event_date, p.event_location, p.event_lat, p.event_lng, p.visibility,
@@ -3400,12 +3458,15 @@ app.get('/api/search', authenticate, async (req, res) => {
       SELECT id AS user_id, username, display_name, location, bio, tags, is_admin, role, created_at,
              avatar_url, profile_headline, banner_mode, banner_color, banner_gradient_from,
              banner_gradient_to, banner_image_file_name, website, profile_visibility, last_seen_at,
-             ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
-               setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
-               setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
-               setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
-               setweight(to_tsvector('english', coalesce(location,'')), 'D'),
-               websearch_to_tsquery('english', $1), 32) AS text_rank
+             GREATEST(
+               ts_rank_cd(${SEARCH_FTS_WEIGHT_VEC},
+                 setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
+                 setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
+                 setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
+                 setweight(to_tsvector('english', coalesce(location,'')), 'D'),
+                 websearch_to_tsquery('english', $1), 32),
+               strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', ''))
+             ) AS text_rank
       FROM hub_users
       WHERE (
               setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
@@ -3413,6 +3474,7 @@ app.get('/api/search', authenticate, async (req, res) => {
               setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
               setweight(to_tsvector('english', coalesce(location,'')), 'D')
             ) @@ websearch_to_tsquery('english', $1)
+         OR strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', '')) > $3
       LIMIT 200`;
 
     const spacesSql = `
@@ -3453,7 +3515,7 @@ app.get('/api/search', authenticate, async (req, res) => {
 
     const [postsR, membersR, spacesR, requestsR] = await Promise.all([
       pool.query(postsSql, [q, req.user.id]),
-      pool.query(membersSql, [q]),
+      pool.query(membersSql, [q, normalizedNameNeedle, NAME_SIMILARITY_THRESHOLD]),
       pool.query(spacesSql, [q, req.user.id]),
       canSeeRequests ? pool.query(requestsSql, [q]) : Promise.resolve({ rows: [] }),
     ]);
@@ -4464,6 +4526,8 @@ app.patch('/api/requests/:id', authenticate, async (req, res) => {
 
 // List mod log (all authenticated members — public governance record)
 app.get('/api/mod-log', authenticate, async (req, res) => {
+  if (!isMod(req.user))
+    return res.status(403).json({ error: 'Moderator access required' });
   const limit = Math.min(parseInt(req.query.limit ?? '50', 10), 100);
   const offset = parseInt(req.query.offset ?? '0', 10);
   try {
@@ -6583,6 +6647,7 @@ app.get('/api/initiatives/:id', authenticate, async (req, res) => {
 app.patch('/api/initiatives/:id', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
   try {
+    await assertInitiativeCreator(req.params.id, req);
     if (!p) {
       // status is intentionally not settable here — it's derived from task
       // completion in enrichInitiatives, not a manually-edited field.
@@ -6608,7 +6673,7 @@ app.patch('/api/initiatives/:id', authenticate, async (req, res) => {
     );
     res.status(status).json(data);
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    res.status(err.status || 502).json({ error: err.message });
   }
 });
 
@@ -6617,6 +6682,7 @@ app.delete('/api/initiatives/:id', authenticate, async (req, res) => {
   const p = await getProvider('initiatives');
   const id = req.params.id;
   try {
+    await assertInitiativeCreator(id, req);
     if (!p) {
       await pool.query(`DELETE FROM hub_initiatives_local WHERE id = $1`, [id]); // members/tasks cascade
     } else {
@@ -6642,7 +6708,7 @@ app.delete('/api/initiatives/:id', authenticate, async (req, res) => {
     ]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

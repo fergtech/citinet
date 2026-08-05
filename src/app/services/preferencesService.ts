@@ -1,8 +1,9 @@
 import { hubService } from './hubService';
 
 export interface UserPreferences {
-  /** 'solid' is the true default — a theme-aware plain color. 'default' names the
-   *  classic dot-grid wallpaper, kept as an explicit opt-in rather than the fallback. */
+  /** 'default' (or unset) is the true default — the classic Citinet dot-grid
+   *  wallpaper. 'solid' names the theme-aware plain color, kept as an explicit
+   *  "Classic" opt-in rather than the fallback. */
   background_type?: 'solid' | 'default' | 'color' | 'image' | 'preset';
   background_value?: string;
   background_brightness?: string;

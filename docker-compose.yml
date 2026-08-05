@@ -89,24 +89,6 @@ services:
     networks:
       - citinet-network
 
-  # Redis (Sessions, caching)
-  citinet-redis:
-    image: redis:7-alpine
-    container_name: citinet-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
-    volumes:
-      - ${DATA_DIR:-./data}/redis:/data
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - citinet-network
-
 networks:
   citinet-network:
     driver: bridge

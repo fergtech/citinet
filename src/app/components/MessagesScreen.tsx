@@ -891,7 +891,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             userId={member.user_id}
                             name={member.username}
                             sizeClass="w-9 h-9"
-                            radiusClass="rounded-lg"
+                            radiusClass="rounded-full"
                             textClass="text-xs"
                           />
                           <span className="flex-1 text-left text-sm font-medium text-slate-900 dark:text-white">{member.username}</span>
@@ -971,7 +971,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           userId={participant.user_id}
                           name={participant.username}
                           sizeClass="w-10 h-10"
-                          radiusClass="rounded-xl"
+                          radiusClass="rounded-full"
                           textClass=""
                         />
                         <div className="min-w-0 flex-1">
@@ -1079,7 +1079,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         userId={avatarUserId}
                         name={displayName}
                         sizeClass="w-12 h-12"
-                        radiusClass="rounded-xl"
+                        radiusClass="rounded-full"
                         textClass=""
                       />
                       {isUnread && (
@@ -1167,7 +1167,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                   userId={convoAvatarUserId(selectedConvo, myUserId)}
                   name={convoDisplayName(selectedConvo, myUserId)}
                   sizeClass="w-10 h-10"
-                  radiusClass="rounded-xl"
+                  radiusClass="rounded-full"
                   textClass=""
                 />
               </div>
@@ -1245,7 +1245,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             userId={msg.sender_id}
                             name={msg.sender_username || '?'}
                             sizeClass="w-7 h-7"
-                            radiusClass="rounded-lg"
+                            radiusClass="rounded-full"
                             textClass="text-[10px]"
                           />
                         </button>

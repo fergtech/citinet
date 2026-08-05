@@ -15,7 +15,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
   const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex flex-col items-center justify-center p-6">
+    <div className="min-h-[100dvh] w-full relative overflow-hidden flex flex-col items-center justify-center p-6">
       <OnboardingBackground />
 
       {/* Top Left Logo */}
@@ -100,7 +100,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
         {/* Footer Note */}
         <p className="text-white/70 text-sm font-light mt-8">
-          Participating in citinet means joining shared civic digital space
+          Participating in citinet means joining a shared digital ecosytem
         </p>
         <a
           href={INFO_SITE_URL}

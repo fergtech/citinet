@@ -341,6 +341,10 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
   }, [slug, tunnelUrl, currentUser?.authToken]);
 
   const needle = query.trim().toLowerCase();
+  // "tom anderson" vs "tomanderson" should find the same person -- strip spaces from
+  // both the query and the name fields before comparing so either spelling matches
+  // (mirrors the same fallback GET /api/search applies once 2+ chars kick in).
+  const normalizedNeedle = needle.replace(/\s+/g, '');
   // Real backend relevance-ranked search kicks in at 2+ chars (see GET /api/search) —
   // below that, English stemming makes results unreliable anyway, so we fall back to
   // today's local substring filtering, unchanged, exactly as before this feature.
@@ -394,8 +398,9 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     return members.filter(m => !needle
       || m.username.toLowerCase().includes(needle)
       || (m.display_name?.toLowerCase().includes(needle) ?? false)
-      || (m.tags?.some(t => t.toLowerCase().includes(needle)) ?? false));
-  }, [members, needle, searching, searchResults]);
+      || (m.tags?.some(t => t.toLowerCase().includes(needle)) ?? false)
+      || `${m.username}${m.display_name ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(normalizedNeedle));
+  }, [members, needle, normalizedNeedle, searching, searchResults]);
   const filteredHubs = useMemo(
     () => otherHubs.filter(h => !needle || h.name.toLowerCase().includes(needle)),
     [otherHubs, needle]

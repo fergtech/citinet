@@ -16,7 +16,6 @@ export interface HubSecrets {
   dbPassword: string;
   storageAccessKey: string;
   storageSecretKey: string;
-  redisPassword: string;
 }
 
 export interface HubScriptConfig {
@@ -30,7 +29,7 @@ export interface HubScriptConfig {
   adminPassword: string;
   secrets: HubSecrets;
   generatedAt: string;
-  /** Custom directory for Docker bind mounts (Postgres, MinIO, Redis data).
+  /** Custom directory for Docker bind mounts (Postgres, MinIO data).
    *  If omitted, Docker-managed named volumes are used instead. */
   dataDir?: string;
   /**
@@ -72,7 +71,6 @@ export function generateSecrets(): HubSecrets {
     dbPassword: generateSecret(24),       // 48-char hex
     storageAccessKey: generateSecret(16), // 32-char hex
     storageSecretKey: generateSecret(32), // 64-char hex
-    redisPassword: generateSecret(20),    // 40-char hex
   };
 }
 
@@ -121,9 +119,6 @@ function generateEnvContent(config: HubScriptConfig): string {
     'STORAGE_SECRET_KEY=' + config.secrets.storageSecretKey,
     'STORAGE_BUCKET=hub-files',
     '',
-    '# Redis',
-    'REDIS_PASSWORD=' + config.secrets.redisPassword,
-    '',
     '# Security',
     'JWT_SECRET=' + config.secrets.jwtSecret,
     '',
@@ -147,7 +142,7 @@ function generateEnvContent(config: HubScriptConfig): string {
     '# Registry -- leave empty for local/private hubs',
     'REGISTRY_URL=',
     '',
-    '# Data Directory — where database and cache data is stored (postgres + redis).',
+    '# Data Directory — where database data is stored (postgres).',
     '# Change this to any local path and restart to relocate.',
     '#   Windows example:  DATA_DIR=D:\\citinet-hub\\data',
     '#   Linux example:    DATA_DIR=/mnt/external/citinet',
@@ -160,6 +155,13 @@ function generateEnvContent(config: HubScriptConfig): string {
     '#   Local example:   FILES_DIR=/mnt/external/citinet-files',
     '#   Network example: FILES_DIR=/mnt/nas/hub-files  (mount the share first)',
     'FILES_DIR=' + (config.dataDir ?? './data') + '/storage',
+    '',
+    '# Backup Directory — nightly database + file backups are written here, rotated',
+    '# after BACKUP_RETENTION_DAYS. Defaults to a subfolder of DATA_DIR, which only',
+    '# protects against accidental deletes/bad updates -- point this at a different',
+    '# drive or external volume for real protection against this machine\'s disk failing.',
+    'BACKUP_DIR=' + (config.dataDir ?? './data') + '/backups',
+    'BACKUP_RETENTION_DAYS=7',
     '',
     '# Enabled Apps — comma-separated list of app IDs shown to members.',
     '# Leave empty to enable all apps. Set during hub creation wizard.',
@@ -181,13 +183,19 @@ function getComposeYaml(): string {
   const v = (name: string) => '${' + name + '}';
   const vd = (name: string, def: string) => '${' + name + ':-' + def + '}';
 
-  // DATA_DIR controls postgres + redis. FILES_DIR controls MinIO so file
-  // storage can live on a separate drive or remote network share independently.
-  // Both are set in .env and can be changed at any time without regenerating.
+  // DATA_DIR controls postgres. FILES_DIR controls MinIO so file storage can
+  // live on a separate drive or remote network share independently. Both are
+  // set in .env and can be changed at any time without regenerating.
   const dbVol      = vd('DATA_DIR', './data') + '/db';
   const storageVol = vd('FILES_DIR', './data/storage');
-  const redisVol   = vd('DATA_DIR', './data') + '/redis';
   const caddyVol   = vd('DATA_DIR', './data') + '/caddy';
+  // Separate from DATA_DIR by default so it's at least a different directory than the
+  // live DB volume -- operators who want real protection against a failed disk (not
+  // just accidental deletes/bad migrations) can point BACKUP_DIR at a different drive
+  // or mounted external volume without touching the compose file. Not chained through
+  // DATA_DIR's own default: Compose's env interpolation doesn't reliably support
+  // nested ${VAR:-${OTHER:-x}} the way full bash does.
+  const backupVol  = vd('BACKUP_DIR', './data/backups');
 
   return [
     'services:',
@@ -197,7 +205,12 @@ function getComposeYaml(): string {
     '    container_name: citinet-api',
     '    restart: unless-stopped',
     '    ports:',
-    '      - "' + vd('API_PORT', '9090') + ':9090"',
+    // Loopback-only: Caddy (443/80) is the only intended path in from the LAN --
+    // this binding exists purely so the setup script and tray app can poll
+    // /health from the same machine. Publishing it on 0.0.0.0 would let anyone
+    // on the LAN hit the API in plaintext HTTP, bypassing TLS entirely
+    // (including credentials sent to /api/auth/login).
+    '      - "127.0.0.1:' + vd('API_PORT', '9090') + ':9090"',
     '    environment:',
     '      - NODE_ENV=production',
     '      - PORT=9090',
@@ -211,7 +224,6 @@ function getComposeYaml(): string {
     '      - STORAGE_ACCESS_KEY=' + v('STORAGE_ACCESS_KEY'),
     '      - STORAGE_SECRET_KEY=' + v('STORAGE_SECRET_KEY'),
     '      - STORAGE_BUCKET=' + vd('STORAGE_BUCKET', 'hub-files'),
-    '      - REDIS_URL=redis://:' + v('REDIS_PASSWORD') + '@citinet-redis:6379',
     '      - JWT_SECRET=' + v('JWT_SECRET'),
     '      - CORS_ORIGIN=' + vd('CORS_ORIGIN', '*'),
     '      - REGISTRY_URL=' + vd('REGISTRY_URL', ''),
@@ -228,8 +240,6 @@ function getComposeYaml(): string {
     '        condition: service_healthy',
     '      citinet-storage:',
     '        condition: service_healthy',
-    '      citinet-redis:',
-    '        condition: service_started',
     '    healthcheck:',
     '      test: ["CMD", "node", "-e", "fetch(\'http://localhost:9090/health\').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]',
     '      interval: 30s',
@@ -280,18 +290,46 @@ function getComposeYaml(): string {
     '    networks:',
     '      - citinet-network',
     '',
-    '  citinet-redis:',
-    '    image: redis:7-alpine',
-    '    container_name: citinet-redis',
+    '  citinet-backup:',
+    '    image: postgres:16-alpine',
+    '    container_name: citinet-backup',
     '    restart: unless-stopped',
-    '    command: redis-server --appendonly yes --requirepass ' + v('REDIS_PASSWORD'),
+    '    environment:',
+    '      - PGPASSWORD=' + v('DB_PASSWORD'),
+    '      - BACKUP_RETENTION_DAYS=' + vd('BACKUP_RETENTION_DAYS', '7'),
     '    volumes:',
-    '      - ' + redisVol + ':/data',
-    '    healthcheck:',
-    '      test: ["CMD", "redis-cli", "-a", "' + v('REDIS_PASSWORD') + '", "ping"]',
-    '      interval: 10s',
-    '      timeout: 5s',
-    '      retries: 3',
+    '      - ' + backupVol + ':/backups',
+    '      - ' + storageVol + ':/storage:ro',
+    '    depends_on:',
+    '      citinet-db:',
+    '        condition: service_healthy',
+    '    entrypoint: ["/bin/sh", "-c"]',
+    '    command:',
+    '      - |',
+    // $$ (not $) throughout -- these are the backup container's own runtime shell
+    // variables, not compose-level substitutions; Compose collapses $$ -> $ when it
+    // writes the container's actual command, verified against a real postgres
+    // container before shipping this (pg_dump | gzip would silently report "ok" even
+    // on a failed dump, since a pipeline's exit status is its last command's (gzip)
+    // in plain /bin/sh -- no pipefail here -- so pg_dump is checked on its own first).
+    '        apk add --no-cache tar gzip >/dev/null 2>&1 || true',
+    '        while true; do',
+    '          ts=$$(date +%Y%m%d-%H%M%S)',
+    '          echo "[backup] starting $$ts"',
+    '          if pg_dump -h citinet-db -U citinet citinet > /backups/db-$$ts.sql 2>/backups/db-$$ts.err; then',
+    '            gzip -f /backups/db-$$ts.sql && rm -f /backups/db-$$ts.err && echo "[backup] db ok"',
+    '          else',
+    '            echo "[backup] db FAILED:"; cat /backups/db-$$ts.err',
+    '          fi',
+    '          if tar -czf /backups/storage-$$ts.tar.gz -C /storage . 2>/dev/null; then',
+    '            echo "[backup] storage ok"',
+    '          else',
+    '            echo "[backup] storage FAILED"',
+    '          fi',
+    '          find /backups -name \'db-*.sql.gz\' -mtime +$$BACKUP_RETENTION_DAYS -delete',
+    '          find /backups -name \'storage-*.tar.gz\' -mtime +$$BACKUP_RETENTION_DAYS -delete',
+    '          sleep 86400',
+    '        done',
     '    networks:',
     '      - citinet-network',
     '',
@@ -301,6 +339,7 @@ function getComposeYaml(): string {
     '    restart: unless-stopped',
     '    ports:',
     '      - "443:443"',
+    '      - "80:80"',
     '    volumes:',
     '      - ./Caddyfile:/etc/caddy/Caddyfile:ro',
     '      - ' + caddyVol + ':/data/certs',
@@ -461,11 +500,14 @@ function generateBashScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     'DATA_DIR="' + (config.dataDir ?? '$HUB_DIR/data') + '"',
-    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/redis" "$DATA_DIR/caddy"',
+    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/caddy"',
     'ok "DB + cache at: $DATA_DIR"',
     'FILES_DIR="$DATA_DIR/storage"',
     'mkdir -p "$FILES_DIR"',
     'ok "File storage at: $FILES_DIR"',
+    'BACKUP_DIR="$DATA_DIR/backups"',
+    'mkdir -p "$BACKUP_DIR"',
+    'ok "Backups at: $BACKUP_DIR"',
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'step "Writing configuration"',
@@ -580,6 +622,22 @@ function generateBashScript(config: HubScriptConfig): string {
     '    fi',
     '  fi',
     'fi',
+    '',
+    '# === Configure firewall -- only touches it if one is actually active, so',
+    '# hosts with no firewall (the common case) are left alone ===',
+    'step "Configuring firewall"',
+    'if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then',
+    '  sudo ufw allow 80/tcp >/dev/null 2>&1 || true',
+    '  sudo ufw allow 443/tcp >/dev/null 2>&1 || true',
+    '  ok "ufw: allowed inbound 80/tcp and 443/tcp"',
+    'elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state 2>/dev/null | grep -q "running"; then',
+    '  sudo firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1 || true',
+    '  sudo firewall-cmd --permanent --add-port=443/tcp >/dev/null 2>&1 || true',
+    '  sudo firewall-cmd --reload >/dev/null 2>&1 || true',
+    '  ok "firewalld: allowed inbound 80/tcp and 443/tcp"',
+    'else',
+    '  ok "No active host firewall detected -- nothing to configure"',
+    'fi',
 
     ...tailscaleLines,
 
@@ -595,7 +653,16 @@ function generateBashScript(config: HubScriptConfig): string {
     '  COMPOSE_CMD="docker-compose"',
     'fi',
     '',
-    '$COMPOSE_CMD up -d',
+    'if ! $COMPOSE_CMD up -d 2>compose_up.err; then',
+    '  cat compose_up.err >&2',
+    '  if grep -qi "address already in use\\|port is already allocated" compose_up.err; then',
+    '    rm -f compose_up.err',
+    '    err "Port 80 or 443 is already in use by another program on this machine (common culprits: another web server, VPN client, or a second Citinet hub). Free the port and re-run this script."',
+    '  fi',
+    '  rm -f compose_up.err',
+    '  err "Failed to start hub services -- see the error above."',
+    'fi',
+    'rm -f compose_up.err',
     '',
     '# If TUNNEL_URL was resolved, force-recreate the API container so it picks it up',
     'if [ -n "${TUNNEL_URL:-}" ]; then',
@@ -771,11 +838,14 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     '$DataDir = "' + (config.dataDir ?? '$HubDir\\data') + '"',
-    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\redis","$DataDir\\caddy" | Out-Null',
+    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\caddy" | Out-Null',
     'Ok "DB + cache at: $DataDir"',
     '$FilesDir = "$DataDir\\storage"',
     'New-Item -ItemType Directory -Force -Path $FilesDir | Out-Null',
     'Ok "File storage at: $FilesDir"',
+    '$BackupDir = "$DataDir\\backups"',
+    'New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null',
+    'Ok "Backups at: $BackupDir"',
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'Step "Writing configuration"',
@@ -909,6 +979,20 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '    Err "Docker Desktop installation failed: $errMsg -- Install manually from https://www.docker.com/products/docker-desktop then re-run."',
     '  }',
     '}',
+    '',
+    '# === Configure firewall (requires Administrator; skipped with guidance otherwise) ===',
+    'Step "Configuring firewall"',
+    '$IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
+    'if ($IsElevated) {',
+    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTP" -ErrorAction SilentlyContinue',
+    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTPS" -ErrorAction SilentlyContinue',
+    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow | Out-Null',
+    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow | Out-Null',
+    '  Ok "Windows Firewall allows inbound 80/tcp and 443/tcp"',
+    '} else {',
+    '  Warn "Not running as Administrator -- could not open firewall ports 80/443 automatically."',
+    '  Warn "If guests on your network cannot connect, run this script as Administrator once, or manually allow inbound TCP 80 and 443 in Windows Firewall."',
+    '}',
 
     ...tailscaleLines,
 
@@ -923,6 +1007,9 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'if ($LASTEXITCODE -eq 0) { $ComposeCmd = "docker compose" }',
     '',
     'Invoke-Expression "$ComposeCmd up -d"',
+    'if ($LASTEXITCODE -ne 0) {',
+    '  Err "Failed to start hub services (see error above). If it mentions port 80 or 443 already in use, another program on this machine (e.g. IIS/World Wide Web Publishing Service, Skype, a VPN client, or a second Citinet hub) is holding it -- free the port and re-run this script."',
+    '}',
     '',
     ...(isTailscale ? [
       '# If TUNNEL_URL was resolved, force-recreate the API container so it picks it up',

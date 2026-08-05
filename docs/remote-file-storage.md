@@ -1,7 +1,7 @@
 # Remote File Storage for Citinet Hubs
 
 How to move MinIO file storage off the hub machine onto a remote drive on another PC on your LAN.
-Postgres and Redis stay local — only uploaded user files move to the remote machine.
+Postgres stays local — only uploaded user files move to the remote machine.
 
 ---
 
@@ -203,7 +203,6 @@ Expected output:
 | Service | Data location |
 |---|---|
 | Postgres (database) | Local Pi — `DATA_DIR/db` |
-| Redis (cache) | Local Pi — `DATA_DIR/redis` |
 | MinIO (user files) | Remote PC — `FILES_DIR` via SMB |
 
 ---

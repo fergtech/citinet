@@ -188,8 +188,30 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
         });
       }
 
-      // Recover (or generate) encryption keys in the background — never blocks auth
-      hubService.ensureUserKeys(hub.slug, password).catch(() => {});
+      // Recover (or generate) encryption keys in the background — never blocks auth.
+      // This entry point doesn't have the full recovery-phrase UI (see
+      // NodeEntryFlow for that); a legacy password-wrapped backup still
+      // upgrades transparently, but a device that genuinely needs a phrase
+      // just starts fresh here rather than prompting — manage/restore keys
+      // properly from Account settings after landing in the hub.
+      const hubSlugForKeys = hub.slug;
+      hubService.ensureUserKeys(hubSlugForKeys).then(async ({ status }) => {
+        // 'has-keys-new-backup' already created the backup server-side inside
+        // ensureUserKeys -- the phrase just isn't shown here (see NodeEntryFlow
+        // for that UI); the user can view/regenerate it from Account settings.
+        if (status === 'no-backup') {
+          await hubService.setupNewAccountKeys(hubSlugForKeys);
+        } else if (status === 'needs-recovery') {
+          // Deliberately does NOT fall back to generateFreshDeviceKeys on
+          // failure here (unlike the old behavior) -- silently minting
+          // unrelated keys with no confirmation is what caused a real
+          // content-loss incident via this same fallback in NodeEntryFlow.
+          // Leaving local keys unset if this fails means notes/DMs stay
+          // inaccessible until the user restores properly from Account
+          // settings, which is recoverable; silently replacing keys wasn't.
+          await hubService.restoreFromKeyBackup(hubSlugForKeys, password).catch(() => false);
+        }
+      }).catch(() => {});
 
       onNodeFound(hub.slug, hub.name, hub);
     } catch (err) {
@@ -242,7 +264,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex flex-col">
+    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
       <OnboardingBackground />
 
       {/* Main Content */}

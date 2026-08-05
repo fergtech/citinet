@@ -30,10 +30,11 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
+import { checkPasswordStrength } from '../utils/passwordStrength';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import type { HubMember } from '../types/hub';
@@ -80,12 +81,15 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState('');
 
-  // Key backup state
-  const [backupPassphrase, setBackupPassphrase] = useState('');
-  const [backupConfirm, setBackupConfirm] = useState('');
-  const [backupSaving, setBackupSaving] = useState(false);
-  const [backupStatus, setBackupStatus] = useState<'idle' | 'saved' | 'error'>('idle');
-  const [backupError, setBackupError] = useState('');
+  // Recovery phrase state
+  const [regeneratingPhrase, setRegeneratingPhrase] = useState(false);
+  const [newPhraseToShow, setNewPhraseToShow] = useState('');
+  const [phraseCopied, setPhraseCopied] = useState(false);
+  const [phraseError, setPhraseError] = useState('');
+  const [hasBackup, setHasBackup] = useState<boolean | null>(null);
+  const [restoreSecret, setRestoreSecret] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<'idle' | 'ok' | 'fail'>('idle');
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
@@ -120,6 +124,11 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       setBgBrightness(0.65);
     }
   }, [userPreferences.background_brightness]);
+
+  useEffect(() => {
+    if (!currentHub?.slug) return;
+    hubService.hasKeyBackup(currentHub.slug).then(setHasBackup).catch(() => setHasBackup(false));
+  }, [currentHub?.slug]);
 
   useEffect(() => {
     if (!currentHub?.slug || !currentUser?.hubUserId) return;
@@ -250,14 +259,15 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) { setPwError("New passwords don't match"); return; }
-    if (newPassword.length < 4) { setPwError('New password must be at least 4 characters'); return; }
+    const strength = checkPasswordStrength(newPassword);
+    if (!strength.acceptable) { setPwError(strength.reason ?? 'Password is too weak'); return; }
     setPwError('');
     setPwSaving(true);
     try {
       await hubService.changePassword(currentHub!.slug, currentPassword, newPassword);
-      // Re-wrap this device's keys under the new password so future logins
-      // (on this or any other device) can still recover them automatically.
-      hubService.storeKeyBackup(currentHub!.slug, newPassword).catch(() => {});
+      // Encryption keys are backed up under a separate recovery phrase, not the
+      // login password (see Recovery Phrase in this screen) -- changing your
+      // login password no longer needs to touch that backup at all.
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -270,33 +280,57 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     }
   };
 
-  const handleBackupKeys = async () => {
+  const handleRegeneratePhrase = async () => {
     if (!currentHub?.slug) return;
-    if (backupPassphrase.length < 8) {
-      setBackupError('Passphrase must be at least 8 characters');
-      return;
-    }
-    if (backupPassphrase !== backupConfirm) {
-      setBackupError('Passphrases do not match');
-      return;
-    }
-    setBackupSaving(true);
-    setBackupError('');
+    setRegeneratingPhrase(true);
+    setPhraseError('');
+    setNewPhraseToShow('');
     try {
-      const ok = await hubService.storeKeyBackup(currentHub.slug, backupPassphrase);
-      if (ok) {
-        setBackupStatus('saved');
-        setBackupPassphrase('');
-        setBackupConfirm('');
-        setTimeout(() => setBackupStatus('idle'), 4000);
+      const phrase = await hubService.regenerateRecoveryPhrase(currentHub.slug);
+      if (phrase) {
+        setNewPhraseToShow(phrase);
+        setHasBackup(true);
       } else {
-        setBackupError('Backup failed — make sure your keys are set up (try logging out and back in)');
+        setPhraseError('Could not generate a recovery phrase — make sure your keys are set up (try logging out and back in)');
       }
     } catch {
-      setBackupError('Backup failed');
+      setPhraseError('Could not generate a recovery phrase');
     } finally {
-      setBackupSaving(false);
+      setRegeneratingPhrase(false);
     }
+  };
+
+  // Overwrites THIS device's local keys with whatever the server-side backup
+  // decrypts to under the given secret -- a recovery phrase, or (for backups
+  // predating the recovery-phrase feature) the login password that was active
+  // when that backup was created. Deliberately explicit/manual: unlike the
+  // automatic restore-on-login flow, this runs even when local keys already
+  // exist, specifically so a "started fresh" device can still be corrected
+  // afterward instead of being permanently stuck on the wrong keys.
+  const handleRestoreFromBackup = async () => {
+    if (!currentHub?.slug || !restoreSecret.trim()) return;
+    setRestoring(true);
+    setRestoreResult('idle');
+    try {
+      const normalized = restoreSecret.trim().toLowerCase().includes('-')
+        ? restoreSecret.trim().toLowerCase().replace(/\s+/g, '-')
+        : restoreSecret; // looks like a password, not a recovery phrase -- don't mangle it
+      const ok = await hubService.restoreFromKeyBackup(currentHub.slug, normalized);
+      setRestoreResult(ok ? 'ok' : 'fail');
+      if (ok) setRestoreSecret('');
+    } catch {
+      setRestoreResult('fail');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const handleCopyPhrase = async () => {
+    try {
+      await navigator.clipboard.writeText(newPhraseToShow);
+      setPhraseCopied(true);
+      setTimeout(() => setPhraseCopied(false), 2000);
+    } catch { /* clipboard access denied — user can still select/copy manually */ }
   };
 
   const handleDeleteAccount = async () => {
@@ -340,13 +374,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   };
 
   const handleResetBg = async () => {
-    await updateUserPreferences({ background_type: 'solid', background_value: '' });
+    await updateUserPreferences({ background_type: 'default', background_value: '' });
     setBgSaved(true);
     setTimeout(() => setBgSaved(false), 1500);
   };
 
   const handleSetClassic = async () => {
-    await updateUserPreferences({ background_type: 'default', background_value: '' });
+    await updateUserPreferences({ background_type: 'solid', background_value: '' });
     setBgSaved(true);
     setTimeout(() => setBgSaved(false), 1500);
   };
@@ -663,15 +697,15 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <button
           onClick={handleSetClassic}
           className={`relative w-full rounded-xl overflow-hidden aspect-[3/1] border-2 transition-all hover:scale-[1.01] active:scale-95 focus:outline-none ${
-            userPreferences.background_type === 'default'
+            userPreferences.background_type === 'solid'
               ? 'border-purple-500 ring-2 ring-purple-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600'
           }`}
-          style={{ background: 'var(--cn-wallpaper)' }}
+          style={{ background: 'var(--cn-surface-2)' }}
         >
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5">
-            <span className="text-[11px] font-medium text-white/90">Citinet dot grid — the original look</span>
+            <span className="text-[11px] font-medium text-white/90">Plain surface — the original look</span>
           </div>
-          {userPreferences.background_type === 'default' && (
+          {userPreferences.background_type === 'solid' && (
             <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center">
               <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -742,9 +776,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </div>
       </div>
       {bgError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{bgError}</p>}
-      {userPreferences.background_type && userPreferences.background_type !== 'solid' && (
+      {userPreferences.background_type && userPreferences.background_type !== 'default' && (
         <button onClick={handleResetBg} className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-          <RotateCcw className="w-3.5 h-3.5" /> Reset to default (solid)
+          <RotateCcw className="w-3.5 h-3.5" /> Reset to default (dot grid)
         </button>
       )}
     </div>
@@ -815,38 +849,85 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </button>
     </div>
 
-    {/* Key backup */}
+    {/* Recovery phrase */}
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-1">
         <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Encrypted Notes Backup</h3>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Recovery Phrase</h3>
+        {hasBackup !== null && (
+          <span className={`ml-auto text-xs font-medium ${hasBackup ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            {hasBackup ? 'Set up' : 'Not set up'}
+          </span>
+        )}
       </div>
       <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
-        Your notes are encrypted on this device. Set a passphrase to back up your key — required to read encrypted notes on a new device.
+        Your notes are encrypted on this device. This phrase — separate from your login password — is what unlocks them on a new device. It's generated by the app, not chosen by you, so it can't be a weak or guessable password.
       </p>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Backup Passphrase</label>
-          <input type="password" value={backupPassphrase} onChange={e => setBackupPassphrase(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
-            placeholder="At least 8 characters" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Confirm Passphrase</label>
-          <input type="password" value={backupConfirm} onChange={e => setBackupConfirm(e.target.value)}
-            className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow ${
-              backupConfirm && backupConfirm !== backupPassphrase ? 'border-red-400 dark:border-red-600' : 'border-slate-200 dark:border-zinc-700'
-            }`}
-            placeholder="Repeat passphrase" />
-        </div>
-      </div>
-      {backupError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{backupError}</p>}
-      <button onClick={handleBackupKeys} disabled={backupSaving || !backupPassphrase || !backupConfirm}
-        className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
-        {backupStatus === 'saved' ? <Check className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
-        {backupSaving ? 'Saving backup…' : backupStatus === 'saved' ? 'Backup saved!' : 'Save Key Backup'}
-      </button>
+
+      {newPhraseToShow ? (
+        <>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-800/60 font-mono text-[15px] text-center text-slate-900 dark:text-white tracking-wide select-all">
+            {newPhraseToShow}
+          </div>
+          <button type="button" onClick={handleCopyPhrase}
+            className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors">
+            {phraseCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {phraseCopied ? 'Copied' : 'Copy to clipboard'}
+          </button>
+          <div className="rounded-xl p-3 mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+              Save this now — it won't be shown again, and any previous recovery phrase for this account stops working.
+            </p>
+          </div>
+          <button onClick={() => setNewPhraseToShow('')}
+            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors">
+            I've saved it
+          </button>
+        </>
+      ) : (
+        <>
+          {phraseError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{phraseError}</p>}
+          <button onClick={handleRegeneratePhrase} disabled={regeneratingPhrase}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+            {regeneratingPhrase ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+            {regeneratingPhrase ? 'Generating…' : hasBackup ? 'Regenerate recovery phrase' : 'Set up recovery phrase'}
+          </button>
+        </>
+      )}
     </div>
+
+    {/* Restore keys from an existing backup */}
+    {hasBackup && (
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Restore Keys From Backup</h3>
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+          If this device is showing your notes or messages as still encrypted, enter your recovery phrase — or, for an account set up before recovery phrases existed, the login password that was active when your backup was created — to overwrite this device's keys with the ones from your backup.
+        </p>
+        <input
+          type="text"
+          value={restoreSecret}
+          onChange={e => { setRestoreSecret(e.target.value); setRestoreResult('idle'); }}
+          onKeyDown={e => e.key === 'Enter' && handleRestoreFromBackup()}
+          placeholder="Recovery phrase or old password"
+          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow font-mono"
+        />
+        {restoreResult === 'fail' && (
+          <p className="text-xs text-red-500 dark:text-red-400 mt-3">Didn't match — check the spelling, or try the password from when the backup was last created.</p>
+        )}
+        {restoreResult === 'ok' && (
+          <p className="text-xs text-green-600 dark:text-green-400 mt-3">Restored. Refresh the page to see your content decrypt.</p>
+        )}
+        <button onClick={handleRestoreFromBackup} disabled={restoring || !restoreSecret.trim()}
+          className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+          {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+          {restoring ? 'Trying…' : 'Restore this device'}
+        </button>
+      </div>
+    )}
     </div>
   );
 

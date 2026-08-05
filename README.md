@@ -50,18 +50,19 @@ See [docs/vision.md](./docs/vision.md) for the full picture of where this is hea
 
 ## The Hub Stack
 
-Each Citinet hub runs 4 containers via Docker Compose:
+Each Citinet hub runs several containers via Docker Compose:
 
 ```
 citinet-api       (port 9090)  — Node.js/Express: auth, posts, messages, files, atlas
 citinet-db        (internal)   — PostgreSQL 16: all structured data
 citinet-storage   (internal)   — MinIO: file and media object storage (S3-compatible)
-citinet-redis     (internal)   — Redis: sessions, cache
+citinet-caddy     (port 443/80)— automatic HTTPS termination + reverse proxy
+citinet-backup    (internal)   — nightly database + file backups, rotated
 ```
 
 The production image is `ghcr.io/fergtech/citinet-api:latest` — built for both `amd64` and `arm64` (Raspberry Pi).
 
-All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage/cache ports are bound to `127.0.0.1` only.
+All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage ports are bound to `127.0.0.1` only.
 
 ---
 
@@ -157,7 +158,6 @@ docker compose -f ~/citinet-hub/docker-compose.yml up -d --force-recreate citine
 - Node.js + Express
 - PostgreSQL (`pg`) — users, sessions, posts, messages, files, atlas, notifications
 - MinIO — file/media object storage
-- Redis — sessions
 - bcryptjs — password hashing
 - multer — file upload handling
 

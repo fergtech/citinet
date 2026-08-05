@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowRight, Shield, Users, FileText, User, Tag, LogIn, Eye, EyeOff, Download, Share, X, Lock } from 'lucide-react';
+import { ArrowRight, Shield, Users, FileText, User, Tag, LogIn, Eye, EyeOff, Download, Share, X, Lock, KeyRound, Copy, Check as CheckIcon, AlertTriangle } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { checkPasswordStrength } from '../utils/passwordStrength';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { OnboardingBackground } from './OnboardingBackground';
 import { clearSubdomainCache } from '../utils/subdomain';
@@ -18,9 +19,9 @@ interface NodeEntryFlowProps {
   /** Post-join hub record, when a connection already exists — used to render the
    * hub's own custom identity icon instead of the generic citinet logo. */
   hub?: Hub;
-  /** 'login' when a returning member's session expired (they already have a
-   * profile); 'signup' for a genuinely new hub with no profile yet. Defaults
-   * to 'signup' so the hub-creator flow is unaffected. */
+  /** 'signup' only for the hub creator's first visit fresh from the setup
+   * wizard; 'login' for everyone else (returning members and any other
+   * guest), with "Create account" one click away. */
   defaultMode?: 'signup' | 'login';
 }
 
@@ -99,6 +100,19 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Recovery-phrase flow (encryption key setup/restore) -- gates entry into
+  // the hub after a successful login/signup whenever there's something the
+  // user needs to see or provide first. 'none' means proceed normally.
+  const [recoveryStep, setRecoveryStep] = useState<'none' | 'show-phrase' | 'enter-phrase'>('none');
+  const [pendingUserData, setPendingUserData] = useState<HubUser | null>(null);
+  const [recoveryPhraseToShow, setRecoveryPhraseToShow] = useState('');
+  const [phraseSavedConfirmed, setPhraseSavedConfirmed] = useState(false);
+  const [phraseCopied, setPhraseCopied] = useState(false);
+  const [enteredPhrase, setEnteredPhrase] = useState('');
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [confirmingSkip, setConfirmingSkip] = useState(false);
+
   const handleTagToggle = (tag: string) => {
     setSelectedTags(prev =>
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
@@ -128,9 +142,42 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
         username: loginUsername.trim().toLowerCase(),
         password: loginPassword,
       });
-      // Recover (or generate) encryption keys in the background — never blocks login
-      hubService.ensureUserKeys(hubSlug, loginPassword).catch(() => {});
-      onComplete(userData);
+      const keyResult = await hubService.ensureUserKeys(hubSlug).catch(() => ({ status: 'no-backup' as const }));
+
+      if (keyResult.status === 'no-backup') {
+        // Never had encryption set up (brand-new account, or an account from
+        // before recovery phrases existed with no backup at all) — set it up
+        // now and show the phrase once before entering the hub.
+        setPendingUserData(userData);
+        const phrase = await hubService.setupNewAccountKeys(hubSlug);
+        if (phrase) { setRecoveryPhraseToShow(phrase); setRecoveryStep('show-phrase'); }
+        else onComplete(userData);
+      } else if (keyResult.status === 'has-keys-new-backup') {
+        // This device already had keys, but the account had no server-side
+        // backup at all until just now (ensureUserKeys creates one on the spot
+        // specifically to prevent this same gap from causing exactly the kind
+        // of unrecoverable content loss it's meant to guard against). Show
+        // the phrase before continuing, same as first-time setup.
+        setPendingUserData(userData);
+        if (keyResult.newPhrase) { setRecoveryPhraseToShow(keyResult.newPhrase); setRecoveryStep('show-phrase'); }
+        else onComplete(userData);
+      } else if (keyResult.status === 'needs-recovery') {
+        // A backup exists but this device has no local keys. Try the login
+        // password first, silently — pre-recovery-phrase accounts had their
+        // backup wrapped under it, so this upgrades them transparently
+        // instead of asking for a phrase they were never given.
+        const legacyRestored = await hubService.restoreFromKeyBackup(hubSlug, loginPassword).catch(() => false);
+        setPendingUserData(userData);
+        if (legacyRestored) {
+          const phrase = await hubService.regenerateRecoveryPhrase(hubSlug);
+          if (phrase) { setRecoveryPhraseToShow(phrase); setRecoveryStep('show-phrase'); }
+          else onComplete(userData);
+        } else {
+          setRecoveryStep('enter-phrase');
+        }
+      } else {
+        onComplete(userData);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed');
     } finally {
@@ -153,9 +200,10 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
         tags: selectedTags,
         agreedToManifesto: true,
       };
-      // Generate encryption keys in the background — never blocks registration
-      hubService.ensureUserKeys(hubSlug, password).catch(() => {});
-      onComplete(merged);
+      setPendingUserData(merged);
+      const phrase = await hubService.setupNewAccountKeys(hubSlug);
+      if (phrase) { setRecoveryPhraseToShow(phrase); setRecoveryStep('show-phrase'); }
+      else onComplete(merged);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Registration failed');
     } finally {
@@ -163,17 +211,204 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
     }
   };
 
+  const handleContinueAfterPhrase = () => {
+    if (pendingUserData) onComplete(pendingUserData);
+  };
+
+  const handleCopyPhrase = async () => {
+    try {
+      await navigator.clipboard.writeText(recoveryPhraseToShow);
+      setPhraseCopied(true);
+      setTimeout(() => setPhraseCopied(false), 2000);
+    } catch { /* clipboard access denied — user can still select/copy manually */ }
+  };
+
+  const handleRestoreWithPhrase = async () => {
+    if (!pendingUserData) return;
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const normalized = enteredPhrase.trim().toLowerCase().replace(/\s+/g, '-');
+      const ok = await hubService.restoreFromKeyBackup(hubSlug, normalized);
+      if (ok) onComplete(pendingUserData);
+      else setRecoveryError("That phrase didn't match. Check the spelling and try again.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const handleSkipRecovery = async () => {
+    if (!pendingUserData) return;
+    setRecoveryBusy(true);
+    try {
+      await hubService.generateFreshDeviceKeys(hubSlug);
+    } finally {
+      setRecoveryBusy(false);
+      onComplete(pendingUserData);
+    }
+  };
+
+  const passwordStrength = checkPasswordStrength(password);
   const canProceedStep1 =
     displayName.trim().length >= 2 &&
     username.trim().length >= 2 &&
-    password.length >= 6;
+    passwordStrength.acceptable;
 
   const labelClass = 'block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1';
   const inputClass = 'w-full h-[42px] px-3.5 border border-slate-200 dark:border-white/10 rounded-lg text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px] focus:border-purple-500 focus:outline-none transition-colors';
   const cardClass = 'p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-800/60';
 
+  // Recovery-phrase interstitials take over the whole screen, gating entry
+  // into the hub until the user has either saved their new phrase or
+  // provided/skipped an existing one.
+  if (recoveryStep === 'show-phrase') {
+    return (
+      <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+        <OnboardingBackground />
+        <div className="flex-1 flex items-center justify-center p-6 relative z-10">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="cn-glass rounded-3xl shadow-2xl p-7 relative z-10 max-w-[460px] w-full mx-auto"
+          >
+            <div className="flex flex-col items-center text-center gap-1 mb-5">
+              <div className="w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center mb-2">
+                <KeyRound className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Save your recovery phrase</h2>
+              <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
+                This unlocks your encrypted notes on a new device. It's shown only once — the hub doesn't store it anywhere it could read it back to you.
+              </p>
+            </div>
+
+            <div className={`${cardClass} font-mono text-[15px] text-center text-slate-900 dark:text-white tracking-wide select-all`}>
+              {recoveryPhraseToShow}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCopyPhrase}
+              className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+            >
+              {phraseCopied ? <CheckIcon className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {phraseCopied ? 'Copied' : 'Copy to clipboard'}
+            </button>
+
+            <div className="rounded-xl p-3 mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                Anyone with this phrase can read your encrypted notes. If you lose it, encrypted content on a new device can't be recovered — write it down or save it in a password manager.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2.5 mt-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={phraseSavedConfirmed}
+                onChange={e => setPhraseSavedConfirmed(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 dark:border-purple-600 text-purple-600 focus:ring-2 focus:ring-purple-500 cursor-pointer"
+              />
+              <span className="text-xs text-slate-600 dark:text-slate-300">I've saved this phrase somewhere safe</span>
+            </label>
+
+            <button
+              onClick={handleContinueAfterPhrase}
+              disabled={!phraseSavedConfirmed}
+              className={`w-full mt-5 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all ${
+                phraseSavedConfirmed
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl'
+                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              Continue <ArrowRight className="w-4 h-4" />
+            </button>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
+  if (recoveryStep === 'enter-phrase') {
+    return (
+      <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+        <OnboardingBackground />
+        <div className="flex-1 flex items-center justify-center p-6 relative z-10">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="cn-glass rounded-3xl shadow-2xl p-7 relative z-10 max-w-[460px] w-full mx-auto"
+          >
+            <div className="flex flex-col items-center text-center gap-1 mb-5">
+              <div className="w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center mb-2">
+                <KeyRound className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">New device detected</h2>
+              <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
+                Enter your recovery phrase to unlock your encrypted notes here too. If this account is old enough to predate recovery phrases, try the login password that was active back then instead — it may still work.
+              </p>
+            </div>
+
+            <input
+              type="text"
+              value={enteredPhrase}
+              onChange={e => setEnteredPhrase(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleRestoreWithPhrase()}
+              placeholder="word-word-word-word-word-word-word"
+              autoFocus
+              className={`${inputClass} font-mono text-center`}
+            />
+            {recoveryError && <p className="text-xs text-red-500 dark:text-red-400 mt-2 text-center">{recoveryError}</p>}
+
+            <button
+              onClick={handleRestoreWithPhrase}
+              disabled={recoveryBusy || !enteredPhrase.trim()}
+              className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+            >
+              {recoveryBusy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Unlock'}
+            </button>
+
+            {!confirmingSkip ? (
+              <button
+                onClick={() => setConfirmingSkip(true)}
+                disabled={recoveryBusy}
+                className="w-full mt-2.5 py-2.5 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+              >
+                I don't have it — start fresh on this device
+              </button>
+            ) : (
+              <div className="rounded-xl p-3.5 mt-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                <div className="flex items-start gap-2.5 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-red-800 dark:text-red-300 leading-relaxed">
+                    This permanently gives up on any encrypted notes, messages, or files this account already has — they'll show as encrypted forever after this, on every device, with no way back. Only do this if you're certain you don't have the phrase or the old password anywhere.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmingSkip(false)}
+                    disabled={recoveryBusy}
+                    className="flex-1 py-2 rounded-lg text-xs font-medium border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    Go back
+                  </button>
+                  <button
+                    onClick={handleSkipRecovery}
+                    disabled={recoveryBusy}
+                    className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+                  >
+                    {recoveryBusy ? 'Starting fresh…' : 'Yes, start fresh'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen relative overflow-hidden flex flex-col">
+    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
       <OnboardingBackground />
 
       {/* LOGIN MODE */}
@@ -338,7 +573,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                       </div>
                       <div>
                         <label className={labelClass}>
-                          Password <span className="text-slate-400 dark:text-slate-500 font-normal"> min 6 characters</span>
+                          Password <span className="text-slate-400 dark:text-slate-500 font-normal"> min 10 characters</span>
                         </label>
                         <div className="relative">
                           <input
@@ -356,6 +591,9 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
+                        {password.length > 0 && !passwordStrength.acceptable && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 ml-1">{passwordStrength.reason}</p>
+                        )}
                       </div>
 
                       <div className={cardClass}>

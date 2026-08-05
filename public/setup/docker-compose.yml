@@ -26,7 +26,6 @@ services:
       - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY}
       - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY}
       - STORAGE_BUCKET=${STORAGE_BUCKET:-hub-files}
-      - REDIS_URL=redis://citinet-redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
       - REGISTRY_URL=${REGISTRY_URL:-}
@@ -41,8 +40,6 @@ services:
         condition: service_healthy
       citinet-storage:
         condition: service_healthy
-      citinet-redis:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/health"]
       interval: 30s
@@ -100,24 +97,6 @@ services:
     networks:
       - citinet-network
 
-  # Redis (Sessions, WebSocket pub/sub, caching)
-  citinet-redis:
-    image: redis:7-alpine
-    container_name: citinet-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
-    volumes:
-      - citinet-redis-data:/data
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - citinet-network
-
 networks:
   citinet-network:
     driver: bridge
@@ -126,6 +105,4 @@ volumes:
   citinet-db-data:
     driver: local
   citinet-storage-data:
-    driver: local
-  citinet-redis-data:
     driver: local

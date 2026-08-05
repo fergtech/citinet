@@ -384,7 +384,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // ─────────────────────────────────────────────────────
   if (step === 'waiting') {
     return (
-      <div className="min-h-screen relative flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6 text-center">
         <OnboardingBackground />
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -420,7 +420,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // ─────────────────────────────────────────────────────
   if (step === 'live') {
     return (
-      <div className="min-h-screen relative flex flex-col items-center justify-center p-6">
+      <div className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6">
         <OnboardingBackground />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -521,7 +521,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // Main wizard card (steps 1–4)
   // ─────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen relative overflow-hidden flex flex-col">
+    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
       <OnboardingBackground />
 
       {/* Card */}

@@ -1282,13 +1282,15 @@ interface InlineComposerProps {
   hubSlug: string;
   hubCenter?: [number, number];
   isMod: boolean;
-  displayInitial: string;
+  currentUserId?: string;
+  currentUserName: string;
+  currentUserAvatarUrl?: string;
   onPostCreated: (post: HubPost) => void;
   onOpenFullComposer: (initialBody: string) => void;
   autoFocus?: boolean;
 }
 
-function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreated, onOpenFullComposer, autoFocus }: InlineComposerProps) {
+function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus }: InlineComposerProps) {
   const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
@@ -1523,7 +1525,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
               </div>
               {openRequests.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium cn-text-3 mb-1 flex items-center gap-1">
+                  <label className="flex items-center gap-1 text-xs font-medium cn-text-3 mb-1">
                     <Link2 className="w-3 h-3" /> Link to feature request (optional)
                   </label>
                   <select value={linkedRequestId} onChange={e => setLinkedRequestId(e.target.value)} className={fieldCls}>
@@ -1614,9 +1616,14 @@ function InlineComposer({ hubSlug, hubCenter, isMod, displayInitial, onPostCreat
   return (
     <div className="cn-glass rounded-2xl overflow-hidden">
       <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
-          {displayInitial}
-        </div>
+        <AvatarCircle
+          authorId={currentUserId ?? ''}
+          authorUsername={currentUserName}
+          authorAvatarUrl={currentUserAvatarUrl}
+          currentUserId={currentUserId}
+          currentUserAvatarUrl={currentUserAvatarUrl}
+          size="sm"
+        />
         <input
           ref={bodyInputRef}
           value={body}
@@ -2057,7 +2064,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 hubSlug={hubSlug}
                 hubCenter={currentHub?.lat && currentHub?.lng ? [currentHub.lat, currentHub.lng] : undefined}
                 isMod={isMod}
-                displayInitial={currentUser?.displayName?.charAt(0)?.toUpperCase() ?? '?'}
+                currentUserId={currentUser?.hubUserId}
+                currentUserName={currentUser?.displayName || currentUser?.username || '?'}
+                currentUserAvatarUrl={currentHub?.slug && currentUser?.hubUserId ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId) ?? undefined : currentUser?.avatarUrl ?? undefined}
                 onPostCreated={handleCreated}
                 onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
                 autoFocus={focusComposer}

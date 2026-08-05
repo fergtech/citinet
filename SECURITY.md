@@ -1,9 +1,8 @@
 # Security Model — Citinet Hub
 
-> Last updated: 2026-07-26. Rewritten after a full audit of `api/server.js` against
-> this file's previous claims — several were stale or simply wrong (see "Corrections"
-> below). Reflects what is actually implemented, verified by reading the code, not by
-> reading commit messages.
+> Last updated: 2026-08-05. Route-by-route authorization audit of every endpoint in
+> `api/server.js`, plus a dependency/network-exposure pass. Reflects what is actually
+> implemented, verified by reading the code, not by reading commit messages.
 
 ---
 
@@ -45,9 +44,23 @@ The web app (citinet.cloud) is served from Vercel — **not** from the hub. The 
 | Notes | AES-GCM encrypted in browser; server stores `{"_citinet_enc":1,"ct":"..."}` |
 | File content | AES-GCM encrypted in browser before upload; server/MinIO receives ciphertext only |
 | Private keys | Never leave the browser (IndexedDB only) |
-| Key backups | PBKDF2-encrypted with user passphrase before reaching server; server never sees plaintext key |
+| Key backups | Argon2id-encrypted (as of 2026-08-05; was PBKDF2) with an app-generated recovery phrase, before reaching server; server never sees plaintext key |
 
-Even with full database or storage access, a hub admin cannot read encrypted content without the user's browser-side key.
+Even with full database or storage access, a hub admin cannot read encrypted content without the user's key.
+
+### Recovery phrase, decoupled from the login password (2026-08-05)
+Previously, the key backup was wrapped under the account's *login password* —
+meaning anyone who could guess a member's login password (via offline brute-force
+against the bcrypt hash, which DB access enables) could also derive the same
+backup-wrapping key and decrypt that member's "encrypted" notes/DMs. Login and
+encryption are now two independent secrets: `generateRecoveryPhrase()`
+(`src/app/utils/crypto.ts`) produces a 7-word, ~56-bit phrase from a fixed
+256-word list at signup, shown to the user exactly once, used only to wrap the
+key backup. Guessing someone's login password now only grants login access to
+that account — not their encrypted content. Pre-existing accounts (created
+before this shipped) migrate transparently: on first login without local keys,
+the app tries the old password-derived unwrap silently, and if it succeeds,
+immediately re-wraps the backup under a fresh recovery phrase and shows it.
 
 ### File storage obfuscation
 MinIO object keys use `{userId}/{uuid}` — original filenames never appear in the storage layer. The filename→key mapping exists only in Postgres (`hub_files.file_name`).
@@ -74,16 +87,53 @@ MinIO object keys use `{userId}/{uuid}` — original filenames never appear in t
   `/api/auth/register`), `apiLimiter` (300 req/min general), `aiLimiter` (20 req/min on
   AI endpoints).
 - Passwords hashed with `bcryptjs` (cost factor 10).
-- **Consistent password minimum** — both `/api/auth/register` and
-  `/api/auth/change-password` enforce a shared `MIN_PASSWORD_LENGTH = 8` constant (as of
-  2026-07-26; previously change-password only required 4, allowing a downgrade below
-  the registration policy).
+- **Password strength, not just length** (as of 2026-08-05) — `MIN_PASSWORD_LENGTH = 10`
+  (raised from 8), plus a common-password blocklist and trivial-pattern rejection
+  (`passwordStrengthError()` in `server.js`, mirrored client-side in
+  `src/app/utils/passwordStrength.ts`), enforced identically on register and
+  change-password.
+- **Username charset validation** (as of 2026-08-05) — registration previously checked
+  length only; usernames flow unsanitized into email notification subject lines, so an
+  unrestricted charset was a narrow header-injection surface (compounded by the
+  nodemailer CVEs below, now patched). Now `^[a-zA-Z0-9_-]{2,30}$`.
 - Sessions (`hub_sessions` table) carry a 30-day sliding expiration (`expires_at`,
   refreshed on each authenticated request) and are purged server-side every 6 hours.
 - `POST /api/auth/logout` deletes the session token server-side (not just a client-side
   `localStorage` clear).
 - Bearer token auth — no cookies, so CSRF via `<form>` submission cannot include the
   Authorization header.
+
+### Route-by-route authorization audit (2026-08-05)
+All 191 routes in `api/server.js` reviewed for missing/incorrect authorization. Two
+real gaps found and fixed:
+- `GET /api/mod-log` had `authenticate` but no role check — any logged-in member could
+  read the full moderation log (bans, warnings, reasons). Fixed with `isMod()`.
+- `PATCH`/`DELETE /api/initiatives/:id` had `authenticate` but no ownership or role
+  check at all — any member could edit or delete anyone's community initiative. Fixed
+  by wiring in `assertInitiativeCreator`, an existing helper already used for this same
+  resource's banner/goals/tasks endpoints that the top-level route had never been
+  connected to. (Also fixed both routes' error handlers, which were swallowing the
+  thrown 403/404 and always returning 502/500.)
+
+Everywhere else checked — role/admin management, post/space/initiative-sub-resource
+moderation, marketplace listings, atlas pins, files, notes, AI conversations, DM
+membership — was already correctly scoped, mostly via ownership checks embedded
+directly in SQL `WHERE` clauses or existing per-feature helper functions
+(`assertTaskOwner`, `canManageSpace`).
+
+### Network exposure (2026-08-05)
+`citinet-api`'s container port (9090) was published on `0.0.0.0`, reachable from
+anywhere on the hub's LAN (and the WAN, if a router forwarded it) in **plain HTTP**,
+completely bypassing Caddy's TLS termination — including `/api/auth/login`, meaning
+credentials could be sent unencrypted if that path were ever hit. Every legitimate use
+(setup-script health checks, the tray app) only needs loopback access. Now bound to
+`127.0.0.1:9090:9090` in both `scriptGenerator.ts` (new hubs) and existing hub configs.
+
+### Dependencies
+`npm audit` on `api/` is clean (0 vulnerabilities) as of 2026-08-05 — patched
+`fast-xml-parser`, `undici`, and `nodemailer` (9.0.0 → 9.0.4, a breaking major-version
+bump, applied after confirming `mailer.js` only uses the stable `createTransport`/
+`sendMail` surface).
 
 ### Join approval (added 2026-07-26)
 Registration is no longer instant-access. `hub_users.status` (`approved` /
@@ -147,8 +197,8 @@ access, which implies broader compromise anyway.
 |---|---|
 | `citinet-db` | All plaintext data (posts, file names, user metadata, session tokens); ciphertext for messages/notes/files |
 | `citinet-storage` | UUID-named encrypted blobs — unreadable without user key |
-| `citinet-redis` | Provisioned but unused by the API — nothing of value here currently |
 | `citinet-api` | Source code (already public on GitHub); cannot intercept E2E data |
+| `citinet-backup` | Same data as `citinet-db`/`citinet-storage`, just a point-in-time copy |
 
 ---
 
@@ -171,16 +221,16 @@ if (description?.length > 1000) return res.status(400).json({ error: 'Descriptio
 #### 3. Session/user-agent binding
 See "Session token access via direct DB access" above.
 
-#### 4. Raise password minimum from 8 to 10
-Current minimum (8, consistent across register/change-password as of 2026-07-26) is
-reasonable but the original hardening goal was 10. Low priority — no known active risk
-at 8.
+#### 4. ~~Raise password minimum from 8 to 10~~ — done 2026-08-05
 
-#### 5. Resolve the unused Redis container
-Either wire `citinet-redis` into actual use (e.g. session cache, rate-limit store
-shared across multiple API replicas) or remove it from `docker-compose.yml` to reduce
-attack surface and stop the doc/deployment drift that caused the "Redis session
-hijacking" confusion in the first place.
+#### 5. ~~Resolve the unused Redis container~~ — done 2026-08-05
+Removed rather than wired up — `citinet-redis` never had a client library, a single
+reference in `api/server.js`, or any consumer anywhere in the codebase, confirmed fresh
+before removal. Every hub now runs one fewer unnecessary container, port, volume, and
+password. Removed from `scriptGenerator.ts` (new hubs), both root/`public/setup`
+`docker-compose.yml` reference files, and the hub-tray status display's hardcoded
+container list, plus doc references in `README.md`, `docs/hub-setup.md`, and
+`docs/remote-file-storage.md`.
 
 ---
 
@@ -201,19 +251,24 @@ hijacking" confusion in the first place.
 ## Deployment checklist
 
 - [x] Rate limiting on `/api/auth/*`
-- [x] Password minimum consistent across register and change-password (8 characters)
+- [x] Password strength enforced consistently — length (10) + common-password blocklist + trivial-pattern rejection, register and change-password alike
 - [x] Logout endpoint implemented (`POST /api/auth/logout`) and called from `leaveHub()`
 - [x] File upload extension blocklist + serve-time content-type/disposition enforcement
 - [x] `javascript:` URL blocked in featured `image_url` (create and edit)
 - [x] Content-Disposition filenames sanitized
 - [x] Token expiration (30-day sliding sessions) + periodic purge
 - [x] Join approval — new accounts are `pending` until a hub admin approves them (founding admin auto-approved)
+- [x] Route-by-route authorization audit — all 191 routes reviewed, two gaps found and fixed (see above)
+- [x] Recovery secret decoupled from login password (app-generated recovery phrase, Argon2id)
+- [x] API port bound to loopback only — no plaintext LAN/WAN path bypassing TLS
+- [x] Username charset validated (email-header-injection surface closed)
+- [x] Dependencies patched — `npm audit` clean on `api/`
 - [ ] `CORS_ORIGIN` env var is currently inert — either wire it up or remove it from `.env.example`/`docker-compose.yml` to stop implying it does something
-- [ ] Resolve unused `citinet-redis` container (wire up or remove)
+- [x] Unused `citinet-redis` container removed
 - [ ] Input length limits on posts, pins, descriptions
 - [ ] Session binding to user-agent/IP (optional hardening)
 - [ ] Encrypt file names client-side (closes last plaintext metadata gap)
 
-**Note:** none of the 2026-07-26 code fixes take effect on a running hub until the
+**Note:** none of the code fixes on this page take effect on a running hub until the
 Docker image (`ghcr.io/fergtech/citinet-api:latest`) is rebuilt, pushed, and the
 container recreated — see the hub stack docs for the rebuild workflow.
