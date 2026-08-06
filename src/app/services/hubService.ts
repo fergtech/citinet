@@ -133,6 +133,8 @@ class HubService {
       tunnelUrl: storedUrl,
       publicTunnelUrl,
       location: probeInfo?.location || '',
+      lat: probeInfo?.lat,
+      lng: probeInfo?.lng,
       description: probeInfo?.description,
       memberCount: probeStatus?.user_count,
       connectionStatus: probeInfo ? 'connected' : 'disconnected',
@@ -1915,6 +1917,8 @@ class HubService {
       const body: Record<string, unknown> = {};
       if (fields.name         !== undefined) body.name         = fields.name;
       if (fields.location     !== undefined) body.location     = fields.location;
+      if (fields.lat          !== undefined) body.lat          = fields.lat;
+      if (fields.lng          !== undefined) body.lng          = fields.lng;
       if (fields.description  !== undefined) body.description  = fields.description;
       if (fields.enabledApps  !== undefined) body.enabled_apps = fields.enabledApps;
       if (fields.hub_icon_mode              !== undefined) body.hub_icon_mode              = fields.hub_icon_mode;

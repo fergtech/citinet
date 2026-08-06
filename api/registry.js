@@ -89,7 +89,7 @@ export default async function handler(req, res) {
     }
 
     const {
-      id, name, slug, location, description, tunnel_url, member_count,
+      id, name, slug, location, description, lat, lng, tunnel_url, member_count,
       hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
       hub_icon_gradient_from, hub_icon_gradient_to,
       hub_icon_solid_color, hub_icon_image_file_name,
@@ -117,12 +117,16 @@ export default async function handler(req, res) {
       // last happened to fire this request. If unreachable, keep whatever was
       // already on file rather than reverting to a possibly-stale client value.
       const previousCount = existingIndex >= 0 ? content.hubs[existingIndex].member_count : undefined;
+      const previousLat = existingIndex >= 0 ? content.hubs[existingIndex].lat : undefined;
+      const previousLng = existingIndex >= 0 ? content.hubs[existingIndex].lng : undefined;
       const hubEntry = {
         id:            id || slug,
         name,
         slug,
         location:      location || (info?.location) || (info?.hub_location) || '',
         description:   description || (info?.description) || (info?.hub_description) || '',
+        lat:           lat ?? info?.lat ?? previousLat ?? null,
+        lng:           lng ?? info?.lng ?? previousLng ?? null,
         tunnel_url,
         member_count:  info?.member_count ?? previousCount ?? member_count ?? 0,
         online:        info !== null,

@@ -165,6 +165,10 @@ export interface HubInfoResponse extends HubIconFields {
   // Optional fields the hub may add later
   location?: string;
   description?: string;
+  /** Geocoded latitude, set via the admin's LocationPicker */
+  lat?: number;
+  /** Geocoded longitude, set via the admin's LocationPicker */
+  lng?: number;
   /** Public tunnel URL reported by the hub (e.g. Tailscale funnel URL) */
   tunnel_url?: string;
   /** LAN IP reported by the hub */

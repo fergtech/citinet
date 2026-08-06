@@ -15,11 +15,17 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
   const { showBanner, isIOS, install, dismiss } = useInstallPrompt();
 
   return (
-    <div className="min-h-[100dvh] w-full relative overflow-hidden flex flex-col items-center justify-center p-6">
+    <div
+      className="min-h-[100dvh] w-full relative overflow-hidden flex flex-col items-center justify-center px-6"
+      style={{
+        paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top) + 1rem))',
+        paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))',
+      }}
+    >
       <OnboardingBackground />
 
       {/* Top Left Logo */}
-      <div className="absolute top-6 left-6">
+      <div className="absolute left-6" style={{ top: 'max(1.5rem, calc(env(safe-area-inset-top) + 0.5rem))' }}>
         <a href="/"
           className="block hover:opacity-80 transition-opacity">
           <CitinetLogo size={36} />
@@ -30,18 +36,18 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
       <div className="flex flex-col items-center text-center z-10 max-w-2xl w-full">
         {/* Icon Container */}
         <motion.div
-          className="mb-8"
+          className="mb-6 md:mb-8"
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         >
-          <div className="w-32 h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
+          <div className="w-24 h-24 md:w-32 md:h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
             {/* Citinet mesh logo mark - MapPin icon */}
-            <MapPin className="w-16 h-16 text-white" strokeWidth={2} />
+            <MapPin className="w-12 h-12 md:w-16 md:h-16 text-white" strokeWidth={2} />
           </div>
         </motion.div>
 
         {/* Headline */}
-        <h1 className="text-white mb-4 max-w-xl text-5xl leading-tight font-semibold tracking-tight">
+        <h1 className="text-white mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
           Decentralized. Local.
           <br />
           <span className="text-white/90 font-medium">Citizens' Internet.</span>

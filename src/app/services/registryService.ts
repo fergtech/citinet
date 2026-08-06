@@ -25,6 +25,10 @@ export interface RegistryHub extends HubIconFields {
   location: string;
   /** Optional short description of the community */
   description?: string;
+  /** Geocoded latitude, for distance-based sorting (older entries may lack this) */
+  lat?: number;
+  /** Geocoded longitude, for distance-based sorting (older entries may lack this) */
+  lng?: number;
   /** The hub's public tunnel URL (custom domain or trycloudflare) */
   tunnel_url: string;
   /** Approximate member count (refreshed periodically by the hub) */

@@ -263,7 +263,10 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   // provided/skipped an existing one.
   if (recoveryStep === 'show-phrase') {
     return (
-      <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+      <div
+        className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <OnboardingBackground />
         <div className="flex-1 flex items-center justify-center p-6 relative z-10">
           <motion.div
@@ -330,7 +333,10 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
   if (recoveryStep === 'enter-phrase') {
     return (
-      <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+      <div
+        className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <OnboardingBackground />
         <div className="flex-1 flex items-center justify-center p-6 relative z-10">
           <motion.div
@@ -408,7 +414,10 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   }
 
   return (
-    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+    <div
+      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       <OnboardingBackground />
 
       {/* LOGIN MODE */}

@@ -61,9 +61,15 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const [registryLoading, setRegistryLoading] = useState(true);
   const [registryRefreshKey, setRegistryRefreshKey] = useState(0);
   const [hubSearchQuery, setHubSearchQuery] = useState('');
-  const filteredRegistryHubs = registryHubs.filter(hub =>
-    hub.name.toLowerCase().includes(hubSearchQuery.trim().toLowerCase())
-  );
+  const filteredRegistryHubs = registryHubs.filter(hub => {
+    const q = hubSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      hub.name.toLowerCase().includes(q) ||
+      (hub.location ?? '').toLowerCase().includes(q) ||
+      (hub.description ?? '').toLowerCase().includes(q)
+    );
+  });
 
   // ── URL input state ──
   const [urlOpen, setUrlOpen] = useState(false);
@@ -264,7 +270,10 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   };
 
   return (
-    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+    <div
+      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       <OnboardingBackground />
 
       {/* Main Content */}
@@ -310,7 +319,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   type="text"
                   value={hubSearchQuery}
                   onChange={(e) => setHubSearchQuery(e.target.value)}
-                  placeholder="Search by name…"
+                  placeholder="Search by name, area, or description…"
                   className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
                 />
               </div>

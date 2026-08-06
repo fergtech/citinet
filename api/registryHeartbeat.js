@@ -33,6 +33,8 @@ async function heartbeat() {
       slug: info.hub_slug,
       location: info.hub_location,
       description: info.hub_description,
+      lat: info.lat,
+      lng: info.lng,
       tunnel_url: tunnelUrl,
       member_count: info.member_count,
       hub_icon_mode: info.hub_icon_mode,

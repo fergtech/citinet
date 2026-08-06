@@ -758,7 +758,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
 
         {/* Mobile Header — single compact row (name, online count, connection status) */}
         <div className="md:hidden bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/60 dark:border-zinc-800/60 shrink-0 z-20">
-          <div className="px-3 py-2 space-y-2">
+          <div className="px-3 pb-2 space-y-2" style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}>
             <div className="flex items-center gap-2">
               <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
               <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate flex-1 min-w-0">{nodeName}</h1>

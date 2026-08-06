@@ -356,7 +356,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       .catch(() => setRegistryListed(null));
   }, [activeTab, currentHub?.tunnelUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const reRegisterHub = (overrides?: Partial<HubIconFields> & { name?: string; location?: string; description?: string }) => {
+  const reRegisterHub = (overrides?: Partial<HubIconFields> & { name?: string; location?: string; lat?: number; lng?: number; description?: string }) => {
     if (!currentHub?.tunnelUrl) return;
     const stableId = hubNodeId ?? currentHub.slug;
     const iconBase = hubIconRegistryFields(currentHub);
@@ -365,6 +365,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       name: overrides?.name ?? currentHub.name,
       slug: currentHub.slug,
       location: overrides?.location ?? currentHub.location ?? '',
+      lat: overrides?.lat ?? currentHub.lat,
+      lng: overrides?.lng ?? currentHub.lng,
       description: overrides?.description ?? currentHub.description ?? '',
       tunnel_url: currentHub.tunnelUrl,
       member_count: 0,
@@ -394,6 +396,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       name: currentHub.name,
       slug: currentHub.slug,
       location: currentHub.location ?? '',
+      lat: currentHub.lat,
+      lng: currentHub.lng,
       description: currentHub.description ?? '',
       tunnel_url: currentHub.tunnelUrl,
       ...hubIconRegistryFields(currentHub),
@@ -478,7 +482,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       await updateLocation(locationResult.displayName, locationResult.lat, locationResult.lng);
       setEditingLocation(false);
       setLocationResult(null);
-      reRegisterHub({ location: locationResult.displayName });
+      reRegisterHub({ location: locationResult.displayName, lat: locationResult.lat, lng: locationResult.lng });
     } catch {
       setLocationError('Failed to save — changes saved locally only.');
     } finally {

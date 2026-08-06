@@ -22,6 +22,10 @@ export interface HubScriptConfig {
   hubName: string;
   hubSlug: string;
   hubLocation: string;
+  /** Geocoded coordinates from the wizard's LocationPicker, for distance-based
+   *  hub discovery in the registry. Omitted if geocoding wasn't available. */
+  hubLat?: number;
+  hubLng?: number;
   hubDescription: string;
   visibility: 'local' | 'tailscale';
   tailscaleAuthKey?: string;
@@ -44,6 +48,18 @@ export interface HubScriptConfig {
    * its slug with this on every cert issue/renewal request.
    */
   certSecret: string;
+  /**
+   * Local AI (Ollama) is never provisioned by default -- most hubs run on a
+   * spare Pi/laptop, and silently trying to run a local LLM there would make
+   * first-run setup slower or broken for the common case. An explicit,
+   * informed opt-in during creation, not a checkbox buried in the app list.
+   */
+  enableAi?: boolean;
+  /** Only meaningful when enableAi is true -- adds the NVIDIA GPU reservation
+   *  to the ollama service. Left off (CPU-only) unless the creator says they
+   *  have one, since requesting a GPU device that doesn't exist stops the
+   *  container from starting at all rather than just running slower. */
+  aiGpu?: boolean;
 }
 
 /** Every hub's automatic HTTPS hostname — derived from its slug, never asked of the creator. */
@@ -103,6 +119,8 @@ function generateEnvContent(config: HubScriptConfig): string {
     'HUB_NAME=' + config.hubName,
     'HUB_SLUG=' + config.hubSlug,
     'HUB_LOCATION=' + config.hubLocation,
+    ...(config.hubLat !== undefined ? ['HUB_LAT=' + config.hubLat] : []),
+    ...(config.hubLng !== undefined ? ['HUB_LNG=' + config.hubLng] : []),
     'HUB_DESCRIPTION=' + config.hubDescription,
     'HUB_VISIBILITY=' + config.visibility,
     'API_PORT=9090',
@@ -163,6 +181,12 @@ function generateEnvContent(config: HubScriptConfig): string {
     'BACKUP_DIR=' + (config.dataDir ?? './data') + '/backups',
     'BACKUP_RETENTION_DAYS=7',
     '',
+    ...(config.enableAi ? [
+      '# Ollama Directory — downloaded local AI models are stored here. These can be',
+      '# several GB each, so point this at a drive with room if space is tight.',
+      'OLLAMA_DIR=' + (config.dataDir ?? './data') + '/ollama',
+      '',
+    ] : []),
     '# Enabled Apps — comma-separated list of app IDs shown to members.',
     '# Leave empty to enable all apps. Set during hub creation wizard.',
     'ENABLED_APPS=' + (config.enabledApps ? config.enabledApps.join(',') : ''),
@@ -177,7 +201,7 @@ function generateEnvContent(config: HubScriptConfig): string {
 // because they use string concatenation, not TypeScript template interpolation.
 // ─────────────────────────────────────────────────────────
 
-function getComposeYaml(): string {
+function getComposeYaml(config: HubScriptConfig): string {
   // Build the YAML using string concatenation so ${VAR} references are
   // literal in the output and not interpreted by TypeScript.
   const v = (name: string) => '${' + name + '}';
@@ -189,6 +213,7 @@ function getComposeYaml(): string {
   const dbVol      = vd('DATA_DIR', './data') + '/db';
   const storageVol = vd('FILES_DIR', './data/storage');
   const caddyVol   = vd('DATA_DIR', './data') + '/caddy';
+  const ollamaVol  = vd('OLLAMA_DIR', './data/ollama');
   // Separate from DATA_DIR by default so it's at least a different directory than the
   // live DB volume -- operators who want real protection against a failed disk (not
   // just accidental deletes/bad migrations) can point BACKUP_DIR at a different drive
@@ -217,6 +242,8 @@ function getComposeYaml(): string {
     '      - HUB_NAME=' + v('HUB_NAME'),
     '      - HUB_SLUG=' + v('HUB_SLUG'),
     '      - HUB_LOCATION=' + v('HUB_LOCATION'),
+    '      - HUB_LAT=' + vd('HUB_LAT', ''),
+    '      - HUB_LNG=' + vd('HUB_LNG', ''),
     '      - HUB_DESCRIPTION=' + v('HUB_DESCRIPTION'),
     '      - HUB_VISIBILITY=' + vd('HUB_VISIBILITY', 'local'),
     '      - DATABASE_URL=postgresql://citinet:' + v('DB_PASSWORD') + '@citinet-db:5432/citinet',
@@ -233,6 +260,7 @@ function getComposeYaml(): string {
     '      - HUB_HTTPS_HOSTNAME=' + v('HUB_HTTPS_HOSTNAME'),
     '      - ADMIN_USERNAME=' + v('ADMIN_USERNAME'),
     '      - ADMIN_PASSWORD=' + v('ADMIN_PASSWORD'),
+    ...(config.enableAi ? ['      - OLLAMA_URL=http://citinet-ollama:11434'] : []),
     '    volumes:',
     '      - ' + caddyVol + ':/app/caddy-data',
     '    depends_on:',
@@ -349,6 +377,30 @@ function getComposeYaml(): string {
     '    networks:',
     '      - citinet-network',
     '',
+    ...(config.enableAi ? [
+      '  citinet-ollama:',
+      '    image: ollama/ollama:latest',
+      '    container_name: citinet-ollama',
+      '    restart: unless-stopped',
+      '    volumes:',
+      '      - ' + ollamaVol + ':/root/.ollama',
+      '    networks:',
+      '      - citinet-network',
+      // CPU-only unless the creator confirmed an NVIDIA GPU at setup time --
+      // reserving a GPU device that doesn't exist stops the container from
+      // starting at all, which would be a much worse default than "AI just
+      // runs slower on CPU." Ollama works fine either way.
+      ...(config.aiGpu ? [
+        '    deploy:',
+        '      resources:',
+        '        reservations:',
+        '          devices:',
+        '            - driver: nvidia',
+        '              count: all',
+        '              capabilities: [gpu]',
+      ] : []),
+      '',
+    ] : []),
     'networks:',
     '  citinet-network:',
     '    driver: bridge',
@@ -450,7 +502,7 @@ function buildBashTailscaleSection(config: HubScriptConfig): string[] {
 
 function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml();
+  const composeYaml = getComposeYaml(config);
   const caddyfileContent = getCaddyfileContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
@@ -508,6 +560,11 @@ function generateBashScript(config: HubScriptConfig): string {
     'BACKUP_DIR="$DATA_DIR/backups"',
     'mkdir -p "$BACKUP_DIR"',
     'ok "Backups at: $BACKUP_DIR"',
+    ...(config.enableAi ? [
+      'OLLAMA_DIR="$DATA_DIR/ollama"',
+      'mkdir -p "$OLLAMA_DIR"',
+      'ok "AI models at: $OLLAMA_DIR"',
+    ] : []),
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'step "Writing configuration"',
@@ -789,7 +846,7 @@ function buildPsTailscaleSection(config: HubScriptConfig): string[] {
 
 function generatePowerShellScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
-  const composeYaml = getComposeYaml();
+  const composeYaml = getComposeYaml(config);
   const caddyfileContent = getCaddyfileContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
@@ -846,6 +903,11 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '$BackupDir = "$DataDir\\backups"',
     'New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null',
     'Ok "Backups at: $BackupDir"',
+    ...(config.enableAi ? [
+      '$OllamaDir = "$DataDir\\ollama"',
+      'New-Item -ItemType Directory -Force -Path $OllamaDir | Out-Null',
+      'Ok "AI models at: $OllamaDir"',
+    ] : []),
     '',
     '# === Write .env (only on first install — never overwrite existing data) ===',
     'Step "Writing configuration"',

@@ -80,11 +80,12 @@ html, body, #root {
 }
 
 /* ── Safe area utilities (viewport-fit=cover) ────────────────
-   viewport-fit=cover lets content reach the bottom home-bar area.
-   These classes are used on fixed bottom elements (install banners,
-   floating launcher) so they respect the home indicator.
-   We use `default` status bar style so iOS owns the top safe area —
-   no #root padding needed. theme-color matching handles the visual. */
+   viewport-fit=cover + `black-translucent` status bar style let content
+   reach the true screen edges (top notch/status bar and bottom home-bar
+   area) instead of iOS reserving opaque space for them. Backgrounds can
+   bleed full-screen, but real content (headers, headlines, nav) needs
+   these classes so it doesn't render under the status bar icons or the
+   home indicator. */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom) !important; }
 .pt-safe { padding-top:    env(safe-area-inset-top)    !important; }
 .mb-safe { margin-bottom:  env(safe-area-inset-bottom) !important; }

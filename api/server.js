@@ -1517,6 +1517,10 @@ app.get('/api/info', async (_req, res) => {
   const name = cfg.hub_name || process.env.HUB_NAME || '';
   const location = cfg.hub_location || process.env.HUB_LOCATION || '';
   const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+  const latRaw = cfg.hub_lat ?? process.env.HUB_LAT;
+  const lngRaw = cfg.hub_lng ?? process.env.HUB_LNG;
+  const lat = latRaw !== undefined && latRaw !== null && latRaw !== '' ? parseFloat(latRaw) : null;
+  const lng = lngRaw !== undefined && lngRaw !== null && lngRaw !== '' ? parseFloat(lngRaw) : null;
   let memberCount = 0;
   try {
     const r = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
@@ -1548,6 +1552,8 @@ app.get('/api/info', async (_req, res) => {
     hub_location: location,
     description: description,
     hub_description: description,
+    lat: lat,
+    lng: lng,
     hub_visibility: process.env.HUB_VISIBILITY || 'local',
     tunnel_url: process.env.TUNNEL_URL || '',
     lan_ip: getLanIp(),
@@ -1571,7 +1577,7 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
   if (!req.user.is_admin)
     return res.status(403).json({ error: 'Admin access required' });
   const {
-    name, location, description, enabled_apps,
+    name, location, description, lat, lng, enabled_apps,
     hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
     hub_icon_gradient_from, hub_icon_gradient_to,
     hub_icon_solid_color, hub_icon_image_file_name,
@@ -1582,6 +1588,8 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
     updates.push(['hub_location', String(location).trim()]);
   if (description !== undefined)
     updates.push(['hub_description', String(description).trim()]);
+  if (lat !== undefined) updates.push(['hub_lat', lat === null ? null : String(lat)]);
+  if (lng !== undefined) updates.push(['hub_lng', lng === null ? null : String(lng)]);
   if (enabled_apps !== undefined) {
     // null = clear (all apps enabled); array = store as JSON
     updates.push([

@@ -5,9 +5,11 @@
  *  1. Hub identity    — name, location, zip, description
  *  2. Access mode     — local LAN or Tailscale (worldwide); Tailscale asks for auth key
  *  3. Admin account   — username + password, set here in the UI (baked into config)
- *  4. Download script — OS-detected, one download, one command to copy
- *  5. Waiting         — polls localhost:9090/health automatically
- *  6. Live!           — hub is up; shows local + public URLs; enter hub button
+ *  4. Choose apps     — which of the 12 hub apps show up for members
+ *  5. Local AI        — opt-in only; provisions Ollama if enabled (see scriptGenerator.ts)
+ *  6. Download script — OS-detected, one download, one command to copy
+ *  7. Waiting         — polls localhost:9090/health automatically
+ *  8. Live!           — hub is up; shows local + public URLs; enter hub button
  *
  * No file editing. No manual password generation. No terminal skills needed
  * beyond pasting one command.
@@ -17,7 +19,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowRight, Eye, Lock,
   Download, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, Cpu,
 } from 'lucide-react';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
@@ -37,7 +39,7 @@ import { OnboardingBackground } from './OnboardingBackground';
 // Types
 // ─────────────────────────────────────────────────────────
 
-type WizardStep = 'identity' | 'access' | 'admin' | 'apps' | 'download' | 'waiting' | 'live';
+type WizardStep = 'identity' | 'access' | 'admin' | 'apps' | 'ai' | 'download' | 'waiting' | 'live';
 
 interface WizardData {
   // Step 1
@@ -57,6 +59,9 @@ interface WizardData {
   adminPasswordConfirm: string;
   // Step 4 (apps)
   enabledApps: string[];
+  // Step 5 (AI)
+  enableAi: boolean;
+  aiGpu: boolean;
 }
 
 interface HubLiveInfo {
@@ -80,6 +85,32 @@ function FieldLabel({ label, hint }: { label: string; hint?: string }) {
       {label}
       {hint && <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">({hint})</span>}
     </label>
+  );
+}
+
+/**
+ * Renders a solid-glyph PNG (icon on transparent background) as a CSS mask
+ * instead of an <img> -- the source pixels only control shape, so the actual
+ * color comes from `className`/currentColor and can shift with selection
+ * state (or dark mode) without touching the image files themselves.
+ */
+function MaskIcon({ src, className }: { src: string; className?: string }) {
+  return (
+    <span
+      className={className}
+      style={{
+        display: 'inline-block',
+        backgroundColor: 'currentColor',
+        WebkitMaskImage: `url(${src})`,
+        maskImage: `url(${src})`,
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+      }}
+    />
   );
 }
 
@@ -170,6 +201,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
     enabledApps: ['feed', 'messages', 'atlas', 'notes'],
+    enableAi: false, aiGpu: false,
   });
 
   // Generated once when the user reaches the download step
@@ -226,6 +258,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       data.adminPassword.length >= 8 &&
       data.adminPassword === data.adminPasswordConfirm,
     apps: data.enabledApps.length >= 1,
+    ai: true,
     download: scriptDownloaded,
     waiting: false,
     live: true,
@@ -261,6 +294,8 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       hubName: data.hubName.trim(),
       hubSlug: generateSlug(data.hubName),
       hubLocation: data.hubLocation.trim(),
+      hubLat: data.hubLat,
+      hubLng: data.hubLng,
       hubDescription: data.hubDescription.trim(),
       visibility: data.visibility,
       tailscaleAuthKey: data.tailscaleAuthKey.trim() || undefined,
@@ -271,11 +306,13 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       dataDir: data.dataDir.trim() || undefined,
       enabledApps: data.enabledApps.length > 0 ? data.enabledApps : null,
       certSecret,
+      enableAi: data.enableAi,
+      aiGpu: data.enableAi && data.aiGpu,
     };
   }
 
   // ── Advance step ───────────────────────────────────────
-  const STEP_ORDER: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'download', 'waiting', 'live'];
+  const STEP_ORDER: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'ai', 'download', 'waiting', 'live'];
 
   const next = () => {
     const idx = STEP_ORDER.indexOf(step);
@@ -384,7 +421,10 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // ─────────────────────────────────────────────────────
   if (step === 'waiting') {
     return (
-      <div className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6 text-center">
+      <div
+        className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6 text-center"
+        style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
         <OnboardingBackground />
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -420,7 +460,10 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // ─────────────────────────────────────────────────────
   if (step === 'live') {
     return (
-      <div className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6">
+      <div
+        className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6"
+        style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+      >
         <OnboardingBackground />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -521,7 +564,10 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // Main wizard card (steps 1–4)
   // ─────────────────────────────────────────────────────
   return (
-    <div className="min-h-[100dvh] relative overflow-hidden flex flex-col">
+    <div
+      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
       <OnboardingBackground />
 
       {/* Card */}
@@ -862,18 +908,18 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                 {/* ── Step 4: Choose Apps ──────────────── */}
                 {step === 'apps' && (() => {
                   const ALL_HUB_APPS = [
-                    { id: 'feed',        label: 'Feed',         emoji: '💬', desc: 'Community posts, events, and conversations' },
-                    { id: 'messages',    label: 'Messages',     emoji: '✉️', desc: 'Private and group messaging' },
-                    { id: 'atlas',       label: 'Atlas',        emoji: '🗺️', desc: 'Interactive community map' },
-                    { id: 'notes',       label: 'Notes',        emoji: '📓', desc: 'Private notes and journal' },
-                    { id: 'spaces',      label: 'Spaces',       emoji: '🌐', desc: 'Topic-based community groups' },
-                    { id: 'marketplace', label: 'Exchange',     emoji: '🏪', desc: 'Buy, sell, and trade locally' },
-                    { id: 'files',       label: 'Files',        emoji: '📁', desc: 'Shared file storage' },
-                    { id: 'discover',    label: 'Discover',     emoji: '🧭', desc: 'Community resources and links' },
-                    { id: 'toolkit',     label: 'Resources',    emoji: '🔧', desc: 'Tools and local resources' },
-                    { id: 'initiatives', label: 'Initiatives',  emoji: '🎯', desc: 'Community projects and goals' },
-                    { id: 'network',     label: 'Network',      emoji: '📡', desc: 'Hub network map and stats' },
-                    { id: 'mod-log',     label: 'Mod Log',      emoji: '📜', desc: 'Moderation and governance log' },
+                    { id: 'feed',        label: 'Feed',         icon: '/icons/onboard/feed.png',        desc: 'Community posts, events, and conversations' },
+                    { id: 'messages',    label: 'Messages',     icon: '/icons/onboard/messages.png',    desc: 'Private and group messaging' },
+                    { id: 'atlas',       label: 'Atlas',        icon: '/icons/onboard/atlas.png',       desc: 'Interactive community map' },
+                    { id: 'notes',       label: 'Notes',        icon: '/icons/onboard/notes.png',       desc: 'Private notes and journal' },
+                    { id: 'spaces',      label: 'Spaces',       icon: '/icons/onboard/spaces-2.png',    desc: 'Topic-based community groups' },
+                    { id: 'marketplace', label: 'Exchange',     icon: '/icons/onboard/exchange.png',    desc: 'Buy, sell, and trade locally' },
+                    { id: 'files',       label: 'Files',        icon: '/icons/onboard/files.png',       desc: 'Shared file storage' },
+                    { id: 'discover',    label: 'Discover',     icon: '/icons/onboard/discover.png',    desc: 'Community resources and links' },
+                    { id: 'toolkit',     label: 'Resources',    icon: '/icons/onboard/resources.png',   desc: 'Tools and local resources' },
+                    { id: 'initiatives', label: 'Initiatives',  icon: '/icons/onboard/initiatives-1.png', desc: 'Community projects and goals' },
+                    { id: 'network',     label: 'Network',      icon: '/icons/onboard/network.png',     desc: 'Hub network map and stats' },
+                    { id: 'mod-log',     label: 'Mod Log',      icon: '/icons/onboard/log.png',         desc: 'Moderation and governance log' },
                   ];
                   const ESSENTIALS = ['feed', 'messages', 'atlas', 'notes'];
                   const toggle = (id: string) => {
@@ -903,7 +949,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                             border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300
                             hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400"
                         >
-                          ⚡ Essentials
+                          Essentials
                         </button>
                         <button
                           onClick={() => set({ enabledApps: ALL_HUB_APPS.map(a => a.id) })}
@@ -913,7 +959,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400'
                           }`}
                         >
-                          🚀 Full Community
+                          Full Community
                         </button>
                       </div>
 
@@ -932,7 +978,10 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               }`}
                             >
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-lg leading-none">{app.emoji}</span>
+                                <MaskIcon
+                                  src={app.icon}
+                                  className={`w-5 h-5 flex-shrink-0 ${on ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}
+                                />
                                 <span className={`text-sm font-semibold ${on ? 'text-purple-700 dark:text-purple-300' : 'text-slate-800 dark:text-white'}`}>
                                   {app.label}
                                 </span>
@@ -955,7 +1004,131 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                   );
                 })()}
 
-                {/* ── Step 5: Download & run ────────────── */}
+                {/* ── Step 5: Local AI ──────────────────── */}
+                {step === 'ai' && (
+                  <div className="space-y-4">
+                    <div className="mb-5">
+                      <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
+                        Enable a local AI assistant?
+                      </h2>
+                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                        Off by default — you can turn this on later from Hub Management instead
+                      </p>
+                    </div>
+
+                    {/* Off option */}
+                    <button
+                      onClick={() => set({ enableAi: false })}
+                      className={`w-full p-4 rounded-xl border text-left transition-all ${
+                        !data.enableAi
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                          !data.enableAi
+                            ? 'border-purple-500 bg-purple-500'
+                            : 'border-slate-300 dark:border-zinc-600'
+                        }`}>
+                          {!data.enableAi && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
+                            No local AI
+                          </h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Everything else works exactly the same. Recommended for a Raspberry Pi,
+                            an older laptop, or any lower-power machine.
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* On option */}
+                    <button
+                      onClick={() => set({ enableAi: true })}
+                      className={`w-full p-4 rounded-xl border text-left transition-all ${
+                        data.enableAi
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                          data.enableAi
+                            ? 'border-purple-500 bg-purple-500'
+                            : 'border-slate-300 dark:border-zinc-600'
+                        }`}>
+                          {data.enableAi && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <MaskIcon
+                              src="/icons/onboard/ai.png"
+                              className={`w-5 h-5 flex-shrink-0 ${data.enableAi ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}
+                            />
+                            <h3 className="font-semibold text-slate-900 dark:text-white">
+                              Enable local AI assistant
+                            </h3>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30
+                              text-amber-700 dark:text-amber-400 font-medium">
+                              Heavier
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Runs a real language model on your own hardware via Ollama — drafts posts,
+                            summarizes discussions, answers questions about your community. Needs more
+                            RAM and a few GB of disk for the model itself. Works on CPU alone, just
+                            slower; a GPU makes it noticeably faster.
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* GPU checkbox + requirements, shown only when AI is on */}
+                    <AnimatePresence>
+                      {data.enableAi && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800
+                            border border-slate-200 dark:border-white/10 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <Cpu className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Recommended minimum: 8 GB RAM and 10 GB free disk. Ollama downloads its
+                                model on first run — that download happens automatically, no extra step here.
+                              </p>
+                            </div>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={data.aiGpu}
+                                onChange={e => set({ aiGpu: e.target.checked })}
+                                className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-zinc-600
+                                  text-purple-600 focus:ring-purple-500 cursor-pointer"
+                              />
+                              <span className="text-sm text-slate-700 dark:text-slate-300">
+                                This machine has an <strong>NVIDIA GPU</strong> — use it for AI
+                              </span>
+                            </label>
+                            <p className="text-xs text-slate-400 dark:text-slate-500 pl-7">
+                              Leave unchecked if you're not sure. Requesting a GPU that isn't there
+                              stops the AI container from starting at all — CPU-only is always safe,
+                              just slower to respond.
+                            </p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {/* ── Step 6: Download & run ────────────── */}
                 {step === 'download' && (
                   <div className="space-y-4">
                     <div className="mb-5">
