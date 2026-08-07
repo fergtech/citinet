@@ -53,6 +53,12 @@ export interface Hub extends HubIconFields {
   lat?: number;
   /** Geocoded longitude (stored when admin sets location via LocationPicker) */
   lng?: number;
+  /** Set when created via one of the wizard's Step 4 hub-purpose categories
+   *  (HOA, Group, Neighborhood Watch, …). See data/hubCategories.ts. */
+  hubFocus?: string;
+  /** How new join requests get decided: an admin approves them (default), or
+   *  they're put to a member vote via the Decisions/Polls system. */
+  joinApprovalMode?: 'admin' | 'member_vote';
   /** Host machine's LAN IP for direct local network access (no internet required) */
   lanIp?: string;
   /**
@@ -169,6 +175,11 @@ export interface HubInfoResponse extends HubIconFields {
   lat?: number;
   /** Geocoded longitude, set via the admin's LocationPicker */
   lng?: number;
+  /** Set to 'group' when created via the wizard's "HOA / Group" preset.
+   *  Empty/undefined for the default, general-purpose layout. */
+  hub_focus?: string;
+  /** How new join requests get decided: 'admin' (default) or 'member_vote'. */
+  join_approval_mode?: 'admin' | 'member_vote';
   /** Public tunnel URL reported by the hub (e.g. Tailscale funnel URL) */
   tunnel_url?: string;
   /** LAN IP reported by the hub */
@@ -203,6 +214,8 @@ export interface HubAuthCredentials {
   username: string;
   password: string;
   email?: string;
+  displayName?: string;
+  tags?: string[];
 }
 
 /** A member of the hub */

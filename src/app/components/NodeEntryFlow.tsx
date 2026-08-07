@@ -193,6 +193,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
       const userData = await hubService.registerUser(hubSlug, {
         username: username.trim().toLowerCase(),
         password,
+        displayName: displayName.trim(),
+        tags: selectedTags,
       });
       const merged: HubUser = {
         ...userData,

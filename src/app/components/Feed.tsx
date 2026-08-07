@@ -17,6 +17,7 @@ import { notificationsService } from '../services/notificationsService';
 import { openLocationInAtlas } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
 import { requestsService, type HubRequest } from '../services/requestsService';
+import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubPost, HubPostReply, HubEventAttendee } from '../types/hub';
 import {
   DropdownMenu,
@@ -1732,7 +1733,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [posts, setPosts] = useState<HubPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  // Hubs created via a wizard category with a feedDefaultFilter (e.g. HOA)
+  // open straight to that tab instead of the general feed, since that's
+  // what the category is for. Anyone can still switch tabs freely from there.
+  const [activeFilter, setActiveFilter] = useState<string | null>(
+    HUB_CATEGORIES.find(cat => cat.hubFocus === currentHub?.hubFocus)?.feedDefaultFilter ?? null
+  );
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
   const [focusComposer, setFocusComposer] = useState(false);

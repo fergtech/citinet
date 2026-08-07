@@ -42,6 +42,12 @@ export interface HubScriptConfig {
    */
   enabledApps?: string[] | null;
   /**
+   * Set when one of the wizard's Step 4 hub-purpose categories is chosen
+   * (see data/hubCategories.ts) instead of a flat app grid. Editable later
+   * via PATCH /api/hub-info, same as enabledApps.
+   */
+  hubFocus?: string;
+  /**
    * Returned by the cert broker's `claim` call (see certBrokerService.ts) —
    * not client-generated like the other secrets, since the broker itself
    * verifies it later against a hash it stores. The hub proves ownership of
@@ -190,6 +196,12 @@ function generateEnvContent(config: HubScriptConfig): string {
     '# Enabled Apps — comma-separated list of app IDs shown to members.',
     '# Leave empty to enable all apps. Set during hub creation wizard.',
     'ENABLED_APPS=' + (config.enabledApps ? config.enabledApps.join(',') : ''),
+    '',
+    '# Hub Focus — set when a hub-purpose category (HOA, Group, Neighborhood',
+    '# Watch, ...) is chosen during creation. Lets the portal lead with the',
+    '# apps that matter for that purpose instead of a flat app grid. Leave',
+    '# empty for the default, general-purpose layout.',
+    'HUB_FOCUS=' + (config.hubFocus ?? ''),
   ].join('\n');
 }
 
@@ -246,6 +258,8 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - HUB_LNG=' + vd('HUB_LNG', ''),
     '      - HUB_DESCRIPTION=' + v('HUB_DESCRIPTION'),
     '      - HUB_VISIBILITY=' + vd('HUB_VISIBILITY', 'local'),
+    '      - ENABLED_APPS=' + vd('ENABLED_APPS', ''),
+    '      - HUB_FOCUS=' + vd('HUB_FOCUS', ''),
     '      - DATABASE_URL=postgresql://citinet:' + v('DB_PASSWORD') + '@citinet-db:5432/citinet',
     '      - STORAGE_URL=http://citinet-storage:9000',
     '      - STORAGE_ACCESS_KEY=' + v('STORAGE_ACCESS_KEY'),

@@ -4,11 +4,12 @@ import { Clock, XCircle, LogOut, RefreshCw } from 'lucide-react';
 interface PendingApprovalScreenProps {
   status: 'pending' | 'rejected';
   hubName: string;
+  joinApprovalMode?: 'admin' | 'member_vote';
   onCheckAgain: () => Promise<boolean>;
   onSignOut: () => void;
 }
 
-export function PendingApprovalScreen({ status, hubName, onCheckAgain, onSignOut }: PendingApprovalScreenProps) {
+export function PendingApprovalScreen({ status, hubName, joinApprovalMode, onCheckAgain, onSignOut }: PendingApprovalScreenProps) {
   const [checking, setChecking] = useState(false);
   const [stillWaiting, setStillWaiting] = useState(false);
 
@@ -34,7 +35,9 @@ export function PendingApprovalScreen({ status, hubName, onCheckAgain, onSignOut
       <p className="text-muted-foreground max-w-sm mb-6">
         {rejected
           ? "The hub admin declined this account's access request. If you think this is a mistake, reach out to them directly."
-          : "Your account has been created but needs the hub admin's approval before you can get in. This usually doesn't take long."}
+          : joinApprovalMode === 'member_vote'
+            ? "Your account has been created. Members are voting on your request, not just an admin — check back in a bit."
+            : "Your account has been created but needs the hub admin's approval before you can get in. This usually doesn't take long."}
       </p>
 
       {!rejected && (

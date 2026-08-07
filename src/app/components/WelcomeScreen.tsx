@@ -48,15 +48,15 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
         {/* Headline */}
         <h1 className="text-white mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
-          Decentralized. Local.
+          Your community.
           <br />
-          <span className="text-white/90 font-medium">Citizens' Internet.</span>
+          <span className="text-white/90 font-medium">Your internet.</span>
         </h1>
 
         {/* Subtext */}
         <p className="text-white/90 mb-10 font-light leading-relaxed text-base max-w-md">
-          Community-owned networks.<br />
-          No mega-corporations. No central servers.
+          Votes, announcements, and shared files — actually kept somewhere,<br />
+          not buried in a group chat.
         </p>
 
         {/* Two Path Options */}

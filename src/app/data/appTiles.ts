@@ -15,7 +15,7 @@ export const APP_TILES: { Icon: React.ElementType; label: string; screen: string
   { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },
   { Icon: MessageCircle, label: 'Messages',    screen: 'messages',    gradient: 'bg-gradient-to-br from-fuchsia-500 to-violet-600', notifyFeature: 'messages' },
-  { Icon: ScrollText,    label: 'Mod Log',     screen: 'mod-log',     gradient: 'bg-gradient-to-br from-slate-600 to-slate-700' },
+  { Icon: ScrollText,    label: 'Decisions',   screen: 'mod-log',     gradient: 'bg-gradient-to-br from-slate-600 to-slate-700' },
   { Icon: NotebookPen,   label: 'Notes',       screen: 'notes',       gradient: 'bg-gradient-to-br from-amber-500 to-yellow-500' },
 ];
 

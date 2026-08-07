@@ -230,6 +230,7 @@ function HubPendingApprovalRoute() {
     <PendingApprovalScreen
       status={currentUser.accountStatus}
       hubName={currentHub?.name || hubSlug}
+      joinApprovalMode={currentHub?.joinApprovalMode}
       onCheckAgain={handleCheckAgain}
       onSignOut={handleSignOut}
     />

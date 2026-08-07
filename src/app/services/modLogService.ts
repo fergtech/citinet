@@ -34,6 +34,21 @@ class ModLogService {
       return { entries: [], total: 0 };
     }
   }
+
+  /** Member-visible subset: vote (poll) actions only, no mod/admin required. */
+  async listDecisions(hubSlug: string, offset = 0, limit = 50): Promise<{ entries: ModLogEntry[]; total: number }> {
+    const conn = this.getConn(hubSlug);
+    if (!conn) return { entries: [], total: 0 };
+    try {
+      const res = await fetch(`${conn.baseUrl}/api/decisions?limit=${limit}&offset=${offset}`, {
+        headers: { Authorization: `Bearer ${conn.token}` },
+      });
+      if (!res.ok) return { entries: [], total: 0 };
+      return await res.json();
+    } catch {
+      return { entries: [], total: 0 };
+    }
+  }
 }
 
 export const modLogService = new ModLogService();

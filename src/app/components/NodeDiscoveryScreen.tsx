@@ -13,7 +13,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, AlertCircle,
   Globe, User, Lock, Eye, EyeOff, Mail,
-  RefreshCw, WifiOff, Users, MapPin, Search, ChevronLeft,
+  RefreshCw, WifiOff, Users, MapPin, Search, ChevronLeft, Info, X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
@@ -309,7 +309,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
               <div className="flex flex-col items-center text-center gap-1 mb-5">
                 <CitinetLogo size={44} className="mb-2" />
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Join a Hub</h2>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Find a Hub</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Connect to your community's hub</p>
               </div>
 
@@ -615,7 +615,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 {joining ? (
                   <><Loader2 className="w-5 h-5 animate-spin" />{authMode === 'login' ? 'Logging in…' : 'Creating Account…'}</>
                 ) : (
-                  authMode === 'login' ? 'Log In & Join' : 'Create Account & Join'
+                  authMode === 'login' ? 'Log In & Enter' : 'Create Account & Join'
                 )}
               </button>
 
@@ -705,6 +705,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
 function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
   const isOnline = hub.online !== false;
+  const [showFullDescription, setShowFullDescription] = useState(false);
   return (
     <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
       <div className="relative flex-shrink-0">
@@ -732,16 +733,67 @@ function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void
           )}
         </div>
         {hub.description && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">{hub.description}</p>
+          <div className="flex items-start gap-1 mt-1">
+            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">{hub.description}</p>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowFullDescription(true); }}
+              title="Read full description"
+              aria-label="Read full description"
+              className="shrink-0 text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors mt-0.5"
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Join button */}
+      {/* Full-description overlay — tap the info icon to read before joining,
+          close to return to the normal row without leaving this screen. */}
+      <AnimatePresence>
+        {showFullDescription && (
+          <motion.div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowFullDescription(false)}
+          >
+            <motion.div
+              className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-5"
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <HubIcon hub={hub} baseUrl={hub.tunnel_url ?? ''} size={28} variant="badge" />
+                  <span className="font-semibold text-sm text-slate-900 dark:text-white truncate">{hub.name}</span>
+                </div>
+                <button
+                  onClick={() => setShowFullDescription(false)}
+                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                {hub.description}
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Enter button — could be a first join or a returning member, so "Enter"
+          reads right either way instead of assuming this is always a new join. */}
       <button
         onClick={onJoin}
         className="flex-shrink-0 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all active:scale-95"
       >
-        Join
+        Enter
       </button>
     </div>
   );

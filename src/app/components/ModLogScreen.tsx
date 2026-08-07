@@ -35,8 +35,13 @@ function timeAgo(iso: string): string {
 }
 
 export function ModLogScreen({ onBack }: ModLogScreenProps) {
-  const { currentHub } = useHub();
+  const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  // Mirrors the server's isMod() check -- mods/admins see the full moderation
+  // log; everyone else sees only the member-visible Decisions subset (votes).
+  const isMod = currentUser?.isAdmin === true
+    || currentUser?.hubRole === 'admin'
+    || currentUser?.hubRole === 'moderator';
 
   const [entries, setEntries] = useState<ModLogEntry[]>([]);
   const [total, setTotal]     = useState(0);
@@ -46,7 +51,9 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
 
   const load = useCallback(async (offset = 0, append = false) => {
     if (offset === 0) setLoading(true); else setLoadingMore(true);
-    const { entries: newEntries, total: newTotal } = await modLogService.list(hubSlug, offset, PAGE);
+    const { entries: newEntries, total: newTotal } = isMod
+      ? await modLogService.list(hubSlug, offset, PAGE)
+      : await modLogService.listDecisions(hubSlug, offset, PAGE);
     if (append) {
       setEntries(prev => [...prev, ...newEntries]);
     } else {
@@ -55,7 +62,7 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
     setTotal(newTotal);
     setLoading(false);
     setLoadingMore(false);
-  }, [hubSlug]);
+  }, [hubSlug, isMod]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -73,9 +80,11 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
           <div className="flex-1">
             <h1 className="text-lg font-semibold text-slate-900 dark:text-white flex items-center gap-2">
               <ScrollText className="w-5 h-5 text-slate-400 dark:text-zinc-400" />
-              Moderation Log
+              {isMod ? 'Moderation Log' : 'Decisions'}
             </h1>
-            <p className="text-xs text-slate-400 dark:text-zinc-500">{total} action{total !== 1 ? 's' : ''} recorded</p>
+            <p className="text-xs text-slate-400 dark:text-zinc-500">
+              {total} {isMod ? 'action' : 'decision'}{total !== 1 ? 's' : ''} recorded
+            </p>
           </div>
           <button onClick={() => load()} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -86,7 +95,9 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
       {/* Info banner */}
       <div className="max-w-2xl mx-auto px-4 pt-4">
         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200/50 dark:border-indigo-800/30 rounded-xl px-4 py-3 text-xs text-indigo-700 dark:text-indigo-300">
-          This is a public record of all moderation actions taken on this hub. Every member can view it.
+          {isMod
+            ? 'The full moderation log, visible to admins and moderators only. Votes are also visible to every member in Decisions.'
+            : 'A public record of every vote taken on this hub — anyone can see what was decided.'}
         </div>
       </div>
 
@@ -99,8 +110,12 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
         ) : entries.length === 0 ? (
           <div className="text-center py-20">
             <ScrollText className="w-10 h-10 text-slate-200 dark:text-zinc-700 mx-auto mb-3" />
-            <p className="text-sm font-medium text-slate-400 dark:text-zinc-500">No actions recorded yet</p>
-            <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">Moderation actions will appear here automatically</p>
+            <p className="text-sm font-medium text-slate-400 dark:text-zinc-500">
+              {isMod ? 'No actions recorded yet' : 'No decisions recorded yet'}
+            </p>
+            <p className="text-xs text-slate-300 dark:text-zinc-600 mt-1">
+              {isMod ? 'Moderation actions will appear here automatically' : 'Votes will appear here as soon as one is created'}
+            </p>
           </div>
         ) : (
           <div className="relative">

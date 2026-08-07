@@ -19,7 +19,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowRight, Eye, Lock,
   Download, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, Cpu,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, Cpu, ChevronDown,
 } from 'lucide-react';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
@@ -34,6 +34,13 @@ import {
 } from '../utils/scriptGenerator';
 import { registryService } from '../services/registryService';
 import { OnboardingBackground } from './OnboardingBackground';
+import { HUB_CATEGORIES } from '../data/hubCategories';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -59,6 +66,12 @@ interface WizardData {
   adminPasswordConfirm: string;
   // Step 4 (apps)
   enabledApps: string[];
+  /** Set when a hub-purpose category (HOA, Group, Neighborhood Watch, …) is
+   *  chosen from the Step 4 category list -- lets the hub lead with the apps
+   *  that matter for that purpose instead of treating every app as an equal
+   *  peer. Undefined for Essentials/Full Community/manual picks. See
+   *  data/hubCategories.ts. */
+  hubFocus?: string;
   // Step 5 (AI)
   enableAi: boolean;
   aiGpu: boolean;
@@ -201,6 +214,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
     enabledApps: ['feed', 'messages', 'atlas', 'notes'],
+    hubFocus: undefined,
     enableAi: false, aiGpu: false,
   });
 
@@ -296,6 +310,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       hubLocation: data.hubLocation.trim(),
       hubLat: data.hubLat,
       hubLng: data.hubLng,
+      hubFocus: data.hubFocus,
       hubDescription: data.hubDescription.trim(),
       visibility: data.visibility,
       tailscaleAuthKey: data.tailscaleAuthKey.trim() || undefined,
@@ -919,17 +934,24 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     { id: 'toolkit',     label: 'Resources',    icon: '/icons/onboard/resources.png',   desc: 'Tools and local resources' },
                     { id: 'initiatives', label: 'Initiatives',  icon: '/icons/onboard/initiatives-1.png', desc: 'Community projects and goals' },
                     { id: 'network',     label: 'Network',      icon: '/icons/onboard/network.png',     desc: 'Hub network map and stats' },
-                    { id: 'mod-log',     label: 'Mod Log',      icon: '/icons/onboard/log.png',         desc: 'Moderation and governance log' },
+                    { id: 'mod-log',     label: 'Decisions',    icon: '/icons/onboard/log.png',         desc: 'A public record of what was voted on and decided' },
                   ];
-                  const ESSENTIALS = ['feed', 'messages', 'atlas', 'notes'];
                   const toggle = (id: string) => {
                     set({
+                      hubFocus: undefined,
                       enabledApps: data.enabledApps.includes(id)
                         ? data.enabledApps.filter(a => a !== id)
                         : [...data.enabledApps, id],
                     });
                   };
-                  const allSelected = ALL_HUB_APPS.every(a => data.enabledApps.includes(a.id));
+                  // A category card is "active" when the current selection
+                  // matches its preset exactly -- not just by hubFocus, since
+                  // Essentials/Full Community share hubFocus === undefined.
+                  const sameApps = (apps: string[]) =>
+                    apps.length === data.enabledApps.length && apps.every(a => data.enabledApps.includes(a));
+                  const activeCategory = HUB_CATEGORIES.find(cat =>
+                    cat.hubFocus === data.hubFocus && sameApps(cat.apps)
+                  );
                   return (
                     <div className="space-y-4">
                       <div className="mb-2">
@@ -937,31 +959,52 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           Choose your apps
                         </h2>
                         <p className="text-[13px] text-slate-500 dark:text-slate-400">
-                          Pick the features you want — you can change this any time in Hub Management
+                          What's this hub for? Pick a starting point, then fine-tune below — you can change this any time in Hub Management
                         </p>
                       </div>
 
-                      {/* Preset buttons */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => set({ enabledApps: ESSENTIALS })}
-                          className="flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all
-                            border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300
-                            hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400"
+                      {/* Category dropdown -- compact single-line selector,
+                          defaults to Essentials */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="w-full flex items-center gap-2.5 py-2.5 px-3 rounded-lg border
+                              border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20
+                              text-left transition-colors"
+                          >
+                            {activeCategory && (
+                              <activeCategory.Icon className="w-4 h-4 flex-shrink-0 text-purple-600 dark:text-purple-400" />
+                            )}
+                            <span className="text-[13.5px] font-semibold text-slate-800 dark:text-white">
+                              {activeCategory?.label ?? 'Custom selection'}
+                            </span>
+                            <ChevronDown className="w-4 h-4 text-slate-400 dark:text-slate-500 ml-auto flex-shrink-0" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="start"
+                          className="w-[--radix-dropdown-menu-trigger-width]"
                         >
-                          Essentials
-                        </button>
-                        <button
-                          onClick={() => set({ enabledApps: ALL_HUB_APPS.map(a => a.id) })}
-                          className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all ${
-                            allSelected
-                              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
-                              : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400 hover:text-purple-700 dark:hover:text-purple-400'
-                          }`}
-                        >
-                          Full Community
-                        </button>
-                      </div>
+                          {HUB_CATEGORIES.map(cat => (
+                            <DropdownMenuItem
+                              key={cat.id}
+                              onSelect={() => set({ enabledApps: cat.apps, hubFocus: cat.hubFocus })}
+                              className="gap-2.5 py-2"
+                            >
+                              <cat.Icon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                              <span className="text-[13px] font-medium">{cat.label}</span>
+                              {activeCategory?.id === cat.id && (
+                                <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 ml-auto" />
+                              )}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      {activeCategory && (
+                        <p className="text-[12px] text-slate-500 dark:text-slate-400 -mt-1.5">
+                          {activeCategory.description}
+                        </p>
+                      )}
 
                       {/* App grid */}
                       <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-0.5">

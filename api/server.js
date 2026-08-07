@@ -636,6 +636,12 @@ async function initDb() {
         pass_pct    INT NOT NULL DEFAULT 50
       )
     `);
+    // Membership-vote linkage: set when a poll was auto-created because the hub's
+    // join_approval_mode is 'member_vote' -- see checkPollThreshold(), which approves
+    // or rejects this user once the poll's quorum/pass thresholds are met.
+    await client.query(
+      `ALTER TABLE hub_post_polls ADD COLUMN IF NOT EXISTS pending_user_id UUID REFERENCES hub_users(id) ON DELETE CASCADE`,
+    );
     // ID-preserving data copy — reuses hub_polls.id as the new hub_posts.id so every
     // inbound reference (hub_requests.poll_id, vote rows, old share links) keeps
     // resolving to the same UUID. ON CONFLICT DO NOTHING makes this safe to re-run.
@@ -1517,13 +1523,15 @@ app.get('/api/info', async (_req, res) => {
   const name = cfg.hub_name || process.env.HUB_NAME || '';
   const location = cfg.hub_location || process.env.HUB_LOCATION || '';
   const description = cfg.hub_description || process.env.HUB_DESCRIPTION || '';
+  const hubFocus = cfg.hub_focus || process.env.HUB_FOCUS || '';
+  const joinApprovalMode = cfg.join_approval_mode === 'member_vote' ? 'member_vote' : 'admin';
   const latRaw = cfg.hub_lat ?? process.env.HUB_LAT;
   const lngRaw = cfg.hub_lng ?? process.env.HUB_LNG;
   const lat = latRaw !== undefined && latRaw !== null && latRaw !== '' ? parseFloat(latRaw) : null;
   const lng = lngRaw !== undefined && lngRaw !== null && lngRaw !== '' ? parseFloat(lngRaw) : null;
   let memberCount = 0;
   try {
-    const r = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
+    const r = await pool.query(`SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved'`);
     memberCount = parseInt(r.rows[0].c, 10);
   } catch {
     /* db may not be ready yet */
@@ -1554,6 +1562,8 @@ app.get('/api/info', async (_req, res) => {
     hub_description: description,
     lat: lat,
     lng: lng,
+    hub_focus: hubFocus,
+    join_approval_mode: joinApprovalMode,
     hub_visibility: process.env.HUB_VISIBILITY || 'local',
     tunnel_url: process.env.TUNNEL_URL || '',
     lan_ip: getLanIp(),
@@ -1577,7 +1587,7 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
   if (!req.user.is_admin)
     return res.status(403).json({ error: 'Admin access required' });
   const {
-    name, location, description, lat, lng, enabled_apps,
+    name, location, description, lat, lng, hub_focus, join_approval_mode, enabled_apps,
     hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
     hub_icon_gradient_from, hub_icon_gradient_to,
     hub_icon_solid_color, hub_icon_image_file_name,
@@ -1590,6 +1600,10 @@ app.patch('/api/hub-info', authenticate, async (req, res) => {
     updates.push(['hub_description', String(description).trim()]);
   if (lat !== undefined) updates.push(['hub_lat', lat === null ? null : String(lat)]);
   if (lng !== undefined) updates.push(['hub_lng', lng === null ? null : String(lng)]);
+  if (hub_focus !== undefined)
+    updates.push(['hub_focus', hub_focus === null ? null : String(hub_focus).trim()]);
+  if (join_approval_mode !== undefined)
+    updates.push(['join_approval_mode', join_approval_mode === 'member_vote' ? 'member_vote' : 'admin']);
   if (enabled_apps !== undefined) {
     // null = clear (all apps enabled); array = store as JSON
     updates.push([
@@ -1628,10 +1642,10 @@ app.get('/api/status', async (_req, res) => {
   let userCount = 0;
   let onlineNow = 0;
   try {
-    const r = await pool.query('SELECT COUNT(*) AS c FROM hub_users');
+    const r = await pool.query(`SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved'`);
     userCount = parseInt(r.rows[0].c, 10);
     const o = await pool.query(
-      `SELECT COUNT(*) AS c FROM hub_users WHERE last_seen_at > NOW() - INTERVAL '5 minutes'`,
+      `SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved' AND last_seen_at > NOW() - INTERVAL '5 minutes'`,
     );
     onlineNow = parseInt(o.rows[0].c, 10);
   } catch {
@@ -1650,7 +1664,7 @@ app.get('/api/status', async (_req, res) => {
 // ── Auth routes ───────────────────────────────────────────
 
 app.post('/api/auth/register', authLimiter, async (req, res) => {
-  const { username, password, email } = req.body || {};
+  const { username, password, email, displayName, tags } = req.body || {};
   if (!username || !password) {
     return res
       .status(400)
@@ -1678,10 +1692,18 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     // them yet); everyone after that needs the admin to approve their account.
     const status = isFirst ? 'approved' : 'pending';
 
+    // Collected on the signup form (Step 1) — stored at creation so a
+    // member_vote poll (created below, before onboarding finishes) has
+    // something better to show voters than a bare username.
+    const cleanDisplayName = typeof displayName === 'string' ? displayName.trim().slice(0, 50) : '';
+    const cleanTags = Array.isArray(tags)
+      ? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim().slice(0, 40)).slice(0, 10)
+      : [];
+
     const result = await pool.query(
-      `INSERT INTO hub_users (username, email, password_hash, is_admin, role, status)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, username, email, is_admin, role, avatar_url, status`,
+      `INSERT INTO hub_users (username, email, password_hash, is_admin, role, status, display_name, tags)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, username, email, is_admin, role, avatar_url, status, display_name, tags`,
       [
         username.trim().toLowerCase(),
         email || '',
@@ -1689,6 +1711,8 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
         isFirst,
         isFirst ? 'admin' : 'member',
         status,
+        cleanDisplayName || null,
+        cleanTags,
       ],
     );
 
@@ -1700,13 +1724,24 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     );
 
     if (status === 'pending') {
-      // Let every admin know a new account is waiting on them — fire-and-forget,
-      // never blocks the registration response.
+      // Fire-and-forget both branches — never block the registration response.
       pool
-        .query(`SELECT id FROM hub_users WHERE is_admin = true`)
-        .then(({ rows: admins }) => {
-          for (const admin of admins) {
-            notifyUser(admin.id, 'join_request', user.id, user.id).catch(() => {});
+        .query(`SELECT value FROM hub_config WHERE key = 'join_approval_mode'`)
+        .then(({ rows }) => {
+          if (rows[0]?.value === 'member_vote') {
+            // Collective decision: open a member-voted poll instead of routing
+            // this to admins alone. See createMembershipVotePoll/checkPollThreshold.
+            createMembershipVotePoll(user.id, user.username, user.display_name, user.tags);
+          } else {
+            // Default: let every admin know a new account is waiting on them.
+            pool
+              .query(`SELECT id FROM hub_users WHERE is_admin = true`)
+              .then(({ rows: admins }) => {
+                for (const admin of admins) {
+                  notifyUser(admin.id, 'join_request', user.id, user.id).catch(() => {});
+                }
+              })
+              .catch(() => {});
           }
         })
         .catch(() => {});
@@ -2152,7 +2187,7 @@ app.get('/api/members', authenticate, async (_req, res) => {
       `SELECT id AS user_id, username, display_name, location, bio, tags,
               is_admin, created_at, avatar_url,
               profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
-       FROM hub_users ORDER BY created_at`,
+       FROM hub_users WHERE status = 'approved' ORDER BY created_at`,
     );
     res.json({ members: result.rows });
   } catch (err) {
@@ -2161,14 +2196,21 @@ app.get('/api/members', authenticate, async (_req, res) => {
   }
 });
 
-// Get a single member's public profile
+// Get a single member's public profile. Mods/admins can look up any account
+// (pending or rejected included) for moderation purposes; everyone else only
+// resolves approved members, matching /api/members and /api/search.
 app.get('/api/members/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id AS user_id, username, display_name, location, bio, tags,
-              avatar_url, is_admin, created_at,
-              profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
-       FROM hub_users WHERE id = $1`,
+      isMod(req.user)
+        ? `SELECT id AS user_id, username, display_name, location, bio, tags,
+                  avatar_url, is_admin, created_at, status,
+                  profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
+           FROM hub_users WHERE id = $1`
+        : `SELECT id AS user_id, username, display_name, location, bio, tags,
+                  avatar_url, is_admin, created_at, status,
+                  profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
+           FROM hub_users WHERE id = $1 AND status = 'approved'`,
       [req.params.id],
     );
     if (!result.rows[0])
@@ -3305,7 +3347,7 @@ async function attachPollData(rows, userId) {
   const pollIds = pollRows.map((r) => r.id);
   const [{ rows: allVotes }, { rows: members }] = await Promise.all([
     pool.query(`SELECT post_id, option_index, voter_id FROM hub_post_poll_votes WHERE post_id = ANY($1)`, [pollIds]),
-    pool.query(`SELECT COUNT(*) AS c FROM hub_users`),
+    pool.query(`SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved'`),
   ]);
   const memberCount = parseInt(members[0].c, 10);
 
@@ -3476,13 +3518,16 @@ app.get('/api/search', authenticate, async (req, res) => {
                strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', ''))
              ) AS text_rank
       FROM hub_users
-      WHERE (
-              setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
-              setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
-              setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
-              setweight(to_tsvector('english', coalesce(location,'')), 'D')
-            ) @@ websearch_to_tsquery('english', $1)
-         OR strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', '')) > $3
+      WHERE status = 'approved'
+        AND (
+              (
+                setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
+                setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
+                setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
+                setweight(to_tsvector('english', coalesce(location,'')), 'D')
+              ) @@ websearch_to_tsquery('english', $1)
+              OR strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', '')) > $3
+            )
       LIMIT 200`;
 
     const spacesSql = `
@@ -4559,9 +4604,70 @@ app.get('/api/mod-log', authenticate, async (req, res) => {
   }
 });
 
+// Member-visible subset of the mod log: vote (poll) actions only. Unlike
+// /api/mod-log, this has no isMod gate -- the whole point is that any member
+// can see what was voted on and decided, without exposing bans/removals/role
+// changes to the general membership.
+const DECISION_ACTION_TYPES = ['create_poll', 'close_poll', 'edit_poll', 'reopen_poll'];
+app.get('/api/decisions', authenticate, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit ?? '50', 10), 100);
+  const offset = parseInt(req.query.offset ?? '0', 10);
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.id, l.action_type, l.target_type, l.target_id, l.target_name,
+              l.reason, l.meta, l.created_at,
+              u.id AS actor_id, u.username AS actor_username, u.avatar_url AS actor_avatar_url
+       FROM hub_mod_log l
+       LEFT JOIN hub_users u ON l.actor_id = u.id
+       WHERE l.action_type = ANY($1)
+       ORDER BY l.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [DECISION_ACTION_TYPES, limit, offset],
+    );
+    const { rows: total } = await pool.query(
+      'SELECT COUNT(*) AS c FROM hub_mod_log WHERE action_type = ANY($1)',
+      [DECISION_ACTION_TYPES],
+    );
+    res.json({ entries: rows, total: parseInt(total[0].c, 10) });
+  } catch (err) {
+    console.error('Decisions log error:', err);
+    res.status(500).json({ error: 'Failed to load decisions' });
+  }
+});
+
 // ── Poll actions on posts (category='POLL') ───────────────────────
 // Polls are hub_posts rows (title = question) plus a 1:1 hub_post_polls
 // extension table and hub_post_poll_votes — see the migration above.
+
+// Helper: create the "approve this new member?" poll for hubs with
+// join_approval_mode = 'member_vote'. author_id is left NULL (system-authored,
+// same pattern as null-actor mod-log entries) since no single person decided
+// to open this vote -- registering did. Fire-and-forget safe; a failure here
+// just means the pending account falls back to needing manual admin approval.
+async function createMembershipVotePoll(userId, username, displayName, tags) {
+  try {
+    const shownName = displayName && displayName !== username ? `${displayName} (@${username})` : `@${username}`;
+    const tagsLine = Array.isArray(tags) && tags.length > 0
+      ? `Says they're interested in: ${tags.join(', ')}.`
+      : "Didn't list any interests yet.";
+    const body = `${shownName} just signed up and wants to join. ${tagsLine} If you know who this is, say so in the replies — that's usually enough for people to decide.`;
+    const { rows: postRows } = await pool.query(
+      `INSERT INTO hub_posts (category, title, body, author_id, visibility)
+       VALUES ('POLL', $1, $2, NULL, 'hub')
+       RETURNING id, title`,
+      [`Approve ${shownName} to join?`, body],
+    );
+    const post = postRows[0];
+    await pool.query(
+      `INSERT INTO hub_post_polls (post_id, options, quorum_pct, pass_pct, pending_user_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [post.id, JSON.stringify(['Approve', 'Reject']), 10, 50, userId],
+    );
+    logMod(null, 'create_poll', 'poll', post.id, post.title, 'Opened automatically: join_approval_mode is member_vote', { pending_user_id: userId });
+  } catch (err) {
+    console.error('createMembershipVotePoll error:', err);
+  }
+}
 
 // Helper: compute outcome of a closed poll (null = no quorum, true = passed, false = failed)
 function computePollOutcome(
@@ -4585,7 +4691,7 @@ function computePollOutcome(
 async function checkPollThreshold(postId) {
   try {
     const { rows: polls } = await pool.query(
-      `SELECT p.id, p.title AS question, pp.options, pp.quorum_pct, pp.pass_pct, pp.request_id, pp.closed
+      `SELECT p.id, p.title AS question, pp.options, pp.quorum_pct, pp.pass_pct, pp.request_id, pp.pending_user_id, pp.closed
        FROM hub_posts p JOIN hub_post_polls pp ON pp.post_id = p.id WHERE p.id = $1`,
       [postId],
     );
@@ -4597,7 +4703,7 @@ async function checkPollThreshold(postId) {
       [postId],
     );
     const { rows: members } = await pool.query(
-      `SELECT COUNT(*) AS c FROM hub_users`,
+      `SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved'`,
     );
     const memberCount = parseInt(members[0].c, 10);
     const totalVotes = votes.length;
@@ -4649,6 +4755,30 @@ async function checkPollThreshold(postId) {
         'Auto-approved: linked poll passed',
         { poll_id: postId },
       );
+    }
+
+    // Advance a linked membership vote, either way -- unlike requests, a failed
+    // membership poll has a real, final outcome (rejected), not just "left alone".
+    if (poll.pending_user_id) {
+      const nextStatus = outcome === true ? 'approved' : 'rejected';
+      const { rows: updated } = await pool.query(
+        `UPDATE hub_users SET status = $1 WHERE id = $2 AND status = 'pending' RETURNING id, username`,
+        [nextStatus, poll.pending_user_id],
+      );
+      if (updated[0]) {
+        logMod(
+          null,
+          nextStatus === 'approved' ? 'approve_member' : 'reject_member',
+          'user',
+          updated[0].id,
+          updated[0].username,
+          nextStatus === 'approved' ? 'Auto-approved: member vote passed' : 'Auto-rejected: member vote did not pass',
+          { poll_id: postId },
+        );
+        if (nextStatus === 'approved') {
+          notifyUser(updated[0].id, 'account_approved', null, null).catch(() => {});
+        }
+      }
     }
   } catch (err) {
     console.error('checkPollThreshold error:', err);
@@ -4714,7 +4844,7 @@ app.patch('/api/posts/:id/close', authenticate, async (req, res) => {
       [req.params.id],
     );
     const { rows: members } = await pool.query(
-      `SELECT COUNT(*) AS c FROM hub_users`,
+      `SELECT COUNT(*) AS c FROM hub_users WHERE status = 'approved'`,
     );
     const memberCount = parseInt(members[0].c, 10);
     const totalVotes = votes.length;
@@ -5245,7 +5375,7 @@ app.get('/api/public/profile/:username', async (req, res) => {
               banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name,
               website, role
        FROM hub_users
-       WHERE username = $1 AND profile_visibility = 'public'`,
+       WHERE username = $1 AND profile_visibility = 'public' AND status = 'approved'`,
       [req.params.username],
     );
     if (!rows[0])
@@ -8761,7 +8891,7 @@ async function buildHubContext(query = '') {
       pool.query(
         `SELECT key, value FROM hub_config WHERE key IN ('hub_name','hub_location','hub_description')`,
       ),
-      pool.query(`SELECT COUNT(*) AS cnt FROM hub_users`),
+      pool.query(`SELECT COUNT(*) AS cnt FROM hub_users WHERE status = 'approved'`),
     ]);
     const cfg = Object.fromEntries(cfgResult.rows.map((r) => [r.key, r.value]));
     const name = cfg.hub_name || process.env.HUB_NAME || 'this hub';
@@ -9094,7 +9224,7 @@ async function executeReadTool(toolName, args) {
       const { rows } = await pool.query(
         `SELECT u.username, u.is_admin, u.created_at,
                 (SELECT COUNT(*) FROM hub_posts WHERE author_id = u.id)::int AS post_count
-         FROM hub_users u WHERE username ILIKE $1 LIMIT 1`,
+         FROM hub_users u WHERE username ILIKE $1 AND status = 'approved' LIMIT 1`,
         [args.username],
       );
       if (!rows[0]) return `No member found with username "${args.username}".`;

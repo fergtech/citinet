@@ -135,6 +135,8 @@ class HubService {
       location: probeInfo?.location || '',
       lat: probeInfo?.lat,
       lng: probeInfo?.lng,
+      hubFocus: probeInfo?.hub_focus,
+      joinApprovalMode: probeInfo?.join_approval_mode,
       description: probeInfo?.description,
       memberCount: probeStatus?.user_count,
       connectionStatus: probeInfo ? 'connected' : 'disconnected',
@@ -198,6 +200,8 @@ class HubService {
         username: credentials.username,
         password: credentials.password,
         email: credentials.email || '',
+        displayName: credentials.displayName || '',
+        tags: credentials.tags || [],
       }),
     });
 
@@ -1905,7 +1909,7 @@ class HubService {
    */
   async updateHubInfo(
     slug: string,
-    fields: Partial<HubIconFields> & { name?: string; location?: string; lat?: number; lng?: number; description?: string; enabledApps?: string[] | null },
+    fields: Partial<HubIconFields> & { name?: string; location?: string; lat?: number; lng?: number; description?: string; enabledApps?: string[] | null; joinApprovalMode?: 'admin' | 'member_vote' },
   ): Promise<Hub> {
     const { headers, tunnelUrl } = this.getAuthHeaders(slug);
     const connections = this.getAllHubConnections();
@@ -1921,6 +1925,7 @@ class HubService {
       if (fields.lng          !== undefined) body.lng          = fields.lng;
       if (fields.description  !== undefined) body.description  = fields.description;
       if (fields.enabledApps  !== undefined) body.enabled_apps = fields.enabledApps;
+      if (fields.joinApprovalMode !== undefined) body.join_approval_mode = fields.joinApprovalMode;
       if (fields.hub_icon_mode              !== undefined) body.hub_icon_mode              = fields.hub_icon_mode;
       if (fields.hub_icon_symbol            !== undefined) body.hub_icon_symbol            = fields.hub_icon_symbol;
       if (fields.hub_icon_bg_mode           !== undefined) body.hub_icon_bg_mode           = fields.hub_icon_bg_mode;
@@ -1949,6 +1954,7 @@ class HubService {
     if (fields.name        !== undefined) connection.hub.name        = fields.name;
     if (fields.location    !== undefined) connection.hub.location    = fields.location;
     if (fields.lat         !== undefined) connection.hub.lat         = fields.lat;
+    if (fields.joinApprovalMode !== undefined) connection.hub.joinApprovalMode = fields.joinApprovalMode;
     if (fields.lng         !== undefined) connection.hub.lng         = fields.lng;
     if (fields.description !== undefined) connection.hub.description = fields.description;
     if (fields.enabledApps !== undefined) connection.hub.enabledApps = fields.enabledApps;

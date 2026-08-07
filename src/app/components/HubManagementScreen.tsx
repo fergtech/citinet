@@ -30,6 +30,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [pendingUsers, setPendingUsers] = useState<Array<{ user_id: string; username: string; email: string | null; created_at: string }>>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const [joinModeSaving, setJoinModeSaving] = useState(false);
 
   // Name editing
   const [editingName, setEditingName] = useState(false);
@@ -161,6 +162,16 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
       setAppSaveError(err instanceof Error ? err.message : 'Could not connect — check URL and key');
     }
     setAppSaving(false);
+  };
+
+  const saveJoinApprovalMode = async (mode: 'admin' | 'member_vote') => {
+    if (!currentHub?.slug || joinModeSaving) return;
+    setJoinModeSaving(true);
+    try {
+      await hubService.updateHubInfo(currentHub.slug, { joinApprovalMode: mode });
+      await refreshStatus();
+    } catch {}
+    setJoinModeSaving(false);
   };
 
   const saveEnabledApps = async () => {
@@ -1422,6 +1433,42 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 Maximum of 5 featured items reached. Remove one to add another.
               </p>
             )}
+          </div>
+        )}
+
+        {/* ─── Join Approval Mode (admin only) ─── */}
+        {activeTab === 'members' && currentUser?.isAdmin && (
+          <div className="cn-glass rounded-2xl p-4 mb-4">
+            <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">How new members get approved</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+              {currentHub?.joinApprovalMode === 'member_vote'
+                ? 'New join requests open a vote in Decisions. Members decide, using this hub\'s quorum threshold.'
+                : 'You (and other admins) approve or decline each new join request.'}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => saveJoinApprovalMode('admin')}
+                disabled={joinModeSaving}
+                className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
+                  (currentHub?.joinApprovalMode ?? 'admin') === 'admin'
+                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400'
+                }`}
+              >
+                Admin approval
+              </button>
+              <button
+                onClick={() => saveJoinApprovalMode('member_vote')}
+                disabled={joinModeSaving}
+                className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
+                  currentHub?.joinApprovalMode === 'member_vote'
+                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400'
+                }`}
+              >
+                Member vote
+              </button>
+            </div>
           </div>
         )}
 

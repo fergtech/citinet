@@ -20,6 +20,7 @@ import { FeatureRequestModal } from './FeatureRequestModal';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache } from '../utils/subdomain';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
+import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
 
 // Screens pinned to the desktop sidebar/dock out of the box — users can repin
@@ -44,13 +45,15 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return 'sidebar';
     return localStorage.getItem('citinet-desktop-nav-layout') === 'dock' ? 'dock' : 'sidebar';
   });
+  const hubCategory = HUB_CATEGORIES.find(cat => cat.hubFocus === currentHub?.hubFocus);
+  const defaultPinnedNav = hubCategory?.pinnedNav ?? DEFAULT_PINNED_NAV;
   const [pinnedNavScreens, setPinnedNavScreens] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_PINNED_NAV;
+    if (typeof window === 'undefined') return defaultPinnedNav;
     try {
       const parsed = JSON.parse(localStorage.getItem('citinet-pinned-nav') ?? 'null');
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PINNED_NAV;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultPinnedNav;
     } catch {
-      return DEFAULT_PINNED_NAV;
+      return defaultPinnedNav;
     }
   });
   const [navEditMode, setNavEditMode] = useState(false);
@@ -114,7 +117,17 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
 
   const enabledSet = currentHub?.enabledApps ?? null;
   const AI_TILE = { Icon: Sparkles, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600', notifyFeature: undefined as NotificationFeature | undefined };
-  const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
+  const orderedTiles = hubCategory?.pinnedNav
+    ? [...APP_TILES].sort((a, b) => {
+        const ai = hubCategory.pinnedNav!.indexOf(a.screen);
+        const bi = hubCategory.pinnedNav!.indexOf(b.screen);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      })
+    : APP_TILES;
+  const baseTiles = enabledSet ? orderedTiles.filter(t => enabledSet.includes(t.screen)) : orderedTiles;
   const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
 
   const dockItems = DOCK_PRIORITY_SCREENS
