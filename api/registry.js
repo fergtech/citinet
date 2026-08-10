@@ -55,7 +55,7 @@ async function writeRegistryFile(content, sha) {
 async function verifyHub(tunnelUrl) {
   try {
     const res = await fetch(`${tunnelUrl}/api/info`, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) {
