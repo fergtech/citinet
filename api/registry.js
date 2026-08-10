@@ -58,9 +58,13 @@ async function verifyHub(tunnelUrl) {
       signal: AbortSignal.timeout(8000),
       headers: { Accept: 'application/json' },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[verifyHub] ${tunnelUrl} responded ${res.status}`);
+      return null;
+    }
     return await res.json();
-  } catch {
+  } catch (err) {
+    console.error(`[verifyHub] ${tunnelUrl} failed: ${err.name}: ${err.message}`);
     return null;
   }
 }
