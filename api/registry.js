@@ -64,7 +64,8 @@ async function verifyHub(tunnelUrl) {
     }
     return await res.json();
   } catch (err) {
-    console.error(`[verifyHub] ${tunnelUrl} failed: ${err.name}: ${err.message}`);
+    const cause = err.cause ? ` cause: ${err.cause.code || err.cause.message || err.cause}` : '';
+    console.error(`[verifyHub] ${tunnelUrl} failed: ${err.name}: ${err.message}${cause}`);
     return null;
   }
 }
