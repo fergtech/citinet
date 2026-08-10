@@ -110,9 +110,11 @@ export default async function handler(req, res) {
         h => h.slug === slug || (id && h.id === id),
       );
 
-      // Attempt to verify the hub is reachable — but treat it as advisory.
-      // A hub may be behind Tailscale or temporarily unreachable from Vercel;
-      // we still register it and let the online flag reflect actual reachability.
+      // Attempt to verify the hub is reachable, purely to backfill fields
+      // (location/description/member_count) the caller didn't send. Not used
+      // to gate the online flag: Vercel's serverless network can't reliably
+      // reach residential/tailnet hubs (connect timeouts even when the hub is
+      // demonstrably up), so a failed probe here is not evidence of an outage.
       let info = null;
       try { info = await verifyHub(tunnel_url); } catch { /* soft fail */ }
 
@@ -134,7 +136,10 @@ export default async function handler(req, res) {
         lng:           lng ?? info?.lng ?? previousLng ?? null,
         tunnel_url,
         member_count:  info?.member_count ?? previousCount ?? member_count ?? 0,
-        online:        info !== null,
+        // A successful registration call is itself proof of life — the hub
+        // (or its admin's browser) reached out to us. See comment above on
+        // why we don't gate this on verifyHub's inbound probe succeeding.
+        online:        true,
         registered_at: existingIndex >= 0 ? content.hubs[existingIndex].registered_at : now,
         last_seen:     now,
         hub_icon_mode,
