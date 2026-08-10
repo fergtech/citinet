@@ -55,9 +55,17 @@ async function heartbeat() {
   }
 }
 
-/** Call once at server startup. Registers immediately, then every 6 hours. */
+// Give the DB pool a moment to settle before the very first call -- under a
+// full-host reboot (every container starting at once) an immediate call can
+// race a not-yet-ready pool. /api/info now retries internally too, but this
+// costs nothing and adds a second layer of margin.
+const STARTUP_DELAY_MS = 10 * 1000;
+
+/** Call once at server startup. Registers after a short delay, then every 6 hours. */
 function startRegistryHeartbeat() {
-  heartbeat().catch(err => console.error('[registryHeartbeat] startup call failed:', err.message));
+  setTimeout(() => {
+    heartbeat().catch(err => console.error('[registryHeartbeat] startup call failed:', err.message));
+  }, STARTUP_DELAY_MS);
   setInterval(() => {
     heartbeat().catch(err => console.error('[registryHeartbeat] periodic call failed:', err.message));
   }, HEARTBEAT_INTERVAL_MS);

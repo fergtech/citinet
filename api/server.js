@@ -1511,13 +1511,22 @@ app.get('/api/health/detailed', async (_req, res) => {
 
 app.get('/api/info', async (_req, res) => {
   // Read overrides from hub_config DB (set by admin via PATCH /api/hub-info).
-  // Falls back to env vars baked in at startup.
+  // Falls back to env vars baked in at startup. Retries briefly first --
+  // under heavy startup load (e.g. every container on the host restarting
+  // at once) the pg pool's first connection can transiently fail even though
+  // Postgres itself is already healthy; without a retry here that one bad
+  // request silently ships stale env-var placeholders anywhere its result
+  // gets used, notably the registry heartbeat's one-shot startup call.
   let cfg = {};
-  try {
-    const r = await pool.query('SELECT key, value FROM hub_config');
-    for (const row of r.rows) cfg[row.key] = row.value;
-  } catch {
-    /* db may not be ready yet — use env fallback */
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await pool.query('SELECT key, value FROM hub_config');
+      for (const row of r.rows) cfg[row.key] = row.value;
+      break;
+    } catch {
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 300));
+      /* db may not be ready yet — use env fallback after final attempt */
+    }
   }
 
   const name = cfg.hub_name || process.env.HUB_NAME || '';
