@@ -242,12 +242,14 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
       <div className="max-w-5xl mx-auto px-4 sm:px-8 py-7">
         {/* Top bar */}
         <div className="flex items-center gap-2 mb-5 flex-wrap">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back
-          </button>
+          {!hubBaseUrl && (
+            <button
+              onClick={onBack}
+              className="inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Back
+            </button>
+          )}
           <div className="flex-1" />
           {isOwner && (
             <>
@@ -265,13 +267,15 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               </button>
             </>
           )}
-          <button
-            onClick={handleToggleSave}
-            title={isSaved ? 'Remove from saved' : 'Save vendor'}
-            className="w-9 h-9 rounded-full flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-          >
-            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-purple-500 text-purple-500 dark:fill-purple-300 dark:text-purple-300' : ''}`} />
-          </button>
+          {!hubBaseUrl && (
+            <button
+              onClick={handleToggleSave}
+              title={isSaved ? 'Remove from saved' : 'Save vendor'}
+              className="w-9 h-9 rounded-full flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-purple-500 text-purple-500 dark:fill-purple-300 dark:text-purple-300' : ''}`} />
+            </button>
+          )}
           <button
             onClick={handleShare}
             title={copied ? 'Copied!' : 'Share'}

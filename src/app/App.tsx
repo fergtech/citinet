@@ -314,6 +314,7 @@ function HubVendorProfileRoute() {
   const { vendorId } = useParams<{ vendorId: string }>();
   const { currentHub } = useHub();
   const slug = currentHub?.slug ?? '';
+  const onBack = useSmartBack();
 
   const [data, setData] = useState<{ vendor: HubVendor; listings: HubListing[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -335,7 +336,7 @@ function HubVendorProfileRoute() {
   }
 
   if (!data) {
-    return <PlaceholderScreen title="Vendor Not Found" onBack={useSmartBack()} />;
+    return <PlaceholderScreen title="Vendor Not Found" onBack={onBack} />;
   }
 
   return (
@@ -343,7 +344,7 @@ function HubVendorProfileRoute() {
       vendor={data.vendor}
       listings={data.listings}
       hubSlug={slug}
-      onBack={useSmartBack()}
+      onBack={onBack}
       onItemClick={(listingId) => {
         sessionStorage.setItem('citinet-deeplink-listing', listingId);
         navigate(hubPath('/marketplace'));

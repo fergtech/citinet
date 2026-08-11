@@ -2,24 +2,10 @@ import { X, Copy, Check, UserPlus, Mail, QrCode } from 'lucide-react';
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useHub } from '../context/HubContext';
-import { JoinQrCard } from './JoinQrCard';
 
 interface InviteNeighborsModalProps {
   isOpen: boolean;
   onClose: () => void;
-}
-
-/** Whether a tunnel URL only resolves on the hub's own machine/network — if so it's not
- * something a neighbor's browser can actually load, so we need the LAN-IP flow instead
- * of just sharing it verbatim. */
-function isLocalTunnelUrl(url: string): boolean {
-  if (!url || url === 'https://' || url === 'http://') return true;
-  try {
-    const host = new URL(url).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.');
-  } catch {
-    return true;
-  }
 }
 
 export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalProps) {
@@ -28,7 +14,7 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
   const { currentHub } = useHub();
 
   const tunnelUrl = currentHub?.tunnelUrl || '';
-  const isLocal = isLocalTunnelUrl(tunnelUrl);
+  const hasUrl = !!tunnelUrl && tunnelUrl !== 'https://' && tunnelUrl !== 'http://';
   const memberCount = currentHub?.meta?.activeMembers ?? currentHub?.memberCount ?? 0;
 
   const handleCopy = async () => {
@@ -64,11 +50,8 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
           Share this link with people nearby. Each new neighbor who joins grows {currentHub?.name || 'the hub'}.
         </p>
 
-        {isLocal ? (
-          // Local/unconfigured hub — a raw localhost or LAN API URL isn't something another
-          // device can actually load, so hand off to the same LAN-IP-aware flow Hub
-          // Management uses, rather than sharing a link that won't work for anyone else.
-          <JoinQrCard hubSlug={currentHub?.slug ?? ''} tunnelUrl={tunnelUrl} embedded />
+        {!hasUrl ? (
+          <p className="text-xs cn-text-4 text-center py-4">Set up your hub's public address to generate an invite link.</p>
         ) : (
           <>
             <div className="flex gap-2">

@@ -4,7 +4,11 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import Underline from '@tiptap/extension-underline';
+import Image from '@tiptap/extension-image';
+import Youtube from '@tiptap/extension-youtube';
+import Link from '@tiptap/extension-link';
+import { Video } from './editor/VideoExtension';
+import { LinkPreview } from './editor/LinkPreviewExtension';
 import { Loader2, AlertCircle, NotebookPen, Copy, Check, LogIn } from 'lucide-react';
 import { hubService } from '../services/hubService';
 
@@ -24,10 +28,14 @@ function NoteViewer({ note }: { note: PublicNote }) {
   const editor = useEditor({
     editable: false,
     extensions: [
-      StarterKit,
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Underline,
+      Image.configure({ inline: false, allowBase64: false }),
+      Youtube.configure({ width: 640, height: 360, nocookie: true }),
+      Link.configure({ openOnClick: true }),
+      Video,
+      LinkPreview,
     ],
     content: (note.web_body_rich as object) ?? note.web_body_plain ?? '',
   });

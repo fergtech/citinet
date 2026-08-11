@@ -1062,7 +1062,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             </div>
 
             {/* ── Join QR Code ── */}
-            <JoinQrCard hubSlug={currentHub?.slug ?? ''} tunnelUrl={currentHub?.tunnelUrl ?? ''} />
+            <JoinQrCard tunnelUrl={currentHub?.tunnelUrl ?? ''} />
           </div>
         )}
 
