@@ -159,7 +159,7 @@ export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpe
               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-2 cn-text-3">{cat.label}</span>
               {initiative.viewerIsMember && (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">You're in</span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-2 cn-text-2">You're in</span>
               )}
             </div>
           </div>

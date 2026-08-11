@@ -511,7 +511,7 @@ function OverviewPane({ initiative, hubSlug, onSeeUpdates }: { initiative: Initi
         >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Latest update</h3>
-            <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">See all →</span>
+            <span className="text-xs cn-text-3 font-medium">See all →</span>
           </div>
           <div className="flex items-start gap-3">
             <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(initiative.updates[0].author_name)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
@@ -833,7 +833,7 @@ function TaskTrackerView({
         <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors">
           <ChevronLeft className="w-3.5 h-3.5" />All tasks
         </button>
-        <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 mt-3">{initiative.title}</p>
+        <p className="text-xs font-semibold cn-text-3 mt-3">{initiative.title}</p>
         <h2 className="text-lg font-bold cn-text-1">{task.title}</h2>
       </div>
 
@@ -958,7 +958,7 @@ function TaskTrackerView({
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold cn-text-1">{note.author_name} <span className="font-normal cn-text-4">{timeAgo(note.created_at)}</span></p>
                     <p className="text-sm cn-text-2 mt-0.5">{note.content}</p>
-                    <button onClick={() => setOpenReplyFor(openReplyFor === note.id ? null : note.id)} className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline mt-1">
+                    <button onClick={() => setOpenReplyFor(openReplyFor === note.id ? null : note.id)} className="text-[11px] font-semibold cn-text-3 hover:cn-text-1 hover:underline mt-1">
                       Reply
                     </button>
                   </div>
@@ -1003,7 +1003,7 @@ function TaskTrackerView({
                       autoFocus
                       className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg cn-surface-2 text-xs cn-text-1 placeholder:cn-text-4 outline-none"
                     />
-                    <button onClick={() => postReply(note.id)} className="shrink-0 text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+                    <button onClick={() => postReply(note.id)} className="shrink-0 text-[11px] font-semibold cn-text-2 hover:cn-text-1 hover:underline">
                       Send
                     </button>
                   </div>
@@ -1196,7 +1196,7 @@ function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiativ
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-[11px] font-semibold cn-text-3 uppercase tracking-wider">Contributors ({initiative.members.length})</h3>
-          <button onClick={() => setShowInvite(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+          <button onClick={() => setShowInvite(true)} className="inline-flex items-center gap-1.5 text-xs font-semibold cn-text-3 hover:cn-text-1 hover:underline">
             <UserPlus className="w-3.5 h-3.5" /> Invite
           </button>
         </div>
@@ -1429,7 +1429,7 @@ function UpdatesPane({ initiative, hubSlug, canPost, currentUserId }: { initiati
                     placeholder="Reply…"
                     className="flex-1 text-xs bg-transparent border-b cn-border cn-text-1 placeholder:cn-text-4 focus:outline-none py-1"
                   />
-                  <button onClick={() => comment(update.id)} disabled={!commentDrafts[update.id]?.trim()} className="text-xs font-semibold text-purple-600 dark:text-purple-400 disabled:opacity-40 shrink-0">Reply</button>
+                  <button onClick={() => comment(update.id)} disabled={!commentDrafts[update.id]?.trim()} className="text-xs font-semibold cn-text-2 hover:cn-text-1 disabled:opacity-40 shrink-0">Reply</button>
                 </div>
               )}
             </motion.div>
@@ -1710,8 +1710,8 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
           <div className="flex flex-col gap-4 md:gap-5 min-w-0">
             {!current && (
               <div>
-                <button onClick={onBack} className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors">
-                  <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
+                <button onClick={onBack} className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors">
+                  <ChevronLeft className="w-3.5 h-3.5" /> Back
                 </button>
                 <div className="flex items-center gap-3">
                   <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm" style={{ background: 'var(--cn-grad-initiatives)' }}>

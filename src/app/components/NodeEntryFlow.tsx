@@ -293,7 +293,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             <button
               type="button"
               onClick={handleCopyPhrase}
-              className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+              className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
             >
               {phraseCopied ? <CheckIcon className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {phraseCopied ? 'Copied' : 'Copy to clipboard'}
@@ -504,7 +504,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
             <p className="text-center text-xs text-slate-500 dark:text-slate-400">
               New to {locationName}?{' '}
-              <button onClick={() => switchMode('signup')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">
+              <button onClick={() => switchMode('signup')} className="text-slate-700 dark:text-slate-200 font-semibold hover:underline">
                 Create account
               </button>
             </p>
@@ -609,7 +609,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
                       <div className={cardClass}>
                         <div className="flex items-center gap-2 mb-1">
-                          <Tag className="w-4 h-4 text-purple-500 dark:text-purple-400" />
+                          <Tag className="w-4 h-4 text-slate-400 dark:text-slate-500" />
                           <span className="text-sm font-semibold text-slate-800 dark:text-white">Community Interests</span>
                           <span className="text-xs text-slate-400 dark:text-slate-500">Optional</span>
                         </div>
@@ -635,7 +635,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
                       <p className="text-center text-xs text-slate-500 dark:text-slate-400 pt-1">
                         Already have an account?{' '}
-                        <button onClick={() => switchMode('login')} className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">
+                        <button onClick={() => switchMode('login')} className="text-slate-700 dark:text-slate-200 font-semibold hover:underline">
                           Sign in
                         </button>
                       </p>
@@ -646,7 +646,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                   {step === 2 && (
                     <div className="space-y-4">
                       <div className="flex flex-col items-center text-center gap-1 mb-5">
-                        <FileText className="w-8 h-8 text-purple-500 dark:text-purple-400 mb-1" />
+                        <FileText className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-1" />
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                           How This Network Operates
                         </h2>
@@ -659,7 +659,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                         {manifestoPrinciples.map((principle, i) => (
                           <div key={i} className={cardClass}>
                             <div className="flex items-start gap-3">
-                              <Shield className="w-4 h-4 text-purple-500 dark:text-purple-400 mt-0.5 shrink-0" />
+                              <Shield className="w-4 h-4 text-slate-400 dark:text-slate-500 mt-0.5 shrink-0" />
                               <div>
                                 <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-0.5">{principle.title}</h3>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{principle.description}</p>

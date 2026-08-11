@@ -73,7 +73,7 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
           <button
             onClick={onBack}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+            className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>

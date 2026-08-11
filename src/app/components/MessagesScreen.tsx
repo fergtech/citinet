@@ -246,7 +246,7 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
   if (!blobUrl) {
     return (
       <div className={`flex items-center justify-center bg-slate-100 dark:bg-zinc-700 rounded-lg min-w-[80px] min-h-[60px] ${className || ''}`}>
-        <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
       </div>
     );
   }
@@ -730,7 +730,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     return (
       <div className="h-full bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-3" />
+          <Loader2 className="w-8 h-8 animate-spin text-slate-400 dark:text-slate-500 mx-auto mb-3" />
           <p className="text-sm text-slate-600 dark:text-slate-400">Loading conversations…</p>
         </div>
       </div>
@@ -872,7 +872,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 {/* Member list */}
                 <div className="max-h-64 overflow-y-auto space-y-1">
                   {membersLoading ? (
-                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-purple-500" /></div>
+                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
                   ) : filteredMembers.length === 0 ? (
                     <p className="text-center text-sm text-slate-500 py-6">No neighbors found</p>
                   ) : (
@@ -946,7 +946,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
               <div className="p-2 overflow-y-auto">
                 {membersLoading ? (
-                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-purple-500" /></div>
+                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
                 ) : (
                   selectedConvo.members.map(participant => {
                     const isSelf = participant.user_id === myUserId;
@@ -979,7 +979,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{displayName}</span>
                             {isSelf && <span className="text-[10px] text-slate-400 shrink-0">(You)</span>}
                             {!isSelf && detail && detail.role !== 'member' && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0 uppercase">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-300 shrink-0 uppercase">
                                 {detail.role}
                               </span>
                             )}
@@ -1006,7 +1006,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           <div className="flex items-center gap-3 mb-4">
             <button
               onClick={onBack}
-              className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
+              className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
               aria-label="Back"
             >
               <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
@@ -1184,7 +1184,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 {selectedConvo.kind === 'group' ? (
                   <button
                     onClick={openGroupMembers}
-                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:underline transition-colors"
+                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:underline transition-colors"
                   >
                     {selectedConvo.members.length} members
                   </button>
@@ -1199,7 +1199,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
             {msgsLoading ? (
               <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+                <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" />
               </div>
             ) : messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -1296,7 +1296,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                     <FileIcon className="w-4 h-4 text-slate-400" />
                                     <span className="text-xs truncate max-w-[120px]">{att.file_name}</span>
                                     <button
-                                      className="ml-1 text-purple-600 dark:text-purple-400 hover:underline text-xs"
+                                      className="ml-1 text-slate-600 dark:text-slate-300 hover:underline text-xs"
                                       onClick={() => hubService.downloadFile(slug, att.file_name)}
                                       title={`Download ${att.file_name}`}
                                     >
@@ -1357,7 +1357,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           />
                         ) : (
                           <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 border border-purple-300">
-                            <FileIcon className="w-4 h-4 text-purple-400" />
+                            <FileIcon className="w-4 h-4 text-slate-400" />
                             <span className="text-xs truncate max-w-[120px]">{sf.file.name}</span>
                           </div>
                         )}
@@ -1366,7 +1366,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           onClick={() => removeStagedFile(i)}
                           title="Remove"
                         >
-                          <X className="w-3 h-3 text-purple-600" />
+                          <X className="w-3 h-3 text-slate-500" />
                         </button>
                       </div>
                     ))}
@@ -1374,7 +1374,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 )}
                 {/* Upload progress */}
                 {uploadProgress && (
-                  <div className="mb-1.5 text-xs text-purple-600 dark:text-purple-400">{uploadProgress}</div>
+                  <div className="mb-1.5 text-xs text-slate-600 dark:text-slate-400">{uploadProgress}</div>
                 )}
                 {/* Send error */}
                 {sendError && (

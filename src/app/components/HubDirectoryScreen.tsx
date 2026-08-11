@@ -169,7 +169,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
               </p>
               <button
                 onClick={() => setSearch('')}
-                className="mt-3 text-purple-600 dark:text-purple-400 text-sm font-semibold hover:underline"
+                className="mt-3 cn-text-3 hover:cn-text-1 text-sm font-semibold hover:underline"
               >
                 Clear search
               </button>

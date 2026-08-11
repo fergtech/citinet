@@ -681,7 +681,7 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
         <div className="flex items-center gap-2 px-4 py-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
           <button
             onClick={showArchive ? () => switchView(false) : onBack}
-            className="w-8 h-8 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-400 transition-colors"
+            className="md:hidden w-8 h-8 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center text-slate-600 dark:text-zinc-400 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>

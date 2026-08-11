@@ -12,7 +12,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
-import { getBackLabel } from '../utils/routeLabels';
 import { PostDetailModal } from './PostDetailModal';
 import { NoteDetailModal } from './NoteDetailModal';
 import type { HubMember, HubPost, HubNote } from '../types/hub';
@@ -86,7 +85,7 @@ function SkillTag({ children, onClick }: { children: React.ReactNode; onClick?: 
       onClick={onClick}
       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full cn-surface-2 border cn-border text-xs font-semibold cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
     >
-      <Sparkles className="w-3 h-3 text-purple-500 dark:text-purple-400 shrink-0" />{children}
+      <Sparkles className="w-3 h-3 cn-text-3 shrink-0" />{children}
     </button>
   );
 }
@@ -136,10 +135,9 @@ interface ProfileScreenProps {
 }
 
 export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps) {
-  const { currentHub, currentUser, updateUserProfile, previousPath } = useHub();
+  const { currentHub, currentUser, updateUserProfile } = useHub();
   const slug = currentHub?.slug ?? '';
   const hubName = currentHub?.name ?? 'Hub';
-  const backLabel = getBackLabel(previousPath, hubName);
 
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
@@ -263,7 +261,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
-      <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+      <Loader2 className="w-8 h-8 animate-spin cn-text-3" />
     </div>
   );
 
@@ -271,7 +269,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     <div className="min-h-screen flex flex-col items-center justify-center gap-3">
       <AlertCircle className="w-8 h-8 text-red-400" />
       <p className="text-sm cn-text-3">{error || 'Profile not found'}</p>
-      <button onClick={onBack} className="text-sm text-purple-600 hover:underline">Go back</button>
+      <button onClick={onBack} className="text-sm cn-text-3 hover:cn-text-1 hover:underline">Go back</button>
     </div>
   );
 
@@ -295,9 +293,9 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         <div className="flex items-center gap-2 mb-6">
           <button
             onClick={onBack}
-            className="inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="md:hidden inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> {backLabel}
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
         </div>
 
@@ -406,7 +404,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   {displayName || member.username}
                 </h1>
                 {member.is_admin && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-500/20 shrink-0">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">
                     <Shield className="w-3 h-3" /> Admin
                   </span>
                 )}
@@ -523,7 +521,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                     <p className="mt-2.5 text-[13.5px] leading-relaxed cn-text-2">
                       {bioClamped}
                       {bio.length > 280 && (
-                        <button onClick={() => setShowBioModal(true)} className="ml-1.5 font-semibold text-purple-600 dark:text-purple-400 hover:underline">
+                        <button onClick={() => setShowBioModal(true)} className="ml-1.5 font-semibold cn-text-3 hover:cn-text-1 hover:underline">
                           Read more
                         </button>
                       )}
@@ -612,7 +610,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                     icon={FileText}
                     label={isOwnProfile ? "You haven't posted yet." : `${displayName || member.username} hasn't posted yet.`}
                     action={isOwnProfile && (
-                      <button onClick={() => onNavigate('feed')} className="mt-2 text-sm text-purple-600 dark:text-purple-400 font-semibold hover:underline">
+                      <button onClick={() => onNavigate('feed')} className="mt-2 text-sm cn-text-3 hover:cn-text-1 font-semibold hover:underline">
                         Start a discussion
                       </button>
                     )}
@@ -666,7 +664,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                               className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all opacity-0 group-hover:opacity-100 ${
                                 forkedNoteId === note.id
                                   ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                                  : 'cn-surface-2 cn-text-3 cn-border hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-800'
+                                  : 'cn-surface-2 cn-text-3 cn-border hover:bg-black/5 dark:hover:bg-white/5 hover:cn-text-1'
                               }`}
                             >
                               {forkingNoteId === note.id ? (

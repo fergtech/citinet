@@ -154,7 +154,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
 
             <div className="flex items-start gap-3.5">
               <div className="w-14 text-center rounded-xl cn-surface-2 border cn-border py-2 shrink-0">
-                <div className="text-[10px] font-bold tracking-wider text-purple-400">{weekdayStr}</div>
+                <div className="text-[10px] font-bold tracking-wider cn-text-4">{weekdayStr}</div>
                 <div className="font-mono text-xl font-bold leading-tight cn-text-1">{dayOfMonth}</div>
               </div>
               <div className="flex-1 min-w-0">
@@ -236,7 +236,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
 
             <button
               onClick={() => { onClose(); onNavigate(`feed/${event.id}`); }}
-              className="w-full text-center text-xs font-medium text-purple-500 dark:text-purple-400 hover:text-purple-400 dark:hover:text-purple-300 transition-colors"
+              className="w-full text-center text-xs font-medium cn-text-3 hover:cn-text-1 transition-colors"
             >
               View full post &amp; comments →
             </button>
@@ -431,7 +431,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 }
               </div>
               <span className="text-sm cn-text-3 flex-1">Share something with your neighbors…</span>
-              <span className="w-8 h-8 rounded-xl flex items-center justify-center text-purple-300 group-hover:bg-purple-500/15 group-hover:text-purple-200 transition-colors shrink-0">
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center cn-text-4 group-hover:bg-purple-500/15 group-hover:text-purple-200 transition-colors shrink-0">
                 <Plus className="w-4 h-4" />
               </span>
             </button>
@@ -574,7 +574,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               <h2 className="text-base font-semibold cn-text-1 tracking-tight">Upcoming events</h2>
               <button
                 onClick={() => { sessionStorage.setItem('citinet-deeplink-feed-category', 'EVENT'); onNavigate('feed'); }}
-                className="text-xs font-semibold text-purple-300 hover:text-purple-200 transition-colors"
+                className="text-xs font-semibold cn-text-3 hover:cn-text-1 transition-colors"
               >
                 See all
               </button>
@@ -591,7 +591,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 <p className="text-sm cn-text-3">No upcoming events yet</p>
                 <button
                   onClick={() => onNavigate('feed')}
-                  className="mt-2 text-xs font-semibold text-purple-300 hover:underline"
+                  className="mt-2 text-xs font-semibold cn-text-3 hover:cn-text-1 hover:underline"
                 >
                   Post one in the Feed →
                 </button>
@@ -610,7 +610,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                       className="w-full text-left flex gap-3 items-center rounded-xl p-1.5 -mx-1.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group"
                     >
                       <div className="w-11 text-center rounded-lg cn-surface-2 border cn-border py-1.5 shrink-0">
-                        <div className="text-[9px] font-bold tracking-wider text-purple-400">{weekdayStr}</div>
+                        <div className="text-[9px] font-bold tracking-wider cn-text-4">{weekdayStr}</div>
                         <div className="font-mono text-lg font-bold leading-tight cn-text-1">{dayOfMonth}</div>
                       </div>
                       <div className="flex-1 min-w-0">

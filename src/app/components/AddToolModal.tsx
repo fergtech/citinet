@@ -585,7 +585,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                           <Badge key={c} variant="outline" className="text-xs">{c}</Badge>
                         ))}
                         {selectedTags.map((t) => (
-                          <Badge key={t} className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-0">
+                          <Badge key={t} className="text-xs bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 border-0">
                             {t.replace(/-/g, ' ')}
                           </Badge>
                         ))}

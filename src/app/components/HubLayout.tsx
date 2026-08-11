@@ -462,7 +462,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <div className="flex items-center gap-2">
                     <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
                     {tunnelInput.trim() && (
-                      <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                      <button onClick={handleForceUpdateUrl} className="text-[10px] cn-text-3 underline hover:no-underline shrink-0">Save anyway</button>
                     )}
                   </div>
                 )}
@@ -495,7 +495,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
-                      {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                      {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">Admin</span>}
                     </div>
                     <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{nodeName}</span>
                   </div>
@@ -507,7 +507,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                   >
-                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
                     <span className="text-sm text-slate-700 dark:text-slate-300">View Profile</span>
                   </button>
                 )}
@@ -515,7 +515,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowAccountMenu(false); navigate(hubPath('/account')); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
-                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <User className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
                   <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
                 </button>
                 <button
@@ -523,8 +523,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   {isDarkMode
-                    ? <Moon className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    : <Sun className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />}
+                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
+                    : <Sun className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />}
                   <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">Dark Mode</span>
                   <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -534,7 +534,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
                   <span className="text-sm text-slate-700 dark:text-slate-300">Help & Support</span>
                 </button>
               </div>
@@ -844,7 +844,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                         <div className="flex items-center gap-2">
                           <p className="text-[10px] text-red-500 dark:text-red-400 flex-1">{tunnelError}</p>
                           {tunnelInput.trim() && (
-                            <button onClick={handleForceUpdateUrl} className="text-[10px] text-purple-500 underline hover:no-underline shrink-0">Save anyway</button>
+                            <button onClick={handleForceUpdateUrl} className="text-[10px] cn-text-3 underline hover:no-underline shrink-0">Save anyway</button>
                           )}
                         </div>
                       )}
@@ -966,7 +966,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
-                        {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 shrink-0">Admin</span>}
+                        {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">Admin</span>}
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
                     </div>
@@ -986,7 +986,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
-                    <UserCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                     <span className="text-sm text-slate-800 dark:text-slate-200">View Profile</span>
                   </button>
                 )}
@@ -994,7 +994,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/account')); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <User className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                   <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
                 </button>
                 <button
@@ -1002,8 +1002,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
                   {isDarkMode
-                    ? <Moon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                    : <Sun className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    : <Sun className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
                   <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">Dark Mode</span>
                   <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -1013,7 +1013,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <HelpCircle className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                   <span className="text-sm text-slate-800 dark:text-slate-200">Help & Support</span>
                 </button>
               </div>
@@ -1024,7 +1024,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/hub-management')); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
-                    <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <Shield className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                     <span className="text-sm text-slate-800 dark:text-slate-200">Hub Admin</span>
                   </button>
                 )}
@@ -1032,7 +1032,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowMobileAccountMenu(false); openProjectInfo(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <CircleAlert className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <CircleAlert className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                   <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
                 </button>
               </div>
@@ -1214,7 +1214,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   {!showMobileAppsMenu && (
                     <button
                       onClick={() => setNavEditMode(v => !v)}
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 dark:hover:bg-purple-400/10 transition-colors shrink-0"
+                      className="px-2.5 py-1.5 rounded-lg text-xs font-semibold cn-text-3 hover:cn-text-1 hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
                     >
                       {navEditMode ? 'Done' : 'Edit'}
                     </button>
@@ -1302,7 +1302,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Everything's pinned to your navigation</p>
                     <button
                       onClick={() => setNavEditMode(true)}
-                      className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+                      className="text-xs font-semibold cn-text-3 hover:cn-text-1 hover:underline"
                     >
                       Tap Edit to rearrange or unpin apps
                     </button>

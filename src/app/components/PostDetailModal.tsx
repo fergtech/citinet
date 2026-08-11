@@ -587,7 +587,7 @@ export function PostDetailModal({
                                 currentUserAvatarUrl={currentUserAvatarUrl}
                                 size="sm"
                               />
-                              <span className="group-hover/author:text-purple-600 dark:group-hover/author:text-purple-400 transition-colors">
+                              <span className="group-hover/author:text-slate-900 dark:group-hover/author:text-white transition-colors">
                                 {post.author_username}
                               </span>
                             </button>

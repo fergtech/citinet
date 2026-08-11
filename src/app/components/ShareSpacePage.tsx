@@ -134,7 +134,7 @@ export function ShareSpacePage() {
       <main className="flex-1 flex flex-col items-center px-4 py-8 max-w-2xl mx-auto w-full">
         {loading ? (
           <div className="flex flex-col items-center gap-3 mt-20">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-zinc-400 animate-spin" />
             <p className="text-sm text-zinc-400">Loading space…</p>
           </div>
         ) : error ? (
@@ -230,7 +230,7 @@ export function ShareSpacePage() {
                       </div>
                       {post.body && (
                         <p className="text-sm text-zinc-400 leading-relaxed mb-3">
-                          {truncated}{isTruncated && <span className="text-purple-400 font-medium"> Sign in to read more</span>}
+                          {truncated}{isTruncated && <span className="text-zinc-300 font-medium"> Sign in to read more</span>}
                         </p>
                       )}
                       {mediaUrl && (

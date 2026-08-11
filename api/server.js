@@ -39,6 +39,7 @@ const Minio = require('minio');
 const { sendEmail } = require('./mailer');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
+const { startBlogSync } = require('./blogSyncHeartbeat');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -9946,6 +9947,7 @@ async function start() {
 
   startCertAgent();
   startRegistryHeartbeat();
+  startBlogSync(pool);
 }
 
 start();

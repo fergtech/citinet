@@ -563,7 +563,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   )}
                   {authMode === 'login' && (
                     <div className="flex justify-end mt-1.5">
-                      <button type="button" className="text-xs text-purple-600 dark:text-purple-400 hover:underline">
+                      <button type="button" className="text-xs cn-text-3 hover:cn-text-1 hover:underline">
                         Forgot password?
                       </button>
                     </div>
@@ -629,7 +629,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 {authMode === 'login' ? 'New to this hub? ' : 'Already a member? '}
                 <button
                   onClick={() => switchAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                  className="text-purple-600 dark:text-purple-400 font-semibold hover:underline"
+                  className="cn-text-2 hover:cn-text-1 font-semibold hover:underline"
                 >
                   {authMode === 'login' ? 'Sign up' : 'Log in'}
                 </button>

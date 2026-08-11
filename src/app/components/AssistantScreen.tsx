@@ -465,7 +465,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
           {/* Header */}
           <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
             <div className="px-4 py-3 flex items-center gap-3">
-              <button onClick={onBack} title="Back" aria-label="Back" className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors">
+              <button onClick={onBack} title="Back" aria-label="Back" className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors">
                 <ArrowLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
               </button>
               <button onClick={() => setSidebarOpen(true)} className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="History">

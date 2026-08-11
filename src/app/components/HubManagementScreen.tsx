@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Layers, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -739,7 +739,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
           <p className="text-sm cn-text-2 mb-4">Admin access required</p>
           <button
             onClick={onBack}
-            className="text-sm text-purple-600 dark:text-purple-400 underline"
+            className="text-sm cn-text-3 hover:cn-text-1 underline"
           >
             Go back
           </button>
@@ -755,20 +755,20 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         <div>
           <button
             onClick={onBack}
-            className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors"
+            className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors"
           >
-            <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
+            <ChevronLeft className="w-3.5 h-3.5" /> Back
           </button>
           <div className="flex items-center gap-3">
             <span className="w-11 h-11 rounded-xl cn-surface-2 border cn-border flex items-center justify-center shrink-0">
-              <Shield className="w-[21px] h-[21px] text-purple-500 dark:text-purple-300" />
+              <Shield className="w-[21px] h-[21px] cn-text-2" />
             </span>
             <div className="flex-1 min-w-0">
               <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Hub management</h1>
               <p className="text-[13px] cn-text-3 mt-0.5">Admin tools for {currentHub?.name}</p>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-semibold shrink-0">
-              <Crown className="w-3 h-3" /> Admin
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full cn-surface-3 cn-text-2 text-xs font-semibold shrink-0">
+              <Crown className="w-3 h-3 text-purple-500 dark:text-purple-400" /> Admin
             </span>
           </div>
         </div>
@@ -817,7 +817,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   {!editingName && (
                     <button
                       onClick={() => { setNameValue(currentHub?.name ?? ''); setEditingName(true); }}
-                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                      className="flex items-center gap-1 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                     >
                       <Pencil className="w-3 h-3" />
                       Rename
@@ -869,7 +869,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Hub Icon</p>
                   <button
                     onClick={() => setShowIconEditor(true)}
-                    className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                    className="flex items-center gap-1 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                   >
                     <Pencil className="w-3 h-3" />
                     Change
@@ -892,7 +892,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   {!editingDescription && (
                     <button
                       onClick={() => { setDescriptionValue(currentHub?.description ?? ''); setEditingDescription(true); }}
-                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                      className="flex items-center gap-1 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                     >
                       <Pencil className="w-3 h-3" />
                       {currentHub?.description ? 'Edit' : 'Add description'}
@@ -946,7 +946,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   {!editingLocation && (
                     <button
                       onClick={() => setEditingLocation(true)}
-                      className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                      className="flex items-center gap-1 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                     >
                       <Pencil className="w-3 h-3" />
                       {currentHub?.location ? 'Update' : 'Set location'}
@@ -1274,7 +1274,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <div className="cn-glass rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
                   <p className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-2">
-                    <Link className="w-4 h-4 text-purple-500" />
+                    <Link className="w-4 h-4 cn-text-3" />
                     Pin a post
                   </p>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
@@ -1326,7 +1326,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   onClick={() => setShowCustomForm(v => !v)}
                   className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-slate-900 dark:text-white hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-colors"
                 >
-                  <Plus className="w-4 h-4 text-purple-500" />
+                  <Plus className="w-4 h-4 cn-text-3" />
                   Add custom card
                   <span className="ml-auto text-slate-400">{showCustomForm ? '−' : '+'}</span>
                 </button>
@@ -1581,8 +1581,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           {isSelf && <span className="text-slate-400 dark:text-slate-500 font-normal"> (you)</span>}
                         </span>
                         {memRole === 'admin' && (
-                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 shrink-0 font-semibold">
-                            <Crown className="w-2.5 h-2.5" /> Admin
+                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0 font-semibold">
+                            <Crown className="w-2.5 h-2.5 text-purple-500 dark:text-purple-400" /> Admin
                           </span>
                         )}
                         {memRole === 'moderator' && (
@@ -1654,19 +1654,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <div className="cn-glass rounded-2xl p-5 space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { screen: 'feed',        label: 'Feed',         emoji: '💬' },
-                    { screen: 'messages',    label: 'Messages',     emoji: '✉️' },
-                    { screen: 'atlas',       label: 'Atlas',        emoji: '🗺️' },
-                    { screen: 'notes',       label: 'Notes',        emoji: '📓' },
-                    { screen: 'spaces',      label: 'Spaces',       emoji: '🌐' },
-                    { screen: 'marketplace', label: 'Exchange',     emoji: '🏪' },
-                    { screen: 'files',       label: 'Files',        emoji: '📁' },
-                    { screen: 'discover',    label: 'Discover',     emoji: '🧭' },
-                    { screen: 'toolkit',     label: 'Resources',    emoji: '🔧' },
-                    { screen: 'initiatives', label: 'Initiatives',  emoji: '🎯' },
-                    { screen: 'network',     label: 'Network',      emoji: '📡' },
-                    { screen: 'mod-log',     label: 'Mod Log',      emoji: '📜' },
-                  ].map(({ screen, label, emoji }) => {
+                    { screen: 'feed',        label: 'Feed',         Icon: Newspaper },
+                    { screen: 'messages',    label: 'Messages',     Icon: MessageCircle },
+                    { screen: 'atlas',       label: 'Atlas',        Icon: Map },
+                    { screen: 'notes',       label: 'Notes',        Icon: NotebookPen },
+                    { screen: 'spaces',      label: 'Spaces',       Icon: Layers },
+                    { screen: 'marketplace', label: 'Exchange',     Icon: Store },
+                    { screen: 'files',       label: 'Files',        Icon: FolderOpen },
+                    { screen: 'discover',    label: 'Discover',     Icon: Compass },
+                    { screen: 'toolkit',     label: 'Resources',    Icon: Package },
+                    { screen: 'initiatives', label: 'Initiatives',  Icon: Target },
+                    { screen: 'network',     label: 'Network',      Icon: Radio },
+                    { screen: 'mod-log',     label: 'Mod Log',      Icon: ScrollText },
+                  ].map(({ screen, label, Icon }) => {
                     const on = enabledApps.includes(screen);
                     return (
                       <button
@@ -1679,7 +1679,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             : 'border-slate-200 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-80'
                         }`}
                       >
-                        <span>{emoji}</span>
+                        <Icon className="w-4 h-4 shrink-0" />
                         <span className="truncate">{label}</span>
                       </button>
                     );

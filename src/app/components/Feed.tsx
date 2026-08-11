@@ -124,7 +124,7 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
       {/* Guidelines */}
       <div className="cn-glass rounded-2xl p-4">
         <div className="flex items-center gap-2 mb-2">
-          <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
+          <ShieldCheck className="w-4 h-4 cn-text-3 shrink-0" />
           <span className="text-sm font-semibold cn-text-1">Community guidelines</span>
         </div>
         <p className="text-xs cn-text-3 leading-relaxed">
@@ -1491,7 +1491,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
             </div>
           ))}
           {options.length < 5 && (
-            <button onClick={() => setOptions(o => [...o, ''])} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold text-purple-500 hover:text-purple-400 transition-colors">
+            <button onClick={() => setOptions(o => [...o, ''])} className="inline-flex items-center gap-1.5 self-start text-xs font-semibold cn-text-3 hover:cn-text-1 transition-colors">
               <Plus className="w-3.5 h-3.5" /> Add option
             </button>
           )}
@@ -1654,7 +1654,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         <div className="px-4 pb-3">
           {place ? (
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg cn-surface-2 border cn-border text-xs cn-text-2">
-              <MapPin className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400 shrink-0" />
+              <MapPin className="w-3.5 h-3.5 cn-text-3 shrink-0" />
               {place.label}
               <button onClick={() => setPlace(null)} className="cn-text-4 hover:text-red-500 transition-colors">
                 <X className="w-3 h-3" />
@@ -2013,10 +2013,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
       {/* ── Header ── */}
       <div className="pt-3 pb-0">
           {/* Breadcrumb */}
-          <button onClick={onBack} className="flex items-center gap-0.5 mb-2 group">
-            <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
-            <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">
-              {currentHub?.name ?? 'Hub'}
+          <button onClick={onBack} className="md:hidden flex items-center gap-0.5 mb-2 group">
+            <ChevronLeft className="w-3.5 h-3.5 cn-text-3 group-hover:cn-text-1 transition-colors" />
+            <span className="text-sm font-medium cn-text-3 group-hover:cn-text-1 transition-colors">
+              Back
             </span>
           </button>
 
@@ -2103,11 +2103,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                     {activeFilter === 'POLL' ? 'No polls yet.' : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
                   </p>
                   {activeFilter === 'POLL' ? (
-                    <button onClick={() => setComposingPoll(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
+                    <button onClick={() => setComposingPoll(true)} className="cn-text-3 hover:cn-text-1 text-sm font-medium transition-colors">
                       Create the first poll →
                     </button>
                   ) : (
-                    <button onClick={() => setComposing(true)} className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors">
+                    <button onClick={() => setComposing(true)} className="cn-text-3 hover:cn-text-1 text-sm font-medium transition-colors">
                       Be the first to post →
                     </button>
                   )}

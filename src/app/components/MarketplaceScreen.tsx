@@ -139,7 +139,7 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
           }
           <button
             onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
-            className="text-[11px] cn-text-2 hover:text-purple-500 dark:hover:text-purple-300 transition-colors truncate flex-1 text-left"
+            className="text-[11px] cn-text-2 hover:cn-text-1 transition-colors truncate flex-1 text-left"
           >
             {listing.vendor_name}
           </button>
@@ -395,9 +395,9 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             {/* Back */}
             <button
               onClick={onBack}
-              className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors self-start"
+              className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors self-start"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
+              <ChevronLeft className="w-3.5 h-3.5" /> Back
             </button>
 
             {/* Header */}
@@ -687,7 +687,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 <p className="text-sm font-medium">No listings match your filters</p>
                 <button
                   onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveTab('all'); }}
-                  className="mt-2 text-xs text-purple-300 hover:underline"
+                  className="mt-2 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                 >
                   Clear filters
                 </button>
@@ -760,7 +760,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             <div className="rounded-2xl p-4 cn-glass">
               <div className="flex gap-2.5">
-                <ShieldCheck className="w-4.5 h-4.5 text-purple-500 dark:text-purple-300 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
+                <ShieldCheck className="w-4.5 h-4.5 cn-text-3 shrink-0 mt-0.5" style={{ width: 18, height: 18 }} />
                 <div>
                   <div className="text-sm font-semibold cn-text-1">Neighbors only</div>
                   <p className="mt-1 text-[11px] cn-text-3 leading-relaxed">Every seller is a verified member of this hub. Meet in public, pay in person.</p>

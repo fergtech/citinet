@@ -888,7 +888,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                     </div>
                     {post.body && (() => {
                       const { truncated, isTruncated } = truncateText(post.body);
-                      return <p className="text-sm cn-text-3 leading-relaxed">{truncated}{isTruncated && <span className="text-purple-600 dark:text-purple-400 font-medium"> Click to read more</span>}</p>;
+                      return <p className="text-sm cn-text-3 leading-relaxed">{truncated}{isTruncated && <span className="cn-text-2 font-medium"> Click to read more</span>}</p>;
                     })()}
                     {mediaUrl && (
                       <div className="mt-3 rounded-xl overflow-hidden">
@@ -901,7 +901,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                       <span className="text-xs cn-text-4 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
                       {post.author_id === myUserId && !sharedPosts.has(post.id) && !(post as any).shared_to_feed && (
                         <button onClick={e => { e.stopPropagation(); handleShareToFeed(post.id); }} disabled={sharingPost === post.id}
-                          className="ml-auto flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                          className="ml-auto flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors">
                           {sharingPost === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />} Share to hub feed
                         </button>
                       )}
@@ -1174,7 +1174,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
       {/* Left panel */}
       <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 border-r cn-border flex-shrink-0`}>
         <div className="flex items-center gap-3 px-4 py-4 border-b cn-border flex-shrink-0">
-          <button onClick={onBack} className="w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 cn-text-3" /></button>
+          <button onClick={onBack} className="md:hidden w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 cn-text-3" /></button>
           <h1 className="text-base font-semibold cn-text-1 flex-1">Spaces</h1>
           <button onClick={() => setShowCreate(true)} title="Create space" aria-label="Create space" className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
         </div>

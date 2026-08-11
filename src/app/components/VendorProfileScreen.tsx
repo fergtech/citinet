@@ -246,7 +246,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
             onClick={onBack}
             className="inline-flex items-center gap-1.5 border cn-border cn-surface cn-text-2 text-sm font-semibold px-3.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> Exchange
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
           <div className="flex-1" />
           {isOwner && (
@@ -317,7 +317,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               <div className="flex-1 min-w-0 pb-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <h1 className="text-xl sm:text-2xl font-bold cn-text-1 tracking-tight leading-tight">{vendor.name}</h1>
-                  <BadgeCheck className="w-4 h-4 text-purple-500 dark:text-purple-300 shrink-0" />
+                  <BadgeCheck className="w-4 h-4 cn-text-3 shrink-0" />
                 </div>
                 <p className="text-sm cn-text-3 mt-0.5">
                   {vendor.category ? `${vendor.category} · ` : ''}Joined {formatMemberSince(vendor.created_at)}
@@ -348,12 +348,12 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
           {hasContact && (
             <div className="px-5 sm:px-7 py-3 border-t cn-border flex flex-wrap items-center gap-x-5 gap-y-2">
               {vendor.contact_phone && (
-                <a href={`tel:${vendor.contact_phone}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                <a href={`tel:${vendor.contact_phone}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors">
                   <Phone className="w-3.5 h-3.5 shrink-0" /> {vendor.contact_phone}
                 </a>
               )}
               {vendor.contact_email && (
-                <a href={`mailto:${vendor.contact_email}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                <a href={`mailto:${vendor.contact_email}`} className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors">
                   <Mail className="w-3.5 h-3.5 shrink-0" /> {vendor.contact_email}
                 </a>
               )}
@@ -362,7 +362,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                   href={vendor.website.startsWith('http') ? vendor.website : `https://${vendor.website}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors truncate max-w-[220px]"
+                  className="inline-flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors truncate max-w-[220px]"
                 >
                   <Globe className="w-3.5 h-3.5 shrink-0" /> {vendor.website}
                 </a>
@@ -382,7 +382,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
             <Globe className="w-3.5 h-3.5 cn-text-4 shrink-0" />
             <span className="text-xs cn-text-4 flex-1">{vendor.web_public ? 'Public — visible on the open web' : 'Private — hub members only'}</span>
             {vendor.web_public && (
-              <button onClick={handleCopyPublicLink} className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 transition-colors">
+              <button onClick={handleCopyPublicLink} className="inline-flex items-center gap-1 text-xs font-medium cn-text-3 hover:cn-text-1 transition-colors">
                 <Link2 className="w-3 h-3" /> {copied ? 'Copied!' : 'Copy link'}
               </button>
             )}

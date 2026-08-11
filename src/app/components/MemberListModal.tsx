@@ -156,7 +156,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
                         {member.username}
                       </h4>
                       {member.is_admin && (
-                        <span className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 text-xs font-medium rounded">
+                        <span className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 cn-surface-3 cn-text-2 text-xs font-medium rounded">
                           <Shield className="w-3 h-3" />
                           Admin
                         </span>

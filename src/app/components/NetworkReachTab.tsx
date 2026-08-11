@@ -130,7 +130,7 @@ export function NetworkReachTab({ hubSlug, hubName }: NetworkReachTabProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Wifi className="w-4 h-4 text-purple-500 dark:text-purple-400" />
+        <Wifi className="w-4 h-4 cn-text-3" />
         <h3 className="text-sm font-semibold cn-text-1">Network Reach</h3>
       </div>
       <p className="text-xs cn-text-3">
@@ -155,7 +155,7 @@ export function NetworkReachTab({ hubSlug, hubName }: NetworkReachTabProps) {
               onClick={() => handlePlatformChange('windows')}
               className={`${cardBaseClass} ${platform === 'windows' ? cardActiveClass : cardInactiveClass}`}
             >
-              <Laptop className="w-5 h-5 text-purple-500 dark:text-purple-400 shrink-0" />
+              <Laptop className="w-5 h-5 cn-text-3 shrink-0" />
               <div>
                 <p className="text-sm font-medium cn-text-1">This machine (Windows)</p>
                 <p className="text-xs cn-text-3">No second device — uses Mobile Hotspot</p>
@@ -166,7 +166,7 @@ export function NetworkReachTab({ hubSlug, hubName }: NetworkReachTabProps) {
               onClick={() => handlePlatformChange('pi')}
               className={`${cardBaseClass} ${platform === 'pi' ? cardActiveClass : cardInactiveClass}`}
             >
-              <Cpu className="w-5 h-5 text-purple-500 dark:text-purple-400 shrink-0" />
+              <Cpu className="w-5 h-5 cn-text-3 shrink-0" />
               <div>
                 <p className="text-sm font-medium cn-text-1">Separate Raspberry Pi / Linux</p>
                 <p className="text-xs cn-text-3">Dedicated device just for networking</p>

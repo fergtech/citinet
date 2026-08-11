@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ThemeProvider } from 'next-themes';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { markInAppNavigation } from './hooks/navigationHistory';
+import { useSmartBack } from './hooks/useSmartBack';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
@@ -239,14 +241,14 @@ function HubPendingApprovalRoute() {
 
 function HubFeedRoute() {
   const navigate = useNavigate();
-  return <Feed onBack={() => navigate(-1)} onNavigate={screen => navigate(hubPath(`/${screen}`))} />;
+  return <Feed onBack={useSmartBack()} onNavigate={screen => navigate(hubPath(`/${screen}`))} />;
 }
 
 function HubNeighborsRoute() {
   const navigate = useNavigate();
   return (
     <NeighborsScreen
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onNavigate={screen => navigate(hubPath(`/${screen}`))}
       onViewProfile={userId => navigate(hubPath(`/profile/${userId}`))}
     />
@@ -259,7 +261,7 @@ function HubProfileRoute() {
   return (
     <ProfileScreen
       userId={params.userId ?? ''}
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onNavigate={screen => {
         // Account is a sibling of Profile — replace so toggling doesn't stack history
         const replace = screen === 'account';
@@ -270,41 +272,37 @@ function HubProfileRoute() {
 }
 
 function HubFilesRoute() {
-  const navigate = useNavigate();
-  return <FilesScreen onBack={() => navigate(-1)} />;
+  return <FilesScreen onBack={useSmartBack()} />;
 }
 
 function HubMessagesRoute() {
   const navigate = useNavigate();
-  return <MessagesScreen onBack={() => navigate(-1)} onNavigate={(screen) => navigate(`/${screen}`)} />;
+  return <MessagesScreen onBack={useSmartBack()} onNavigate={(screen) => navigate(`/${screen}`)} />;
 }
 
 function HubNetworkRoute() {
   const navigate = useNavigate();
-  return <NetworkScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+  return <NetworkScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubModLogRoute() {
-  const navigate = useNavigate();
-  return <ModLogScreen onBack={() => navigate(-1)} />;
+  return <ModLogScreen onBack={useSmartBack()} />;
 }
 
 function HubSpacesRoute() {
-  const navigate = useNavigate();
-  return <SpacesScreen onBack={() => navigate(-1)} />;
+  return <SpacesScreen onBack={useSmartBack()} />;
 }
 
 function HubNotesRoute() {
-  const navigate = useNavigate();
   const { noteId } = useParams<{ noteId?: string }>();
-  return <NotesScreen onBack={() => navigate(-1)} initialNoteId={noteId} />;
+  return <NotesScreen onBack={useSmartBack()} initialNoteId={noteId} />;
 }
 
 function HubMarketplaceRoute() {
   const navigate = useNavigate();
   return (
     <MarketplaceScreen
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onNavigate={screen => navigate(hubPath(`/${screen}`))}
       onVendorClick={id => navigate(hubPath(`/vendor/${id}`))}
     />
@@ -337,7 +335,7 @@ function HubVendorProfileRoute() {
   }
 
   if (!data) {
-    return <PlaceholderScreen title="Vendor Not Found" onBack={() => navigate(-1)} />;
+    return <PlaceholderScreen title="Vendor Not Found" onBack={useSmartBack()} />;
   }
 
   return (
@@ -345,7 +343,7 @@ function HubVendorProfileRoute() {
       vendor={data.vendor}
       listings={data.listings}
       hubSlug={slug}
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onItemClick={(listingId) => {
         sessionStorage.setItem('citinet-deeplink-listing', listingId);
         navigate(hubPath('/marketplace'));
@@ -357,17 +355,15 @@ function HubVendorProfileRoute() {
 
 function HubToolkitRoute() {
   const navigate = useNavigate();
-  return <ToolkitScreen onBack={() => navigate(-1)} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+  return <ToolkitScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubMySubmissionsRoute() {
-  const navigate = useNavigate();
-  return <MySubmissionsScreen onBack={() => navigate(-1)} />;
+  return <MySubmissionsScreen onBack={useSmartBack()} />;
 }
 
 function HubAtlasRoute() {
-  const navigate = useNavigate();
-  return <AtlasScreen onBack={() => navigate(-1)} />;
+  return <AtlasScreen onBack={useSmartBack()} />;
 }
 
 function HubInitiativesRoute() {
@@ -376,7 +372,7 @@ function HubInitiativesRoute() {
   const id = initiativeId || undefined;
   return (
     <InitiativesScreen
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       initialId={id}
       onOpenDetail={detailId => navigate(hubPath(`/initiatives/${detailId}`))}
       onBackToList={() => navigate(hubPath('/initiatives'), { replace: true })}
@@ -386,15 +382,14 @@ function HubInitiativesRoute() {
 }
 
 function HubModerationQueueRoute() {
-  const navigate = useNavigate();
-  return <ModerationQueueScreen onBack={() => navigate(-1)} />;
+  return <ModerationQueueScreen onBack={useSmartBack()} />;
 }
 
 function HubAccountRoute() {
   const navigate = useNavigate();
   return (
     <AccountScreen
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onNavigate={screen => {
         // Profile is a sibling of Account — replace so toggling doesn't stack history
         const replace = screen.startsWith('profile/');
@@ -405,20 +400,18 @@ function HubAccountRoute() {
 }
 
 function HubManagementRoute() {
-  const navigate = useNavigate();
-  return <HubManagementScreen onBack={() => navigate(-1)} />;
+  return <HubManagementScreen onBack={useSmartBack()} />;
 }
 
 function HubAssistantRoute() {
-  const navigate = useNavigate();
-  return <AssistantScreen onBack={() => navigate(-1)} />;
+  return <AssistantScreen onBack={useSmartBack()} />;
 }
 
 function HubDiscoverRoute() {
   const navigate = useNavigate();
   return (
     <DiscoverScreen
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
       onNavigate={s => navigate(hubPath(`/${s}`))}
       onViewProfile={userId => navigate(hubPath(`/profile/${userId}`))}
     />
@@ -426,12 +419,11 @@ function HubDiscoverRoute() {
 }
 
 function HubPlaceholderRoute({ screen }: { screen: string }) {
-  const navigate = useNavigate();
   return (
     <PlaceholderScreen
       title={screenTitles[screen] || 'Screen'}
       description={screenDescriptions[screen]}
-      onBack={() => navigate(-1)}
+      onBack={useSmartBack()}
     />
   );
 }
@@ -554,6 +546,20 @@ function AppInner() {
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
   const [probing, setProbing] = useState(!subdomain && !isSharePath && !isPortalPath);
+
+  // Marks that a real in-app navigation has happened, for useSmartBack's
+  // fallback logic. location.key changes on every navigate() call; skip the
+  // very first one (the initial page load / a direct link has no "back" of
+  // its own to record).
+  const location = useLocation();
+  const isFirstLocation = useRef(true);
+  useEffect(() => {
+    if (isFirstLocation.current) {
+      isFirstLocation.current = false;
+      return;
+    }
+    markInAppNavigation();
+  }, [location.key]);
 
   useEffect(() => {
     if (subdomain || isSharePath || isPortalPath) return;

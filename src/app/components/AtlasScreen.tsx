@@ -218,7 +218,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
       )}
 
       <div>
-        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-500/30 mb-2">
+        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/5 dark:bg-white/8 cn-text-2 mb-2">
           {cat.label}
         </span>
         <h1 className="text-xl font-bold cn-text-1 tracking-tight">{pin.title}</h1>
@@ -428,7 +428,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
                 <button
                   type="button"
                   onClick={() => onCategoryChange(categorySuggestion)}
-                  className="text-[11px] text-purple-400 hover:text-purple-300 transition-colors"
+                  className="text-[11px] cn-text-3 hover:cn-text-1 transition-colors"
                 >
                   Suggested: {ATLAS_CATEGORIES[categorySuggestion].label}
                 </button>
@@ -854,9 +854,9 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
           <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0' : 'flex flex-col gap-5 min-w-0'}>
             <button
               onClick={onBack}
-              className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
+              className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name ?? 'Hub'}
+              <ChevronLeft className="w-3.5 h-3.5" /> Back
             </button>
 
             <div className="flex items-center gap-3">

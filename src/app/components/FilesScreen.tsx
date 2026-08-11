@@ -522,9 +522,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* Back */}
             <button
               onClick={onBack}
-              className="flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors shrink-0 mb-4"
+              className="md:hidden flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors shrink-0 mb-4"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />{currentHub?.name || 'Hub'}
+              <ChevronLeft className="w-3.5 h-3.5" /> Back
             </button>
 
             {/* Title + Upload/Refresh — same row */}

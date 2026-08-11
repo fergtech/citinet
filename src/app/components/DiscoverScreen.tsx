@@ -528,10 +528,10 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     <div>
       {/* Header */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-0">
-        <button onClick={onBack} className="flex items-center gap-0.5 mb-2 group">
+        <button onClick={onBack} className="md:hidden flex items-center gap-0.5 mb-2 group">
           <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
           <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">
-            {currentHub?.name ?? 'Hub'}
+            Back
           </span>
         </button>
 

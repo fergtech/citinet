@@ -168,9 +168,9 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
     <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
         {/* Breadcrumb */}
-        <button onClick={onBack} className="flex items-center gap-0.5 mb-4 group">
+        <button onClick={onBack} className="md:hidden flex items-center gap-0.5 mb-4 group">
           <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
-          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">{hubName}</span>
+          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">Back</span>
         </button>
 
         {/* Header */}

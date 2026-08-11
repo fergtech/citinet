@@ -48,3 +48,6 @@ CLAUDE_CONTEXT.md
 
 # mkcert-generated local dev TLS cert/key (per-machine, never shared)
 .certs/
+
+.vercel
+.env*

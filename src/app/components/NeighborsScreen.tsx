@@ -153,9 +153,9 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
         <div>
           <button
             onClick={onBack}
-            className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors"
+            className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:cn-text-1 mb-2.5 transition-colors"
           >
-            <ChevronLeft className="w-3.5 h-3.5" /> {currentHub?.name}
+            <ChevronLeft className="w-3.5 h-3.5" /> Back
           </button>
           <div className="flex items-center gap-3">
             <span
@@ -329,10 +329,10 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[13.5px] font-semibold cn-text-1 truncate">{member.username}</span>
-                          {member.role === 'admin' && <Crown className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-                          {member.role === 'moderator' && <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+                          {member.role === 'admin' && <Crown className="w-3.5 h-3.5 cn-text-3 shrink-0" />}
+                          {member.role === 'moderator' && <Shield className="w-3.5 h-3.5 cn-text-3 shrink-0" />}
                           {isYou && (
-                            <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-medium rounded-full shrink-0">
+                            <span className="px-1.5 py-0.5 cn-surface-3 cn-text-2 text-[10px] font-medium rounded-full shrink-0">
                               You
                             </span>
                           )}

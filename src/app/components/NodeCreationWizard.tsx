@@ -807,7 +807,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                 href="https://login.tailscale.com/admin/settings/keys"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400
+                                className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400
                                   hover:underline"
                               >
                                 Generate a key
