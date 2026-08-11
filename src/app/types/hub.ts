@@ -146,6 +146,8 @@ export interface HubUser {
   bannerImageFileName?: string;
   /** Who can see this profile: 'public' (www) | 'hub' (members only) | 'private' (self only) */
   profileVisibility?: 'public' | 'hub' | 'private';
+  /** Whether location is shown to others (network map pin, "Lives at"). Defaults true server-side. */
+  locationVisible?: boolean;
 }
 
 /** What we store per hub in localStorage */
@@ -224,6 +226,8 @@ export interface HubMember {
   username: string;
   display_name?: string | null;
   location?: string | null;
+  /** Whether the member has opted to show their location. Server nulls `location` above when false (except for self). */
+  location_visible?: boolean | null;
   bio?: string | null;
   tags?: string[] | null;
   is_admin: boolean;
@@ -238,12 +242,15 @@ export interface HubMember {
   banner_image_file_name?: string | null;
   website?: string | null;
   profile_visibility?: 'public' | 'hub' | 'private' | null;
+  last_seen_at?: string | null;
 }
 
 /** A conversation participant */
 export interface HubParticipant {
   user_id: string;
   username: string;
+  /** When this member last fetched this conversation's messages — powers read receipts */
+  last_read_at?: string | null;
 }
 
 /** A conversation (DM or group) */
@@ -267,6 +274,25 @@ export interface HubMessageAttachment {
   url?: string;         // resolved blob URL (client-side only)
 }
 
+/** One file shared in a conversation — powers the shared-media gallery */
+export interface HubConversationMediaItem {
+  file_id: string;
+  file_name: string;
+  mime_type: string;
+  size: number;
+  message_id: string;
+  sender_id: string;
+  sender_username?: string;
+  created_at: string;
+}
+
+/** One emoji's aggregated reaction count on a message */
+export interface HubMessageReaction {
+  emoji: string;
+  count: number;
+  reacted_by_me: boolean;
+}
+
 /** A message within a conversation */
 export interface HubMessage {
   id: string;                       // message_id from API
@@ -275,6 +301,7 @@ export interface HubMessage {
   sender_username?: string;
   body: string;
   attachments?: HubMessageAttachment[];
+  reactions?: HubMessageReaction[];
   created_at: string;
 }
 

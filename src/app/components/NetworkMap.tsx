@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { NodeDetailsModal, type NodeData } from './NodeDetailsModal';
 import { useHub } from '../context/HubContext';
+import { isOnline } from '../utils/presence';
 import type { HubMember } from '../types/hub';
 
 interface NetworkMapProps {
@@ -26,6 +27,20 @@ const memberIcon = L.divIcon({
   iconAnchor: [6, 6],
 });
 
+// "You" marker — amber, larger, with a soft pulsing ring so your own pin reads
+// as unmistakably different from everyone else's at a glance.
+const meIcon = L.divIcon({
+  className: '',
+  html: `
+    <div style="position:relative;width:22px;height:22px;">
+      <div class="animate-ping" style="position:absolute;inset:0;border-radius:9999px;background:#f59e0b;opacity:0.45;"></div>
+      <div style="position:absolute;inset:5px;border-radius:9999px;background:#f59e0b;border:2.5px solid #fff;box-shadow:0 2px 10px rgba(245,158,11,0.7);"></div>
+    </div>
+  `,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
 const DEFAULT_CENTER: [number, number] = [39.8283, -98.5795]; // geographic center of US
 const DEFAULT_ZOOM = 13;
 
@@ -43,26 +58,64 @@ async function geocodeLocation(location: string): Promise<[number, number] | nul
   return null;
 }
 
-/** Stable angular offset per member index so pins spread evenly around hub */
-function memberOffset(index: number): [number, number] {
-  const angle = (index * 137.508) % 360; // golden angle for even distribution
-  const radius = 0.001 + (index % 4) * 0.0007; // ~100–380m spread
+/** Stable per-member angular offset, hashed from their user_id rather than their
+ *  position in whatever (possibly filtered/reordered) array is currently being
+ *  rendered — otherwise the same person's pin would jump around the map every
+ *  time the "Online only" filter or member order changed. */
+function memberOffset(userId: string): [number, number] {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  hash = Math.abs(hash);
+  const angle = hash % 360;
+  const radius = 0.001 + (Math.floor(hash / 360) % 4) * 0.0007; // ~100–380m spread
   return [
     Math.sin((angle * Math.PI) / 180) * radius,
     Math.cos((angle * Math.PI) / 180) * radius,
   ];
 }
 
-function MapController({ center }: { center: [number, number] }) {
+/** Human-friendly "last seen" for an offline member's node detail panel */
+function formatLastSeen(iso?: string | null): string | undefined {
+  if (!iso) return undefined;
+  try {
+    const d = new Date(iso);
+    const diffMin = Math.floor((Date.now() - d.getTime()) / 60_000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHrs = Math.floor(diffMin / 60);
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return undefined;
+  }
+}
+
+// Padding (px) kept clear around the outermost pins, and a cap on how far it'll
+// zoom in for a small/tightly-clustered set of members (no point zooming to
+// building-outline level for 1-2 pins a few hundred meters apart).
+const FIT_BOUNDS_PADDING: [number, number] = [56, 56];
+const FIT_BOUNDS_MAX_ZOOM = 16;
+
+function MapController({ center, positions, ready }: {
+  center: [number, number];
+  positions: [number, number][];
+  ready: boolean;
+}) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, DEFAULT_ZOOM);
-  }, [map, center]);
+    if (!ready) return;
+    if (positions.length === 0) {
+      map.setView(center, DEFAULT_ZOOM);
+      return;
+    }
+    const bounds = L.latLngBounds([center, ...positions]);
+    map.fitBounds(bounds, { padding: FIT_BOUNDS_PADDING, maxZoom: FIT_BOUNDS_MAX_ZOOM });
+  }, [map, center, positions, ready]);
   return null;
 }
 
 export function NetworkMap({ members }: NetworkMapProps) {
-  const { currentHub } = useHub();
+  const { currentHub, currentUser } = useHub();
   const [center, setCenter] = useState<[number, number]>(DEFAULT_CENTER);
   const [geocoded, setGeocoded] = useState(false);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
@@ -120,6 +173,20 @@ export function NetworkMap({ members }: NetworkMapProps) {
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
     : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
 
+  // Computed once here (not inline per-Marker) so the exact same positions used
+  // for rendering are what the map fits its bounds to.
+  const visibleMembers = useMemo(
+    () => members.filter(m => m.location_visible !== false),
+    [members],
+  );
+  const memberPositions = useMemo(
+    () => visibleMembers.map(m => {
+      const [latOff, lngOff] = memberOffset(m.user_id);
+      return [center[0] + latOff, center[1] + lngOff] as [number, number];
+    }),
+    [visibleMembers, center],
+  );
+
   const hubNodeData: NodeData = {
     id: currentHub?.id || 'hub',
     type: 'infrastructure',
@@ -147,7 +214,7 @@ export function NetworkMap({ members }: NetworkMapProps) {
             url={tileUrl}
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
           />
-          <MapController center={center} />
+          <MapController center={center} positions={memberPositions} ready={geocoded} />
 
           {/* Hub pin — shown once location is geocoded */}
           {geocoded && (
@@ -159,14 +226,15 @@ export function NetworkMap({ members }: NetworkMapProps) {
           )}
 
           {/* Member pins — spread around hub with stable offsets */}
-          {geocoded && members.map((member, idx) => {
-            const [latOff, lngOff] = memberOffset(idx);
-            const pos: [number, number] = [center[0] + latOff, center[1] + lngOff];
+          {geocoded && visibleMembers.map((member, idx) => {
+            const pos = memberPositions[idx];
+            const isMe = !!currentUser?.hubUserId && member.user_id === currentUser.hubUserId;
             const nodeData: NodeData = {
               id: member.user_id,
               type: 'member',
-              name: member.username,
-              status: 'online',
+              name: isMe ? `${member.username} (You)` : member.username,
+              status: isOnline(member.last_seen_at) ? 'online' : 'offline',
+              lastSeen: formatLastSeen(member.last_seen_at),
               joinedDate: new Date(member.created_at).toLocaleDateString('en-US', {
                 month: 'long',
                 year: 'numeric',
@@ -176,7 +244,8 @@ export function NetworkMap({ members }: NetworkMapProps) {
               <Marker
                 key={member.user_id}
                 position={pos}
-                icon={memberIcon}
+                icon={isMe ? meIcon : memberIcon}
+                zIndexOffset={isMe ? 1000 : 0}
                 eventHandlers={{ click: () => setSelectedNode(nodeData) }}
               />
             );
@@ -193,6 +262,10 @@ export function NetworkMap({ members }: NetworkMapProps) {
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
               <span>Members</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+              <span>You</span>
             </div>
           </div>
         </div>

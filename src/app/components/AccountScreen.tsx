@@ -37,6 +37,7 @@ import { preferencesService } from '../services/preferencesService';
 import { checkPasswordStrength } from '../utils/passwordStrength';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
+import { Switch } from './ui/switch';
 import type { HubMember } from '../types/hub';
 
 const BANNER_SOLID_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#be123c', '#b45309', '#374151'];
@@ -64,6 +65,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [profileHeadline, setProfileHeadline] = useState(currentUser?.profileHeadline || '');
   const [website, setWebsite] = useState(currentUser?.website || '');
   const [profileVisibility, setProfileVisibility] = useState<'public' | 'hub' | 'private'>(currentUser?.profileVisibility ?? 'hub');
+  const [locationVisible, setLocationVisible] = useState(currentUser?.locationVisible ?? true);
   const [copiedProfileLink, setCopiedProfileLink] = useState(false);
   const [tags, setTags] = useState<string[]>(currentUser?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
@@ -142,6 +144,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         if (member.website)       setWebsite(member.website);
         if (member.tags?.length)  setTags(member.tags);
         if (member.profile_visibility) setProfileVisibility(member.profile_visibility as 'public' | 'hub' | 'private');
+        if (member.location_visible !== undefined && member.location_visible !== null) setLocationVisible(member.location_visible);
       })
       .catch(() => {});
   }, [currentHub?.slug, currentUser?.hubUserId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -245,6 +248,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         profileHeadline: profileHeadline.trim(),
         website: website.trim(),
         profileVisibility,
+        locationVisible,
       });
       if (email.trim()) updateUserProfile({ email: email.trim() });
       setIsDirty(false);
@@ -542,10 +546,10 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Bio</label>
-            <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={160} rows={2}
+            <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={2600} rows={2}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
-              placeholder="A short intro about you (160 chars)" />
-            <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/160</p>
+              placeholder="A short intro about you (2600 chars)" />
+            <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/2600</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Website</label>
@@ -582,6 +586,17 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <LocationPicker defaultValue={currentUser?.location || ''} onSelect={r => { setLocationResult(r); setIsDirty(true); }}
               placeholder="Your neighborhood or city…"
               inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow" />
+          </div>
+          <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-700">
+            <div className="min-w-0 pr-2">
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Show my location</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
+                {locationVisible
+                  ? 'Visible on the network map and in your profile.'
+                  : 'Hidden — you’ll show as “Somewhere in the community” instead. You can still be found by name, messaged, and interacted with.'}
+              </p>
+            </div>
+            <Switch checked={locationVisible} onCheckedChange={v => { setLocationVisible(v); setIsDirty(true); }} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Profile visibility</label>

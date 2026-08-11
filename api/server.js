@@ -317,8 +317,12 @@ async function initDb() {
         conversation_id UUID REFERENCES hub_conversations(id) ON DELETE CASCADE,
         user_id         UUID REFERENCES hub_users(id) ON DELETE CASCADE,
         joined_at       TIMESTAMPTZ DEFAULT NOW(),
+        last_read_at    TIMESTAMPTZ,
         PRIMARY KEY (conversation_id, user_id)
       )
+    `);
+    await client.query(`
+      ALTER TABLE hub_conversation_members ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMPTZ
     `);
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_messages (
@@ -334,6 +338,15 @@ async function initDb() {
         message_id UUID REFERENCES hub_messages(id) ON DELETE CASCADE,
         file_id    UUID REFERENCES hub_files(id) ON DELETE CASCADE,
         PRIMARY KEY (message_id, file_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_message_reactions (
+        message_id UUID REFERENCES hub_messages(id) ON DELETE CASCADE,
+        user_id    UUID REFERENCES hub_users(id) ON DELETE CASCADE,
+        emoji      TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (message_id, user_id, emoji)
       )
     `);
     await client.query(`
@@ -490,6 +503,9 @@ async function initDb() {
     );
     await client.query(
       `ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS location               TEXT`,
+    );
+    await client.query(
+      `ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS location_visible       BOOLEAN NOT NULL DEFAULT true`,
     );
     await client.query(
       `ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS bio                    TEXT`,
@@ -2116,6 +2132,7 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
     banner_gradient_to,
     website,
     profile_visibility,
+    location_visible,
   } = req.body || {};
   const VALID_VISIBILITY = ['public', 'hub', 'private'];
   const fields = [];
@@ -2168,6 +2185,12 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
     fields.push(`profile_visibility = $${idx++}`);
     values.push(profile_visibility);
   }
+  if (location_visible !== undefined) {
+    if (typeof location_visible !== 'boolean')
+      return res.status(400).json({ error: 'location_visible must be a boolean' });
+    fields.push(`location_visible = $${idx++}`);
+    values.push(location_visible);
+  }
 
   if (fields.length === 0)
     return res.status(400).json({ error: 'No fields to update' });
@@ -2178,7 +2201,7 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE hub_users SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id AS user_id, username, display_name, location, bio, tags, avatar_url, is_admin, created_at, updated_at,
+       RETURNING id AS user_id, username, display_name, location, location_visible, bio, tags, avatar_url, is_admin, created_at, updated_at,
                  profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility`,
       values,
     );
@@ -2194,8 +2217,9 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
 app.get('/api/members', authenticate, async (_req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id AS user_id, username, display_name, location, bio, tags,
-              is_admin, created_at, avatar_url,
+      `SELECT id AS user_id, username, display_name,
+              CASE WHEN location_visible THEN location ELSE NULL END AS location, location_visible, bio, tags,
+              is_admin, created_at, avatar_url, last_seen_at,
               profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
        FROM hub_users WHERE status = 'approved' ORDER BY created_at`,
     );
@@ -2213,15 +2237,17 @@ app.get('/api/members/:id', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       isMod(req.user)
-        ? `SELECT id AS user_id, username, display_name, location, bio, tags,
-                  avatar_url, is_admin, created_at, status,
+        ? `SELECT id AS user_id, username, display_name,
+                  CASE WHEN location_visible OR id = $2 THEN location ELSE NULL END AS location, location_visible, bio, tags,
+                  avatar_url, is_admin, created_at, status, last_seen_at,
                   profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
            FROM hub_users WHERE id = $1`
-        : `SELECT id AS user_id, username, display_name, location, bio, tags,
-                  avatar_url, is_admin, created_at, status,
+        : `SELECT id AS user_id, username, display_name,
+                  CASE WHEN location_visible OR id = $2 THEN location ELSE NULL END AS location, location_visible, bio, tags,
+                  avatar_url, is_admin, created_at, status, last_seen_at,
                   profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
            FROM hub_users WHERE id = $1 AND status = 'approved'`,
-      [req.params.id],
+      [req.params.id, req.user.id],
     );
     if (!result.rows[0])
       return res.status(404).json({ error: 'Member not found' });
@@ -2407,6 +2433,22 @@ app.delete('/api/auth/account', authenticate, async (req, res) => {
 
 // ── Conversation routes ───────────────────────────────────
 
+// In-memory typing-indicator state — deliberately not persisted (it's only ever
+// meaningful for a few seconds), keyed by conversation then user, cheap to poll.
+// Map<conversationId, Map<userId, timestampMs>>
+const typingState = new Map();
+const TYPING_TTL_MS = 6000;
+
+function pruneTyping(conversationId) {
+  const convoTyping = typingState.get(conversationId);
+  if (!convoTyping) return convoTyping;
+  const cutoff = Date.now() - TYPING_TTL_MS;
+  for (const [uid, ts] of convoTyping) {
+    if (ts < cutoff) convoTyping.delete(uid);
+  }
+  return convoTyping;
+}
+
 // List conversations the current user is a member of
 app.get('/api/conversations', authenticate, async (req, res) => {
   try {
@@ -2419,7 +2461,7 @@ app.get('/api/conversations', authenticate, async (req, res) => {
          c.created_at,
          c.updated_at,
          (
-           SELECT json_agg(json_build_object('user_id', u.id, 'username', u.username)
+           SELECT json_agg(json_build_object('user_id', u.id, 'username', u.username, 'last_read_at', cm.last_read_at)
                            ORDER BY cm.joined_at)
            FROM hub_conversation_members cm
            JOIN hub_users u ON cm.user_id = u.id
@@ -2570,6 +2612,15 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
         .status(403)
         .json({ error: 'Not a member of this conversation' });
 
+    // Fire-and-forget read receipt: fetching a conversation's messages (on open,
+    // and on every poll while it stays open) is treated as "read up to now".
+    pool
+      .query(
+        `UPDATE hub_conversation_members SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
+        [id, req.user.id],
+      )
+      .catch(() => {});
+
     const ATTACH_AGG = `
       COALESCE(
         JSON_AGG(JSON_BUILD_OBJECT(
@@ -2579,11 +2630,24 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
         '[]'
       ) AS attachments`;
 
+    // Correlated subquery (not part of the attachments GROUP BY) so it can't be
+    // fanned out by the attachments JOIN — it aggregates independently per message.
+    const reactionsAgg = (userIdx) => `
+      COALESCE((
+        SELECT JSON_AGG(JSON_BUILD_OBJECT('emoji', t.emoji, 'count', t.cnt, 'reacted_by_me', t.mine) ORDER BY t.first_at)
+        FROM (
+          SELECT mr.emoji, COUNT(*)::int AS cnt, BOOL_OR(mr.user_id = $${userIdx}) AS mine, MIN(mr.created_at) AS first_at
+          FROM hub_message_reactions mr
+          WHERE mr.message_id = m.id
+          GROUP BY mr.emoji
+        ) t
+      ), '[]') AS reactions`;
+
     let rows;
     if (before) {
       const { rows: r } = await pool.query(
         `SELECT m.id AS message_id, m.conversation_id, m.sender_id,
-                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}
+                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}, ${reactionsAgg(4)}
          FROM hub_messages m
          LEFT JOIN hub_users u ON m.sender_id = u.id
          LEFT JOIN hub_message_attachments hma ON hma.message_id = m.id
@@ -2593,13 +2657,13 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
          GROUP BY m.id, u.username
          ORDER BY m.created_at DESC
          LIMIT $3`,
-        [id, before, limit],
+        [id, before, limit, req.user.id],
       );
       rows = r;
     } else {
       const { rows: r } = await pool.query(
         `SELECT m.id AS message_id, m.conversation_id, m.sender_id,
-                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}
+                u.username AS sender_username, m.body, m.created_at, ${ATTACH_AGG}, ${reactionsAgg(3)}
          FROM hub_messages m
          LEFT JOIN hub_users u ON m.sender_id = u.id
          LEFT JOIN hub_message_attachments hma ON hma.message_id = m.id
@@ -2608,7 +2672,7 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
          GROUP BY m.id, u.username
          ORDER BY m.created_at DESC
          LIMIT $2`,
-        [id, limit],
+        [id, limit, req.user.id],
       );
       rows = r;
     }
@@ -2618,6 +2682,36 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Get messages error:', err);
     res.status(500).json({ error: 'Failed to load messages' });
+  }
+});
+
+// All files ever shared in a conversation — powers the "shared media" gallery.
+app.get('/api/conversations/:id/media', authenticate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const member = await pool.query(
+      `SELECT 1 FROM hub_conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+      [id, req.user.id],
+    );
+    if (!member.rows[0])
+      return res.status(403).json({ error: 'Not a member of this conversation' });
+
+    const { rows } = await pool.query(
+      `SELECT hf.id AS file_id, hf.file_name, hf.mime_type, hf.size_bytes AS size,
+              m.id AS message_id, m.created_at, m.sender_id, u.username AS sender_username
+       FROM hub_message_attachments hma
+       JOIN hub_files hf ON hf.id = hma.file_id
+       JOIN hub_messages m ON m.id = hma.message_id
+       LEFT JOIN hub_users u ON u.id = m.sender_id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at DESC
+       LIMIT 500`,
+      [id],
+    );
+    res.json({ media: rows });
+  } catch (err) {
+    console.error('Conversation media error:', err);
+    res.status(500).json({ error: 'Failed to load shared media' });
   }
 });
 
@@ -2636,6 +2730,10 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: 'Not a member of this conversation' });
+
+    // Sending a message implies typing has stopped — don't leave the indicator
+    // showing for the remainder of its TTL.
+    typingState.get(id)?.delete(req.user.id);
 
     // Insert message
     const msgResult = await pool.query(
@@ -2692,6 +2790,103 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Send message error:', err);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Toggle a reaction (add if not present, remove if it is) — one user can have
+// multiple different emoji on the same message, but only one of each.
+app.post('/api/messages/:id/reactions', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const { emoji } = req.body || {};
+  if (!emoji || typeof emoji !== 'string' || [...emoji].length > 4)
+    return res.status(400).json({ error: 'A single emoji is required' });
+
+  try {
+    const msg = await pool.query(
+      `SELECT conversation_id FROM hub_messages WHERE id = $1`,
+      [id],
+    );
+    if (!msg.rows[0]) return res.status(404).json({ error: 'Message not found' });
+
+    const member = await pool.query(
+      `SELECT 1 FROM hub_conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+      [msg.rows[0].conversation_id, req.user.id],
+    );
+    if (!member.rows[0])
+      return res.status(403).json({ error: 'Not a member of this conversation' });
+
+    const existing = await pool.query(
+      `SELECT 1 FROM hub_message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
+      [id, req.user.id, emoji],
+    );
+    let reacted;
+    if (existing.rows[0]) {
+      await pool.query(
+        `DELETE FROM hub_message_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
+        [id, req.user.id, emoji],
+      );
+      reacted = false;
+    } else {
+      await pool.query(
+        `INSERT INTO hub_message_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [id, req.user.id, emoji],
+      );
+      reacted = true;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT emoji, COUNT(*)::int AS count, BOOL_OR(user_id = $2) AS reacted_by_me
+       FROM hub_message_reactions WHERE message_id = $1
+       GROUP BY emoji ORDER BY MIN(created_at)`,
+      [id, req.user.id],
+    );
+    res.json({ message_id: id, reacted, reactions: rows });
+  } catch (err) {
+    console.error('Toggle reaction error:', err);
+    res.status(500).json({ error: 'Failed to toggle reaction' });
+  }
+});
+
+// Signal "I am typing" in a conversation — ephemeral, expires after a few
+// seconds unless the client renews it (called on a throttle while the user types).
+app.post('/api/conversations/:id/typing', authenticate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const member = await pool.query(
+      `SELECT 1 FROM hub_conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+      [id, req.user.id],
+    );
+    if (!member.rows[0])
+      return res.status(403).json({ error: 'Not a member of this conversation' });
+
+    if (!typingState.has(id)) typingState.set(id, new Map());
+    typingState.get(id).set(req.user.id, Date.now());
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Typing signal error:', err);
+    res.status(500).json({ error: 'Failed to send typing signal' });
+  }
+});
+
+// Who's currently typing in this conversation, excluding me
+app.get('/api/conversations/:id/typing', authenticate, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const member = await pool.query(
+      `SELECT 1 FROM hub_conversation_members WHERE conversation_id = $1 AND user_id = $2`,
+      [id, req.user.id],
+    );
+    if (!member.rows[0])
+      return res.status(403).json({ error: 'Not a member of this conversation' });
+
+    const convoTyping = pruneTyping(id);
+    const typing_user_ids = convoTyping
+      ? [...convoTyping.keys()].filter(uid => uid !== req.user.id)
+      : [];
+    res.json({ typing_user_ids });
+  } catch (err) {
+    console.error('Get typing state error:', err);
+    res.status(500).json({ error: 'Failed to load typing state' });
   }
 });
 
@@ -3515,7 +3710,8 @@ app.get('/api/search', authenticate, async (req, res) => {
       LIMIT 200`;
 
     const membersSql = `
-      SELECT id AS user_id, username, display_name, location, bio, tags, is_admin, role, created_at,
+      SELECT id AS user_id, username, display_name,
+             CASE WHEN location_visible THEN location ELSE NULL END AS location, location_visible, bio, tags, is_admin, role, created_at,
              avatar_url, profile_headline, banner_mode, banner_color, banner_gradient_from,
              banner_gradient_to, banner_image_file_name, website, profile_visibility, last_seen_at,
              GREATEST(
@@ -3523,7 +3719,7 @@ app.get('/api/search', authenticate, async (req, res) => {
                  setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
                  setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
                  setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
-                 setweight(to_tsvector('english', coalesce(location,'')), 'D'),
+                 setweight(to_tsvector('english', coalesce(CASE WHEN location_visible THEN location ELSE NULL END,'')), 'D'),
                  websearch_to_tsquery('english', $1), 32),
                strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', ''))
              ) AS text_rank
@@ -3534,7 +3730,7 @@ app.get('/api/search', authenticate, async (req, res) => {
                 setweight(to_tsvector('english', coalesce(username,'') || ' ' || coalesce(display_name,'')), 'A') ||
                 setweight(to_tsvector('english', immutable_array_to_string(coalesce(tags, ARRAY[]::text[]), ' ')), 'B') ||
                 setweight(to_tsvector('english', coalesce(profile_headline,'') || ' ' || coalesce(bio,'')), 'C') ||
-                setweight(to_tsvector('english', coalesce(location,'')), 'D')
+                setweight(to_tsvector('english', coalesce(CASE WHEN location_visible THEN location ELSE NULL END,'')), 'D')
               ) @@ websearch_to_tsquery('english', $1)
               OR strict_word_similarity($2, replace(lower(coalesce(username,'') || coalesce(display_name,'')), ' ', '')) > $3
             )
@@ -5380,7 +5576,8 @@ app.get('/api/public/notes/:id', async (req, res) => {
 app.get('/api/public/profile/:username', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id AS user_id, username, display_name, location, bio, tags,
+      `SELECT id AS user_id, username, display_name,
+              CASE WHEN location_visible THEN location ELSE NULL END AS location, location_visible, bio, tags,
               avatar_url, created_at, profile_headline,
               banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name,
               website, role

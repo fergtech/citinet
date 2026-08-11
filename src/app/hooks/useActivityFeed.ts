@@ -19,6 +19,8 @@ export interface ActivityItem {
   actor: string;
   /** Uploaded avatar URL for the actor, if available */
   actorAvatarUrl?: string;
+  /** Actor's last presence heartbeat — powers the "who's online" dot, same field/threshold as the hub-wide online count and the Messages screen */
+  actorLastSeenAt?: string | null;
   summary: string;
   title: string;
   timestamp: Date;
@@ -92,8 +94,8 @@ export function useActivityFeed(hubSlug: string) {
     const raw: ActivityItem[] = [];
 
     // Build lookup maps from members list
-    const memberByUsername: Record<string, { user_id: string }> = {};
-    const memberByUserId: Record<string, { username: string }> = {};
+    const memberByUsername: Record<string, { user_id: string; last_seen_at?: string | null }> = {};
+    const memberByUserId: Record<string, { username: string; last_seen_at?: string | null }> = {};
     if (membersResult.status === 'fulfilled') {
       for (const m of membersResult.value) {
         memberByUsername[m.username] = m;
@@ -121,6 +123,7 @@ export function useActivityFeed(hubSlug: string) {
           type,
           actor,
           actorAvatarUrl: avatarUrlForUsername(actor),
+          actorLastSeenAt: memberByUsername[actor]?.last_seen_at,
           summary: 'posted',
           title: post.title || post.body?.slice(0, 80) || 'Untitled',
           timestamp: new Date(post.created_at),
@@ -145,6 +148,7 @@ export function useActivityFeed(hubSlug: string) {
           type: 'file_shared',
           actor,
           actorAvatarUrl: file.owner_id ? avatarUrl(file.owner_id) : undefined,
+          actorLastSeenAt: member?.last_seen_at,
           summary: 'shared a file',
           title: friendlyFileLabel(file.mime_type, file.name),
           timestamp: new Date(file.uploaded_at!),
@@ -167,6 +171,7 @@ export function useActivityFeed(hubSlug: string) {
           type: 'neighbor_joined',
           actor: member.username,
           actorAvatarUrl: avatarUrl(member.user_id),
+          actorLastSeenAt: member.last_seen_at,
           summary: 'joined the community',
           title: `@${member.username} is a new neighbor`,
           timestamp: new Date(member.created_at),
@@ -190,6 +195,7 @@ export function useActivityFeed(hubSlug: string) {
           type: 'pin_added',
           actor,
           actorAvatarUrl: avatarUrlForUsername(actor),
+          actorLastSeenAt: memberByUsername[actor]?.last_seen_at,
           summary: 'pinned to Atlas',
           title: pin.title,
           timestamp: new Date(pin.createdAt),
@@ -213,6 +219,7 @@ export function useActivityFeed(hubSlug: string) {
           type: 'space_created',
           actor,
           actorAvatarUrl: creatorId ? avatarUrl(creatorId) : undefined,
+          actorLastSeenAt: creatorId ? memberByUserId[creatorId]?.last_seen_at : undefined,
           summary: 'created a space',
           title: space.name,
           timestamp: new Date(space.created_at),

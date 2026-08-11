@@ -8,6 +8,7 @@ import { HostNodeModal } from './HostNodeModal';
 import { EmergencySignalModal } from './EmergencySignalModal';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { isOnline } from '../utils/presence';
 import type { HubMember } from '../types/hub';
 
 interface NetworkScreenProps {
@@ -99,6 +100,7 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
   const [hostNodeOpen, setHostNodeOpen] = useState(false);
   const [emergencySignalOpen, setEmergencySignalOpen] = useState(false);
   const [members, setMembers] = useState<HubMember[]>([]);
+  const [mapOnlineOnly, setMapOnlineOnly] = useState(false);
 
   const { currentHub } = useHub();
   const { status, label: statusLabel, dotColor } = useHubStatus();
@@ -118,6 +120,8 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
     const now = Date.now();
     return members.filter(m => now - new Date(m.created_at).getTime() < THIRTY_DAYS_MS).length;
   }, [members]);
+  const onlineMembers = useMemo(() => members.filter(m => isOnline(m.last_seen_at)), [members]);
+  const mapMembers = mapOnlineOnly ? onlineMembers : members;
   const hubName = currentHub?.name || 'Community Hub';
   const tunnelUrl = currentHub?.tunnelUrl || '';
 
@@ -195,10 +199,26 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
             {/* Main column */}
             <div className="flex flex-col gap-5 min-w-0">
               <div>
-                <h2 className="text-base font-semibold cn-text-1 mb-0.5">Live network</h2>
-                <p className="text-xs cn-text-3 mb-3">Real-time member locations around this hub</p>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h2 className="text-base font-semibold cn-text-1 mb-0.5">Live network</h2>
+                    <p className="text-xs cn-text-3">Real-time member locations around this hub</p>
+                  </div>
+                  <button
+                    onClick={() => setMapOnlineOnly(v => !v)}
+                    className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      mapOnlineOnly
+                        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
+                        : 'cn-surface-2 cn-border cn-text-3 hover:bg-black/5 dark:hover:bg-white/5'
+                    }`}
+                    title={mapOnlineOnly ? 'Showing online members only' : 'Showing all members'}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${mapOnlineOnly ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400 dark:bg-zinc-600'}`} />
+                    Online only · {onlineMembers.length}
+                  </button>
+                </div>
                 <div className="h-[420px]">
-                  <NetworkMap members={members} />
+                  <NetworkMap members={mapMembers} />
                 </div>
               </div>
               {/* Sidebar content repeats here on mobile, below the map */}

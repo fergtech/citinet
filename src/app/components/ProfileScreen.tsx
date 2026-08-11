@@ -520,7 +520,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                     <span className="cn-eyebrow">Bio</span>
                     <p className="mt-2.5 text-[13.5px] leading-relaxed cn-text-2">
                       {bioClamped}
-                      {bio.length > 280 && (
+                      {bio.length > 300 && (
                         <button onClick={() => setShowBioModal(true)} className="ml-1.5 font-semibold cn-text-3 hover:cn-text-1 hover:underline">
                           Read more
                         </button>
@@ -544,12 +544,16 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                       <DetailRow icon={Building2} label="Member of" first onClick={() => window.open(`${window.location.origin}/?hub=${slug}`, '_blank')}>
                         {hubName}
                       </DetailRow>
-                      {member.location && (
-                        <DetailRow icon={MapPin} label="Lives at">{member.location}</DetailRow>
-                      )}
                       {member.created_at && (
-                        <DetailRow icon={Calendar} label="Neighbor since">{formatJoinDate(member.created_at)}</DetailRow>
+                        <DetailRow icon={Calendar} label="Member since">{formatJoinDate(member.created_at)}</DetailRow>
                       )}
+
+                      {(member.location || member.location_visible === false) && (
+                        <DetailRow icon={MapPin} label="Lives at">
+                          {member.location_visible === false ? 'Somewhere in the community' : member.location}
+                        </DetailRow>
+                      )}
+                      
                       <DetailRow icon={Hash} label="Hub handle">
                         <span className="cn-mono">@{member.username}</span>
                       </DetailRow>

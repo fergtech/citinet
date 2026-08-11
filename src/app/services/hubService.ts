@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubMessage, HubMessageAttachment, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 
@@ -405,6 +405,7 @@ class HubService {
       bannerMode?: 'image' | 'solid' | 'gradient'; bannerColor?: string;
       bannerGradientFrom?: string; bannerGradientTo?: string;
       profileVisibility?: 'public' | 'hub' | 'private';
+      locationVisible?: boolean;
     }
   ): Promise<HubUser> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
@@ -420,6 +421,7 @@ class HubService {
     if (updates.bannerGradientFrom !== undefined) body.banner_gradient_from = updates.bannerGradientFrom;
     if (updates.bannerGradientTo   !== undefined) body.banner_gradient_to   = updates.bannerGradientTo;
     if (updates.profileVisibility  !== undefined) body.profile_visibility   = updates.profileVisibility;
+    if (updates.locationVisible    !== undefined) body.location_visible     = updates.locationVisible;
 
     const res = await fetch(`${tunnelUrl}/api/auth/profile`, {
       method: 'PATCH',
@@ -443,6 +445,7 @@ class HubService {
       bannerGradientFrom: updates.bannerGradientFrom,
       bannerGradientTo:   updates.bannerGradientTo,
       profileVisibility:  updates.profileVisibility,
+      locationVisible:    updates.locationVisible,
     });
   }
 
@@ -630,7 +633,7 @@ class HubService {
   /** Update profile fields for the current user on a hub (stored locally) */
   updateUserProfile(
     hubSlug: string,
-    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName' | 'profileVisibility'>>
+    updates: Partial<Pick<HubUser, 'displayName' | 'email' | 'location' | 'bio' | 'tags' | 'avatarUrl' | 'profileHeadline' | 'website' | 'bannerMode' | 'bannerColor' | 'bannerGradientFrom' | 'bannerGradientTo' | 'bannerImageFileName' | 'profileVisibility' | 'locationVisible'>>
   ): HubUser {
     const connections = this.getAllHubConnections();
     const connection = connections[hubSlug];
@@ -963,6 +966,8 @@ class HubService {
       username:  m.username || m.name || m.display_name || 'Unknown',
       display_name: m.display_name ?? null,
       location: m.location ?? null,
+      location_visible: m.location_visible ?? null,
+      last_seen_at: m.last_seen_at ?? null,
       bio: m.bio ?? null,
       tags: m.tags ?? null,
       is_admin:  Boolean(m.is_admin || m.isAdmin || false),
@@ -1014,9 +1019,10 @@ class HubService {
     return Promise.all(rawConvos.map(async (raw: any) => {
       // API wraps as { conversation: {...}, members: [...], last_message: ... }
       const conv = raw.conversation || raw;
-      const membersList: Array<{ user_id: string; username: string }> = (raw.members || conv.members || conv.participants || []).map((p: any) => ({
+      const membersList: HubParticipant[] = (raw.members || conv.members || conv.participants || []).map((p: any) => ({
         user_id: p.user_id || p.id || '',
         username: p.username || p.name || 'Unknown',
+        last_read_at: p.last_read_at || null,
       }));
       const lastMsg = raw.last_message || conv.last_message;
       const convoId: string = conv.conversation_id || conv.id || '';
@@ -1151,8 +1157,31 @@ class HubService {
         sender_username: m.sender_username || m.username || undefined,
         body,
         attachments: this.normalizeAttachments(m.attachments),
+        reactions: this.normalizeReactions(m.reactions),
         created_at: m.created_at || '',
       };
+    }));
+  }
+
+  /** All files ever shared in a conversation — powers the "shared media" gallery. */
+  async getConversationMedia(hubSlug: string, conversationId: string): Promise<HubConversationMediaItem[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/conversations/${conversationId}/media`, { headers });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(body || `Failed to load shared media (${res.status})`);
+    }
+    const data = await res.json();
+    const raw: any[] = Array.isArray(data) ? data : (data.media || []);
+    return raw.map((m: any) => ({
+      file_id: m.file_id,
+      file_name: m.file_name,
+      mime_type: m.mime_type,
+      size: Number(m.size || 0),
+      message_id: m.message_id,
+      sender_id: m.sender_id,
+      sender_username: m.sender_username || undefined,
+      created_at: m.created_at,
     }));
   }
 
@@ -1290,6 +1319,33 @@ class HubService {
     }));
   }
 
+  /** Normalize reaction aggregates from the hub API */
+  private normalizeReactions(raw: any): HubMessageReaction[] | undefined {
+    if (!raw || !Array.isArray(raw) || raw.length === 0) return undefined;
+    return raw.map((r: any) => ({
+      emoji: r.emoji,
+      count: Number(r.count || 0),
+      reacted_by_me: !!r.reacted_by_me,
+    }));
+  }
+
+  /** Toggle a reaction on a message — adds it if the user hasn't reacted with that
+   *  emoji yet, removes it if they have. Returns the message's updated reaction list. */
+  async toggleReaction(hubSlug: string, messageId: string, emoji: string): Promise<{ reacted: boolean; reactions: HubMessageReaction[] }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(body || `Failed to react (${res.status})`);
+    }
+    const data = await res.json();
+    return { reacted: !!data.reacted, reactions: this.normalizeReactions(data.reactions) || [] };
+  }
+
   /**
    * Get the WebSocket URL for real-time message delivery.
    * Returns ws(s)://host/ws?token=JWT
@@ -1302,6 +1358,24 @@ class HubService {
       .replace('https://', 'wss://')
       .replace('http://', 'ws://');
     return `${wsUrl}/ws?token=${connection.user.authToken}`;
+  }
+
+  /** Signal "I am typing" in a conversation. Fire-and-forget — callers should throttle. */
+  async sendTypingSignal(hubSlug: string, conversationId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    await fetch(`${tunnelUrl}/api/conversations/${conversationId}/typing`, {
+      method: 'POST',
+      headers,
+    }).catch(() => {});
+  }
+
+  /** User IDs currently typing in a conversation (excluding the caller). */
+  async getTypingUsers(hubSlug: string, conversationId: string): Promise<string[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/conversations/${conversationId}/typing`, { headers });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => null);
+    return Array.isArray(data?.typing_user_ids) ? data.typing_user_ids : [];
   }
 
   // ──────────────────────────────────────────────

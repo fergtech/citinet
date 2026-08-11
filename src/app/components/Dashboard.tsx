@@ -14,6 +14,7 @@ import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
+import { isOnline } from '../utils/presence';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import { aiService } from '../services/aiService';
@@ -470,9 +471,11 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 <div className="flex items-center gap-4 mb-5 overflow-x-auto pb-1 no-scrollbar">
                   {activeActors.map(item => {
                     const ini = item.actor.charAt(0).toUpperCase();
-                    // Current user is always green — they're online right now
+                    // Current user is always green — they're online right now.
+                    // Everyone else: real presence (last_seen_at), same threshold as the
+                    // hub's "N online" count and the Messages screen — not "posted recently".
                     const isCurrentUser = item.actor === currentUser?.username;
-                    const fresh = isCurrentUser || Date.now() - item.timestamp.getTime() < 3_600_000;
+                    const fresh = isCurrentUser || isOnline(item.actorLastSeenAt);
                     return (
                       <button
                         key={item.actor}

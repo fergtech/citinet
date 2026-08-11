@@ -5,13 +5,17 @@ import {
   Search, Send, Users, Loader2, AlertCircle,
   RefreshCw, Plus, MessageCircle, X, Check,
   Paperclip, File as FileIcon, Download, ArrowLeft, ChevronRight,
+  ImagePlus, MapPin, NotebookPen, CalendarDays, Sparkles, Smile, Mic, Film, Images, SmilePlus,
 } from 'lucide-react';
 import { SupportLauncher } from './SupportLauncher';
+import { parseMessageLinks, LinkPreviewCard } from './LinkPreview';
+import { EmojiPicker } from './EmojiPicker';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
-import type { HubConversation, HubMessage, HubMember } from '../types/hub';
+import { isOnline } from '../utils/presence';
+import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem } from '../types/hub';
 
 interface MessagesScreenProps {
   onBack: () => void;
@@ -163,6 +167,32 @@ function AvatarBadge({
   );
 }
 
+/** One row in the composer's attachment tray */
+function AttachTrayItem({ icon: Icon, label, onClick, disabled }: {
+  icon: React.ElementType; label: string; onClick?: () => void; disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm transition-colors ${
+        disabled
+          ? 'text-slate-300 dark:text-zinc-600 cursor-not-allowed'
+          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-zinc-800/60'
+      }`}
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className="flex-1">{label}</span>
+      {disabled && (
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500">
+          Soon
+        </span>
+      )}
+    </button>
+  );
+}
+
 /** Display name for a conversation */
 function convoDisplayName(c: HubConversation, myUserId?: string): string {
   if (c.name) return c.name;
@@ -175,6 +205,9 @@ function convoDisplayName(c: HubConversation, myUserId?: string): string {
 }
 
 const POLL_INTERVAL = 10_000;
+const TYPING_POLL_INTERVAL = 2_500;
+const TYPING_SEND_THROTTLE_MS = 2_500;
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 /** Classify a file by its MIME type */
 function classifyFile(file: File): 'image' | 'video' | 'audio' | 'file' {
@@ -296,6 +329,17 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // Group members panel (view who's in a group chat, click through to their profile)
   const [showGroupMembers, setShowGroupMembers] = useState(false);
 
+  // Shared media gallery — every file ever sent in the open conversation
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [mediaItems, setMediaItems] = useState<HubConversationMediaItem[]>([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+
+  // Message reactions — which message (if any) has its quick-react bar / full
+  // emoji picker open
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [fullEmojiPickerFor, setFullEmojiPickerFor] = useState<string | null>(null);
+
   // A conversation the user has opened (via "New Conversation", a profile's Message
   // button, or "Message seller") but hasn't sent anything in yet — exists only in
   // local state. It's only persisted to the backend on the first actual send, so
@@ -304,6 +348,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
   // Conversation IDs that have unread notifications — drives the purple dot per row
   const [unreadConvIds, setUnreadConvIds] = useState<Set<string>>(new Set());
+
+  // Who's currently typing in the open conversation (excludes me)
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+  const lastTypingSentRef = useRef(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -315,6 +363,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [fileAcceptMode, setFileAcceptMode] = useState<'media' | 'file'>('file');
+
+  // Composer popovers
+  const [showAttachTray, setShowAttachTray] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Lightbox state — clicking an image opens it full-screen
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -362,6 +415,14 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
       setUnreadConvIds(new Set(convIds));
     }).catch(() => {});
   }, [slug]);
+
+  // Load the full member directory early (not just when "New Conversation" opens)
+  // so DM headers can show online/last-active status right away.
+  useEffect(() => {
+    if (!slug || !myUserId) return;
+    ensureMembersLoaded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, myUserId]);
 
   // Deep-link: auto-select a specific conversation when arriving from a notification badge tap.
   useEffect(() => {
@@ -435,10 +496,26 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     return () => clearInterval(timer);
   }, [selectedId, slug, loadMessages]);
 
+  // Poll who's typing — a faster, cheap poll (in-memory on the server, no DB hit)
+  // separate from the main message poll so the indicator feels responsive.
+  useEffect(() => {
+    setTypingUserIds([]);
+    if (!selectedId || !slug || selectedId.startsWith('draft')) return;
+    let cancelled = false;
+    const poll = () => {
+      hubService.getTypingUsers(slug, selectedId).then(ids => {
+        if (!cancelled) setTypingUserIds(ids);
+      }).catch(() => {});
+    };
+    poll();
+    const timer = setInterval(poll, TYPING_POLL_INTERVAL);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [selectedId, slug]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, typingUserIds]);
 
   // ── select conversation + per-conversation read marking ──
   const handleSelectConversation = (convId: string) => {
@@ -538,6 +615,27 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     setStagedFiles([]);
   };
 
+  /** Insert an emoji at the current cursor position (falls back to appending). */
+  const insertEmoji = (emoji: string) => {
+    const el = inputRef.current;
+    if (!el) { setMessageText(prev => prev + emoji); return; }
+    const start = el.selectionStart ?? messageText.length;
+    const end = el.selectionEnd ?? messageText.length;
+    const next = messageText.slice(0, start) + emoji + messageText.slice(end);
+    setMessageText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + emoji.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const openAttachPicker = (mode: 'media' | 'file') => {
+    setFileAcceptMode(mode);
+    setShowAttachTray(false);
+    requestAnimationFrame(() => fileInputRef.current?.click());
+  };
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(e.target.files);
     e.target.value = '';
@@ -597,6 +695,41 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const openGroupMembers = async () => {
     setShowGroupMembers(true);
     await ensureMembersLoaded();
+  };
+
+  const openMediaGallery = async () => {
+    if (!selectedId || selectedId.startsWith('draft')) return;
+    setShowMediaGallery(true);
+    setMediaLoading(true);
+    setMediaError('');
+    try {
+      const media = await hubService.getConversationMedia(slug, selectedId);
+      setMediaItems(media);
+    } catch (err: any) {
+      setMediaError(err.message || 'Failed to load shared media');
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    setReactionPickerFor(null);
+    setFullEmojiPickerFor(null);
+    try {
+      const { reactions } = await hubService.toggleReaction(slug, messageId, emoji);
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, reactions } : m));
+    } catch (err) {
+      console.error('Failed to toggle reaction:', err);
+    }
+  };
+
+  /** Throttled "I am typing" signal — safe to call on every keystroke. */
+  const notifyTyping = () => {
+    if (!selectedId || selectedId.startsWith('draft') || !slug) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < TYPING_SEND_THROTTLE_MS) return;
+    lastTypingSentRef.current = now;
+    hubService.sendTypingSignal(slug, selectedId);
   };
 
   const toggleMember = (member: HubMember) => {
@@ -666,6 +799,23 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const filteredMembers = members.filter(m =>
     m.username.toLowerCase().includes(memberSearch.toLowerCase())
   );
+  const peerMember = selectedConvo && selectedConvo.kind === 'dm'
+    ? members.find(m => m.user_id === convoAvatarUserId(selectedConvo, myUserId))
+    : undefined;
+  const peerOnline = isOnline(peerMember?.last_seen_at);
+  // Read receipts are DM-only — the peer's own last_read_at comes from the
+  // conversation's member list (refreshed on the same 10s poll as everything else).
+  const peerLastReadAt = selectedConvo?.kind === 'dm'
+    ? selectedConvo.members.find(m => m.user_id !== myUserId)?.last_read_at
+    : undefined;
+  const typingNames = typingUserIds
+    .map(uid => selectedConvo?.members.find(m => m.user_id === uid)?.username
+      || members.find(m => m.user_id === uid)?.username)
+    .filter((n): n is string => !!n);
+  const typingLabel = typingNames.length === 0 ? ''
+    : typingNames.length === 1 ? `${typingNames[0]} is typing`
+    : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing`
+    : 'Several people are typing';
 
   // ── keyboard shortcut ─────────────────────────────────
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -999,6 +1149,96 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
         )}
       </AnimatePresence>
 
+      {/* ── Shared Media Gallery ── */}
+      <AnimatePresence>
+        {showMediaGallery && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 dark:bg-black/40 backdrop-blur-sm p-4"
+            onClick={() => setShowMediaGallery(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Shared media {!mediaLoading && <span className="text-slate-400 dark:text-slate-500 font-normal text-sm">({mediaItems.length})</span>}
+                </h2>
+                <button onClick={() => setShowMediaGallery(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Close shared media">
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto">
+                {mediaLoading ? (
+                  <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
+                ) : mediaError ? (
+                  <div className="flex flex-col items-center py-10 text-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-red-400" />
+                    <p className="text-sm text-red-500">{mediaError}</p>
+                  </div>
+                ) : mediaItems.length === 0 ? (
+                  <div className="flex flex-col items-center py-10 text-center gap-2">
+                    <Images className="w-8 h-8 text-slate-300 dark:text-zinc-600" />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No files shared in this conversation yet</p>
+                  </div>
+                ) : (
+                  (() => {
+                    const visual = mediaItems.filter(m => {
+                      const kind = classifyMime(m.mime_type, m.file_name);
+                      return kind === 'image' || kind === 'video';
+                    });
+                    const other = mediaItems.filter(m => !visual.includes(m));
+                    return (
+                      <>
+                        {visual.length > 0 && (
+                          <div className="grid grid-cols-3 gap-2 mb-4">
+                            {visual.map(m => (
+                              <AuthMedia
+                                key={m.file_id}
+                                slug={slug}
+                                fileName={m.file_name}
+                                mimeType={m.mime_type}
+                                alt={m.file_name}
+                                className="w-full h-24 rounded-lg cursor-pointer border border-slate-200 dark:border-zinc-700 object-cover"
+                                onClick={() => previewAttachment({ file_name: m.file_name, mime_type: m.mime_type })}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {other.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            {other.map(m => (
+                              <div key={m.file_id} className="flex items-center gap-2.5 bg-slate-50 dark:bg-zinc-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-zinc-700">
+                                <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                                <span className="text-xs text-slate-700 dark:text-slate-200 truncate flex-1">{m.file_name}</span>
+                                <button
+                                  className="text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors shrink-0"
+                                  onClick={() => hubService.downloadFile(slug, m.file_name)}
+                                  title={`Download ${m.file_name}`}
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Conversations Sidebar ── */}
       <aside className={`${selectedId ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-xl border-r border-slate-200/50 dark:border-zinc-800/50 relative z-10`}>
         {/* Header */}
@@ -1056,7 +1296,8 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               {filteredConversations.map((convo) => {
                 const displayName = convoDisplayName(convo, myUserId);
                 const avatarUserId = convoAvatarUserId(convo, myUserId);
-                const preview = convo.lastMessage?.body;
+                const lastBody = convo.lastMessage?.body ? parseMessageLinks(convo.lastMessage.body) : null;
+                const preview = lastBody?.text || (lastBody?.urls.length ? '🔗 Link' : convo.lastMessage?.body);
                 const isUnread = unreadConvIds.has(convo.id);
                 return (
                   <motion.button
@@ -1066,10 +1307,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     onClick={() => handleSelectConversation(convo.id)}
-                    className={`w-full p-3.5 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 ${
+                    className={`w-full p-3.5 pl-3 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 border-l-[3px] ${
                       selectedId === convo.id
-                        ? 'bg-purple-50 dark:bg-purple-900/20'
-                        : 'hover:bg-slate-50 dark:hover:bg-zinc-800/30 active:bg-slate-100 dark:active:bg-zinc-800/50'
+                        ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-500'
+                        : 'border-transparent hover:bg-slate-50 dark:hover:bg-zinc-800/30 active:bg-slate-100 dark:active:bg-zinc-800/50'
                     }`}
                   >
                     {/* Avatar */}
@@ -1161,42 +1402,76 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
               </button>
 
-              <div className="relative">
-                <AvatarBadge
-                  slug={slug}
-                  userId={convoAvatarUserId(selectedConvo, myUserId)}
-                  name={convoDisplayName(selectedConvo, myUserId)}
-                  sizeClass="w-10 h-10"
-                  radiusClass="rounded-full"
-                  textClass=""
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-semibold text-slate-900 dark:text-white">
-                    {convoDisplayName(selectedConvo, myUserId)}
-                  </h2>
-                  {selectedConvo.kind === 'group' && (
-                    <Users className="w-4 h-4 text-slate-400" />
+              <button
+                onClick={() => {
+                  if (selectedConvo.kind === 'dm') {
+                    const peerId = convoAvatarUserId(selectedConvo, myUserId);
+                    if (!peerId || !onNavigate) return;
+                    if (selectedId) sessionStorage.setItem('citinet-deeplink-message-conv', selectedId);
+                    onNavigate(`profile/${peerId}`);
+                  } else {
+                    openGroupMembers();
+                  }
+                }}
+                disabled={selectedConvo.kind === 'dm' && (!onNavigate || !convoAvatarUserId(selectedConvo, myUserId))}
+                className="relative flex items-center gap-3 text-left disabled:cursor-default hover:opacity-80 active:opacity-70 transition-opacity disabled:hover:opacity-100"
+                title={selectedConvo.kind === 'dm' ? `View ${convoDisplayName(selectedConvo, myUserId)}’s profile` : 'View group members'}
+              >
+                <div className="relative shrink-0">
+                  <AvatarBadge
+                    slug={slug}
+                    userId={convoAvatarUserId(selectedConvo, myUserId)}
+                    name={convoDisplayName(selectedConvo, myUserId)}
+                    sizeClass="w-10 h-10"
+                    radiusClass="rounded-full"
+                    textClass=""
+                  />
+                  {selectedConvo.kind === 'dm' && (
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 ${
+                        peerOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'
+                      }`}
+                    />
                   )}
                 </div>
-                {selectedConvo.kind === 'group' ? (
-                  <button
-                    onClick={openGroupMembers}
-                    className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:underline transition-colors"
-                  >
-                    {selectedConvo.members.length} members
-                  </button>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-semibold text-slate-900 dark:text-white">
+                      {convoDisplayName(selectedConvo, myUserId)}
+                    </h2>
+                    {selectedConvo.kind === 'group' && (
+                      <Users className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                  {selectedConvo.kind === 'group' ? (
+                    <span className="text-xs text-slate-600 dark:text-slate-400">
+                      {selectedConvo.members.length} members
+                    </span>
+                  ) : peerOnline ? (
+                  <p className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Online
+                  </p>
                 ) : (
-                  <p className="text-xs text-slate-600 dark:text-slate-400">Direct message</p>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    {peerMember?.last_seen_at ? `Last active ${formatTimestamp(peerMember.last_seen_at)}` : 'Direct message'}
+                  </p>
                 )}
               </div>
+              </button>
             </div>
+
+            <button
+              onClick={openMediaGallery}
+              title="Shared media"
+              className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
+            >
+              <Images className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+            </button>
           </div>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2.5">
             {msgsLoading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" />
@@ -1209,9 +1484,14 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             ) : (
               (() => {
                 const sorted = [...messages].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                // Only the most recent message I sent ever shows a read receipt —
+                // matches iMessage/WhatsApp instead of stamping every bubble.
+                const lastMyMessageId = [...sorted].reverse().find(m => m.sender_id === myUserId)?.id;
                 let lastDate = '';
                 return sorted.map((msg) => {
                   const isMe = msg.sender_id === myUserId;
+                  const isRead = isMe && msg.id === lastMyMessageId && !!peerLastReadAt
+                    && new Date(peerLastReadAt).getTime() >= new Date(msg.created_at).getTime();
                   const msgDate = new Date(msg.created_at).toDateString();
                   const showSeparator = msgDate !== lastDate;
                   lastDate = msgDate;
@@ -1226,7 +1506,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
                         </div>
                       )}
-                    <div className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`group flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {/* Avatar for all non-me messages — clickable → profile */}
                       {!isMe && (
                         <button
@@ -1250,7 +1530,66 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           />
                         </button>
                       )}
-                      <div className="max-w-[72%] md:max-w-[58%]">
+                      <div className="max-w-[72%] md:max-w-[58%] relative">
+                        {/* Reaction trigger — visible on hover/focus, opens quick-react bar */}
+                        <div className={`absolute top-0 z-20 ${isMe ? '-left-9' : '-right-9'}`}>
+                          <button
+                            type="button"
+                            onClick={() => setReactionPickerFor(prev => prev === msg.id ? null : msg.id)}
+                            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-7 h-7 rounded-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-sm flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-all"
+                            title="React"
+                          >
+                            <SmilePlus className="w-3.5 h-3.5" />
+                          </button>
+                          <AnimatePresence>
+                            {reactionPickerFor === msg.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setReactionPickerFor(null)} />
+                                <motion.div
+                                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                                  className={`absolute top-8 z-50 flex items-center gap-0.5 p-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 shadow-xl ${isMe ? 'right-0' : 'left-0'}`}
+                                >
+                                  {QUICK_REACTIONS.map(e => (
+                                    <button
+                                      key={e}
+                                      type="button"
+                                      onClick={() => handleToggleReaction(msg.id, e)}
+                                      className="w-7 h-7 flex items-center justify-center text-base rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                      {e}
+                                    </button>
+                                  ))}
+                                  <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 mx-0.5 shrink-0" />
+                                  <button
+                                    type="button"
+                                    onClick={() => { setReactionPickerFor(null); setFullEmojiPickerFor(msg.id); }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-slate-500 transition-colors"
+                                    title="More emoji"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+                                </motion.div>
+                              </>
+                            )}
+                          </AnimatePresence>
+                          <AnimatePresence>
+                            {fullEmojiPickerFor === msg.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setFullEmojiPickerFor(null)} />
+                                <motion.div
+                                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                                  className={`absolute top-8 z-50 ${isMe ? 'right-0' : 'left-0'}`}
+                                >
+                                  <EmojiPicker onSelect={(e) => { handleToggleReaction(msg.id, e); setFullEmojiPickerFor(null); }} />
+                                </motion.div>
+                              </>
+                            )}
+                          </AnimatePresence>
+                        </div>
                         {/* Colored sender name in group chats — clickable → profile */}
                         {!isMe && selectedConvo.kind === 'group' && msg.sender_username && (
                           <button
@@ -1265,58 +1604,120 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             <span className={getSenderNameColor(msg.sender_username)}>{msg.sender_username}</span>
                           </button>
                         )}
-                        <div
-                          className={`rounded-2xl px-4 py-2.5 ${
-                            isMe
-                              ? 'bg-purple-600 dark:bg-purple-500 text-white rounded-br-sm'
-                              : 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700 rounded-bl-sm'
-                          }`}
-                        >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
-                          {/* Attachments */}
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {msg.attachments.map((att) => {
-                                const kind = classifyMime(att.mime_type, att.file_name);
-                                if (kind === 'image' || kind === 'video' || kind === 'audio') {
-                                  return (
-                                    <AuthMedia
-                                      key={att.id}
-                                      slug={slug}
-                                      fileName={att.file_name}
-                                      mimeType={att.mime_type}
-                                      alt={att.file_name}
-                                      className="max-w-[240px] max-h-[180px] rounded-lg cursor-pointer border border-slate-200 dark:border-zinc-700 object-cover"
-                                      onClick={() => previewAttachment(att)}
-                                    />
-                                  );
-                                }
-                                return (
-                                  <div key={att.id} className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2 py-1 border border-slate-200 dark:border-zinc-700">
-                                    <FileIcon className="w-4 h-4 text-slate-400" />
-                                    <span className="text-xs truncate max-w-[120px]">{att.file_name}</span>
-                                    <button
-                                      className="ml-1 text-slate-600 dark:text-slate-300 hover:underline text-xs"
-                                      onClick={() => hubService.downloadFile(slug, att.file_name)}
-                                      title={`Download ${att.file_name}`}
-                                    >
-                                      <Download className="w-4 h-4 inline" />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        <p className={`text-xs text-slate-500 dark:text-slate-400 mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
+                        {(() => {
+                          const { text, urls } = parseMessageLinks(msg.body);
+                          const hasAttachments = !!msg.attachments?.length;
+                          return (
+                            <>
+                              {(text || hasAttachments) && (
+                                <div
+                                  className={`rounded-2xl px-4 py-2.5 ${
+                                    isMe
+                                      ? 'bg-purple-600 dark:bg-purple-500 text-white rounded-br-sm'
+                                      : 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700 rounded-bl-sm'
+                                  }`}
+                                >
+                                  {text && (
+                                    <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
+                                  )}
+                                  {/* Attachments */}
+                                  {hasAttachments && (
+                                    <div className={`flex flex-wrap gap-2 ${text ? 'mt-2' : ''}`}>
+                                      {msg.attachments!.map((att) => {
+                                        const kind = classifyMime(att.mime_type, att.file_name);
+                                        if (kind === 'image' || kind === 'video' || kind === 'audio') {
+                                          return (
+                                            <AuthMedia
+                                              key={att.id}
+                                              slug={slug}
+                                              fileName={att.file_name}
+                                              mimeType={att.mime_type}
+                                              alt={att.file_name}
+                                              className="max-w-[240px] max-h-[180px] rounded-lg cursor-pointer border border-slate-200 dark:border-zinc-700 object-cover"
+                                              onClick={() => previewAttachment(att)}
+                                            />
+                                          );
+                                        }
+                                        return (
+                                          <div key={att.id} className="flex items-center gap-2 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2 py-1 border border-slate-200 dark:border-zinc-700">
+                                            <FileIcon className="w-4 h-4 text-slate-400" />
+                                            <span className="text-xs truncate max-w-[120px]">{att.file_name}</span>
+                                            <button
+                                              className="ml-1 text-slate-600 dark:text-slate-300 hover:underline text-xs"
+                                              onClick={() => hubService.downloadFile(slug, att.file_name)}
+                                              title={`Download ${att.file_name}`}
+                                            >
+                                              <Download className="w-4 h-4 inline" />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {urls.map(url => (
+                                <LinkPreviewCard key={url} url={url} slug={slug} />
+                              ))}
+                            </>
+                          );
+                        })()}
+                        {msg.reactions && msg.reactions.length > 0 && (
+                          <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            {msg.reactions.map(r => (
+                              <button
+                                key={r.emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(msg.id, r.emoji)}
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
+                                  r.reacted_by_me
+                                    ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300'
+                                    : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                                }`}
+                                title={r.reacted_by_me ? 'Remove your reaction' : 'React'}
+                              >
+                                <span>{r.emoji}</span>
+                                <span className="font-medium">{r.count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <p className={`text-xs text-slate-500 dark:text-slate-400 mt-0.5 ${isMe ? 'text-right' : 'text-left'}`}>
                           {formatMessageTime(msg.created_at)}
                         </p>
+                        {isRead && (
+                          <p className="text-[11px] text-purple-500 dark:text-purple-400 mt-0.5 text-right flex items-center justify-end gap-1">
+                            <Check className="w-3 h-3" /> Read {formatMessageTime(peerLastReadAt!)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     </React.Fragment>
                   );
                 });
               })()
+            )}
+            {typingLabel && (
+              <div className="flex items-end gap-2 justify-start">
+                {selectedConvo.kind === 'dm' && (
+                  <AvatarBadge
+                    slug={slug}
+                    userId={convoAvatarUserId(selectedConvo, myUserId)}
+                    name={convoDisplayName(selectedConvo, myUserId)}
+                    sizeClass="w-7 h-7"
+                    radiusClass="rounded-full"
+                    textClass="text-[10px]"
+                  />
+                )}
+                <div className="flex flex-col gap-0.5">
+                  <div className="rounded-2xl rounded-bl-sm px-4 py-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 ml-1">{typingLabel}</p>
+                </div>
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -1332,11 +1733,47 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             }}
           >
             <div
-              className={`flex items-end gap-1.5 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
+              className={`flex items-center gap-1.5 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
+              {/* Attachment tray trigger */}
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAttachTray(v => !v)}
+                  className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-sm shrink-0"
+                  title="Add attachment"
+                  disabled={sending || stagedFiles.length >= MAX_ATTACHMENTS}
+                >
+                  <Plus className={`w-4 h-4 text-white transition-transform ${showAttachTray ? 'rotate-45' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {showAttachTray && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowAttachTray(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                        className="absolute bottom-[46px] left-0 z-50 w-56 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-xl overflow-hidden py-1.5"
+                      >
+                        <AttachTrayItem icon={ImagePlus} label="Photo / video" onClick={() => openAttachPicker('media')} />
+                        <AttachTrayItem icon={Film} label="GIF" disabled />
+                        <AttachTrayItem icon={Paperclip} label="File" onClick={() => openAttachPicker('file')} />
+                        <div className="my-1 border-t border-slate-100 dark:border-zinc-800" />
+                        <AttachTrayItem icon={MapPin} label="Location" disabled />
+                        <AttachTrayItem icon={NotebookPen} label="Note" disabled />
+                        <AttachTrayItem icon={Users} label="Space" disabled />
+                        <AttachTrayItem icon={CalendarDays} label="Event" disabled />
+                        <AttachTrayItem icon={Sparkles} label="Project / initiative" disabled />
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <div className="flex-1 relative">
                 {/* Attachment preview strip - now above the textarea */}
                 {stagedFiles.length > 0 && (
@@ -1386,33 +1823,64 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     </button>
                   </div>
                 )}
-                <textarea
-                  ref={inputRef}
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder="Type a message…"
-                  title="Message input"
-                  rows={1}
-                  className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
-                />
+                <div className="relative">
+                  <textarea
+                    ref={inputRef}
+                    value={messageText}
+                    onChange={(e) => { setMessageText(e.target.value); notifyTyping(); }}
+                    onKeyDown={onKeyDown}
+                    placeholder="Type a message…"
+                    title="Message input"
+                    rows={1}
+                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
+                  />
+                  {/* Inline icon cluster, paired together on a shared 24x24 grid — emoji
+                      is functional, mic is visible-but-disabled. GIF lives in the "+"
+                      tray instead, so this pair is the only thing living inside the capsule. */}
+                  <div className="absolute right-1.5 bottom-1.5 flex items-center gap-0.5">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker(v => !v)}
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                        title="Emoji"
+                      >
+                        <Smile className="w-4 h-4" />
+                      </button>
+                      <AnimatePresence>
+                        {showEmojiPicker && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowEmojiPicker(false)} />
+                            <motion.div
+                              initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                              className="absolute bottom-9 right-0 z-50"
+                            >
+                              <EmojiPicker onSelect={(e) => { insertEmoji(e); setShowEmojiPicker(false); }} />
+                            </motion.div>
+                          </>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    <button
+                      type="button"
+                      disabled
+                      className="w-6 h-6 flex items-center justify-center rounded-md text-slate-300 dark:text-zinc-600 cursor-not-allowed"
+                      title="Voice messages — coming soon"
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-sm shrink-0"
-                title="Attach file"
-                disabled={sending || stagedFiles.length >= MAX_ATTACHMENTS}
-              >
-                <Paperclip className="w-4 h-4 text-white" />
-              </button>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
                 className="hidden"
                 onChange={handleFileInputChange}
-                accept="image/*,video/*,.pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx"
+                accept={fileAcceptMode === 'media' ? 'image/*,video/*' : 'image/*,video/*,.pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx'}
                 title="Attach files"
                 placeholder="Attach files"
               />
