@@ -58,6 +58,7 @@ citinet-db        (internal)   — PostgreSQL 16: all structured data
 citinet-storage   (internal)   — MinIO: file and media object storage (S3-compatible)
 citinet-caddy     (port 443/80)— automatic HTTPS termination + reverse proxy
 citinet-backup    (internal)   — nightly database + file backups, rotated
+citinet-ollama    (internal)   — local AI assistant, if enabled
 ```
 
 The production image is `ghcr.io/fergtech/citinet-api:latest` — built for both `amd64` and `arm64` (Raspberry Pi).
@@ -84,35 +85,25 @@ All data is stored in `DATA_DIR` on the operator's chosen drive. DB/storage port
 
 ### Choosing Where Your Data Lives
 
-All hub data (database, files, cache) lives under a single `DATA_DIR` path set in `~/citinet-hub/.env`. The default is `./data` (a folder next to `docker-compose.yml`). Point it at any drive — internal, external, USB, NAS — and swap freely.
+Hub data is split across five bind-mount paths, each independently set in `~/citinet-hub/.env`. All default to subfolders under `~/citinet-hub/data/` next to `docker-compose.yml`, but each can point at a different drive — internal, external, USB, NAS.
 
 ```env
-# ~/citinet-hub/.env
-DATA_DIR=./data                  # default — ~/citinet-hub/data/
-DATA_DIR=D:\citinet-hub\data     # Windows external drive
-DATA_DIR=/mnt/external/citinet   # Linux external drive
-DATA_DIR=/Volumes/MyDrive/citi   # macOS external drive
+# ~/citinet-hub/.env — all optional, shown with their defaults
+DB_DIR=./data/postgres      # Postgres data
+FILES_DIR=./data/storage    # MinIO object storage (uploaded files)
+BACKUP_DIR=./data/backups   # nightly DB + file backups
+OLLAMA_DIR=./data/ollama    # local AI model cache, if enabled
+CADDY_DIR=./data/caddy      # HTTPS certificate storage
 ```
 
-**To move your data to a new drive:**
+**To move data to a new drive:** stop the hub, copy the relevant subfolder(s) to the new location, update the matching `*_DIR` variable(s) in `.env`, then start the hub again. No script regeneration, no Docker volume fiddling — each path is a plain bind mount.
 
 ```bash
-# 1. Stop the hub
 docker compose -f ~/citinet-hub/docker-compose.yml down
-
-# 2. Copy data to the new location (Linux/macOS)
-cp -r ~/citinet-hub/data /mnt/new-drive/citinet
-# Windows (PowerShell):
-# robocopy "$env:USERPROFILE\citinet-hub\data" "D:\citinet-hub\data" /E /MOVE
-
-# 3. Edit .env — change DATA_DIR to the new path
-nano ~/citinet-hub/.env
-
-# 4. Start the hub again
+cp -r ~/citinet-hub/data/storage /mnt/new-drive/citinet-files   # e.g. moving just file storage
+# edit .env: FILES_DIR=/mnt/new-drive/citinet-files
 docker compose -f ~/citinet-hub/docker-compose.yml up -d
 ```
-
-That's it. No script regeneration. No Docker volume fiddling. Swap drives like legos.
 
 ### Accessing Your Hub
 
@@ -253,9 +244,8 @@ docker push ghcr.io/fergtech/citinet-api:latest
 | Passwords | bcrypt-hashed ✅ |
 | Session tokens | Cryptographically random 32-byte hex ✅ |
 | DB / storage / cache | Bound to `127.0.0.1` only ✅ |
-| Transit | Encrypted via Tailscale Funnel ✅ |
-| Messages at rest | Plaintext in Postgres ⚠️ (E2E encryption planned Mission 3) |
-| Files at rest | Unencrypted in MinIO ⚠️ (encryption planned Mission 3) |
+| Transit | Real, browser-trusted HTTPS on every hub, issued/renewed automatically — see [Automatic HTTPS](https://citinet-docs.vercel.app/admin-guide/automatic-https/) ✅ |
+| Messages, notes, files at rest | End-to-end encrypted client-side (ECDH P-256 + AES-GCM) — server stores ciphertext only ✅ |
 
 See [SECURITY.md](./SECURITY.md) for the full security backlog and hardening roadmap.
 
@@ -265,6 +255,7 @@ See [SECURITY.md](./SECURITY.md) for the full security backlog and hardening roa
 
 - [citinet-registry](https://github.com/fergtech/citinet-registry) — Public hub registry (GitHub-backed JSON, updated via Vercel API)
 - [citinet-info](https://github.com/fergtech/citinet-info) — Informational companion site
+- [citinet-docs](https://github.com/fergtech/citinet-docs) — Admin/user/architecture documentation ([citinet-docs.vercel.app](https://citinet-docs.vercel.app))
 
 ## License
 
