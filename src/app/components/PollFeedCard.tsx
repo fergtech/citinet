@@ -59,6 +59,42 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
   // Parent only renders this component when post.category === 'POLL', where the
   // backend always attaches `poll` — safe to assert non-null here.
   const poll = post.poll!;
+  if (!poll) {
+    // Render a small fallback card instead of throwing during render
+    return (
+      <div className="cn-glass rounded-2xl p-4">
+        <div className="flex items-start gap-3 mb-3">
+          <button
+            onClick={() => onNavigateToProfile?.()}
+            disabled={!onNavigateToProfile}
+            className="shrink-0 select-none disabled:cursor-default"
+          >
+            <AvatarCircle
+              authorId={post.author_id ?? ''}
+              authorUsername={post.author_username ?? 'Hub Team'}
+              authorAvatarUrl={authorAvatarUrl}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+            />
+          </button>
+  
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-sm font-semibold cn-text-1 truncate">{post.author_username ?? 'Hub Team'}</div>
+              <span className="cn-mono text-[11px] cn-text-4">· {formatTimestamp(post.created_at)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <Vote className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
+              <span className="text-[11px] cn-text-3">Poll</span>
+            </div>
+          </div>
+        </div>
+  
+        <h3 className="text-sm cn-text-3">This poll's data is unavailable.</h3>
+      </div>
+    );
+  }
+
   const isClosed = poll.closed || (poll.closes_at ? new Date(poll.closes_at) < new Date() : false);
   const hasVoted = poll.my_vote != null;
   const showBars = hasVoted || isClosed;
