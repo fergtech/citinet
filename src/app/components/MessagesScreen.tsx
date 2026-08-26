@@ -340,6 +340,42 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [fullEmojiPickerFor, setFullEmojiPickerFor] = useState<string | null>(null);
 
+  // Touch has no :hover, so the reaction trigger (desktop) is replaced by a
+  // press-and-hold on the bubble itself (iMessage/WhatsApp convention). A timer
+  // opens the picker after a beat; moving a finger before then (i.e. scrolling)
+  // cancels it so it doesn't fight the message list's scroll gesture.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressMovedRef = useRef(false);
+  const LONG_PRESS_MS = 450;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
+
+  const handleBubbleTouchStart = (e: React.TouchEvent, messageId: string) => {
+    const touch = e.touches[0];
+    longPressStartRef.current = { x: touch.clientX, y: touch.clientY };
+    longPressMovedRef.current = false;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressMovedRef.current) return;
+      if (navigator.vibrate) navigator.vibrate(8);
+      setReactionPickerFor(messageId);
+    }, LONG_PRESS_MS);
+  };
+  const handleBubbleTouchMove = (e: React.TouchEvent) => {
+    const start = longPressStartRef.current;
+    if (!start) return;
+    const touch = e.touches[0];
+    if (Math.abs(touch.clientX - start.x) > LONG_PRESS_MOVE_TOLERANCE
+      || Math.abs(touch.clientY - start.y) > LONG_PRESS_MOVE_TOLERANCE) {
+      longPressMovedRef.current = true;
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    }
+  };
+  const handleBubbleTouchEnd = () => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressStartRef.current = null;
+  };
+
   // A conversation the user has opened (via "New Conversation", a profile's Message
   // button, or "Message seller") but hasn't sent anything in yet — exists only in
   // local state. It's only persisted to the backend on the first actual send, so
@@ -1531,8 +1567,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         </button>
                       )}
                       <div className="max-w-[72%] md:max-w-[58%] relative">
-                        {/* Reaction trigger — visible on hover/focus, opens quick-react bar */}
-                        <div className={`absolute top-0 z-20 ${isMe ? '-left-9' : '-right-9'}`}>
+                        {/* Reaction trigger — desktop: visible on hover/focus next to the bubble.
+                            Touch has no hover, so mobile instead long-presses the bubble itself
+                            (see onTouchStart/Move/End below); both paths open the same picker. */}
+                        <div className={`hidden md:block absolute top-0 z-20 ${isMe ? '-left-9' : '-right-9'}`}>
                           <button
                             type="button"
                             onClick={() => setReactionPickerFor(prev => prev === msg.id ? null : msg.id)}
@@ -1541,55 +1579,57 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           >
                             <SmilePlus className="w-3.5 h-3.5" />
                           </button>
-                          <AnimatePresence>
-                            {reactionPickerFor === msg.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setReactionPickerFor(null)} />
-                                <motion.div
-                                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                                  className={`absolute top-8 z-50 flex items-center gap-0.5 p-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 shadow-xl ${isMe ? 'right-0' : 'left-0'}`}
-                                >
-                                  {QUICK_REACTIONS.map(e => (
-                                    <button
-                                      key={e}
-                                      type="button"
-                                      onClick={() => handleToggleReaction(msg.id, e)}
-                                      className="w-7 h-7 flex items-center justify-center text-base rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                                    >
-                                      {e}
-                                    </button>
-                                  ))}
-                                  <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 mx-0.5 shrink-0" />
-                                  <button
-                                    type="button"
-                                    onClick={() => { setReactionPickerFor(null); setFullEmojiPickerFor(msg.id); }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-slate-500 transition-colors"
-                                    title="More emoji"
-                                  >
-                                    <Plus className="w-3.5 h-3.5" />
-                                  </button>
-                                </motion.div>
-                              </>
-                            )}
-                          </AnimatePresence>
-                          <AnimatePresence>
-                            {fullEmojiPickerFor === msg.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setFullEmojiPickerFor(null)} />
-                                <motion.div
-                                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                                  className={`absolute top-8 z-50 ${isMe ? 'right-0' : 'left-0'}`}
-                                >
-                                  <EmojiPicker onSelect={(e) => { handleToggleReaction(msg.id, e); setFullEmojiPickerFor(null); }} />
-                                </motion.div>
-                              </>
-                            )}
-                          </AnimatePresence>
                         </div>
+                        {/* Popups anchor to the bubble itself (centered above) rather than the
+                            desktop trigger, so they stay on-screen on narrow phones too. */}
+                        <AnimatePresence>
+                          {reactionPickerFor === msg.id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setReactionPickerFor(null)} />
+                              <motion.div
+                                initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 p-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 shadow-xl"
+                              >
+                                {QUICK_REACTIONS.map(e => (
+                                  <button
+                                    key={e}
+                                    type="button"
+                                    onClick={() => handleToggleReaction(msg.id, e)}
+                                    className="w-7 h-7 flex items-center justify-center text-base rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                                  >
+                                    {e}
+                                  </button>
+                                ))}
+                                <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 mx-0.5 shrink-0" />
+                                <button
+                                  type="button"
+                                  onClick={() => { setReactionPickerFor(null); setFullEmojiPickerFor(msg.id); }}
+                                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-slate-500 transition-colors"
+                                  title="More emoji"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </motion.div>
+                            </>
+                          )}
+                        </AnimatePresence>
+                        <AnimatePresence>
+                          {fullEmojiPickerFor === msg.id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setFullEmojiPickerFor(null)} />
+                              <motion.div
+                                initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50"
+                              >
+                                <EmojiPicker onSelect={(e) => { handleToggleReaction(msg.id, e); setFullEmojiPickerFor(null); }} />
+                              </motion.div>
+                            </>
+                          )}
+                        </AnimatePresence>
                         {/* Colored sender name in group chats — clickable → profile */}
                         {!isMe && selectedConvo.kind === 'group' && msg.sender_username && (
                           <button
@@ -1611,7 +1651,13 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             <>
                               {(text || hasAttachments) && (
                                 <div
-                                  className={`rounded-2xl px-4 py-2.5 ${
+                                  onTouchStart={(e) => handleBubbleTouchStart(e, msg.id)}
+                                  onTouchMove={handleBubbleTouchMove}
+                                  onTouchEnd={handleBubbleTouchEnd}
+                                  onTouchCancel={handleBubbleTouchEnd}
+                                  onContextMenu={(e) => e.preventDefault()}
+                                  style={{ WebkitTouchCallout: 'none' }}
+                                  className={`rounded-2xl px-4 py-2.5 transition-transform active:scale-[0.97] md:active:scale-100 ${
                                     isMe
                                       ? 'bg-purple-600 dark:bg-purple-500 text-white rounded-br-sm'
                                       : 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700 rounded-bl-sm'

@@ -9,6 +9,7 @@ html, body, #root {
   max-width: 100vw;
 }
 
+
 /* Theme */
 @import './theme.css';
 

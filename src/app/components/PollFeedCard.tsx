@@ -74,7 +74,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
         {/* Header: avatar + author + category + time — matches feed post cards */}
         <div className="flex items-start gap-3 mb-3">
           <button
-            onClick={() => onNavigateToProfile?.()}
+            onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
             disabled={!onNavigateToProfile}
             className="shrink-0 select-none disabled:cursor-default"
           >
@@ -89,7 +89,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => onNavigateToProfile?.()}
+                onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
                 disabled={!onNavigateToProfile}
                 className="text-sm font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
               >
@@ -125,11 +125,11 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
             {canManage && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button title="Poll actions" aria-label="Poll actions" className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors shrink-0">
+                  <button onClick={e => e.stopPropagation()} title="Poll actions" aria-label="Poll actions" className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors shrink-0">
                     <MoreVertical className="w-4 h-4 cn-text-3" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
+                <DropdownMenuContent align="end" className="w-36" onClick={e => e.stopPropagation()}>
                   <DropdownMenuItem onClick={onEdit}><Pencil className="w-4 h-4" /><span>Edit poll</span></DropdownMenuItem>
                   <DropdownMenuItem variant="destructive" onClick={onDelete} disabled={deleting}>
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -164,7 +164,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
             return (
               <button
                 key={i}
-                onClick={() => !isClosed && !voting && onVote(i)}
+                onClick={e => { e.stopPropagation(); if (!isClosed && !voting) onVote(i); }}
                 disabled={isClosed || voting}
                 className={`w-full relative text-left rounded-xl overflow-hidden transition-all ${isClosed || hasVoted ? 'cursor-default' : 'hover:shadow-md cursor-pointer'} ${isMyVote ? 'ring-2 ring-indigo-500/50' : ''}`}
               >
@@ -228,7 +228,10 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
       </div>
 
       {/* Reaction bar: like + comment (matching PostCard's engagement row) + share + mod close */}
-      <div className="flex items-center gap-1 px-4 pb-3 pt-2 border-t cn-border">
+      <div
+        className="flex items-center gap-1 px-4 pb-3 pt-2 border-t cn-border"
+        onClick={e => e.stopPropagation()}
+      >
         <button
           onClick={() => onLike?.()}
           className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors text-xs font-semibold ${

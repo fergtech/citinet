@@ -514,6 +514,8 @@ export interface HubNote {
   forked_from_username?: string | null;
   created_at: string;
   updated_at: string;
+  /** True if body_plain/body_rich are a placeholder because this device couldn't decrypt them */
+  decryptFailed?: boolean;
 }
 
 /** A product or service listed on the hub marketplace */

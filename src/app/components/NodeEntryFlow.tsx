@@ -142,9 +142,23 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
         username: loginUsername.trim().toLowerCase(),
         password: loginPassword,
       });
-      const keyResult = await hubService.ensureUserKeys(hubSlug).catch(() => ({ status: 'no-backup' as const }));
+      // Deliberately NOT a blanket .catch-to-'no-backup' here: ensureUserKeys
+      // already distinguishes a confirmed absence from a failed check
+      // internally and returns 'check-failed' for the latter. Collapsing any
+      // thrown error into 'no-backup' would (like the bug it replaced) trigger
+      // destructive fresh-key generation on a merely transient failure and
+      // permanently orphan this account's encrypted content. See
+      // [[e2e_encryption]] memory for the incident this guards against.
+      const keyResult = await hubService.ensureUserKeys(hubSlug);
 
-      if (keyResult.status === 'no-backup') {
+      if (keyResult.status === 'check-failed') {
+        // Could not confirm whether this account already has an encryption
+        // backup — do nothing destructive. Let the user into the hub (auth
+        // itself succeeded); notes/DMs may show as encrypted until they
+        // retry from Account settings, which is recoverable, unlike minting
+        // unrelated keys would be.
+        onComplete(userData);
+      } else if (keyResult.status === 'no-backup') {
         // Never had encryption set up (brand-new account, or an account from
         // before recovery phrases existed with no backup at all) — set it up
         // now and show the phrase once before entering the hub.
@@ -266,7 +280,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   if (recoveryStep === 'show-phrase') {
     return (
       <div
-        className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+        className="min-h-[var(--app-height,100dvh)] relative overflow-hidden flex flex-col"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <OnboardingBackground />
@@ -336,7 +350,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   if (recoveryStep === 'enter-phrase') {
     return (
       <div
-        className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+        className="min-h-[var(--app-height,100dvh)] relative overflow-hidden flex flex-col"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <OnboardingBackground />
@@ -417,7 +431,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
   return (
     <div
-      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      className="min-h-[var(--app-height,100dvh)] relative overflow-hidden flex flex-col"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <OnboardingBackground />

@@ -431,13 +431,18 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   // ── visibility ────────────────────────────────────────────────────────────────
   const handleSetVisibility = async (file: HubFile, target: 'private' | 'hub' | 'web') => {
     if (!slug) return;
-    setVisPopoverId(null); setTogglingId(file.id);
+    setVisPopoverId(null); setTogglingId(file.id); setUploadError('');
     try {
-      await hubService.setFileVisibility(slug, file.name, target);
+      const result = await hubService.setFileVisibility(slug, file, target);
       setAllFiles(prev => prev.map(f =>
-        f.id === file.id ? { ...f, is_public: target !== 'private', web_public: target === 'web' } : f
+        f.id === file.id
+          ? { ...f, id: result?.id ?? f.id, is_public: target !== 'private', web_public: target === 'web' }
+          : f
       ));
-    } catch (err) { console.error('Set visibility failed:', err); }
+    } catch (err) {
+      console.error('Set visibility failed:', err);
+      setUploadError(err instanceof Error ? err.message : 'Failed to update visibility');
+    }
     finally { setTogglingId(null); }
   };
 
@@ -457,10 +462,11 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     const cat = getPreviewCategory(file);
     if (cat === 'other') { handleDownload(file); return; }
     setPreviewFile(file); setPreviewError(''); setPreviewUrl(null);
-    if (file.is_public) {
-      const url = hubService.getPublicFileUrl(slug, file.name);
-      if (url) { previewUrlIsBlobRef.current = false; setPreviewUrl(url); setPreviewLoading(false); return; }
-    }
+    // Deliberately don't shortcut to the raw public URL based on file.is_public
+    // alone: a file promoted from private to hub/web keeps that flag but may
+    // still be ciphertext underneath if it predates the re-encrypt-on-share
+    // fix, so every preview goes through fetchFileBlob, which sniffs the
+    // encryption header itself before deciding whether to decrypt.
     setPreviewLoading(true);
     try {
       const BLOB_LIMIT = 100 * 1024 * 1024;

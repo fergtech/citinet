@@ -92,6 +92,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     registryService.getHubs().then(setRegistryHubs).catch(() => {}).finally(() => setRegistryLoading(false));
   }, [showTunnelInput, connectionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
   const filteredRegistryHubs = registrySearchQuery.trim()
     ? registryHubs.filter(h =>
         h.name.toLowerCase().includes(registrySearchQuery.toLowerCase()) ||
@@ -1311,6 +1312,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 <div className="grid grid-cols-4 gap-3">
                 {(showMobileAppsMenu ? mobileLaunchpadItems : moreNavItems).map(app => {
                   const isSuggest = app.screen === 'suggest';
+                  const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
                   return (
                     <button
                       key={app.screen}
@@ -1324,11 +1326,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                         isSuggest ? 'hover:bg-indigo-500/10 dark:hover:bg-indigo-400/10' : 'hover:bg-purple-500/10 dark:hover:bg-purple-400/10'
                       }`}
                     >
-                      <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white overflow-hidden`}>
-                        {(app.screen.startsWith('vendor/') && vendorLogoUrl)
-                          ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          : <app.Icon className="w-6 h-6" />
-                        }
+                      <div className="relative">
+                        <div className={`w-12 h-12 rounded-2xl ${app.gradient} flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all text-white overflow-hidden`}>
+                          {(app.screen.startsWith('vendor/') && vendorLogoUrl)
+                            ? <img src={vendorLogoUrl} alt={myVendor?.name} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            : <app.Icon className="w-6 h-6" />
+                          }
+                        </div>
+                        {badge > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-2 ring-white dark:ring-zinc-900">
+                            {badge > 9 ? '9+' : badge}
+                          </span>
+                        )}
                       </div>
                       <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
                         {app.label}

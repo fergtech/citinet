@@ -682,8 +682,9 @@ class HubService {
 
     delete connections[slug];
     localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
-    // Clear encryption keys from IndexedDB on logout
-    clearKeys(slug).catch(() => {});
+    // Clear encryption keys from IndexedDB on logout. Compute scope from the
+    // about-to-be-deleted connection since it won't be resolvable afterward.
+    clearKeys(this.keyScope(slug, conn?.user?.hubUserId)).catch(() => {});
 
     if (this.getActiveHubSlug() === slug) {
       const remaining = Object.keys(connections);
@@ -1030,10 +1031,13 @@ class HubService {
 
       let lastMessageBody: string = lastMsg ? (lastMsg.body || lastMsg.content || lastMsg.text || '') : '';
       if (lastMsg && kind === 'dm' && membersList.length === 2 && isMessageEncrypted(lastMessageBody)) {
-        const peerKey = await this.resolveDmPeerKey(hubSlug, membersList);
-        if (peerKey) {
-          lastMessageBody = await decryptMessage(hubSlug, peerKey, convoId, lastMessageBody);
-        } else {
+        try {
+          const peerKey = await this.resolveDmPeerKey(hubSlug, membersList);
+          lastMessageBody = peerKey
+            ? await decryptMessage(this.keyScope(hubSlug), peerKey, convoId, lastMessageBody)
+            : '🔒 Encrypted message';
+        } catch {
+          // Key lookup itself failed (network/tunnel) — next poll retries automatically.
           lastMessageBody = '🔒 Encrypted message';
         }
       }
@@ -1140,15 +1144,30 @@ class HubService {
 
     // Resolve DM peer key once for the whole batch
     let peerKey: string | null = null;
+    let peerKeyLookupFailed = false;
     if (members && members.length === 2) {
-      peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      try {
+        peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      } catch (err) {
+        console.error('[e2e-keys] resolveDmPeerKey failed in getMessages', { conversationId, err });
+        peerKeyLookupFailed = true;
+      }
     }
 
     return Promise.all(rawMsgs.map(async (m: any) => {
       const rawBody: string = m.body || m.content || m.text || '';
       let body = rawBody;
-      if (peerKey && isMessageEncrypted(rawBody)) {
-        body = await decryptMessage(hubSlug, peerKey, conversationId, rawBody);
+      if (isMessageEncrypted(rawBody)) {
+        if (peerKey) {
+          body = await decryptMessage(this.keyScope(hubSlug), peerKey, conversationId, rawBody);
+        } else {
+          // Never show raw ciphertext JSON — either the peer genuinely has no key
+          // (rare/legacy) or the lookup itself failed transiently and the next
+          // 10s poll will retry and self-heal.
+          body = peerKeyLookupFailed
+            ? '[Message unavailable — retrying…]'
+            : '[Encrypted message]';
+        }
       }
       return {
         id: m.message_id || m.id || '',
@@ -1201,9 +1220,17 @@ class HubService {
     // Encrypt body for DMs if we can resolve the peer's public key
     let encryptedBody = messageBody;
     if (members && members.length === 2) {
-      const peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      let peerKey: string | null;
+      try {
+        peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      } catch (err) {
+        console.error('[e2e-keys] resolveDmPeerKey failed in sendMessage', { conversationId, err });
+        // Don't silently send this DM as plaintext just because a transient key
+        // lookup failed — fail the send visibly so the user can retry instead.
+        throw new Error("Couldn't verify the recipient's encryption key — check your connection and try again.");
+      }
       if (peerKey) {
-        encryptedBody = await encryptMessage(hubSlug, peerKey, conversationId, messageBody);
+        encryptedBody = await encryptMessage(this.keyScope(hubSlug), peerKey, conversationId, messageBody);
       }
     }
 
@@ -1270,9 +1297,15 @@ class HubService {
     // Encrypt text body for DMs if possible
     let encryptedBody = messageBody || '';
     if (members && members.length === 2) {
-      const peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      let peerKey: string | null;
+      try {
+        peerKey = await this.resolveDmPeerKey(hubSlug, members);
+      } catch (err) {
+        console.error('[e2e-keys] resolveDmPeerKey failed in sendMessageWithMedia', { conversationId, err });
+        throw new Error("Couldn't verify the recipient's encryption key — check your connection and try again.");
+      }
       if (peerKey && encryptedBody) {
-        encryptedBody = await encryptMessage(hubSlug, peerKey, conversationId, encryptedBody);
+        encryptedBody = await encryptMessage(this.keyScope(hubSlug), peerKey, conversationId, encryptedBody);
       }
     }
 
@@ -1443,7 +1476,7 @@ class HubService {
     if (!isPublic && file.size <= ENCRYPTION_SIZE_LIMIT) {
       try {
         const buf = await file.arrayBuffer();
-        const encBuf = await encryptFileBuffer(hubSlug, buf);
+        const encBuf = await encryptFileBuffer(this.keyScope(hubSlug), buf);
         if (encBuf) {
           uploadFile = new File([encBuf], file.name, { type: file.type });
         }
@@ -1521,13 +1554,8 @@ class HubService {
     }
   }
 
-  /**
-   * Set a file's visibility tier.
-   * 'private' — owner only (requires auth)
-   * 'hub'     — all hub members can see it in the Shared tab (requires auth)
-   * 'web'     — anyone with the link, no account needed
-   */
-  async setFileVisibility(
+  /** Raw PATCH of the visibility flag only — does not touch stored bytes. */
+  private async patchFileVisibility(
     hubSlug: string,
     fileName: string,
     visibility: 'private' | 'hub' | 'web',
@@ -1551,6 +1579,64 @@ class HubService {
       const body = await response.text();
       throw new Error(body || `Set visibility failed (${response.status})`);
     }
+  }
+
+  /**
+   * Set a file's visibility tier.
+   * 'private' — owner only (requires auth)
+   * 'hub'     — all hub members can see it in the Shared tab (requires auth)
+   * 'web'     — anyone with the link, no account needed
+   *
+   * Promoting a 'private' upload straight to 'hub'/'web' used to just flip
+   * the DB flag, but a private upload is client-side encrypted under the
+   * owner's personal key — no other hub member's account can ever decrypt
+   * that ciphertext, so the file would show up in the list but fail to
+   * render for anyone but the owner. Instead of trusting the (possibly
+   * stale) is_public flag, this reads the file's actual current bytes and,
+   * if they're still ciphertext, decrypts them on this device and replaces
+   * the stored copy with plaintext before exposing it more broadly. Throws
+   * if this device can't decrypt it (wrong device / lost key) rather than
+   * silently sharing unreadable ciphertext.
+   */
+  async setFileVisibility(
+    hubSlug: string,
+    file: Pick<HubFile, 'name' | 'mime_type'>,
+    visibility: 'private' | 'hub' | 'web',
+  ): Promise<{ id: string } | void> {
+    if (visibility === 'private') {
+      await this.patchFileVisibility(hubSlug, file.name, visibility);
+      return;
+    }
+
+    const url = this.getFileDownloadUrl(hubSlug, file.name);
+    if (!url) throw new Error('Hub not connected');
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Failed to read file (${res.status})`);
+    const buf = await res.arrayBuffer();
+
+    if (!isFileEncrypted(buf)) {
+      await this.patchFileVisibility(hubSlug, file.name, visibility);
+      return;
+    }
+
+    const plainBuf = await decryptFileBuffer(this.keyScope(hubSlug), buf);
+    if (!plainBuf) {
+      throw new Error(
+        "Can't share this file — this device doesn't have the encryption key it was uploaded with. Try sharing it from the device it was uploaded on."
+      );
+    }
+
+    // Replace the encrypted copy with a plaintext one before exposing it to
+    // anyone else — deleting only after the decrypt above has already
+    // succeeded, so a failed decrypt never destroys the only copy.
+    await this.deleteFile(hubSlug, file.name);
+    const plainFile = new File([plainBuf], file.name, {
+      type: file.mime_type || 'application/octet-stream',
+    });
+    const uploaded = await this.uploadFile(hubSlug, plainFile, true);
+    if (visibility === 'web') await this.patchFileVisibility(hubSlug, file.name, 'web');
+    return { id: uploaded.id };
   }
 
   /**
@@ -1679,7 +1765,7 @@ class HubService {
 
     // Attempt decryption if the file has the encryption magic header
     if (isFileEncrypted(buf)) {
-      const plainBuf = await decryptFileBuffer(hubSlug, buf);
+      const plainBuf = await decryptFileBuffer(this.keyScope(hubSlug), buf);
       if (plainBuf) {
         const mime = mimeType || 'application/octet-stream';
         return URL.createObjectURL(new Blob([plainBuf], { type: mime }));
@@ -2057,6 +2143,32 @@ class HubService {
   // ──────────────────────────────────────────────
 
   /**
+   * Composite IndexedDB namespace for this account's local key material.
+   * crypto.ts's internal `slot(x, name)` just does `${x}:${name}` — it never
+   * inspects `x` beyond using it as an opaque prefix — so passing a
+   * `hubSlug:userId` composite instead of a bare `hubSlug` scopes storage
+   * per (hub, account) without any change to crypto.ts.
+   *
+   * This matters because crypto.ts's key slots used to be keyed by hubSlug
+   * alone ("one set per hub, so multi-hub works" — but nothing accounted for
+   * multiple *accounts* on the same hub sharing one browser). Two accounts on
+   * the same hub, same device, would silently share one IndexedDB slot: log
+   * into account B after account A, and `hasKeys()` would report "already
+   * set up" using account A's leftover keys, which then get re-registered to
+   * the server *as account B's public key* — permanently mixing up whose
+   * messages decrypt with what. See [[e2e_encryption]] memory for the full
+   * incident writeup.
+   *
+   * Pass `userId` explicitly when the connection is about to be torn down
+   * (e.g. leaveHub, which deletes the stored connection right after clearing
+   * keys) so the scope can still be computed correctly.
+   */
+  private keyScope(hubSlug: string, userId?: string): string {
+    const uid = userId ?? this.getHubConnection(hubSlug)?.user?.hubUserId;
+    return uid ? `${hubSlug}:${uid}` : hubSlug;
+  }
+
+  /**
    * Checks this device's encryption-key state after login. Never blocks auth
    * — callers decide what to do with the result:
    *   'has-keys'           — this device is already set up and a backup exists
@@ -2073,9 +2185,20 @@ class HubService {
    *                          no local keys. The caller must get the recovery
    *                          phrase from the user (see restoreFromKeyBackup)
    *                          or offer to start fresh (see generateFreshDeviceKeys).
-   *   'no-backup'          — no local keys and no backup either (brand-new
-   *                          account, or one from before E2E existed). Caller
-   *                          should run first-time setup (see setupNewAccountKeys).
+   *   'no-backup'          — CONFIRMED (server returned 404) no local keys and
+   *                          no backup either (brand-new account, or one from
+   *                          before E2E existed). Caller should run first-time
+   *                          setup (see setupNewAccountKeys).
+   *   'check-failed'       — could not determine backup state (network/tunnel
+   *                          failure talking to the server, after retries).
+   *                          NOT the same as 'no-backup' — callers MUST NOT
+   *                          treat this as license to mint fresh keys. Doing
+   *                          so overwrites the server's public key + backup
+   *                          (both are upserts) and permanently orphans every
+   *                          message ever encrypted to the old key, with no
+   *                          way back via any recovery phrase. Show a retry
+   *                          prompt instead. See [[e2e_encryption]] memory for
+   *                          the incident this guards against.
    *
    * Deliberately does NOT accept the login password: the encryption recovery
    * secret is a separate, app-generated recovery phrase, specifically so that
@@ -2083,19 +2206,28 @@ class HubService {
    * their encrypted content -- see setupNewAccountKeys / regenerateRecoveryPhrase.
    */
   async ensureUserKeys(hubSlug: string): Promise<{
-    status: 'has-keys' | 'has-keys-new-backup' | 'needs-recovery' | 'no-backup';
+    status: 'has-keys' | 'has-keys-new-backup' | 'needs-recovery' | 'no-backup' | 'check-failed';
     /** Set only for 'has-keys-new-backup' — the phrase the caller must show the user. */
     newPhrase?: string;
   }> {
     try {
-      const alreadyHasKeys = await hasKeys(hubSlug);
+      const alreadyHasKeys = await hasKeys(this.keyScope(hubSlug));
       if (alreadyHasKeys) {
         // Keys exist on this device — re-upload the public key so server stays in sync
         // (e.g. server was reset, or first upload failed).
-        const storedJwk = await getStoredPublicKeyJwk(hubSlug);
+        const storedJwk = await getStoredPublicKeyJwk(this.keyScope(hubSlug));
         if (storedJwk) await this.registerPublicKey(hubSlug, storedJwk);
 
-        const backupExists = await this.hasKeyBackup(hubSlug);
+        // If we can't confirm a backup exists, do nothing destructive — leave
+        // this device's already-working local keys alone and let the next
+        // check retry, rather than assuming absence and overwriting anything.
+        let backupExists: boolean;
+        try {
+          backupExists = await this.hasKeyBackup(hubSlug);
+        } catch (err) {
+          console.error('[e2e-keys] hasKeyBackup check failed, leaving local keys untouched', err);
+          return { status: 'has-keys' };
+        }
         if (!backupExists) {
           const phrase = await this.regenerateRecoveryPhrase(hubSlug);
           return phrase ? { status: 'has-keys-new-backup', newPhrase: phrase } : { status: 'has-keys' };
@@ -2105,8 +2237,13 @@ class HubService {
       const backupExists = await this.hasKeyBackup(hubSlug);
       return { status: backupExists ? 'needs-recovery' : 'no-backup' };
     } catch (err) {
-      console.error('[e2e-keys] ensureUserKeys failed', err); // never block auth, but never hide it either
-      return { status: 'no-backup' };
+      // Covers hasKeyBackup throwing in the no-local-keys branch above, or any
+      // other unexpected failure. Must NOT default to 'no-backup' here — this
+      // status drives destructive fresh-key generation in callers, and firing
+      // it on a merely transient failure is exactly the bug that caused
+      // permanent, unrecoverable message loss. See [[e2e_encryption]].
+      console.error('[e2e-keys] ensureUserKeys could not determine key state', err);
+      return { status: 'check-failed' };
     }
   }
 
@@ -2119,7 +2256,7 @@ class HubService {
    */
   async setupNewAccountKeys(hubSlug: string): Promise<string | null> {
     try {
-      const result = await generateUserKeys(hubSlug);
+      const result = await generateUserKeys(this.keyScope(hubSlug));
       await this.registerPublicKey(hubSlug, result.publicKeyJwk);
       return this.regenerateRecoveryPhrase(hubSlug);
     } catch (err) {
@@ -2152,7 +2289,7 @@ class HubService {
    * restore with the phrase (which overwrites these device-local keys).
    */
   async generateFreshDeviceKeys(hubSlug: string): Promise<void> {
-    const result = await generateUserKeys(hubSlug);
+    const result = await generateUserKeys(this.keyScope(hubSlug));
     await this.registerPublicKey(hubSlug, result.publicKeyJwk);
   }
 
@@ -2167,24 +2304,44 @@ class HubService {
     });
   }
 
-  /** Get another user's public key from the hub (for encrypting content to them). */
+  /**
+   * Get another user's public key from the hub (for encrypting content to them).
+   * Returns `null` only when the server confirms (404) the peer has no key registered —
+   * a legitimate, permanent state. On network errors or non-404 failures, retries a
+   * few times with backoff and then throws, so callers can tell "no key exists" apart
+   * from "couldn't check right now" instead of silently treating both as "no key"
+   * (which used to cause DMs to flash raw ciphertext or silently send as plaintext
+   * during transient tunnel hiccups — see [[e2e_encryption]]).
+   */
   async getUserPublicKey(hubSlug: string, userId: string): Promise<string | null> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn?.user?.authToken) return null;
-    try {
-      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/${encodeURIComponent(userId)}`, {
-        headers: { Authorization: `Bearer ${conn.user.authToken}` },
-      });
-      if (!res.ok) return null;
-      const { publicKeyJwk } = await res.json();
-      return publicKeyJwk;
-    } catch { return null; }
+    const url = `${conn.hub.tunnelUrl}/api/keys/${encodeURIComponent(userId)}`;
+    const authHeader = { Authorization: `Bearer ${conn.user.authToken}` };
+
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(url, { headers: authHeader });
+        if (res.status === 404) return null; // peer genuinely has no key registered
+        if (!res.ok) throw new Error(`key lookup failed (${res.status})`);
+        const { publicKeyJwk } = await res.json();
+        return publicKeyJwk;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
+    console.error('[e2e-keys] getUserPublicKey failed after retries', { hubSlug, userId, err: lastErr });
+    throw lastErr;
   }
 
   /**
    * Resolve the peer's public key JWK for a DM conversation.
    * `members` is the conversation's members array (must include both parties).
-   * Returns null for group chats or if the peer has no registered key.
+   * Returns null for group chats or if the peer genuinely has no registered key.
+   * Throws (does not silently return null) if the key lookup itself couldn't be
+   * completed — callers must handle this distinctly from "no key".
    */
   private async resolveDmPeerKey(
     hubSlug: string,
@@ -2200,7 +2357,7 @@ class HubService {
   /** Store an encrypted key backup on the server for cross-device recovery. */
   async storeKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
     try {
-      const backup = await createKeyBackup(hubSlug, passphrase);
+      const backup = await createKeyBackup(this.keyScope(hubSlug), passphrase);
       if (!backup) return false;
       const conn = this.getHubConnection(hubSlug);
       if (!conn?.user?.authToken) return false;
@@ -2226,28 +2383,67 @@ class HubService {
     } catch { return null; }
   }
 
-  /** Retrieve encrypted key backup from server and restore using passphrase. */
+  /**
+   * Retrieve encrypted key backup from server and restore using passphrase.
+   * On success, also re-registers the public key derived from the restored
+   * keypair — self-healing the server's copy in case an earlier bug (see
+   * hasKeyBackup) let it drift out of sync with what backups/senders expect.
+   */
   async restoreFromKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
     const backup = await this.fetchKeyBackup(hubSlug);
     if (!backup) return false;
-    return restoreKeyBackup(hubSlug, backup, passphrase);
+    const ok = await restoreKeyBackup(this.keyScope(hubSlug), backup, passphrase);
+    if (ok) {
+      const storedJwk = await getStoredPublicKeyJwk(this.keyScope(hubSlug));
+      if (storedJwk) await this.registerPublicKey(hubSlug, storedJwk);
+    }
+    return ok;
   }
 
-  /** Whether a key backup exists on the server for this user. */
+  /**
+   * Whether a key backup exists on the server for this user.
+   * Returns `false` only when the server confirms (404) no backup exists —
+   * a legitimate, meaningful signal. On network errors or non-404 failures,
+   * retries a few times with backoff and then throws, so callers can tell
+   * "confirmed no backup" apart from "couldn't check right now."
+   *
+   * This distinction is load-bearing: callers treat a confirmed "no backup"
+   * as license to mint a brand-new keypair and overwrite the server's public
+   * key + backup (both are upserts — see POST /api/keys and POST
+   * /api/keys/backup in server.js). Doing that in response to a merely
+   * transient check failure permanently orphans every message ever encrypted
+   * to the old key, on every device except whichever one still happens to
+   * have the old private key locally — no recovery phrase, old or new, can
+   * ever restore it afterward, because the server-side blob it decrypts to
+   * has been overwritten. This is the actual mechanism behind "I entered my
+   * correct recovery phrase and it still won't decrypt, forever" reports —
+   * see [[e2e_encryption]] for the full incident writeup.
+   */
   async hasKeyBackup(hubSlug: string): Promise<boolean> {
-    try {
-      const conn = this.getHubConnection(hubSlug);
-      if (!conn?.user?.authToken) return false;
-      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
-        headers: { Authorization: `Bearer ${conn.user.authToken}` },
-      });
-      return res.ok;
-    } catch { return false; }
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return false;
+    const url = `${conn.hub.tunnelUrl}/api/keys/backup`;
+    const authHeader = { Authorization: `Bearer ${conn.user.authToken}` };
+
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(url, { headers: authHeader });
+        if (res.status === 404) return false; // confirmed: no backup exists
+        if (!res.ok) throw new Error(`backup check failed (${res.status})`);
+        return true;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
+    console.error('[e2e-keys] hasKeyBackup failed after retries', { hubSlug, err: lastErr });
+    throw lastErr;
   }
 
   /** Remove keys from this device's IndexedDB (called on logout). */
   async clearLocalKeys(hubSlug: string): Promise<void> {
-    await clearKeys(hubSlug).catch(() => {});
+    await clearKeys(this.keyScope(hubSlug)).catch(() => {});
   }
 
   // ──────────────────────────────────────────────
@@ -2257,10 +2453,17 @@ class HubService {
   /** Decrypt a note in-place if its body_plain is an encrypted sentinel. */
   private async maybeDecryptNote(hubSlug: string, note: HubNote): Promise<HubNote> {
     if (!isNoteEncrypted(note.body_plain)) return note;
-    const decrypted = await decryptNoteBody(hubSlug, note.body_plain);
+    const decrypted = await decryptNoteBody(this.keyScope(hubSlug), note.body_plain);
     if (!decrypted) {
-      // Key unavailable on this device — show placeholder so the note still renders
-      return { ...note, body_rich: null, body_plain: '[Encrypted — open on the device where you created this note, or restore your key backup]' };
+      // Key unavailable on this device — show placeholder so the note still renders.
+      // decryptFailed lets callers (e.g. promoting to hub/web visibility) tell this
+      // apart from real content, so the placeholder text itself never gets published.
+      return {
+        ...note,
+        body_rich: null,
+        body_plain: '[Encrypted — open on the device where you created this note, or restore your key backup]',
+        decryptFailed: true,
+      };
     }
     return { ...note, body_rich: decrypted.body_rich, body_plain: decrypted.body_plain };
   }
@@ -2292,7 +2495,7 @@ class HubService {
     // Encrypt body if content key is available and there is content to encrypt
     let payload = { ...data };
     if ((data.body_plain || data.body_rich) && (data.body_plain || data.body_rich !== undefined)) {
-      const enc = await encryptNoteBody(hubSlug, data.body_rich ?? null, data.body_plain ?? '');
+      const enc = await encryptNoteBody(this.keyScope(hubSlug), data.body_rich ?? null, data.body_plain ?? '');
       if (enc) payload = { ...payload, body_plain: enc.body_plain, body_rich: enc.body_rich ?? undefined };
     }
     const res = await fetch(`${conn.hub.tunnelUrl}/api/notes`, {
@@ -2307,16 +2510,22 @@ class HubService {
   async updateNote(hubSlug: string, noteId: string, patch: Partial<Pick<HubNote, 'title' | 'body_plain' | 'body_rich' | 'web_body_plain' | 'web_body_rich' | 'is_pinned' | 'is_archived' | 'is_public' | 'is_blog_published' | 'color'>>): Promise<HubNote> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');
-    // Encrypt body content fields if present in patch
+    // Encrypt body content fields if present in patch — but a note that is (or is
+    // becoming, via is_public in this same patch) hub/web/blog public must never
+    // store ciphertext in body_plain/body_rich: every non-owner reader decrypts
+    // with their own personal key, not the owner's, so a public note's main body
+    // has to be plaintext the same way web_body_plain/web_body_rich already are.
     let sendPatch = { ...patch };
     if (patch.body_plain !== undefined || patch.body_rich !== undefined) {
-      const enc = await encryptNoteBody(
-        hubSlug,
-        patch.body_rich ?? null,
-        patch.body_plain ?? '',
-      );
-      if (enc) {
-        sendPatch = { ...sendPatch, body_plain: enc.body_plain, body_rich: enc.body_rich ?? undefined };
+      if (!patch.is_public) {
+        const enc = await encryptNoteBody(
+          this.keyScope(hubSlug),
+          patch.body_rich ?? null,
+          patch.body_plain ?? '',
+        );
+        if (enc) {
+          sendPatch = { ...sendPatch, body_plain: enc.body_plain, body_rich: enc.body_rich ?? undefined };
+        }
       }
     }
     const res = await fetch(`${conn.hub.tunnelUrl}/api/notes/${noteId}`, {

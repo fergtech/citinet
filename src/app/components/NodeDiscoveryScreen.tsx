@@ -205,6 +205,11 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
         // 'has-keys-new-backup' already created the backup server-side inside
         // ensureUserKeys -- the phrase just isn't shown here (see NodeEntryFlow
         // for that UI); the user can view/regenerate it from Account settings.
+        // 'check-failed' means ensureUserKeys couldn't confirm whether a backup
+        // exists (network/tunnel failure, not a real absence) -- do nothing here.
+        // 'no-backup' is now only ever returned on a confirmed 404, so it's safe
+        // to treat as "genuinely brand new" -- see [[e2e_encryption]] memory for
+        // the incident this used to cause when the two were conflated.
         if (status === 'no-backup') {
           await hubService.setupNewAccountKeys(hubSlugForKeys);
         } else if (status === 'needs-recovery') {
@@ -271,7 +276,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
   return (
     <div
-      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      className="min-h-[var(--app-height,100dvh)] relative overflow-hidden flex flex-col"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <OnboardingBackground />

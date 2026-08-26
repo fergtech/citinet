@@ -437,7 +437,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   if (step === 'waiting') {
     return (
       <div
-        className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6 text-center"
+        className="min-h-[var(--app-height,100dvh)] relative flex flex-col items-center justify-center p-6 text-center"
         style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
         <OnboardingBackground />
@@ -476,7 +476,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   if (step === 'live') {
     return (
       <div
-        className="min-h-[100dvh] relative flex flex-col items-center justify-center p-6"
+        className="min-h-[var(--app-height,100dvh)] relative flex flex-col items-center justify-center p-6"
         style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))', paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
         <OnboardingBackground />
@@ -580,7 +580,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
   // ─────────────────────────────────────────────────────
   return (
     <div
-      className="min-h-[100dvh] relative overflow-hidden flex flex-col"
+      className="min-h-[var(--app-height,100dvh)] relative overflow-hidden flex flex-col"
       style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <OnboardingBackground />

@@ -16,7 +16,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
   return (
     <div
-      className="min-h-[100dvh] w-full relative overflow-hidden flex flex-col items-center justify-center px-6"
+      className="min-h-[var(--app-height,100dvh)] w-full relative overflow-hidden flex flex-col items-center justify-center px-6"
       style={{
         paddingTop: 'max(1.5rem, calc(env(safe-area-inset-top) + 1rem))',
         paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))',

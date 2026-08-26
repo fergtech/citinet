@@ -2118,8 +2118,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {!loading && !error && filteredPosts.map(post => {
                 if (post.category === 'POLL') {
                   return (
-                    <PollFeedCard
+                    <div
                       key={post.id}
+                      className="cursor-pointer"
+                      onClick={() => openPost(post)}
+                    >
+                    <PollFeedCard
                       post={post}
                       canManage={isMod || post.author_id === currentUser?.hubUserId}
                       voting={pollVoting === post.id}
@@ -2143,6 +2147,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       currentUserId={currentUser?.hubUserId}
                       currentUserAvatarUrl={currentUser?.avatarUrl}
                     />
+                    </div>
                   );
                 }
                 const mediaUrl = post.media_file_name
