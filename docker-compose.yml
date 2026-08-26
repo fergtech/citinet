@@ -42,6 +42,28 @@ services:
     networks:
       - citinet-network
 
+  # mDNS/DNS-SD advertiser — lets the mobile app find this hub on the local
+  # network with zero typing, instead of only through the online registry's
+  # tunnel_url (which always routes over the internet). Separate from
+  # citinet-api on purpose: citinet-api sits on the citinet-network bridge,
+  # which doesn't forward UDP multicast to the physical LAN, so this needs
+  # network_mode: host instead -- isolating it means a host where that isn't
+  # available (varies by Docker Desktop version on Windows/Mac) only loses
+  # LAN discovery, the main API is completely unaffected. Builds from the
+  # local Dockerfile (not the published citinet-api image) so it picks up
+  # api/mdnsAdvertise.js immediately -- citinet-api itself is untouched and
+  # keeps pulling the stable published image as before.
+  citinet-mdns:
+    build: .
+    container_name: citinet-mdns
+    restart: unless-stopped
+    command: ["node", "mdnsAdvertise.js"]
+    network_mode: host
+    environment:
+      - PORT=9090
+      - HUB_NAME=${HUB_NAME}
+      - HUB_SLUG=${HUB_SLUG}
+
   # PostgreSQL Database
   citinet-db:
     image: postgres:16-alpine
