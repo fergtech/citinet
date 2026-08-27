@@ -1171,6 +1171,36 @@ async function initDb() {
         updated_at        TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    // Trust & safety — member-submitted reports on content/members, reviewed
+    // by mods/admins via GET/PATCH /api/reports
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_reports (
+        id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        reporter_id  UUID        REFERENCES hub_users(id) ON DELETE SET NULL,
+        target_type  VARCHAR(20) NOT NULL,
+        target_id    TEXT        NOT NULL,
+        reason       VARCHAR(30) NOT NULL,
+        details      TEXT,
+        status       VARCHAR(20) NOT NULL DEFAULT 'open',
+        reviewed_by  UUID        REFERENCES hub_users(id) ON DELETE SET NULL,
+        reviewed_at  TIMESTAMPTZ,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_reports_status ON hub_reports(status, created_at DESC)`,
+    );
+    // Trust & safety — one-directional block rows; a block is enforced as
+    // mutual (neither side sees or can message the other) by checking both
+    // directions at read time — see blockedPairClause().
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_blocks (
+        blocker_id UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        blocked_id UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (blocker_id, blocked_id)
+      )
+    `);
     // Profile + post visibility
     await client.query(
       `ALTER TABLE hub_users ADD COLUMN IF NOT EXISTS profile_visibility TEXT NOT NULL DEFAULT 'hub'`,
@@ -1305,6 +1335,36 @@ function isMod(user) {
   return (
     user.role === 'admin' || user.role === 'moderator' || user.is_admin === true
   );
+}
+
+// ── Trust & safety helpers ─────────────────────────────────
+const REPORT_TARGET_TYPES = ['post', 'reply', 'message', 'listing', 'member'];
+const REPORT_REASONS = ['spam', 'harassment', 'inappropriate', 'scam', 'other'];
+
+/**
+ * SQL fragment: true when a block exists between $viewerParam and
+ * authorColumn, in EITHER direction — a block always hides/mutes both ways,
+ * not just for the person who clicked "block". Interpolates a query param
+ * index, not user input, so this is safe to inline directly.
+ */
+function blockedPairClause(authorColumn, viewerParam) {
+  return `NOT EXISTS (
+    SELECT 1 FROM hub_blocks b
+    WHERE (b.blocker_id = $${viewerParam} AND b.blocked_id = ${authorColumn})
+       OR (b.blocker_id = ${authorColumn} AND b.blocked_id = $${viewerParam})
+  )`;
+}
+
+/** True if a block exists between the two users, in either direction. */
+async function isBlockedPair(userIdA, userIdB) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM hub_blocks
+     WHERE (blocker_id = $1 AND blocked_id = $2)
+        OR (blocker_id = $2 AND blocked_id = $1)
+     LIMIT 1`,
+    [userIdA, userIdB],
+  );
+  return rows.length > 0;
 }
 
 // ── Unified search scoring ─────────────────────────────────
@@ -2214,14 +2274,15 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
 
 // ── Authenticated routes ──────────────────────────────────
 
-app.get('/api/members', authenticate, async (_req, res) => {
+app.get('/api/members', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS user_id, username, display_name,
               CASE WHEN location_visible THEN location ELSE NULL END AS location, location_visible, bio, tags,
               is_admin, created_at, avatar_url, last_seen_at,
               profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility
-       FROM hub_users WHERE status = 'approved' ORDER BY created_at`,
+       FROM hub_users WHERE status = 'approved' AND ${blockedPairClause('id', 1)} ORDER BY created_at`,
+      [req.user.id],
     );
     res.json({ members: result.rows });
   } catch (err) {
@@ -2508,6 +2569,9 @@ app.post('/api/conversations', authenticate, async (req, res) => {
       if (!peer_user_id)
         return res.status(400).json({ error: 'peer_user_id required for DM' });
 
+      if (await isBlockedPair(req.user.id, peer_user_id))
+        return res.status(403).json({ error: "You can't message this user." });
+
       // Return existing DM if one already exists between these two users
       const existing = await pool.query(
         `SELECT c.id FROM hub_conversations c
@@ -2730,6 +2794,18 @@ app.post('/api/conversations/:id/messages', authenticate, async (req, res) => {
       return res
         .status(403)
         .json({ error: 'Not a member of this conversation' });
+
+    // A block placed after this DM was created should still stop new
+    // messages both ways — group conversations aren't gated here since
+    // "block" has no single well-defined meaning with 3+ participants.
+    const dmPeer = await pool.query(
+      `SELECT cm.user_id FROM hub_conversation_members cm
+       JOIN hub_conversations c ON c.id = cm.conversation_id
+       WHERE cm.conversation_id = $1 AND c.kind = 'dm' AND cm.user_id != $2`,
+      [id, req.user.id],
+    );
+    if (dmPeer.rows[0] && (await isBlockedPair(req.user.id, dmPeer.rows[0].user_id)))
+      return res.status(403).json({ error: "You can't message this user." });
 
     // Sending a message implies typing has stopped — don't leave the indicator
     // showing for the remainder of its TTL.
@@ -3321,6 +3397,28 @@ app.post('/api/notifications/mark-read', authenticate, async (req, res) => {
   }
 });
 
+// Mark exactly one notification read, by its own primary key. Neither of
+// the two routes above can target a single row in every case: mark-read is
+// scoped to FEATURE_TYPES (which only covers 'reply'/'message'/'join_request'
+// — 'space_invite', 'initiative_invite', 'account_approved' aren't wired
+// into any feature bucket), and mark-read-by-ref requires a truthy ref_id
+// ('account_approved' always inserts ref_id NULL). Added for the mobile
+// notifications screen, which needs to dismiss any single notification
+// uniformly regardless of type. Scoped to user_id so one user can never
+// mark another's notification read.
+app.post('/api/notifications/:id/read', authenticate, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE hub_notifications SET read = true WHERE id = $1 AND user_id = $2`,
+      [req.params.id, req.user.id],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Notification not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark notification read' });
+  }
+});
+
 // Mark notifications for a specific conversation or post as read
 app.post(
   '/api/notifications/mark-read-by-ref',
@@ -3605,9 +3703,10 @@ app.get('/api/posts', authenticate, async (req, res) => {
     const visClause = `(p.visibility != 'private' OR p.author_id = $${params.length + 1})`;
     params.push(req.user.id);
     const myUserIdParam = params.length;
+    const blockClause = blockedPairClause('p.author_id', myUserIdParam);
     const combinedWhere = where
-      ? `${where} AND ${spaceClause} AND ${visClause}`
-      : `WHERE ${spaceClause} AND ${visClause}`;
+      ? `${where} AND ${spaceClause} AND ${visClause} AND ${blockClause}`
+      : `WHERE ${spaceClause} AND ${visClause} AND ${blockClause}`;
 
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
@@ -4234,9 +4333,9 @@ app.get('/api/posts/:id/replies', authenticate, async (req, res) => {
        FROM hub_post_replies r
        LEFT JOIN hub_users u  ON r.author_id        = u.id
        LEFT JOIN hub_users ru ON r.reply_to_user_id = ru.id
-       WHERE r.post_id = $1
+       WHERE r.post_id = $1 AND ${blockedPairClause('r.author_id', 2)}
        ORDER BY r.created_at ASC`,
-      [req.params.id],
+      [req.params.id, req.user.id],
     );
     res.json({ replies: rows });
   } catch (err) {
@@ -4778,6 +4877,125 @@ app.patch('/api/requests/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Update request error:', err);
     res.status(500).json({ error: 'Failed to update request' });
+  }
+});
+
+// ── Trust & safety: reports + blocks ──────────────────────
+
+// Report a post, reply, message, listing, or member. Any authenticated
+// member can file one; only visible to mods/admins via GET /api/reports.
+app.post('/api/reports', authenticate, async (req, res) => {
+  const { target_type, target_id, reason, details } = req.body || {};
+  if (!REPORT_TARGET_TYPES.includes(target_type))
+    return res.status(400).json({ error: 'Invalid target_type' });
+  if (!target_id) return res.status(400).json({ error: 'target_id required' });
+  if (!REPORT_REASONS.includes(reason))
+    return res.status(400).json({ error: 'Invalid reason' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO hub_reports (reporter_id, target_type, target_id, reason, details)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, target_type, target_id, reason, status, created_at`,
+      [req.user.id, target_type, String(target_id), reason, details ? String(details).slice(0, 2000) : null],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Create report error:', err);
+    res.status(500).json({ error: 'Failed to submit report' });
+  }
+});
+
+// List reports (moderator/admin only) — defaults to open reports.
+app.get('/api/reports', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Moderator access required' });
+  const status = (req.query.status || 'open').toString();
+  const limit = Math.min(parseInt(req.query.limit ?? '50', 10), 100);
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.target_type, r.target_id, r.reason, r.details, r.status, r.created_at,
+              r.reviewed_at, ru.id AS reporter_id, ru.username AS reporter_username,
+              rev.username AS reviewed_by_username
+       FROM hub_reports r
+       LEFT JOIN hub_users ru ON r.reporter_id = ru.id
+       LEFT JOIN hub_users rev ON r.reviewed_by = rev.id
+       WHERE ($1 = 'all' OR r.status = $1)
+       ORDER BY r.created_at DESC
+       LIMIT $2`,
+      [status, limit],
+    );
+    res.json({ reports: rows });
+  } catch (err) {
+    console.error('List reports error:', err);
+    res.status(500).json({ error: 'Failed to load reports' });
+  }
+});
+
+// Mark a report reviewed or dismissed (moderator/admin only).
+app.patch('/api/reports/:id', authenticate, async (req, res) => {
+  if (!isMod(req.user)) return res.status(403).json({ error: 'Moderator access required' });
+  const { status } = req.body || {};
+  if (!['reviewed', 'dismissed'].includes(status))
+    return res.status(400).json({ error: 'status must be reviewed or dismissed' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE hub_reports SET status = $2, reviewed_by = $3, reviewed_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [req.params.id, status, req.user.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Report not found' });
+    logMod(req.user.id, 'resolve_report', rows[0].target_type, rows[0].target_id, null, status);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Resolve report error:', err);
+    res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
+// Members I've blocked — GET /api/blocks rather than nesting under
+// /api/members so it can't collide with GET /api/members/:id's wildcard.
+app.get('/api/blocks', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url
+       FROM hub_blocks b
+       JOIN hub_users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = $1
+       ORDER BY b.created_at DESC`,
+      [req.user.id],
+    );
+    res.json({ members: rows });
+  } catch (err) {
+    console.error('List blocked members error:', err);
+    res.status(500).json({ error: 'Failed to load blocked members' });
+  }
+});
+
+app.post('/api/members/:id/block', authenticate, async (req, res) => {
+  if (req.params.id === req.user.id)
+    return res.status(400).json({ error: "You can't block yourself" });
+  try {
+    const target = await pool.query('SELECT id FROM hub_users WHERE id = $1', [req.params.id]);
+    if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
+    await pool.query(
+      `INSERT INTO hub_blocks (blocker_id, blocked_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+      [req.user.id, req.params.id],
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error('Block member error:', err);
+    res.status(500).json({ error: 'Failed to block that member' });
+  }
+});
+
+app.delete('/api/members/:id/block', authenticate, async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM hub_blocks WHERE blocker_id = $1 AND blocked_id = $2`, [
+      req.user.id,
+      req.params.id,
+    ]);
+    res.status(204).end();
+  } catch (err) {
+    console.error('Unblock member error:', err);
+    res.status(500).json({ error: 'Failed to unblock that member' });
   }
 });
 
@@ -5913,13 +6131,13 @@ app.delete('/api/atlas/pins/:id', authenticate, async (req, res) => {
 app.get('/api/marketplace/listings', authenticate, async (req, res) => {
   const { category } = req.query;
   try {
+    const params = [req.user.id];
     let query = `
       SELECT l.*, v.name AS vendor_name, v.logo_file_name AS vendor_logo_file_name
       FROM hub_listings l
       JOIN hub_vendors v ON l.vendor_id = v.id
-      WHERE l.is_active = TRUE
+      WHERE l.is_active = TRUE AND ${blockedPairClause('v.owner_user_id', 1)}
     `;
-    const params = [];
     if (category && category !== 'All') {
       params.push(category.toString().toUpperCase());
       query += ` AND UPPER(l.category) = $${params.length}`;
@@ -7458,6 +7676,16 @@ app.post('/api/initiatives/tasks/:taskId/notes', authenticate, async (req, res) 
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [req.params.taskId, initiative_id, req.user.id, initiativeActorName(req), content.trim()],
     );
+    // Title lookup is defensive (try/catch to []) the same way getTaskOwnerIds
+    // is above — an external-provider task has no row in the local table.
+    const { rows: taskRows } = await pool
+      .query(`SELECT title FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.taskId])
+      .catch(() => ({ rows: [] }));
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'task', $2, $3, $4)`,
+      [initiative_id, `left a note on "${taskRows[0]?.title || 'a task'}"`, req.user.id, initiativeActorName(req)],
+    );
     res.status(201).json({ ...rows[0], replies: [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -7534,6 +7762,11 @@ app.post('/api/initiatives/:id/resources', authenticate, async (req, res) => {
          VALUES ($1, $2, 'link', $3, $4) RETURNING *`,
         [req.params.id, item?.trim() || url.trim(), url.trim(), req.user.id],
       );
+      await pool.query(
+        `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+         VALUES ($1, 'resource', $2, $3, $4)`,
+        [req.params.id, `added "${rows[0].item}" to the list`, req.user.id, initiativeActorName(req)],
+      );
       res.status(201).json(rows[0]);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -7546,6 +7779,11 @@ app.post('/api/initiatives/:id/resources', authenticate, async (req, res) => {
       `INSERT INTO hub_initiative_resources (initiative_id, item, qty, created_by)
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.params.id, item.trim(), qty?.trim() || null, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'resource', $2, $3, $4)`,
+      [req.params.id, `added "${rows[0].item}" to the list`, req.user.id, initiativeActorName(req)],
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -7575,6 +7813,11 @@ app.post('/api/initiatives/:id/resources/file', authenticate, upload.single('fil
       `INSERT INTO hub_initiative_resources (initiative_id, item, kind, file_id, owns_file, created_by)
        VALUES ($1, $2, 'file', $3, TRUE, $4) RETURNING *`,
       [req.params.id, req.file.originalname, fileRows[0].id, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'resource', $2, $3, $4)`,
+      [req.params.id, `added "${rows[0].item}" to the list`, req.user.id, initiativeActorName(req)],
     );
     res.status(201).json({
       ...rows[0],
@@ -7613,6 +7856,11 @@ app.post('/api/initiatives/:id/resources/attach-file', authenticate, async (req,
       `INSERT INTO hub_initiative_resources (initiative_id, item, kind, file_id, created_by)
        VALUES ($1, $2, 'file', $3, $4) RETURNING *`,
       [req.params.id, file.file_name, file_id, req.user.id],
+    );
+    await pool.query(
+      `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+       VALUES ($1, 'resource', $2, $3, $4)`,
+      [req.params.id, `added "${rows[0].item}" to the list`, req.user.id, initiativeActorName(req)],
     );
     res.status(201).json({
       ...rows[0],
@@ -8010,14 +8258,17 @@ app.patch('/api/initiatives/goals/:goalId/meta', authenticate, async (req, res) 
   if (!initiative_id) return res.status(400).json({ error: 'initiative_id is required' });
   try {
     const finalAssignee = assign_self ? req.user.id : assignee_user_id || null;
+    // Fetched once up front (used by both branches below) so activity only
+    // logs a real assignment change, not a due-date-only patch that happens
+    // to leave the assignee exactly where it already was.
+    const { rows: existing } = await pool.query(
+      `SELECT assignee_user_id FROM hub_initiative_task_meta WHERE task_id = $1`,
+      [req.params.goalId],
+    );
+    const currentAssignee = existing[0]?.assignee_user_id ?? null;
     if (finalAssignee === null) {
       // Clearing an assignment — self-service "oops, not for me" by the current
       // assignee, or a cleanup by the task creator. No one else may clear it.
-      const { rows: existing } = await pool.query(
-        `SELECT assignee_user_id FROM hub_initiative_task_meta WHERE task_id = $1`,
-        [req.params.goalId],
-      );
-      const currentAssignee = existing[0]?.assignee_user_id ?? null;
       if (currentAssignee && currentAssignee !== req.user.id) {
         const { rows: taskRows } = await pool
           .query(`SELECT created_by FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId])
@@ -8033,6 +8284,16 @@ app.patch('/api/initiatives/goals/:goalId/meta', authenticate, async (req, res) 
          RETURNING *`,
         [req.params.goalId, initiative_id, due_date || null],
       );
+      if (currentAssignee) {
+        const { rows: taskRows } = await pool
+          .query(`SELECT title FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId])
+          .catch(() => ({ rows: [] }));
+        await pool.query(
+          `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+           VALUES ($1, 'task', $2, $3, $4)`,
+          [initiative_id, `unassigned "${taskRows[0]?.title || 'a task'}"`, req.user.id, initiativeActorName(req)],
+        );
+      }
       return res.json(rows[0]);
     }
     const assigneeName = assign_self ? initiativeActorName(req) : null;
@@ -8045,6 +8306,19 @@ app.patch('/api/initiatives/goals/:goalId/meta', authenticate, async (req, res) 
        RETURNING *`,
       [req.params.goalId, initiative_id, finalAssignee, assigneeName, due_date || null],
     );
+    if (finalAssignee !== currentAssignee) {
+      const { rows: taskRows } = await pool
+        .query(`SELECT title FROM hub_initiative_local_tasks WHERE id = $1`, [req.params.goalId])
+        .catch(() => ({ rows: [] }));
+      const taskTitle = taskRows[0]?.title || 'a task';
+      const text =
+        finalAssignee === req.user.id ? `took on "${taskTitle}"` : `assigned "${taskTitle}" to ${rows[0].assignee_name || 'someone'}`;
+      await pool.query(
+        `INSERT INTO hub_initiative_activity (initiative_id, kind, text, actor_id, actor_name)
+         VALUES ($1, 'task', $2, $3, $4)`,
+        [initiative_id, text, req.user.id, initiativeActorName(req)],
+      );
+    }
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -8139,6 +8413,7 @@ app.post('/api/spaces', authenticate, async (req, res) => {
       SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8168,6 +8443,7 @@ app.get('/api/spaces', authenticate, async (req, res) => {
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
         sm2.role  AS my_role,
         sm2.status AS my_status
       FROM hub_spaces s
@@ -8203,6 +8479,7 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8233,6 +8510,43 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
   }
 });
 
+// GET /api/spaces/shared-with/:userId — spaces where both the caller and
+// :userId are active members. Added for the mobile app's other-member
+// profile screen ("Shared spaces") — no mutual-membership route existed
+// before this. Two path segments after /api/spaces/, so this never collides
+// with the single-segment /:slug route below (Express matches by segment
+// count/shape, and no space can have "shared-with" as its own slug anyway —
+// POST /api/spaces already rejects a name that doesn't survive slugification
+// into something meaningful, and this route wins by registration order even
+// if it somehow did). Local-mode only — no external-provider proxy branch,
+// since the external societies API has no equivalent concept.
+app.get('/api/spaces/shared-with/:userId', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+             s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
+             s.web_public,
+        COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
+        me.role   AS my_role,
+        me.status AS my_status
+      FROM hub_spaces s
+      JOIN hub_space_members viewer ON viewer.space_id = s.id AND viewer.user_id = $1 AND viewer.status = 'active'
+      JOIN hub_space_members other  ON other.space_id  = s.id AND other.user_id  = $2 AND other.status  = 'active'
+      LEFT JOIN hub_space_members sm ON sm.space_id = s.id
+      LEFT JOIN hub_space_members me ON me.space_id = s.id AND me.user_id = $1
+      GROUP BY s.id, me.role, me.status
+      ORDER BY s.name
+    `,
+      [req.user.id, req.params.userId],
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/spaces/:slug — space detail
 app.get('/api/spaces/:slug', authenticate, async (req, res) => {
   const sp = await getSpacesProvider();
@@ -8257,6 +8571,7 @@ app.get('/api/spaces/:slug', authenticate, async (req, res) => {
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
+        (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8731,21 +9046,37 @@ app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
     if (!memRows[0] || memRows[0].status !== 'active')
       return res.status(403).json({ error: 'Join this space to view posts' });
 
+    // Same shape as GET /api/posts's SELECT (like_count/my_liked/rsvp_count/
+    // my_rsvp/poll fields) — this used to return a bare `p.*` with only
+    // reply_count attached, which left every space post looking permanently
+    // un-liked/0-RSVP'd (those fields would just be undefined) to any client
+    // that assumes the general feed's full HubPost shape, PostRow included.
     const { rows } = await pool.query(
       `
-      SELECT p.*, u.username AS author_username,
-             hf.file_name AS media_file_name,
-             (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id) AS reply_count
+      SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
+             p.space_id, p.event_date, p.event_location, p.visibility,
+             u.id AS author_id, u.username AS author_username,
+             f.file_name AS media_file_name,
+             (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+             (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
+             EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
+             (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
+             EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked,
+             pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
+             pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
+             rq.problem AS poll_request_problem
       FROM hub_posts p
       LEFT JOIN hub_users u ON u.id = p.author_id
-      LEFT JOIN hub_files hf ON hf.id = p.media_file_id
+      LEFT JOIN hub_files f ON f.id = p.media_file_id
+      LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
+      LEFT JOIN hub_requests rq ON rq.id = pp.request_id
       WHERE p.space_id = $1
       ORDER BY p.created_at DESC
       LIMIT 100
     `,
-      [spaceRows[0].id],
+      [spaceRows[0].id, req.user.id],
     );
-    res.json(rows);
+    res.json(await attachPollData(rows, req.user.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
