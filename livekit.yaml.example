@@ -1,0 +1,26 @@
+# LiveKit server config for one Citinet hub.
+# Copy this file to livekit.yaml (same folder as docker-compose.yml) and
+# replace the key/secret below with your own — keep them identical to
+# LIVEKIT_API_KEY / LIVEKIT_API_SECRET in your .env, since citinet-api uses
+# those exact two values to mint the access tokens this server verifies.
+#
+# Generate a real key/secret pair with:
+#   node -e "console.log(require('crypto').randomBytes(16).toString('hex'), require('crypto').randomBytes(32).toString('hex'))"
+# (first value is the key, second is the secret)
+
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # Uncomment and set once mobile clients connect from outside this machine
+  # (i.e. once you've set TUNNEL_URL / LIVEKIT_PUBLIC_URL) — same idea as
+  # this stack's own tunnel setup: LiveKit needs to know its own public
+  # address to tell participants how to reach it. Left off by default so
+  # local-network-only testing (same Wi-Fi as this machine) works with zero
+  # config.
+  # use_external_ip: true
+
+keys:
+  changeme_livekit_key: changeme_livekit_secret_at_least_32_chars

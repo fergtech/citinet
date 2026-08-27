@@ -40,6 +40,7 @@ const { sendEmail } = require('./mailer');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
 const { startBlogSync } = require('./blogSyncHeartbeat');
+const { initCommsDb, createCommsRouter, registerCallEventHistoryRoute, attachCommsSignaling, livekitConfigured } = require('./comms');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -3335,6 +3336,10 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Update failed' });
   }
 });
+
+// ── Comms (calls, broadcasts, rooms) ──────────────────────
+app.use('/api/comms', createCommsRouter({ pool, authenticate, express }));
+registerCallEventHistoryRoute(app, pool, authenticate);
 
 // ── Notifications ─────────────────────────────────────────
 
@@ -10438,6 +10443,7 @@ app.use((err, req, res, next) => {
 async function start() {
   try {
     await initDb();
+    await initCommsDb(pool);
     console.log('Database tables ready');
   } catch (err) {
     console.warn('DB init failed (will retry on first request):', err.message);
@@ -10461,7 +10467,7 @@ async function start() {
     6 * 60 * 60 * 1000,
   );
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Citinet API listening on port ${PORT}`);
     console.log(`  Hub:        ${process.env.HUB_NAME || '(unnamed)'}`);
     console.log(`  Visibility: ${process.env.HUB_VISIBILITY || 'local'}`);
@@ -10471,7 +10477,11 @@ async function start() {
     if (process.env.TUNNEL_URL) {
       console.log(`  Tunnel:     ${process.env.TUNNEL_URL}`);
     }
+    console.log(`  Comms:      ${livekitConfigured ? 'LiveKit configured' : 'not configured (calls disabled)'}`);
   });
+  // Same http.Server Express is already using — a second server/port would
+  // need its own tunnel exposure, which nothing in this stack sets up.
+  attachCommsSignaling(httpServer, pool);
 
   startCertAgent();
   startRegistryHeartbeat();

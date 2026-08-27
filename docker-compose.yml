@@ -28,6 +28,10 @@ services:
       - STORAGE_BUCKET=${STORAGE_BUCKET:-hub-files}
       - CORS_ORIGIN=${CORS_ORIGIN:-*}
       - TUNNEL_URL=${TUNNEL_URL:-}
+      - LIVEKIT_INTERNAL_URL=${LIVEKIT_INTERNAL_URL:-http://citinet-livekit:7880}
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
     depends_on:
       citinet-db:
         condition: service_healthy
@@ -108,6 +112,35 @@ services:
       timeout: 20s
       retries: 3
       start_period: 20s
+    networks:
+      - citinet-network
+
+  # LiveKit — self-hosted WebRTC SFU for Comms (1:1 calls, broadcasts, rooms).
+  # The only new service this feature needs; signaling (who's ringing whom)
+  # and call history both live inside citinet-api itself (see api/comms.js) —
+  # LiveKit's own room list is the live source of truth for "what's live
+  # right now," nothing duplicated in Postgres for that.
+  #
+  # Config is a mounted YAML, not env vars like the rest of this stack —
+  # LiveKit's server config isn't settable purely through env vars the way
+  # citinet-api's is, so this is the one deliberate exception. Copy
+  # livekit.yaml.example to livekit.yaml and set your own key/secret there
+  # (matching LIVEKIT_API_KEY/LIVEKIT_API_SECRET below exactly — citinet-api
+  # uses those same two values to mint the tokens LiveKit verifies).
+  citinet-livekit:
+    image: livekit/livekit-server:latest
+    container_name: citinet-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "${LIVEKIT_PORT:-7880}:7880"
+      - "${LIVEKIT_RTC_TCP_PORT:-7881}:7881"
+      # Media (RTP/RTCP) — kept deliberately small (100 UDP ports) for a
+      # single neighborhood hub's realistic concurrency, not LiveKit's own
+      # much wider default range meant for larger multi-tenant deployments.
+      - "50000-50100:50000-50100/udp"
     networks:
       - citinet-network
 
