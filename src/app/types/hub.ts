@@ -305,6 +305,52 @@ export interface HubMessage {
   created_at: string;
 }
 
+// ── Comms: 1:1 calls, broadcasts, rooms (api/comms.js) ──────────────────
+
+export type CallMode = 'audio' | 'video';
+export type CallOutcome = 'ringing' | 'connected' | 'declined' | 'not_answered';
+
+/** WS payload pushed to the callee the instant someone rings them */
+export interface IncomingCallPayload {
+  type: 'incoming_call';
+  call_id: string;
+  conversation_id: string;
+  room_name: string;
+  mode: CallMode;
+  from_id: string;
+  from_username: string;
+}
+
+export interface CallTokenResponse {
+  call_id?: string;
+  room_name: string;
+  mode?: CallMode;
+  token: string;
+  livekit_url: string;
+}
+
+/** One row of a broadcast/room currently live on this hub's LiveKit server */
+export interface LiveCommsItem {
+  kind: 'broadcast' | 'room';
+  room_name: string;
+  title?: string;
+  host_id: string;
+  host_username: string;
+  participant_count: number;
+}
+
+/** Post-call history row for a DM thread's transcript chip */
+export interface HubCallEvent {
+  id: string;
+  mode: CallMode;
+  outcome: CallOutcome;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  caller_id: string;
+  callee_id: string;
+}
+
 /** Poll-only mechanics for a POLL-category HubPost — the post's title is its
  * question, this carries everything else (options, votes, thresholds). */
 export interface HubPostPoll {

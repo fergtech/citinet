@@ -6,6 +6,7 @@ import {
   RefreshCw, Plus, MessageCircle, X, Check,
   Paperclip, File as FileIcon, Download, ArrowLeft, ChevronRight,
   ImagePlus, MapPin, NotebookPen, CalendarDays, Sparkles, Smile, Mic, Film, Images, SmilePlus,
+  Phone, Video, Radio, Eye,
 } from 'lucide-react';
 import { SupportLauncher } from './SupportLauncher';
 import { parseMessageLinks, LinkPreviewCard } from './LinkPreview';
@@ -13,9 +14,15 @@ import { EmojiPicker } from './EmojiPicker';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
+import { useCall } from '../context/CallContext';
+import { useBroadcast } from '../context/BroadcastContext';
+import { OutgoingCallModal } from './comms/IncomingCallModal';
+import { BroadcastSetupModal } from './comms/BroadcastSetupModal';
+import { LiveThumbnail } from './comms/LiveThumbnail';
+import { ensureBackfill, ingestMessages, initForHub, searchMessages } from '../services/messageSearchIndex';
 import { notificationsService } from '../services/notificationsService';
 import { isOnline } from '../utils/presence';
-import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem } from '../types/hub';
+import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem, LiveCommsItem } from '../types/hub';
 
 interface MessagesScreenProps {
   onBack: () => void;
@@ -193,6 +200,36 @@ function AttachTrayItem({ icon: Icon, label, onClick, disabled }: {
   );
 }
 
+/** One card in the "Live now" strip — a currently-active broadcast/room. */
+function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; onClick?: () => void; showPreview?: boolean }) {
+  const isBroadcast = item.kind === 'broadcast';
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className="relative shrink-0 w-[130px] h-[168px] rounded-2xl overflow-hidden bg-gradient-to-br from-purple-600 to-blue-600 text-left disabled:cursor-default"
+    >
+      {showPreview && <LiveThumbnail roomName={item.room_name} hostId={item.host_id} />}
+      <span className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[9px] font-extrabold text-white ${isBroadcast ? 'bg-red-600' : 'bg-purple-600'}`}>
+        {isBroadcast ? 'LIVE' : 'OPEN'}
+      </span>
+      <span className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-black/45 px-1.5 py-0.5">
+        <Eye className="w-2.5 h-2.5 text-white" />
+        <span className="text-white text-[10px] tabular-nums">{item.participant_count}</span>
+      </span>
+      <div className="absolute left-2.5 right-2.5 bottom-2.5 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+            {(item.host_username || '?').charAt(0).toUpperCase()}
+          </div>
+          <span className="text-white text-[11px] flex-1 truncate">{item.host_username} · {isBroadcast ? 'Broadcast' : 'Room'}</span>
+        </div>
+        <span className="text-white text-[13px] font-semibold line-clamp-2">{item.title || (isBroadcast ? 'Live broadcast' : 'Open room')}</span>
+      </div>
+    </button>
+  );
+}
+
 /** Display name for a conversation */
 function convoDisplayName(c: HubConversation, myUserId?: string): string {
   if (c.name) return c.name;
@@ -305,6 +342,23 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const { currentHub, currentUser } = useHub();
   const slug = currentHub?.slug || '';
   const myUserId = currentUser?.hubUserId || '';
+  const { call } = useCall();
+  const { broadcast, joinAsViewer, restore: restoreBroadcast } = useBroadcast();
+
+  // Pre-call preview modal, opened from the thread header's Phone/Video
+  // buttons — startOutgoingCall itself is only invoked once the user
+  // confirms inside the modal.
+  const [outgoingCall, setOutgoingCall] = useState<{ peerId: string; peerName: string; mode: 'audio' | 'video' } | null>(null);
+  const [showBroadcastSetup, setShowBroadcastSetup] = useState(false);
+
+  // "Live now" strip — every broadcast/room currently active on this hub.
+  const [liveItems, setLiveItems] = useState<LiveCommsItem[]>([]);
+  const [justEndedRoomName, setJustEndedRoomName] = useState<string | null>(null);
+
+  // Whether the local full-history search index is still backfilling older
+  // messages in the background — surfaced as a small note near the search
+  // box so a search run mid-backfill doesn't silently look complete.
+  const [indexingHistory, setIndexingHistory] = useState(false);
 
   // ── state ──────────────────────────────────────────────
   const [conversations, setConversations] = useState<HubConversation[]>([]);
@@ -314,6 +368,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [msgsLoading, setMsgsLoading] = useState(false);
+  // Which conversation's *fresh* (non-poll) message load has actually
+  // landed — see loadMessages' own note on why the jump-to-message effect
+  // needs this instead of just checking msgsLoading.
+  const [loadedConvoId, setLoadedConvoId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -390,10 +448,29 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const lastTypingSentRef = useRef(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Keep a live ref so loadMessages (memoized on slug) can always see current conversations
   const conversationsRef = useRef<HubConversation[]>([]);
+  // Mirrors `messages` synchronously for code that can't wait on React's
+  // render cycle (the jump-to-message scrollback loop below drives several
+  // sequential fetches and needs to see each one's result immediately).
+  const messagesRef = useRef<HubMessage[]>([]);
+  // Whether the view is "stuck" to the latest message — true while the user
+  // hasn't scrolled away from the bottom. Only in that state should a poll
+  // or new message auto-scroll; otherwise it would yank someone back down
+  // to the bottom the instant they scroll up to read older messages.
+  const stickToBottomRef = useRef(true);
+
+  // Scrollback ("infinite scroll up") state for the open conversation.
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  // Set when a search result is opened for a message that isn't in the
+  // last-loaded page — drives the scrollback loop that pages backward until
+  // it's loaded, then scrolls to and highlights it.
+  const [pendingJump, setPendingJump] = useState<{ convoId: string; messageId: string } | null>(null);
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
 
   // Media attachment state
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
@@ -494,6 +571,72 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     return () => clearInterval(timer);
   }, [slug, loadConversations]);
 
+  // ── local full-history search index ────────────────────
+  // Backfills every conversation's full message history into a local,
+  // decrypted IndexedDB index so search can span months of messages, not
+  // just the last-loaded page — see messageSearchIndex.ts's own note on why
+  // this has to run client-side (DM bodies are E2E encrypted; the server
+  // can't search them). Idempotent and resumable, so re-running it is cheap
+  // — already-synced conversations return immediately.
+  //
+  // Keyed on the *set of conversation ids*, not the `conversations` array
+  // itself — loadConversations() creates a new array reference on every 10s
+  // poll even when nothing changed, which used to re-run this every poll
+  // and flash "Indexing…" on and off in sync with it. ensureBackfill still
+  // reads the live conversationsRef (kept fresh in loadConversations) for
+  // each conversation's up-to-date member list.
+  const conversationIdsKey = conversations.map(c => c.id).join(',');
+  useEffect(() => {
+    if (!slug || conversationsRef.current.length === 0) return;
+    let cancelled = false;
+    // Only show the note if backfill is still running after a beat — a
+    // fully-synced hub resolves near-instantly and would otherwise flash
+    // the note on for a single frame for no reason.
+    const indicatorTimer = setTimeout(() => { if (!cancelled) setIndexingHistory(true); }, 400);
+    initForHub(slug).then(() => {
+      if (cancelled) return;
+      ensureBackfill(slug, conversationsRef.current).finally(() => {
+        clearTimeout(indicatorTimer);
+        if (!cancelled) setIndexingHistory(false);
+      });
+    });
+    return () => { cancelled = true; clearTimeout(indicatorTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, conversationIdsKey]);
+
+  // ── live broadcasts/rooms strip ────────────────────────
+  const refreshLive = useCallback(() => {
+    if (!slug) return;
+    hubService.listLiveComms(slug).then(items => {
+      setLiveItems(items);
+      setJustEndedRoomName(prev => (prev && !items.some(item => item.room_name === prev) ? null : prev));
+    }).catch(() => {});
+  }, [slug]);
+
+  useEffect(() => {
+    refreshLive();
+    // Polled at a lower cadence than messages/conversations — a new
+    // broadcast starting elsewhere isn't as time-sensitive as a message.
+    const timer = setInterval(refreshLive, 15_000);
+    return () => clearInterval(timer);
+  }, [refreshLive]);
+
+  // Catches a broadcast this device just started/ended even without the
+  // interval above having ticked yet.
+  useEffect(() => {
+    if (broadcast.phase === 'live' || broadcast.phase === 'idle') refreshLive();
+    if (broadcast.phase === 'ended' && broadcast.roomName) setJustEndedRoomName(broadcast.roomName);
+  }, [broadcast.phase, broadcast.roomName, refreshLive]);
+
+  // A room this device just left/ended, suppressed even if a fetch still
+  // lists it — the host's own /end request races this device's local
+  // disconnect, so a refresh triggered right after ending can land before
+  // the server's own room deletion actually finishes.
+  const visibleLive = liveItems.filter(item =>
+    item.room_name !== justEndedRoomName
+    && (item.host_id !== myUserId || (broadcast.phase === 'live' && broadcast.roomName === item.room_name)),
+  );
+
   // ── load messages for selected conversation ───────────
   const loadMessages = useCallback(async (convoId: string, silent = false) => {
     if (!slug || !convoId) return;
@@ -501,14 +644,38 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     try {
       const convo = conversationsRef.current.find(c => c.id === convoId);
       const msgs = await hubService.getMessages(slug, convoId, 100, undefined, convo?.members);
-      // Preserve locally-known attachments if the server response omits them
-      setMessages(prev => msgs.map(m => {
-        const existing = prev.find(p => p.id === m.id);
-        if (existing?.attachments?.length && !m.attachments?.length) {
-          return { ...m, attachments: existing.attachments };
+      setMessages(prev => {
+        // A fresh open of the conversation (not a background poll) always
+        // just takes the latest page — nothing to preserve yet.
+        if (!silent || prev.length === 0) {
+          return msgs.map(m => {
+            const existing = prev.find(p => p.id === m.id);
+            if (existing?.attachments?.length && !m.attachments?.length) {
+              return { ...m, attachments: existing.attachments };
+            }
+            return m;
+          });
         }
-        return m;
-      }));
+        // A silent poll only ever re-fetches the latest 100 — replacing
+        // `prev` wholesale would silently discard any older pages the user
+        // scrolled up to load via loadOlderMessages(). Merge instead, so
+        // scrollback history survives every 10s refresh.
+        const byId = new Map(prev.map(m => [m.id, m]));
+        for (const m of msgs) {
+          const existing = byId.get(m.id);
+          byId.set(m.id, existing?.attachments?.length && !m.attachments?.length ? { ...m, attachments: existing.attachments } : m);
+        }
+        return Array.from(byId.values()).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+      // Keep the local full-history search index current with whatever's
+      // actually being displayed, independent of the slower background backfill.
+      ingestMessages(slug, convoId, msgs);
+      // Marks that convoId's *fresh* load has actually landed — the
+      // jump-to-message effect below waits on this instead of `msgsLoading`
+      // directly, since `msgsLoading` flips to true in a *later* effect-flush
+      // than the one that sets `pendingJump`, so checking it alone let the
+      // jump run one tick too early against a still-empty `messages` array.
+      if (!silent) setLoadedConvoId(convoId);
     } catch (err: any) {
       console.error('Failed to load messages:', err);
     } finally {
@@ -516,14 +683,119 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     }
   }, [slug]);
 
+  // Keeps messagesRef in lockstep with `messages` for the scrollback/jump
+  // code below, which drives several sequential fetches faster than React
+  // re-renders and can't afford to read a stale closure.
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   useEffect(() => {
     // Drafts only exist locally — nothing to fetch, and the id isn't a real conversation yet.
+    stickToBottomRef.current = true;
+    setHasMoreOlder(true);
+    setLoadedConvoId(null);
     if (selectedId && !selectedId.startsWith('draft')) {
       loadMessages(selectedId);
     } else {
       setMessages([]);
     }
   }, [selectedId, loadMessages]);
+
+  // ── scrollback ("infinite scroll up") ──────────────────
+  const loadOlderMessages = useCallback(async () => {
+    if (!slug || !selectedId || selectedId.startsWith('draft') || loadingOlder || !hasMoreOlder) return;
+    const oldest = messagesRef.current[0];
+    if (!oldest) return;
+    setLoadingOlder(true);
+    const container = messagesScrollRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+    try {
+      const convo = conversationsRef.current.find(c => c.id === selectedId);
+      const older = await hubService.getMessages(slug, selectedId, 100, oldest.id, convo?.members);
+      if (older.length === 0) {
+        setHasMoreOlder(false);
+        return;
+      }
+      setMessages(prev => [...older, ...prev]);
+      ingestMessages(slug, selectedId, older);
+      if (older.length < 100) setHasMoreOlder(false);
+      // Restore the same visual scroll offset after older messages are
+      // prepended above it — otherwise the browser keeps scrollTop fixed
+      // and the content the user was reading jumps down past the viewport.
+      requestAnimationFrame(() => {
+        if (container) container.scrollTop = container.scrollHeight - prevScrollHeight + prevScrollTop;
+      });
+    } catch (err) {
+      console.error('Failed to load older messages:', err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [slug, selectedId, loadingOlder, hasMoreOlder]);
+
+  const handleMessagesScroll = () => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (el.scrollTop < 120) loadOlderMessages();
+  };
+
+  // ── jump to a search hit that isn't in the loaded page ─
+  useEffect(() => {
+    // Waits on loadedConvoId, not msgsLoading — msgsLoading only flips to
+    // true in the *next* effect-flush after this one (it's set inside the
+    // async loadMessages() kicked off by a sibling effect reacting to the
+    // same selectedId change), so checking it here raced against an empty
+    // `messages` array on a conversation's very first open. loadedConvoId is
+    // only ever set once that fresh load has actually landed.
+    if (!pendingJump || !slug || pendingJump.convoId !== selectedId || loadedConvoId !== selectedId) return;
+    let cancelled = false;
+    const targetId = pendingJump.messageId;
+    (async () => {
+      let current = messagesRef.current;
+      // Bounded the same way the search index's own backfill is — a
+      // pathological amount of history just stops trying rather than
+      // spinning forever; the conversation is still open and usable.
+      for (let i = 0; i < 20 && !cancelled; i++) {
+        if (current.some(m => m.id === targetId)) break;
+        const oldest = current[0];
+        if (!oldest) break;
+        const convo = conversationsRef.current.find(c => c.id === selectedId);
+        let older: HubMessage[];
+        try {
+          older = await hubService.getMessages(slug, selectedId!, 100, oldest.id, convo?.members);
+        } catch {
+          break;
+        }
+        if (older.length === 0) {
+          setHasMoreOlder(false);
+          break;
+        }
+        current = [...older, ...current];
+        setMessages(current);
+        ingestMessages(slug, selectedId!, older);
+        if (older.length < 100) setHasMoreOlder(false);
+      }
+      if (cancelled) return;
+      setPendingJump(null);
+      if (!current.some(m => m.id === targetId)) return; // exhausted history without finding it
+      setHighlightMessageId(targetId);
+      requestAnimationFrame(() => {
+        document.getElementById(`msg-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      setTimeout(() => setHighlightMessageId(prev => (prev === targetId ? null : prev)), 2500);
+    })();
+    return () => { cancelled = true; };
+  }, [pendingJump, selectedId, slug, loadedConvoId]);
+
+  /** Opens a conversation and, once its initial page loads, scrolls to and
+   * briefly highlights a specific historical message — paging further back
+   * first if it isn't in that initial page yet. */
+  const jumpToSearchResult = (convId: string, messageId: string) => {
+    handleSelectConversation(convId);
+    setPendingJump({ convoId: convId, messageId });
+  };
 
   // Poll messages for active conversation
   useEffect(() => {
@@ -548,10 +820,16 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedId, slug]);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom — but only while the view is already "stuck"
+  // there (see stickToBottomRef). Without this guard, every poll refresh or
+  // prepended scrollback page re-fires this on every `messages` change and
+  // yanks the view back down even though the user deliberately scrolled up
+  // to read older messages.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, typingUserIds]);
+    if (!pendingJump && stickToBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, typingUserIds, pendingJump]);
 
   // ── select conversation + per-conversation read marking ──
   const handleSelectConversation = (convId: string) => {
@@ -606,7 +884,9 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
       } else {
         msg = await hubService.sendMessage(slug, convoId, text, members);
       }
+      stickToBottomRef.current = true; // sending always lands you on your own new message
       setMessages(prev => [...prev, msg]);
+      ingestMessages(slug, convoId, [msg]);
       loadConversations(true);
     } catch (err: any) {
       console.error('Failed to send:', err);
@@ -829,9 +1109,32 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // sidebar list, only in the currently-open thread.
   const selectedConvo = conversations.find(c => c.id === selectedId)
     ?? (draftConvo && draftConvo.id === selectedId ? draftConvo : undefined);
-  const filteredConversations = conversations.filter(c =>
-    convoDisplayName(c, myUserId).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const searchQueryLower = searchQuery.trim().toLowerCase();
+  // Full message history, not just what's currently loaded — see
+  // messageSearchIndex.ts. Keyed by conversation for O(1) lookup below, and
+  // reused both to widen filteredConversations and to show *why* a
+  // conversation matched (its actual matching line, not just its name).
+  const historicalHitByConvo = searchQueryLower
+    ? new Map(searchMessages(slug, searchQueryLower).map(hit => [hit.conversationId, hit]))
+    : new Map<string, ReturnType<typeof searchMessages>[number]>();
+  const filteredConversations = conversations.filter(c => {
+    if (!searchQueryLower) return true;
+    if (convoDisplayName(c, myUserId).toLowerCase().includes(searchQueryLower)) return true;
+    if (historicalHitByConvo.has(c.id)) return true;
+    // Also match the last message's preview text — hubService.listConversations
+    // already resolves this to decrypted plaintext (or a placeholder if
+    // decryption failed) for DMs, so it's always safe to search as-is.
+    const lastBody = c.lastMessage?.body;
+    return !!lastBody && lastBody.toLowerCase().includes(searchQueryLower);
+  });
+  // "Live now" strip narrows to matching broadcasts/rooms while searching,
+  // instead of disappearing entirely — title and host are both fair game
+  // since neither is encrypted.
+  const filteredLive = searchQueryLower
+    ? visibleLive.filter(item =>
+        (item.title ?? '').toLowerCase().includes(searchQueryLower) || item.host_username.toLowerCase().includes(searchQueryLower),
+      )
+    : visibleLive;
   const filteredMembers = members.filter(m =>
     m.username.toLowerCase().includes(memberSearch.toLowerCase())
   );
@@ -954,6 +1257,8 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   return (
     <div className="h-full bg-slate-50 dark:bg-zinc-950 flex relative overflow-hidden">
       <DotGrid />
+
+      <BroadcastSetupModal open={showBroadcastSetup} onClose={() => setShowBroadcastSetup(false)} />
 
       {/* ── Lightbox Overlay ──
           Portaled to <body>: HubLayout's content area (where this screen renders) is
@@ -1308,10 +1613,49 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all"
             />
           </div>
+          {indexingHistory && (
+            <p className="mt-1.5 px-1 text-[11px] text-slate-400 dark:text-slate-500">
+              Indexing older messages for search…
+            </p>
+          )}
         </div>
 
         {/* Conversation list */}
         <div className="flex-1 overflow-y-auto px-3 py-2">
+          <div className="mb-3">
+            <button
+              onClick={() => setShowBroadcastSetup(true)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-50 dark:bg-red-950/40 px-3.5 py-2 text-red-600 dark:text-red-400 text-sm font-semibold"
+            >
+              <Radio className="w-3.5 h-3.5" /> Broadcast
+            </button>
+
+            {filteredLive.length > 0 && (
+              <>
+                <div className="flex items-center gap-1.5 mt-3 mb-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Live now</span>
+                </div>
+                <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1">
+                  {filteredLive.map(item => {
+                    // A card for a broadcast I'm already in (host or joined
+                    // viewer, just minimized) must restore that session, not
+                    // start a fresh join.
+                    const isMine = broadcast.phase === 'live' && broadcast.roomName === item.room_name;
+                    return (
+                      <LiveCard
+                        key={item.room_name}
+                        item={item}
+                        onClick={item.kind === 'broadcast' ? (isMine ? restoreBroadcast : () => joinAsViewer(item)) : undefined}
+                        showPreview={item.kind === 'broadcast' && !isMine}
+                      />
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
           {filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">
               <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mb-3" />
@@ -1335,6 +1679,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 const lastBody = convo.lastMessage?.body ? parseMessageLinks(convo.lastMessage.body) : null;
                 const preview = lastBody?.text || (lastBody?.urls.length ? '🔗 Link' : convo.lastMessage?.body);
                 const isUnread = unreadConvIds.has(convo.id);
+                // A hit from months of history, not the last message — show
+                // that line instead of the usual preview so it's clear *why*
+                // this conversation matched the search.
+                const historicalHit = historicalHitByConvo.get(convo.id);
+                const showHistoricalHit = !!historicalHit && historicalHit.messageId !== convo.lastMessage?.id;
                 return (
                   <motion.button
                     key={convo.id}
@@ -1342,7 +1691,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    onClick={() => handleSelectConversation(convo.id)}
+                    onClick={() => (showHistoricalHit ? jumpToSearchResult(convo.id, historicalHit!.messageId) : handleSelectConversation(convo.id))}
                     className={`w-full p-3.5 pl-3 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 border-l-[3px] ${
                       selectedId === convo.id
                         ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-500'
@@ -1384,7 +1733,12 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             <span className="text-slate-400 dark:text-slate-600">·</span>
                           </>
                         )}
-                        {(preview || convo.lastMessage?.attachments?.length) ? (
+                        {showHistoricalHit ? (
+                          <p className="text-[13px] text-slate-600 dark:text-slate-400 truncate flex-1">
+                            <span className="text-slate-400 dark:text-slate-500">{formatTimestamp(historicalHit!.createdAt)} · </span>
+                            {historicalHit!.body}
+                          </p>
+                        ) : (preview || convo.lastMessage?.attachments?.length) ? (
                           <p className="text-[13px] text-slate-600 dark:text-slate-400 truncate flex-1">
                             {preview || (convo.lastMessage?.attachments?.length
                               ? `${convo.lastMessage.attachments.length === 1 ? 'Sent an attachment' : `Sent ${convo.lastMessage.attachments.length} attachments`}`
@@ -1497,17 +1851,61 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               </button>
             </div>
 
-            <button
-              onClick={openMediaGallery}
-              title="Shared media"
-              className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
-            >
-              <Images className="w-5 h-5 text-slate-500 dark:text-slate-400" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {selectedConvo.kind === 'dm' && !selectedId?.startsWith('draft') && (() => {
+                const peerId = convoAvatarUserId(selectedConvo, myUserId);
+                const peerName = selectedConvo.members.find(m => m.user_id === peerId)?.username || 'Neighbor';
+                if (!peerId) return null;
+                const callBusy = call.phase !== 'idle';
+                return (
+                  <>
+                    <button
+                      onClick={() => setOutgoingCall({ peerId, peerName, mode: 'audio' })}
+                      disabled={callBusy}
+                      title={callBusy ? 'Already in a call' : 'Audio call'}
+                      className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    >
+                      <Phone className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                    </button>
+                    <button
+                      onClick={() => setOutgoingCall({ peerId, peerName, mode: 'video' })}
+                      disabled={callBusy}
+                      title={callBusy ? 'Already in a call' : 'Video call'}
+                      className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                    >
+                      <Video className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                    </button>
+                  </>
+                );
+              })()}
+              <button
+                onClick={openMediaGallery}
+                title="Shared media"
+                className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors"
+              >
+                <Images className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              </button>
+            </div>
           </div>
 
+          {outgoingCall && selectedId && !selectedId.startsWith('draft') && (
+            <OutgoingCallModal
+              open
+              onClose={() => setOutgoingCall(null)}
+              conversationId={selectedId}
+              peerId={outgoingCall.peerId}
+              peerName={outgoingCall.peerName}
+              initialMode={outgoingCall.mode}
+            />
+          )}
+
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2.5">
+          <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2.5">
+            {loadingOlder && (
+              <div className="flex items-center justify-center py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400 dark:text-slate-500" />
+              </div>
+            )}
             {msgsLoading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" />
@@ -1542,7 +1940,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
                         </div>
                       )}
-                    <div className={`group flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div id={`msg-${msg.id}`} className={`group flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {/* Avatar for all non-me messages — clickable → profile */}
                       {!isMe && (
                         <button
@@ -1566,7 +1964,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           />
                         </button>
                       )}
-                      <div className="max-w-[72%] md:max-w-[58%] relative">
+                      <div className={`max-w-[72%] md:max-w-[58%] relative rounded-2xl transition-colors duration-500 ${highlightMessageId === msg.id ? 'ring-2 ring-purple-400 bg-purple-100/60 dark:bg-purple-900/30' : ''}`}>
                         {/* Reaction trigger — desktop: visible on hover/focus next to the bubble.
                             Touch has no hover, so mobile instead long-presses the bubble itself
                             (see onTouchStart/Move/End below); both paths open the same picker. */}

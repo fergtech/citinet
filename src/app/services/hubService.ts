@@ -7,9 +7,10 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
+import { clearIndexForHub } from './messageSearchIndex';
 
 const STORAGE_KEYS = {
   HUBS: 'citinet-hubs',              // All known hub connections
@@ -685,6 +686,9 @@ class HubService {
     // Clear encryption keys from IndexedDB on logout. Compute scope from the
     // about-to-be-deleted connection since it won't be resolvable afterward.
     clearKeys(this.keyScope(slug, conn?.user?.hubUserId)).catch(() => {});
+    // Same privacy hygiene for the local full-history search index — it's
+    // full of decrypted message content, so it leaves with the account.
+    clearIndexForHub(slug).catch(() => {});
 
     if (this.getActiveHubSlug() === slug) {
       const remaining = Object.keys(connections);
@@ -1409,6 +1413,84 @@ class HubService {
     if (!res.ok) return [];
     const data = await res.json().catch(() => null);
     return Array.isArray(data?.typing_user_ids) ? data.typing_user_ids : [];
+  }
+
+  // ──────────────────────────────────────────────
+  // Comms — 1:1 calls, broadcasts, rooms (api/comms.js)
+  // ──────────────────────────────────────────────
+
+  /** Start (or re-ring) a 1:1 call. Returns the caller's own token immediately. */
+  async ringCall(hubSlug: string, conversationId: string, peerId: string, mode: CallMode): Promise<CallTokenResponse & { call_id: string }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/comms/call/ring`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId, peer_id: peerId, mode }),
+    });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+    return res.json();
+  }
+
+  /** Callee accepts an incoming call. */
+  async answerCall(hubSlug: string, callId: string): Promise<CallTokenResponse> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/comms/call/${callId}/answer`, { method: 'POST', headers });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+    return res.json();
+  }
+
+  /** Callee declines before answering. */
+  async declineCall(hubSlug: string, callId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    await fetch(`${tunnelUrl}/api/comms/call/${callId}/decline`, { method: 'POST', headers }).catch(() => {});
+  }
+
+  /** Either side hangs up. */
+  async endCall(hubSlug: string, callId: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    await fetch(`${tunnelUrl}/api/comms/call/${callId}/end`, { method: 'POST', headers }).catch(() => {});
+  }
+
+  /** Mint a token for a broadcast/room — creates it if room_name is omitted. */
+  async getCommsToken(
+    hubSlug: string,
+    kind: 'broadcast' | 'room',
+    roomName?: string,
+    title?: string,
+    preview?: boolean,
+  ): Promise<CallTokenResponse> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/comms/token`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, room_name: roomName, title, preview }),
+    });
+    if (!res.ok) await this.parseErrorResponse(res, hubSlug);
+    return res.json();
+  }
+
+  /** Host force-closes a broadcast/room. */
+  async endRoom(hubSlug: string, roomName: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    await fetch(`${tunnelUrl}/api/comms/${encodeURIComponent(roomName)}/end`, { method: 'POST', headers }).catch(() => {});
+  }
+
+  /** Every currently-active broadcast/room on this hub. */
+  async listLiveComms(hubSlug: string): Promise<LiveCommsItem[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/comms/live`, { headers });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => []);
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** Call history for a DM thread's transcript chip. */
+  async getCallEvents(hubSlug: string, conversationId: string): Promise<HubCallEvent[]> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const res = await fetch(`${tunnelUrl}/api/conversations/${conversationId}/call-events`, { headers });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({ call_events: [] }));
+    return data.call_events || [];
   }
 
   // ──────────────────────────────────────────────

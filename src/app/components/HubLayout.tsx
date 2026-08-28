@@ -1,12 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import {
   Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, ArrowRightLeft, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
-  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, ChevronUp, ChevronDown,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, GripVertical,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  useDraggable, useDroppable, closestCenter,
+  type DragStartEvent, type DragOverEvent, type DragEndEvent,
+} from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
@@ -17,6 +24,13 @@ import type { NotificationFeature } from '../services/notificationsService';
 import { registryService } from '../services/registryService';
 import type { RegistryHub } from '../services/registryService';
 import { FeatureRequestModal } from './FeatureRequestModal';
+import { CallProvider } from '../context/CallContext';
+import { BroadcastProvider } from '../context/BroadcastContext';
+import { InCallOverlay } from './comms/InCallOverlay';
+import { IncomingCallModal } from './comms/IncomingCallModal';
+import { MinimizedCallBar } from './comms/MinimizedCallBar';
+import { BroadcastOverlay } from './comms/BroadcastOverlay';
+import { MinimizedBroadcastBar } from './comms/MinimizedBroadcastBar';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache } from '../utils/subdomain';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
@@ -24,13 +38,104 @@ import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
 
 // Screens pinned to the desktop sidebar/dock out of the box — users can repin
-// and reorder from the "More" overlay's Edit mode, persisted per-browser.
+// and reorder from the "More" overlay's Edit mode, synced to the account via
+// updateUserPreferences (see the reconciliation effect in HubLayout below).
 const DEFAULT_PINNED_NAV = ['feed', 'messages', 'atlas', 'marketplace', 'toolkit'];
+
+type NavTile = { Icon: React.ElementType; label: string; screen: string; gradient: string };
+
+// Sentinel id for the "Tap to pin" tray's own droppable area — lets dragging
+// a pinned item back out register as "drop here to unpin" even when it isn't
+// released directly on top of another tile (e.g. dropped on empty grid space).
+const UNPINNED_DROP_ZONE = 'nav-unpinned-zone';
+
+/** One row in "Pinned in navigation" — drag the handle to reorder, or the ×
+ * to unpin. Whole-row drag was the other option (Trello/iOS-style), but a
+ * dedicated handle keeps that gesture from fighting with the × button and
+ * the row's own click-through. */
+function SortablePinnedRow({ app, onUnpin }: { app: NavTile; onUnpin: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: app.screen });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60"
+    >
+      <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
+        <app.Icon className="w-4 h-4" />
+      </div>
+      <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+      <button
+        onClick={onUnpin}
+        title="Remove from navigation"
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+      <button
+        {...attributes}
+        {...listeners}
+        title="Drag to reorder"
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-500/10 cursor-grab active:cursor-grabbing shrink-0 touch-none"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+/** One tile in "Tap to pin" — still tappable (dnd-kit's activation distance
+ * means a plain click never gets mistaken for a drag start), but also a drag
+ * source: dropping it on or over the pinned list above pins it at that spot. */
+function DraggableUnpinnedTile({ app, onPin }: { app: NavTile; onPin: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: app.screen });
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={onPin}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-purple-500/10 dark:hover:bg-purple-400/10 transition-colors text-left cursor-grab active:cursor-grabbing touch-none"
+    >
+      <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
+        <app.Icon className="w-4 h-4" />
+      </div>
+      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+    </button>
+  );
+}
+
+/** Wraps the "Tap to pin" grid so it's a drop target in its own right — a
+ * pinned item dragged back out only needs to land somewhere in this tray
+ * (not exactly on another tile) to register as "drop here to unpin". */
+function UnpinnedDropZone({ children }: { children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: UNPINNED_DROP_ZONE });
+  return (
+    <div ref={setNodeRef} className={`grid grid-cols-2 gap-1.5 rounded-xl transition-colors ${isOver ? 'bg-purple-500/10' : ''}`}>
+      {children}
+    </div>
+  );
+}
+
+/** Floating, elevated copy of whatever's being dragged — the "premium touch"
+ * (scale + shadow) that follows the pointer, rendered via DragOverlay so it
+ * isn't clipped by either list's own layout. */
+function NavDragPreview({ app }: { app: NavTile }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white dark:bg-zinc-800 shadow-2xl scale-105 ring-2 ring-purple-400/60">
+      <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
+        <app.Icon className="w-4 h-4" />
+      </div>
+      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+    </div>
+  );
+}
 
 export function HubLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { currentHub, currentUser, leaveHub, signOutOfHub, updateTunnelUrl } = useHub();
+  const { currentHub, currentUser, leaveHub, signOutOfHub, updateTunnelUrl, userPreferences, updateUserPreferences } = useHub();
   const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
   const { resolvedTheme, setTheme } = useTheme();
   const isDarkMode = resolvedTheme === 'dark';
@@ -56,6 +161,35 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       return defaultPinnedNav;
     }
   });
+  // Reconcile with the account's server-synced nav prefs once they load —
+  // localStorage above is only a fast local cache for first paint (avoids a
+  // flash of the default layout before the network round trip resolves).
+  // Without this, "Customize navigation" only ever stuck to one browser: a
+  // different device/browser would just see localStorage's default and never
+  // learn the account actually customized it. Runs once per mount (not on
+  // every userPreferences change) so a local edit's own optimistic update
+  // — which also flows through userPreferences — never gets re-applied to
+  // itself or clobbers a newer local edit made before the fetch resolved.
+  const navPrefsReconciledRef = useRef(false);
+  useEffect(() => {
+    if (navPrefsReconciledRef.current) return;
+    if (userPreferences.nav_layout === undefined && userPreferences.nav_pinned === undefined) return;
+    navPrefsReconciledRef.current = true;
+    if (userPreferences.nav_layout === 'dock' || userPreferences.nav_layout === 'sidebar') {
+      setDesktopNavLayout(userPreferences.nav_layout);
+      localStorage.setItem('citinet-desktop-nav-layout', userPreferences.nav_layout);
+    }
+    if (userPreferences.nav_pinned) {
+      try {
+        const parsed = JSON.parse(userPreferences.nav_pinned);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPinnedNavScreens(parsed);
+          localStorage.setItem('citinet-pinned-nav', JSON.stringify(parsed));
+        }
+      } catch { /* malformed value — keep the local default */ }
+    }
+  }, [userPreferences]);
+
   const [navEditMode, setNavEditMode] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showMobileAccountMenu, setShowMobileAccountMenu] = useState(false);
@@ -139,20 +273,90 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     .map(screen => visibleTiles.find(t => t.screen === screen))
     .filter(Boolean) as typeof APP_TILES;
 
+  // Split so live drag reordering (many rapid updates per gesture, see
+  // handleNavDragOver below) can update just the visible state without
+  // spamming localStorage/the server on every pointer-move — persistPinnedNav
+  // is only called once, when a gesture actually settles.
+  const persistPinnedNav = (next: string[]) => {
+    localStorage.setItem('citinet-pinned-nav', JSON.stringify(next));
+    // Account-level, not just this browser — see the reconciliation effect
+    // above for why "Customize navigation" needs to follow the user across
+    // devices/sessions rather than living only in localStorage.
+    updateUserPreferences({ nav_pinned: JSON.stringify(next) }).catch(() => {});
+  };
   const updatePinnedNav = (next: string[]) => {
     setPinnedNavScreens(next);
-    localStorage.setItem('citinet-pinned-nav', JSON.stringify(next));
+    persistPinnedNav(next);
   };
   const pinApp = (screen: string) => updatePinnedNav([...pinnedNavScreens, screen]);
   const unpinApp = (screen: string) => updatePinnedNav(pinnedNavScreens.filter(s => s !== screen));
-  const movePinnedApp = (screen: string, direction: 'up' | 'down') => {
-    const idx = pinnedNavScreens.indexOf(screen);
-    const swapWith = direction === 'up' ? idx - 1 : idx + 1;
-    if (idx === -1 || swapWith < 0 || swapWith >= pinnedNavScreens.length) return;
-    const next = [...pinnedNavScreens];
-    [next[idx], next[swapWith]] = [next[swapWith], next[idx]];
-    updatePinnedNav(next);
+
+  // ── drag-and-drop nav customization ────────────────────
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const dragStartPinnedRef = useRef<string[]>([]);
+  const navDndSensors = useSensors(
+    // A small activation distance is what lets a plain tap-to-pin/tap-to-
+    // remove click still work on these same elements — only a real drag
+    // gesture (pointer actually moves) starts a dnd-kit drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleNavDragStart = (event: DragStartEvent) => {
+    dragStartPinnedRef.current = pinnedNavScreens;
+    setActiveDragId(event.active.id as string);
   };
+
+  // Live reflow while the gesture is in progress — dragging an unpinned tile
+  // over the pinned list inserts it there immediately (so the list visibly
+  // makes space, Trello/Notion-style), and dragging a pinned item back over
+  // the tray removes it just as live. Nothing is persisted here.
+  const handleNavDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    const activeIsPinned = pinnedNavScreens.includes(activeId);
+    if (!activeIsPinned && pinnedNavScreens.includes(overId)) {
+      setPinnedNavScreens(prev => {
+        if (prev.includes(activeId)) return prev;
+        const overIdx = prev.indexOf(overId);
+        return [...prev.slice(0, overIdx), activeId, ...prev.slice(overIdx)];
+      });
+    } else if (activeIsPinned && (overId === UNPINNED_DROP_ZONE || !pinnedNavScreens.includes(overId))) {
+      setPinnedNavScreens(prev => prev.filter(id => id !== activeId));
+    }
+  };
+
+  const handleNavDragEnd = (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    const activeId = active.id as string;
+    if (!over) {
+      // Dropped somewhere invalid — revert to how the list looked before
+      // this gesture rather than keeping whatever dragOver left mid-flight.
+      setPinnedNavScreens(dragStartPinnedRef.current);
+      return;
+    }
+    const overId = over.id as string;
+    // Computed from `pinnedNavScreens` directly (this handler's own render
+    // closure), not a setState updater function — persistPinnedNav below
+    // calls updateUserPreferences, which sets state on HubProvider, and
+    // doing that from inside a setPinnedNavScreens updater is exactly the
+    // "setState while rendering a different component" React warns about.
+    let next = pinnedNavScreens;
+    if (overId === UNPINNED_DROP_ZONE) {
+      next = pinnedNavScreens.filter(id => id !== activeId);
+    } else if (pinnedNavScreens.includes(activeId) && pinnedNavScreens.includes(overId) && activeId !== overId) {
+      next = arrayMove(pinnedNavScreens, pinnedNavScreens.indexOf(activeId), pinnedNavScreens.indexOf(overId));
+    }
+    setPinnedNavScreens(next);
+    const startedFrom = dragStartPinnedRef.current;
+    const unchanged = startedFrom.length === next.length && startedFrom.every((id, i) => id === next[i]);
+    if (!unchanged) persistPinnedNav(next);
+  };
+
+  const activeDragTile = activeDragId ? visibleTiles.find(t => t.screen === activeDragId) : undefined;
 
   const pinnedScreens = new Set(desktopNavItems.map(i => i.screen));
   const moreNavItems = [
@@ -275,6 +479,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     setDesktopNavLayout(prev => {
       const next = prev === 'dock' ? 'sidebar' : 'dock';
       localStorage.setItem('citinet-desktop-nav-layout', next);
+      // Account-level — see updatePinnedNav's own note.
+      updateUserPreferences({ nav_layout: next }).catch(() => {});
       return next;
     });
   };
@@ -360,6 +566,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   if (!showNav) return <>{children}</>;
 
   return (
+    <CallProvider>
+      <BroadcastProvider>
     <div className="h-[100dvh]">
 
       {/* ═══ DESKTOP TOP MENUBAR ═══ */}
@@ -1229,72 +1437,46 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               {!showMobileAppsMenu && navEditMode ? (
+                <DndContext
+                  sensors={navDndSensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handleNavDragStart}
+                  onDragOver={handleNavDragOver}
+                  onDragEnd={handleNavDragEnd}
+                >
                 <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                       Pinned in navigation
                     </p>
-                    <div className="flex flex-col gap-1.5">
-                      {desktopNavItems.length === 0 && (
-                        <p className="text-xs text-slate-400 dark:text-slate-500 italic px-3 py-2">
-                          Nothing pinned — tap an app below to add it.
-                        </p>
-                      )}
-                      {desktopNavItems.map((app, idx) => (
-                        <div key={app.screen} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-zinc-800/60">
-                          <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
-                            <app.Icon className="w-4 h-4" />
-                          </div>
-                          <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
-                          <button
-                            onClick={() => movePinnedApp(app.screen, 'up')}
-                            disabled={idx === 0}
-                            title="Move up"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-500/10 disabled:opacity-30 disabled:pointer-events-none transition-colors shrink-0"
-                          >
-                            <ChevronUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => movePinnedApp(app.screen, 'down')}
-                            disabled={idx === desktopNavItems.length - 1}
-                            title="Move down"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-500/10 disabled:opacity-30 disabled:pointer-events-none transition-colors shrink-0"
-                          >
-                            <ChevronDown className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => unpinApp(app.screen)}
-                            title="Remove from navigation"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                    <SortableContext items={pinnedNavScreens} strategy={verticalListSortingStrategy}>
+                      <div className="flex flex-col gap-1.5 min-h-[2.75rem]">
+                        {desktopNavItems.length === 0 && (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 italic px-3 py-2">
+                            Nothing pinned — drag or tap an app below to add it.
+                          </p>
+                        )}
+                        {desktopNavItems.map((app) => (
+                          <SortablePinnedRow key={app.screen} app={app} onUnpin={() => unpinApp(app.screen)} />
+                        ))}
+                      </div>
+                    </SortableContext>
                   </div>
                   {moreNavItems.filter(a => a.screen !== 'suggest').length > 0 && (
                     <div>
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
                         Tap to pin
                       </p>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <UnpinnedDropZone>
                         {moreNavItems.filter(a => a.screen !== 'suggest').map(app => (
-                          <button
-                            key={app.screen}
-                            onClick={() => pinApp(app.screen)}
-                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-purple-500/10 dark:hover:bg-purple-400/10 transition-colors text-left"
-                          >
-                            <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
-                              <app.Icon className="w-4 h-4" />
-                            </div>
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
-                          </button>
+                          <DraggableUnpinnedTile key={app.screen} app={app} onPin={() => pinApp(app.screen)} />
                         ))}
-                      </div>
+                      </UnpinnedDropZone>
                     </div>
                   )}
                 </div>
+                <DragOverlay>{activeDragTile ? <NavDragPreview app={activeDragTile} /> : null}</DragOverlay>
+                </DndContext>
               ) : (
               <div className="p-5 max-h-[70vh] overflow-y-auto no-scrollbar">
                 {!showMobileAppsMenu && moreNavItems.filter(a => a.screen !== 'suggest').length === 0 && (
@@ -1352,6 +1534,14 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           </>
         )}
       </AnimatePresence>
+
+      <InCallOverlay />
+      <IncomingCallModal />
+      <MinimizedCallBar />
+      <BroadcastOverlay />
+      <MinimizedBroadcastBar />
     </div>
+      </BroadcastProvider>
+    </CallProvider>
   );
 }

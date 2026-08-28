@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, X, Search, Trash2, MapPin,
+  ChevronLeft, ChevronRight, Plus, X, Trash2, MapPin,
   Navigation, Bookmark, Share2, Check, Map as MapIcon, ImagePlus, Pencil,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -46,12 +45,37 @@ function getPinIcon(category: AtlasPinCategory, selected: boolean): L.DivIcon {
 
 // ── Internal map helpers ───────────────────────────────────────────────────
 
-function MapCenterController({ center }: { center: [number, number] }) {
+// `fitPoints` (all pins, in the overview) takes priority over the plain
+// center/zoom pair (a single focused spot — a selected pin, a searched
+// location, a drop-here preview) whenever it's given: fitBounds computes its
+// own center *and* the tightest zoom that still keeps every point on
+// screen, which a fixed zoom level can't do once pins are spread out.
+// Effect keys off pin identity + fitPoints/selection state, not on every
+// render, so idle panning/zooming around the overview is never fought.
+function MapCenterController({
+  center,
+  zoom,
+  fitPoints,
+}: {
+  center: [number, number];
+  zoom: number;
+  fitPoints: [number, number][] | null;
+}) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, map.getZoom(), { animate: true });
+    if (fitPoints && fitPoints.length > 1) {
+      map.fitBounds(L.latLngBounds(fitPoints), { padding: [32, 32], maxZoom: MAX_ZOOM, animate: true });
+      return;
+    }
+    if (fitPoints && fitPoints.length === 1) {
+      // A single pin: "showing every pin in one glance" is trivially true at
+      // any zoom, so go all the way in — same as focusing one pin directly.
+      map.setView(fitPoints[0], MAX_ZOOM, { animate: true });
+      return;
+    }
+    map.setView(center, zoom, { animate: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center[0], center[1]]);
+  }, [center[0], center[1], zoom, fitPoints]);
   return null;
 }
 
@@ -88,6 +112,11 @@ function formatDistanceMiles(meters: number): string {
 }
 
 const DEFAULT_CENTER: [number, number] = [39.8283, -98.5795];
+const DEFAULT_ZOOM = 14;
+// OpenStreetMap's standard tile server actually renders up to 19 — Leaflet's
+// own default cap is 18, which would silently clip "max zoom" one level
+// short of what the tiles support (see TileLayer's maxZoom below).
+const MAX_ZOOM = 19;
 const SEARCH_HISTORY_KEY = 'citinet-atlas-search-history';
 const SAVED_PINS_KEY = 'citinet-saved-atlas-pins';
 
@@ -580,7 +609,6 @@ interface AtlasScreenProps {
 export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
-  const { resolvedTheme } = useTheme();
 
   const [pins, setPins] = useState<AtlasPin[]>([]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
@@ -604,8 +632,15 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // A location referenced elsewhere (e.g. an EVENT post) with no nearby pin yet
   const [unregisteredLocation, setUnregisteredLocation] = useState<{ lat: number; lng: number; label: string } | null>(null);
 
-  // Pin list filters
-  const [searchQuery, setSearchQuery] = useState('');
+  // Clearing the unified search box resets the map back to its normal
+  // all-pins overview instead of leaving a stale placeholder around.
+  useEffect(() => {
+    if (!locationQuery.trim()) setUnregisteredLocation(null);
+  }, [locationQuery]);
+
+  // Pin list filters — the pin-title filter shares `locationQuery` with the
+  // unified search field above (searching a place or an existing pin is now
+  // the same box).
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
   const [savedOnly, setSavedOnly] = useState(false);
 
@@ -764,11 +799,19 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   const handleLocationSelect = (result: { lat: number; lng: number; label: string }) => {
     setMapCenter([result.lat, result.lng]);
-    setLocationQuery('');
-    setUnregisteredLocation(null);
-    setPendingPosition([result.lat, result.lng]);
-    setSuggestedTitle(result.label);
-    setCreateCategory('poi');
+    // Unified search: a hit on an already-pinned spot opens that pin directly;
+    // otherwise center the map there and surface a placeholder in the list
+    // instead of jumping straight into the create form ("user sees
+    // placeholder-esque pin instead of 'No pins match your filter'").
+    const nearby = pins.find(p => distanceMeters(result.lat, result.lng, p.latitude, p.longitude) <= 100);
+    if (nearby) {
+      setLocationQuery('');
+      setUnregisteredLocation(null);
+      handlePinSelect(nearby);
+    } else {
+      setLocationQuery(result.label);
+      setUnregisteredLocation({ lat: result.lat, lng: result.lng, label: result.label });
+    }
   };
 
   // ── Pin CRUD ─────────────────────────────────────────────────────────────
@@ -826,11 +869,32 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
   const selectedPin = selectedPinId ? pins.find(p => p.id === selectedPinId) ?? null : null;
   const rightPanelActive = !!selectedPin || !!pendingPosition;
+  // Showing one specific pin (selected from the map, the list, or any of the
+  // deep-link paths above) zooms all the way in, centered on it — browsing
+  // the full map stays at the normal overview zoom. Only reacts to
+  // selectedPinId itself (see MapCenterController below), so it never fights
+  // a manual zoom-out afterward — "user can always zoom out if they want."
+  const mapZoom = selectedPinId ? MAX_ZOOM : DEFAULT_ZOOM;
+  // Genuine "just browsing" overview — not while a pin's focused, nor while
+  // previewing/placing a new one (drop-here, a searched location, an
+  // unresolved deep-link coordinate), all of which have their own explicit
+  // "travel to this exact spot" center that fitting-to-all-pins would
+  // otherwise fight.
+  const isOverviewMode = !selectedPinId && !pendingPosition && !placingPin && !unregisteredLocation;
+  // Every pin currently on the map (the map itself renders from the full
+  // `pins` list, not the sidebar's filtered subset — fitting matches what's
+  // actually plotted). Memoized so MapCenterController's effect only re-runs
+  // on a real pins change (initial load, or after add/edit/delete), never on
+  // an unrelated render, so idle pan/zoom around the overview is never undone.
+  const pinFitPoints = useMemo<[number, number][] | null>(
+    () => (pins.length > 0 ? pins.map(p => [p.latitude, p.longitude] as [number, number]) : null),
+    [pins]
+  );
 
   const filteredPins = pins
     .filter(p => !savedOnly || savedPinIds.includes(p.id))
     .filter(p => categoryFilter === 'all' || p.category === categoryFilter)
-    .filter(p => !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.description?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(p => !locationQuery || p.title.toLowerCase().includes(locationQuery.toLowerCase()) || p.description?.toLowerCase().includes(locationQuery.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const distanceTo = (pin: AtlasPin) =>
@@ -841,9 +905,15 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const canDeletePin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername || !!currentUser?.isAdmin;
   const canEditPin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername;
 
-  const tileUrl = resolvedTheme === 'dark'
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  // CARTO's free basemap CDN (basemaps.cartocdn.com) started refusing
+  // unauthenticated requests — every tile came back stamped "API KEY
+  // REQUIRED", and this app never had a CARTO key configured (it was never
+  // supposed to need one). Switched to OpenStreetMap's own standard tile
+  // server instead — the same free, no-key provider citinet-mobile's Atlas
+  // already uses successfully (components/atlas/leaflet-map.tsx). Trade-off:
+  // OSM only has one style, so the light/dark-specific map tiles are gone —
+  // a working map in one style beats a broken one in two.
+  const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   return (
     <div className="min-h-screen">
@@ -905,16 +975,21 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               <div className="w-full h-full isolate">
                 <MapContainer
                   center={mapCenter}
-                  zoom={14}
+                  zoom={mapZoom}
                   style={{ width: '100%', height: '100%' }}
                   zoomControl={!placingPin}
                   attributionControl
                 >
                   <TileLayer
                     url={tileUrl}
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                    maxZoom={MAX_ZOOM}
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
-                  <MapCenterController center={mapCenter} />
+                  <MapCenterController
+                    center={mapCenter}
+                    zoom={mapZoom}
+                    fitPoints={isOverviewMode ? pinFitPoints : null}
+                  />
                   <MapCenterTracker active={placingPin} onCenterChange={handleDropHereCenterChange} />
 
                   {pins.map(pin => (
@@ -1058,23 +1133,6 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               />
             ) : (
               <div className="flex flex-col gap-4">
-                {/* Search pins */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Search pins…"
-                    className="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                      <X className="w-3.5 h-3.5 cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300" />
-                    </button>
-                  )}
-                </div>
-
                 {/* Category chips */}
                 <div className="flex gap-2 overflow-x-auto no-scrollbar">
                   <button
@@ -1120,28 +1178,51 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                 {/* Place cards */}
                 <div className="flex flex-col gap-2">
                   {filteredPins.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16 text-center">
-                      <div className="w-16 h-16 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
-                        <MapPin className="w-8 h-8 cn-text-4" />
+                    unregisteredLocation ? (
+                      // Searched a real-world place with nothing pinned there yet —
+                      // the map already centered on it; offer to create a pin
+                      // instead of a dead-end "no results" message.
+                      <button
+                        onClick={() => {
+                          setPendingPosition([unregisteredLocation.lat, unregisteredLocation.lng]);
+                          setSuggestedTitle(unregisteredLocation.label);
+                          setCreateCategory('poi');
+                          setUnregisteredLocation(null);
+                        }}
+                        className="flex items-center gap-3 p-4 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-500/40 bg-purple-50/50 dark:bg-purple-500/5 hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors text-left"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center shrink-0">
+                          <MapPin className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium cn-text-1 truncate">{unregisteredLocation.label}</p>
+                          <p className="text-xs cn-text-4">Nothing pinned here yet — tap to create a pin</p>
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <div className="w-16 h-16 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-4">
+                          <MapPin className="w-8 h-8 cn-text-4" />
+                        </div>
+                        {pins.length === 0 ? (
+                          <>
+                            <p className="text-sm font-medium cn-text-2 mb-1">No pins yet</p>
+                            <p className="text-xs cn-text-4">
+                              Search for a place above or click <strong>Drop a pin</strong> to mark a spot
+                            </p>
+                          </>
+                        ) : savedOnly ? (
+                          <>
+                            <p className="text-sm font-medium cn-text-2 mb-1">No saved pins</p>
+                            <p className="text-xs cn-text-4">
+                              Tap the <Bookmark className="w-3 h-3 inline -mt-0.5" /> icon on a pin's detail view to save it here
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm cn-text-3">No pins match your filter</p>
+                        )}
                       </div>
-                      {pins.length === 0 ? (
-                        <>
-                          <p className="text-sm font-medium cn-text-2 mb-1">No pins yet</p>
-                          <p className="text-xs cn-text-4">
-                            Search for a place above or click <strong>Drop a pin</strong> to mark a spot
-                          </p>
-                        </>
-                      ) : savedOnly ? (
-                        <>
-                          <p className="text-sm font-medium cn-text-2 mb-1">No saved pins</p>
-                          <p className="text-xs cn-text-4">
-                            Tap the <Bookmark className="w-3 h-3 inline -mt-0.5" /> icon on a pin's detail view to save it here
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-sm cn-text-3">No pins match your filter</p>
-                      )}
-                    </div>
+                    )
                   ) : (
                     filteredPins.map(pin => (
                       <PlaceRow

@@ -119,18 +119,6 @@ export function NetworkMap({ members }: NetworkMapProps) {
   const [center, setCenter] = useState<[number, number]>(DEFAULT_CENTER);
   const [geocoded, setGeocoded] = useState(false);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark')
-  );
-
-  // Track dark/light mode class on <html>
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
 
   // Resolve hub coordinates: stored lat/lng → session cache → Nominatim geocode
   useEffect(() => {
@@ -169,9 +157,14 @@ export function NetworkMap({ members }: NetworkMapProps) {
     });
   }, [currentHub?.lat, currentHub?.lng, currentHub?.location]);
 
-  const tileUrl = isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  // Same fix as AtlasScreen.tsx — CARTO's free basemap CDN now refuses
+  // unauthenticated requests (every tile came back stamped "API KEY
+  // REQUIRED"), and this app never had a key configured. Switched to
+  // OpenStreetMap's own standard tile server, the same free, no-key
+  // provider citinet-mobile's Atlas already uses. Only one style, so the
+  // light/dark-specific tiles (and the dark-mode-tracking state that
+  // selected them) are gone with it.
+  const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   // Computed once here (not inline per-Marker) so the exact same positions used
   // for rendering are what the map fits its bounds to.
@@ -212,7 +205,7 @@ export function NetworkMap({ members }: NetworkMapProps) {
         >
           <TileLayer
             url={tileUrl}
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
           <MapController center={center} positions={memberPositions} ready={geocoded} />
 

@@ -32,7 +32,16 @@ const SERVICE_TYPE = 'citinet';
 const STARTUP_DELAY_MS = 10 * 1000; // let citinet-api finish booting first
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 min -- picks up a renamed hub without a restart
 
-const bonjour = new Bonjour();
+// Without an explicit interface, multicast-dns (which bonjour-service wraps
+// directly) binds using the OS's default route -- on a host that's also
+// running a VPN client (Tailscale, NordVPN/NordLynx, etc.) with a lower
+// interface metric than the physical LAN adapter, that's the VPN, not the
+// LAN. The advertisement then only reaches processes on the same host
+// (loopback-visible), never an actual phone on the WiFi -- silently, no
+// error anywhere. LAN_IP is the same env var already used elsewhere here
+// for the hub's real address (see server.js's getLanIp), so this pins the
+// multicast socket to the same interface that address lives on.
+const bonjour = new Bonjour(process.env.LAN_IP ? { interface: process.env.LAN_IP } : undefined);
 let currentService = null;
 let lastSlug = null;
 let lastName = null;

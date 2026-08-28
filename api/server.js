@@ -6577,6 +6577,11 @@ const PREF_KEYS = [
   'background_value',
   'background_brightness',
   'email_notifications',
+  // Desktop nav customization (HubLayout's "Customize navigation" panel) —
+  // account-level so it follows the user across sessions/browsers/devices
+  // instead of living only in one browser's localStorage.
+  'nav_pinned',
+  'nav_layout',
 ];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {

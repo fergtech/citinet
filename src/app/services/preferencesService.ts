@@ -9,6 +9,12 @@ export interface UserPreferences {
   background_brightness?: string;
   /** Absence means enabled — mirrors the server's opt-out default. */
   email_notifications?: 'true' | 'false';
+  /** JSON-encoded array of pinned nav screen ids, in order — see HubLayout's
+   *  "Customize navigation" panel. Account-level so the order follows the
+   *  user across devices/browsers instead of one browser's localStorage. */
+  nav_pinned?: string;
+  /** Desktop nav chrome: floating dock vs. left sidebar. */
+  nav_layout?: 'dock' | 'sidebar';
 }
 
 class PreferencesService {
