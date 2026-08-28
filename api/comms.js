@@ -58,9 +58,9 @@ function dmRoomName(userIdA, userIdB) {
   return `call-${[userIdA, userIdB].sort().join('-')}`;
 }
 
-async function mintToken({ roomName, identity, name, metadata, canPublish = true }) {
+async function mintToken({ roomName, identity, name, metadata, canPublish = true, hidden = false }) {
   const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, name, metadata, ttl: '4h' });
-  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe: true, canPublishData: true });
+  at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe: true, canPublishData: true, hidden });
   return at.toJwt();
 }
 
@@ -197,8 +197,15 @@ function createCommsRouter({ pool, authenticate, express }) {
   // for GET /api/comms/live to read back — LiveKit doesn't care what it means.
   router.post('/token', authenticate, async (req, res) => {
     if (!requireLivekit(res)) return;
-    const { kind, room_name, title } = req.body || {};
+    const { kind, room_name, title, preview } = req.body || {};
     if (!['broadcast', 'room'].includes(kind)) return res.status(400).json({ error: 'kind must be broadcast or room' });
+    // A preview token is for the "Live now" card's silent camera-thumbnail
+    // connection (see LiveThumbnail) — it only ever joins an existing
+    // broadcast, never creates one, and is minted with canPublish:false,
+    // hidden:true so it never shows up as a real viewer: no participant-
+    // count inflation, no "X entered the broadcast" announcement (see
+    // broadcast-data-bridge.tsx's permissions.hidden check).
+    if (preview && !room_name) return res.status(400).json({ error: 'preview requires an existing room_name' });
     try {
       const roomName = room_name || `${kind}-${req.user.id}-${Date.now().toString(36)}`;
       const isHost = !room_name; // creating fresh (no existing room_name given) = you're the host/owner
@@ -209,7 +216,13 @@ function createCommsRouter({ pool, authenticate, express }) {
           emptyTimeout: 300,
         });
       }
-      const token = await mintToken({ roomName, identity: req.user.id, name: req.user.username });
+      const token = await mintToken({
+        roomName,
+        identity: req.user.id,
+        name: req.user.username,
+        canPublish: !preview,
+        hidden: !!preview,
+      });
       res.json({ room_name: roomName, token, livekit_url: LIVEKIT_PUBLIC_URL });
     } catch (err) {
       res.status(500).json({ error: err.message });
