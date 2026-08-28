@@ -87,3 +87,44 @@
   backdrop-filter: blur(20px);
   border: 1px solid var(--cn-glass-border);
 }
+
+/* ============================================================
+   Leaflet maps (Atlas) — restyle the raster basemap to sit inside
+   the app's own light/dark chrome instead of a separate map palette.
+   OSM's tiles are pre-rendered images, so real token *colors* can't
+   be painted onto them directly — the closest honest equivalent is a
+   CSS filter recipe, kept here as tokens (like everything else on this
+   page) and swapped by the same `.dark` class the rest of the app
+   already uses, so a future theme change never needs a second edit.
+   Scoped to `.leaflet-tile-pane` only — markers, clusters, popups and
+   the zoom control live in separate Leaflet panes/controls and are
+   untouched by this. */
+:root {
+  --cn-map-tile-filter: saturate(0.75) brightness(1.02) contrast(0.98);
+}
+.dark {
+  --cn-map-tile-filter: invert(1) hue-rotate(180deg) saturate(0.55) brightness(0.82) contrast(0.92);
+}
+.cn-leaflet-themed .leaflet-tile-pane {
+  filter: var(--cn-map-tile-filter);
+  transition: filter var(--cn-dur-slow) var(--cn-ease-out);
+}
+
+/* Zoom control chrome — same surface/border/text tokens as the rest of the
+   UI, so the +/- box reads as part of the app rather than Leaflet's default
+   white widget. Position, behavior and markup are untouched. */
+.cn-leaflet-themed .leaflet-control-zoom a {
+  background: var(--cn-surface);
+  color: var(--cn-text-1);
+  border-color: var(--cn-border) !important;
+}
+.cn-leaflet-themed .leaflet-control-zoom a:hover {
+  background: var(--cn-surface-2);
+}
+.cn-leaflet-themed .leaflet-control-attribution {
+  background: var(--cn-glass-bg);
+  color: var(--cn-text-3);
+}
+.cn-leaflet-themed .leaflet-control-attribution a {
+  color: var(--cn-text-2);
+}

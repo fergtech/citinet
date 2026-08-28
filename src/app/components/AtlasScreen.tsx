@@ -910,9 +910,12 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // REQUIRED", and this app never had a CARTO key configured (it was never
   // supposed to need one). Switched to OpenStreetMap's own standard tile
   // server instead — the same free, no-key provider citinet-mobile's Atlas
-  // already uses successfully (components/atlas/leaflet-map.tsx). Trade-off:
-  // OSM only has one style, so the light/dark-specific map tiles are gone —
-  // a working map in one style beats a broken one in two.
+  // already uses successfully (components/atlas/leaflet-map.tsx). OSM only
+  // ships one raster style, but the `cn-leaflet-themed` class on the map
+  // wrapper below applies a light/dark filter recipe driven by the same
+  // `--cn-map-tile-filter` design token as the rest of the app's theme
+  // system (see citinet-tokens.css), so the basemap still matches the
+  // app's chrome in both modes without a second tile provider.
   const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   return (
@@ -972,7 +975,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
             {/* Map */}
             <div className="relative rounded-2xl overflow-hidden border cn-border h-[260px] lg:h-[560px]">
-              <div className="w-full h-full isolate">
+              <div className="w-full h-full isolate cn-leaflet-themed">
                 <MapContainer
                   center={mapCenter}
                   zoom={mapZoom}
