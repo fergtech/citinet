@@ -454,13 +454,15 @@ export interface HubFile {
   folder_id?: string | null;
 }
 
-/** A folder in the Files dashboard's folder hierarchy. */
+/** A folder in the Files dashboard's folder hierarchy.
+ *  Private to its creator by default — is_public means shared hub-wide. */
 export interface HubFolder {
   id: string;
   name: string;
   color: string;
   parent_folder_id: string | null;
   owner_id?: string;
+  is_public: boolean;
   file_count: number;
   created_at?: string;
   updated_at?: string;

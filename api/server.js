@@ -17,6 +17,7 @@
  *   PATCH  /api/files/:filename           — update visibility and/or folder_id (auth required)
  *   GET    /api/folders                   — list folders for a parent scope (auth required)
  *   POST   /api/folders                   — create folder (auth required)
+ *   PATCH  /api/folders/:id               — share/unshare a folder you own (auth required)
  *   GET    /api/posts                     — list posts (auth required)
  *   POST   /api/posts                     — create post (auth required)
  *   PATCH  /api/posts/:id                 — update post (auth required)
@@ -941,9 +942,16 @@ async function initDb() {
     // folder tree), so one level of drill-down works today with deeper
     // nesting free for later. space_id mirrors hub_files' own scoping column
     // (null = the hub-wide root Files dashboard) so a future per-space file
-    // library can reuse the same table without a schema change. Folders are
-    // hub-wide (visible to every member, like the shared file list itself);
-    // only the creator can rename/delete their own folder.
+    // library can reuse the same table without a schema change. Unlike
+    // hub_files (which is shared-by-default with a private opt-out), a
+    // folder is a personal organizational tool first — is_public defaults
+    // false so a folder you create is invisible to every other member until
+    // you deliberately share it hub-wide; there's no third "web" tier here
+    // since "anyone with a link" doesn't map to organizing files the way it
+    // does to sharing one. Only the creator can rename/delete/share their
+    // own folder — a file inside a shared folder still enforces its own
+    // is_public/web_public flag independently, so sharing a folder never
+    // exposes a private file placed in it.
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_folders (
         id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -952,10 +960,14 @@ async function initDb() {
         parent_folder_id UUID         REFERENCES hub_folders(id) ON DELETE CASCADE,
         space_id         UUID         REFERENCES hub_spaces(id)  ON DELETE CASCADE,
         owner_id         UUID         REFERENCES hub_users(id)   ON DELETE SET NULL,
+        is_public        BOOLEAN      NOT NULL DEFAULT FALSE,
         created_at       TIMESTAMPTZ  DEFAULT NOW(),
         updated_at       TIMESTAMPTZ  DEFAULT NOW()
       )
     `);
+    await client.query(
+      `ALTER TABLE hub_folders ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_hub_folders_parent ON hub_folders(parent_folder_id)`,
     );
@@ -3510,18 +3522,22 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
 });
 
 // ── Folder routes ────────────────────────────────────────
-// GET  /api/folders?parent_id=<uuid>  — child folders of that parent, or of
-//                                        the dashboard root when omitted
-// POST /api/folders                   — create a folder (optionally nested)
+// GET   /api/folders?parent_id=<uuid>  — child folders of that parent visible
+//                                         to the caller (own + hub-shared),
+//                                         or of the dashboard root when omitted
+// POST  /api/folders                   — create a folder (optionally nested,
+//                                         private by default)
+// PATCH /api/folders/:id               — share/unshare a folder you own
 app.get('/api/folders', authenticate, async (req, res) => {
   try {
     const parentId = req.query.parent_id && req.query.parent_id !== 'null' ? req.query.parent_id : null;
     const result = await pool.query(
-      `SELECT f.id, f.name, f.color, f.parent_folder_id, f.owner_id, f.created_at, f.updated_at,
+      `SELECT f.id, f.name, f.color, f.parent_folder_id, f.owner_id, f.is_public, f.created_at, f.updated_at,
               (SELECT COUNT(*) FROM hub_files hf
                WHERE hf.folder_id = f.id AND (hf.owner_id = $2 OR hf.is_public = true)) AS file_count
        FROM hub_folders f
        WHERE f.space_id IS NULL AND f.parent_folder_id IS NOT DISTINCT FROM $1
+         AND (f.owner_id = $2 OR f.is_public = true)
        ORDER BY f.name ASC`,
       [parentId, req.user.id],
     );
@@ -3538,6 +3554,7 @@ app.post('/api/folders', authenticate, async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Folder name is required' });
     const color = String(req.body?.color || 'amber').slice(0, 20);
     const parentFolderId = req.body?.parent_folder_id || null;
+    const isPublic = req.body?.is_public === true;
 
     if (parentFolderId) {
       const parentCheck = await pool.query(`SELECT id FROM hub_folders WHERE id = $1`, [parentFolderId]);
@@ -3545,15 +3562,38 @@ app.post('/api/folders', authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO hub_folders (name, color, parent_folder_id, owner_id)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, color, parent_folder_id, owner_id, created_at, updated_at`,
-      [name, color, parentFolderId, req.user.id],
+      `INSERT INTO hub_folders (name, color, parent_folder_id, owner_id, is_public)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, color, parent_folder_id, owner_id, is_public, created_at, updated_at`,
+      [name, color, parentFolderId, req.user.id, isPublic],
     );
     res.json({ ...result.rows[0], file_count: 0 });
   } catch (err) {
     console.error('Create folder error:', err);
     res.status(500).json({ error: 'Failed to create folder' });
+  }
+});
+
+// Owner-only: currently just the private/hub-shared toggle. Renaming/color
+// aren't exposed yet — no client needs them — but this is the route to
+// extend if that changes.
+app.patch('/api/folders/:id', authenticate, async (req, res) => {
+  try {
+    if (req.body?.is_public === undefined) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+    const isPublic = req.body.is_public === true;
+    const result = await pool.query(
+      `UPDATE hub_folders SET is_public = $1, updated_at = NOW()
+       WHERE id = $2 AND owner_id = $3
+       RETURNING id, name, color, parent_folder_id, owner_id, is_public, created_at, updated_at`,
+      [isPublic, req.params.id, req.user.id],
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Folder not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Update folder error:', err);
+    res.status(500).json({ error: 'Failed to update folder' });
   }
 });
 

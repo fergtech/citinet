@@ -270,24 +270,52 @@ function GridFileTile({
   );
 }
 
-function FolderCard({ folder, index, onOpen }: { folder: HubFolder; index: number; onOpen: () => void }) {
+function FolderCard({
+  folder, index, onOpen, isOwner, onToggleVisibility, togglingVisibility,
+}: {
+  folder: HubFolder; index: number; onOpen: () => void;
+  isOwner: boolean; onToggleVisibility: () => void; togglingVisibility: boolean;
+}) {
   const grad = FOLDER_COLORS[folder.color] || FOLDER_COLORS.amber;
   return (
-    <motion.button
+    <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.02 }}
       onClick={onOpen}
-      className="flex items-center gap-3 p-3.5 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all text-left"
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onOpen(); }}
+      className="flex items-start gap-3 p-3.5 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all text-left cursor-pointer"
     >
       <span className={`w-11 h-11 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 shadow-sm`}>
         <Folder className="w-5 h-5 text-white" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold cn-text-1 truncate">{folder.name}</p>
+        <p className="text-sm font-semibold cn-text-1 break-words">{folder.name}</p>
         <p className="text-xs cn-text-4 mt-0.5">{folder.file_count} {folder.file_count === 1 ? 'file' : 'files'}</p>
       </div>
-    </motion.button>
+      {isOwner ? (
+        <button
+          onClick={e => { e.stopPropagation(); onToggleVisibility(); }}
+          disabled={togglingVisibility}
+          title={folder.is_public ? 'Shared with the hub — click to make private' : 'Private — click to share with the hub'}
+          className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+        >
+          {togglingVisibility ? (
+            <Loader2 className="w-3.5 h-3.5 cn-text-4 animate-spin" />
+          ) : folder.is_public ? (
+            <Users className="w-3.5 h-3.5 text-amber-400" />
+          ) : (
+            <Lock className="w-3.5 h-3.5 cn-text-4" />
+          )}
+        </button>
+      ) : folder.is_public ? (
+        <span className="shrink-0" title="Shared with the hub">
+          <Users className="w-3.5 h-3.5 text-amber-400" />
+        </span>
+      ) : null}
+    </motion.div>
   );
 }
 
@@ -421,6 +449,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const [newFolderColor, setNewFolderColor] = useState<string>('amber');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderError, setNewFolderError] = useState('');
+  const [newFolderPublic, setNewFolderPublic] = useState(false);
+  const [togglingFolderId, setTogglingFolderId] = useState<string | null>(null);
 
   // ── UI state ─────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<FileTab>('all');
@@ -723,14 +753,28 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     if (!name || !slug) return;
     setCreatingFolder(true); setNewFolderError('');
     try {
-      const folder = await hubService.createFolder(slug, name, newFolderColor, currentFolderId);
+      const folder = await hubService.createFolder(slug, name, newFolderColor, currentFolderId, newFolderPublic);
       setFolders(prev => [...prev, folder].sort((a, b) => a.name.localeCompare(b.name)));
       setShowNewFolderModal(false);
       setNewFolderName('');
       setNewFolderColor('amber');
+      setNewFolderPublic(false);
     } catch (err) {
       setNewFolderError(err instanceof Error ? err.message : 'Failed to create folder');
     } finally { setCreatingFolder(false); }
+  };
+
+  const handleToggleFolderVisibility = async (folder: HubFolder) => {
+    if (!slug) return;
+    const nextPublic = !folder.is_public;
+    setTogglingFolderId(folder.id);
+    try {
+      await hubService.setFolderVisibility(slug, folder.id, nextPublic);
+      setFolders(prev => prev.map(f => f.id === folder.id ? { ...f, is_public: nextPublic } : f));
+    } catch (err) {
+      console.error('Toggle folder visibility failed:', err);
+      setUploadError(err instanceof Error ? err.message : 'Failed to update folder visibility');
+    } finally { setTogglingFolderId(null); }
   };
 
   // ── tab config ────────────────────────────────────────────────────────────────
@@ -879,9 +923,17 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
             {/* Folder grid */}
             {folders.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 {folders.map((folder, index) => (
-                  <FolderCard key={folder.id} folder={folder} index={index} onOpen={() => openFolder(folder)} />
+                  <FolderCard
+                    key={folder.id}
+                    folder={folder}
+                    index={index}
+                    onOpen={() => openFolder(folder)}
+                    isOwner={folder.owner_id === myUserId}
+                    onToggleVisibility={() => handleToggleFolderVisibility(folder)}
+                    togglingVisibility={togglingFolderId === folder.id}
+                  />
                 ))}
               </div>
             )}
@@ -1377,6 +1429,26 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     }`}
                   />
                 ))}
+              </div>
+              <div className="flex items-center gap-2 mt-4">
+                <button
+                  onClick={() => setNewFolderPublic(false)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border transition-colors ${
+                    !newFolderPublic ? 'border-blue-500/50 bg-blue-900/20' : 'cn-border hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="text-xs font-semibold cn-text-1">Private</span>
+                </button>
+                <button
+                  onClick={() => setNewFolderPublic(true)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl border transition-colors ${
+                    newFolderPublic ? 'border-amber-500/50 bg-amber-900/20' : 'cn-border hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs font-semibold cn-text-1">Hub members</span>
+                </button>
               </div>
               {newFolderError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{newFolderError}</p>}
               <div className="flex items-center gap-2 mt-5">

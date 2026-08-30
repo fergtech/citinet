@@ -1717,6 +1717,7 @@ class HubService {
       color: f.color || 'amber',
       parent_folder_id: f.parent_folder_id || null,
       owner_id: f.owner_id || undefined,
+      is_public: f.is_public ?? false,
       file_count: Number(f.file_count || 0),
       created_at: f.created_at || undefined,
       updated_at: f.updated_at || undefined,
@@ -1725,9 +1726,17 @@ class HubService {
 
   /**
    * Create a folder, optionally nested under a parent folder.
+   * Private to its creator unless isPublic is set — matches the file model's
+   * private-by-default posture, just without a third "web link" tier.
    * POST /api/folders
    */
-  async createFolder(hubSlug: string, name: string, color: string, parentFolderId?: string | null): Promise<HubFolder> {
+  async createFolder(
+    hubSlug: string,
+    name: string,
+    color: string,
+    parentFolderId?: string | null,
+    isPublic?: boolean,
+  ): Promise<HubFolder> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
@@ -1736,7 +1745,7 @@ class HubService {
     const response = await fetch(`${connection.hub.tunnelUrl}/api/folders`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, color, parent_folder_id: parentFolderId || null }),
+      body: JSON.stringify({ name, color, parent_folder_id: parentFolderId || null, is_public: !!isPublic }),
     });
 
     if (!response.ok) {
@@ -1752,10 +1761,34 @@ class HubService {
       color: f.color || 'amber',
       parent_folder_id: f.parent_folder_id || null,
       owner_id: f.owner_id || undefined,
+      is_public: f.is_public ?? false,
       file_count: Number(f.file_count || 0),
       created_at: f.created_at || undefined,
       updated_at: f.updated_at || undefined,
     };
+  }
+
+  /**
+   * Share or unshare a folder you own. PATCH /api/folders/{id}.
+   */
+  async setFolderVisibility(hubSlug: string, folderId: string, isPublic: boolean): Promise<void> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/folders/${encodeURIComponent(folderId)}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_public: isPublic }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      let msg = `Failed to update folder (${response.status})`;
+      try { msg = JSON.parse(body)?.error || msg; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
   }
 
   /**
