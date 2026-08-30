@@ -25,11 +25,32 @@ const LIVEKIT_INTERNAL_URL = process.env.LIVEKIT_INTERNAL_URL || '';
 const LIVEKIT_PUBLIC_URL = process.env.LIVEKIT_PUBLIC_URL || '';
 const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
+// Optional second signaling address for clients reaching this hub over its
+// Tailscale mesh IP instead of the LAN-bound TUNNEL_URL/Caddy domain (see
+// TAILSCALE_IP in .env) -- that domain only ever resolves to the hub's
+// private LAN IP, so a tailnet-only client (e.g. the mobile app while
+// traveling) can reach the REST API there but never the LiveKit signaling
+// path unless it's given this alternate address instead.
+const LIVEKIT_TAILSCALE_URL = process.env.LIVEKIT_TAILSCALE_URL || '';
+const TAILSCALE_IP = process.env.TAILSCALE_IP || '';
 
 const livekitConfigured = !!(LIVEKIT_INTERNAL_URL && LIVEKIT_PUBLIC_URL && LIVEKIT_API_KEY && LIVEKIT_API_SECRET);
 const roomService = livekitConfigured
   ? new RoomServiceClient(LIVEKIT_INTERNAL_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)
   : null;
+
+// Picks the signaling URL matching however the client actually reached this
+// API -- a client that dialed the Tailscale IP directly (req.hostname strips
+// the port) gets the Tailscale-facing LiveKit address back instead of the
+// default, which would be unreachable for it. Falls back to the default
+// whenever the Tailscale pair isn't configured, so this is a no-op on any
+// hub that hasn't set it up.
+function resolveLivekitPublicUrl(req) {
+  if (LIVEKIT_TAILSCALE_URL && TAILSCALE_IP && req.hostname === TAILSCALE_IP) {
+    return LIVEKIT_TAILSCALE_URL;
+  }
+  return LIVEKIT_PUBLIC_URL;
+}
 
 async function initCommsDb(pool) {
   await pool.query(`
@@ -124,7 +145,7 @@ function createCommsRouter({ pool, authenticate, express }) {
         from_username: req.user.username,
       });
 
-      res.json({ call_id: callId, room_name: roomName, token, livekit_url: LIVEKIT_PUBLIC_URL });
+      res.json({ call_id: callId, room_name: roomName, token, livekit_url: resolveLivekitPublicUrl(req) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -144,7 +165,7 @@ function createCommsRouter({ pool, authenticate, express }) {
       if (!rows[0]) return res.status(404).json({ error: 'Call not found or already resolved' });
       const token = await mintToken({ roomName: rows[0].room_name, identity: req.user.id, name: req.user.username });
       sendTo(rows[0].caller_id, { type: 'call_answered', call_id: req.params.id });
-      res.json({ room_name: rows[0].room_name, mode: rows[0].mode, token, livekit_url: LIVEKIT_PUBLIC_URL });
+      res.json({ room_name: rows[0].room_name, mode: rows[0].mode, token, livekit_url: resolveLivekitPublicUrl(req) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -223,7 +244,7 @@ function createCommsRouter({ pool, authenticate, express }) {
         canPublish: !preview,
         hidden: !!preview,
       });
-      res.json({ room_name: roomName, token, livekit_url: LIVEKIT_PUBLIC_URL });
+      res.json({ room_name: roomName, token, livekit_url: resolveLivekitPublicUrl(req) });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
