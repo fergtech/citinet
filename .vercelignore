@@ -1,1 +1,11 @@
-api
+api/Dockerfile
+api/server.js
+api/comms.js
+api/mailer.js
+api/mdnsAdvertise.js
+api/certAgent.js
+api/httpsPostJson.js
+api/registryHeartbeat.js
+api/blogSyncHeartbeat.js
+api/package.json
+api/package-lock.json
