@@ -1,29 +1,36 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, X, Trash2, MapPin,
-  Navigation, Bookmark, Share2, Check, Map as MapIcon, ImagePlus, Pencil,
+  Navigation, Bookmark, Share2, Check, ImagePlus, Pencil,
 } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { useTheme } from 'next-themes';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
 import { LocationSearchInput } from './LocationSearchInput';
 import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
+import { getAtlasMapStyle } from '../utils/atlasMapStyle';
 import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
+import { findNearestPanoramaxImage, panoramaxWebViewerUrl, type PanoramaxImage } from '../utils/panoramax';
+import { AtlasGlyph } from './icons';
 
-// ── Icon factory (cached) ──────────────────────────────────────────────────
+// ── Pin marker HTML (cached) ─────────────────────────────────────────────
 // Teardrop-from-rotated-square marker matching the design system: a category-
 // gradient diamond with the counter-rotated lucide icon centered inside it.
+// Returns an HTML string (not a DOM element) since MapLibre markers each need
+// their own element instance — AtlasMap below clones this into a fresh <div>
+// per marker rather than sharing one node.
 
-const _iconCache = new Map<string, L.DivIcon>();
+const _pinHtmlCache = new Map<string, string>();
 
-function getPinIcon(category: AtlasPinCategory, selected: boolean): L.DivIcon {
+function getPinHtml(category: AtlasPinCategory, selected: boolean): string {
   const key = `${category}-${selected}`;
-  if (_iconCache.has(key)) return _iconCache.get(key)!;
+  const cached = _pinHtmlCache.get(key);
+  if (cached) return cached;
   const cat = ATLAS_CATEGORIES[category];
   const s = selected ? 34 : 28;
   const iconPx = selected ? 16 : 13;
@@ -31,65 +38,250 @@ function getPinIcon(category: AtlasPinCategory, selected: boolean): L.DivIcon {
   const ring = selected
     ? 'box-shadow:0 0 0 3px #fff,0 3px 10px rgba(0,0,0,0.4);'
     : 'box-shadow:0 2px 8px rgba(0,0,0,0.35);';
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;background:${cat.gradientCss};transform:rotate(45deg);${ring}border:2px solid rgba(255,255,255,${selected ? '1' : '0.55'});display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
-      `<span style="transform:rotate(-45deg);display:flex">${svg}</span></div>`,
-    iconSize: [s, s],
-    iconAnchor: [s / 2, s],
-    popupAnchor: [0, -s - 4],
-  });
-  _iconCache.set(key, icon);
-  return icon;
+  const html = `<div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;background:${cat.gradientCss};transform:rotate(45deg);${ring}border:2px solid rgba(255,255,255,${selected ? '1' : '0.55'});display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
+    `<span style="transform:rotate(-45deg);display:flex">${svg}</span></div>`;
+  _pinHtmlCache.set(key, html);
+  return html;
 }
 
-// ── Internal map helpers ───────────────────────────────────────────────────
+// Same amber pulsing-dot treatment NetworkMap.tsx already uses for "you" among
+// members, reused here so "this is me" reads consistently across both maps.
+const MY_LOCATION_HTML = `
+  <div style="position:relative;width:22px;height:22px;">
+    <div class="animate-ping" style="position:absolute;inset:0;border-radius:9999px;background:#f59e0b;opacity:0.45;"></div>
+    <div style="position:absolute;inset:5px;border-radius:9999px;background:#f59e0b;border:2.5px solid #fff;box-shadow:0 2px 10px rgba(245,158,11,0.7);"></div>
+  </div>
+`;
 
-// `fitPoints` (all pins, in the overview) takes priority over the plain
-// center/zoom pair (a single focused spot — a selected pin, a searched
-// location, a drop-here preview) whenever it's given: fitBounds computes its
-// own center *and* the tightest zoom that still keeps every point on
-// screen, which a fixed zoom level can't do once pins are spread out.
-// Effect keys off pin identity + fitPoints/selection state, not on every
-// render, so idle panning/zooming around the overview is never fought.
-function MapCenterController({
-  center,
-  zoom,
-  fitPoints,
-}: {
+// ── Map (MapLibre GL, vector) ────────────────────────────────────────────
+// Atlas used to be Leaflet + a raster OSM tile layer whose pixels got
+// recolored client-side (see the removed atlasTileRecolor.ts) — that could
+// only ever repaint OSM's own picture, still inheriting every OSM decision
+// about label density, building outlines, and visual hierarchy. This renders
+// real OSM vector data through a from-scratch Atlas style (see
+// ../utils/atlasMapStyle.ts): OSM supplies geographic truth, Atlas fully
+// owns the visual language. All the surrounding UI (search, filters, the
+// pin list/detail panel, every overlay button below) is unchanged — this
+// component is a drop-in replacement for the old <MapContainer> tree, not a
+// rewrite of Atlas itself.
+interface AtlasMapProps {
   center: [number, number];
   zoom: number;
   fitPoints: [number, number][] | null;
-}) {
-  const map = useMap();
+  dark: boolean;
+  placingPin: boolean;
+  pins: AtlasPin[];
+  selectedPinId: string | null;
+  onPinSelect: (pin: AtlasPin) => void;
+  pendingPosition: [number, number] | null;
+  createCategory: AtlasPinCategory;
+  myLocation: [number, number] | null;
+  onDropHereCenterChange: (c: [number, number]) => void;
+}
+
+// Imperative escape hatch for one-shot camera moves ("recenter on me",
+// "reset to overview") that should NOT be modeled as ongoing React state —
+// see the recenterOnMe/resetToOverview comment below for why that was
+// actually a real bug, not just an architecture preference.
+export interface AtlasMapHandle {
+  flyTo: (center: [number, number], zoom: number) => void;
+  fitAll: (points: [number, number][], maxZoom?: number) => void;
+}
+
+const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
+  center, zoom, fitPoints, dark, placingPin, pins, selectedPinId, onPinSelect,
+  pendingPosition, createCategory, myLocation, onDropHereCenterChange,
+}, ref) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const pinMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; sig: string }>>(new Map());
+
+  // Refs for values read inside event handlers registered once at map-init
+  // time, so those handlers always see the latest prop without needing to
+  // be torn down and re-attached on every change.
+  const placingPinRef = useRef(placingPin);
+  placingPinRef.current = placingPin;
+  const onDropHereCenterChangeRef = useRef(onDropHereCenterChange);
+  onDropHereCenterChangeRef.current = onDropHereCenterChange;
+  const onPinSelectRef = useRef(onPinSelect);
+  onPinSelectRef.current = onPinSelect;
+
+  useImperativeHandle(ref, () => ({
+    flyTo: (c, z) => { mapRef.current?.flyTo({ center: [c[1], c[0]], zoom: z }); },
+    fitAll: (points, maxZoom = MAX_ZOOM) => {
+      const map = mapRef.current;
+      if (!map || points.length === 0) return;
+      if (points.length === 1) { map.flyTo({ center: [points[0][1], points[0][0]], zoom: PIN_ZOOM }); return; }
+      const bounds = points.reduce(
+        (b, p) => b.extend([p[1], p[0]] as [number, number]),
+        new maplibregl.LngLatBounds([points[0][1], points[0][0]], [points[0][1], points[0][0]])
+      );
+      map.fitBounds(bounds, { padding: 32, maxZoom, animate: true });
+    },
+  }), []);
+
+  // Init once — the map instance itself is imperative, not React-managed.
   useEffect(() => {
+    if (!containerRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: getAtlasMapStyle(dark),
+      center: [center[1], center[0]],
+      zoom,
+      attributionControl: { compact: true },
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    // MapLibre's "compact" attribution is a native <details open> element —
+    // despite the name, it actually starts fully expanded (the full "©
+    // OpenStreetMap contributors" text sitting in the corner) regardless of
+    // the compact option, and only collapses once the *user* manually
+    // toggles it. Worse, it doesn't just start open once — something in the
+    // map's own lifecycle (attribution content gets recomputed as more tiles
+    // load in, each time apparently resetting to its default-open state)
+    // re-opens it again well after initial load too, so a one-time or even a
+    // few-seconds-timeboxed fix isn't reliable. This keeps enforcing "closed"
+    // for the whole life of the map, but only until a real click on the
+    // control itself is observed — from that point on the user's own choice
+    // is left alone, forever, even if they close it again later. Attribution
+    // is still one click away (OSM's ODbL requires it stay reachable, not
+    // permanently visible) — it's just not sitting in the corner as clutter
+    // by default, no matter how many times MapLibre tries to reopen it.
+    let attribUserInteracted = false;
+    const closeAttribution = () => {
+      if (attribUserInteracted) return;
+      const attribEl = containerRef.current?.querySelector('details.maplibregl-ctrl-attrib');
+      if (attribEl) (attribEl as HTMLDetailsElement).open = false;
+    };
+    closeAttribution();
+    const attribCloseInterval = setInterval(closeAttribution, 200);
+    const attribSummary = containerRef.current.querySelector('details.maplibregl-ctrl-attrib summary');
+    const markAttribInteracted = () => { attribUserInteracted = true; };
+    attribSummary?.addEventListener('click', markAttribInteracted);
+    map.on('move', () => {
+      if (!placingPinRef.current) return;
+      const c = map.getCenter();
+      onDropHereCenterChangeRef.current([c.lat, c.lng]);
+    });
+    mapRef.current = map;
+    return () => {
+      clearInterval(attribCloseInterval);
+      attribSummary?.removeEventListener('click', markAttribInteracted);
+      map.remove();
+      mapRef.current = null;
+    };
+  // Deliberately mount-only — center/zoom/dark are all handled by their own
+  // effects below so this doesn't tear down and rebuild the whole map
+  // instance (and every marker on it) on every prop change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Theme swap — setStyle only touches the vector layers/paint; markers are
+  // plain DOM overlays outside the style system, so they survive untouched
+  // (no per-tile reprocessing or marker re-add needed, unlike the old
+  // raster recolor's per-theme cache). Skips the first run: the map's own
+  // constructor above already loaded the correct initial style, and calling
+  // setStyle again immediately interrupts that in-progress load (MapLibre
+  // logs "Style is not done loading.. Rebuilding from scratch" and the
+  // source never actually finishes fetching) rather than genuinely swapping
+  // a *finished* one.
+  const isFirstStyleRef = useRef(true);
+  useEffect(() => {
+    if (isFirstStyleRef.current) { isFirstStyleRef.current = false; return; }
+    mapRef.current?.setStyle(getAtlasMapStyle(dark));
+  }, [dark]);
+
+  // Hides the zoom control while placing a pin, matching the old
+  // zoomControl={!placingPin} — keeps the drop-here reticle uncluttered.
+  useEffect(() => {
+    const el = containerRef.current?.querySelector<HTMLElement>('.maplibregl-ctrl-top-left');
+    if (el) el.style.display = placingPin ? 'none' : '';
+  }, [placingPin]);
+
+  // Center/zoom/fit — same priority the old MapCenterController used:
+  // fitPoints (the all-pins overview) wins over a fixed center+zoom pair
+  // whenever given, since it computes both center *and* the tightest zoom
+  // that keeps every point on screen.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
     if (fitPoints && fitPoints.length > 1) {
-      map.fitBounds(L.latLngBounds(fitPoints), { padding: [32, 32], maxZoom: MAX_ZOOM, animate: true });
+      const bounds = fitPoints.reduce(
+        (b, p) => b.extend([p[1], p[0]] as [number, number]),
+        new maplibregl.LngLatBounds([fitPoints[0][1], fitPoints[0][0]], [fitPoints[0][1], fitPoints[0][0]])
+      );
+      map.fitBounds(bounds, { padding: 32, maxZoom: MAX_ZOOM, animate: true });
       return;
     }
     if (fitPoints && fitPoints.length === 1) {
-      // A single pin: "showing every pin in one glance" is trivially true at
-      // any zoom, so go all the way in — same as focusing one pin directly.
-      map.setView(fitPoints[0], MAX_ZOOM, { animate: true });
+      map.flyTo({ center: [fitPoints[0][1], fitPoints[0][0]], zoom: PIN_ZOOM });
       return;
     }
-    map.setView(center, zoom, { animate: true });
+    map.flyTo({ center: [center[1], center[0]], zoom });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center[0], center[1], zoom, fitPoints]);
-  return null;
-}
 
-function MapCenterTracker({ active, onCenterChange }: { active: boolean; onCenterChange: (c: [number, number]) => void }) {
-  const map = useMap();
-  useMapEvents({
-    move: () => {
-      if (!active) return;
-      const c = map.getCenter();
-      onCenterChange([c.lat, c.lng]);
-    },
-  });
-  return null;
-}
+  // Pin markers — diffed by id + a "category-selected" signature so an
+  // unrelated re-render (e.g. selecting a *different* pin) only recreates
+  // the one or two markers whose look actually changed, not the whole set.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const existing = pinMarkersRef.current;
+    const seen = new Set<string>();
+    for (const pin of pins) {
+      seen.add(pin.id);
+      const sig = `${pin.category}-${selectedPinId === pin.id}`;
+      let entry = existing.get(pin.id);
+      if (!entry || entry.sig !== sig) {
+        entry?.marker.remove();
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = getPinHtml(pin.category, selectedPinId === pin.id);
+        const el = wrapper.firstElementChild as HTMLElement;
+        el.addEventListener('click', e => { e.stopPropagation(); onPinSelectRef.current(pin); });
+        // setLngLat before addTo — maplibregl.Marker.addTo() triggers an immediate
+        // internal _update() that reads the (still-unset) position otherwise.
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([pin.longitude, pin.latitude])
+          .addTo(map);
+        entry = { marker, sig };
+        existing.set(pin.id, entry);
+      } else {
+        entry.marker.setLngLat([pin.longitude, pin.latitude]);
+      }
+    }
+    for (const [id, entry] of existing) {
+      if (!seen.has(id)) { entry.marker.remove(); existing.delete(id); }
+    }
+  }, [pins, selectedPinId]);
+
+  // Pending (unsaved) pin position — drop-here / search-create preview.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pendingPosition) return;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = getPinHtml(createCategory, true);
+    const el = wrapper.firstElementChild as HTMLElement;
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([pendingPosition[1], pendingPosition[0]])
+      .addTo(map);
+    return () => { marker.remove(); };
+  }, [pendingPosition, createCategory]);
+
+  // The user's own live position.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !myLocation) return;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = MY_LOCATION_HTML;
+    const el = wrapper.firstElementChild as HTMLElement;
+    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([myLocation[1], myLocation[0]])
+      .addTo(map);
+    return () => { marker.remove(); };
+  }, [myLocation]);
+
+  return <div ref={containerRef} className="w-full h-full" />;
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -113,10 +305,21 @@ function formatDistanceMiles(meters: number): string {
 
 const DEFAULT_CENTER: [number, number] = [39.8283, -98.5795];
 const DEFAULT_ZOOM = 14;
-// OpenStreetMap's standard tile server actually renders up to 19 — Leaflet's
-// own default cap is 18, which would silently clip "max zoom" one level
-// short of what the tiles support (see TileLayer's maxZoom below).
+// Safety cap for fitBounds around multiple points (e.g. Reset) — not the
+// zoom actually used to focus on one pin, see PIN_ZOOM below. OpenFreeMap's
+// vector tiles render cleanly up to 19; this is rarely hit in practice since
+// spreading across multiple points already keeps the fit well under it.
 const MAX_ZOOM = 19;
+// The zoom used to focus on a single pin (selecting one, or a filtered/search
+// result narrowing to exactly one place) — pulled back halfway from MAX_ZOOM
+// toward DEFAULT_ZOOM per user feedback that a flat MAX_ZOOM (19), then a 25%
+// pull-back (17.75), both still read as too tight on pin select; still a
+// clear close-up, just not the ceiling.
+const PIN_ZOOM = MAX_ZOOM - (MAX_ZOOM - DEFAULT_ZOOM) * 0.5;
+// Recentering on the user's own location zooms to "see nearby pins" range —
+// tighter than the all-pins overview, but not all the way to a single
+// building the way a specific pin's detail view does.
+const MY_LOCATION_ZOOM = 15;
 const SEARCH_HISTORY_KEY = 'citinet-atlas-search-history';
 const SAVED_PINS_KEY = 'citinet-saved-atlas-pins';
 
@@ -159,6 +362,44 @@ function PlaceRow({ pin, distanceLabel, canDelete, onSelect, onDelete }: {
   );
 }
 
+// A small non-interactive map centered+zoomed on one pin — the final fallback
+// in PlaceDetailPanel's photo tier, replacing what used to be a flat category
+// gradient+icon. Mirrors citinet-mobile's own PinDetailScreen, whose banner
+// falls back to exactly this ("a real map centered here" is more useful to
+// someone who just tapped a pin than a generic icon, even without a real
+// photo). Deliberately a separate, minimal component rather than reusing the
+// full <AtlasMap> above — that one carries pin-click handlers, drop-here
+// placement, my-location, and marker-diffing machinery this thumbnail has no
+// use for; `interactive: false` here disables all of MapLibre's own
+// pan/zoom/click handlers in one step, so there's no risk of this thumbnail
+// fighting the page's own scroll/hover the way an interactive embed would.
+function MiniPinMap({ pin }: { pin: AtlasPin }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: getAtlasMapStyle(dark),
+      center: [pin.longitude, pin.latitude],
+      zoom: 17,
+      interactive: false,
+      attributionControl: false,
+    });
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = getPinHtml(pin.category, true);
+    const el = wrapper.firstElementChild as HTMLElement;
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([pin.longitude, pin.latitude])
+      .addTo(map);
+    return () => { marker.remove(); map.remove(); };
+  }, [pin.id, pin.category, pin.latitude, pin.longitude, dark]);
+
+  return <div ref={containerRef} className="w-full h-full" />;
+}
+
 // ── Place detail panel ───────────────────────────────────────────────────────
 
 function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, saved, onBack, onDelete, onToggleSave, onEdit }: {
@@ -178,6 +419,8 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
   const [photo, setPhoto] = useState<PlacePhoto | null>(null);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [userPhotoFailed, setUserPhotoFailed] = useState(false);
+  const [panoramax, setPanoramax] = useState<PanoramaxImage | null>(null);
+  const [panoramaxFailed, setPanoramaxFailed] = useState(false);
 
   // A user-uploaded photo (set at pin creation) is authoritative — only fall back
   // to the Wikidata/Wikimedia lookup when the pin has none of its own.
@@ -193,6 +436,24 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
     });
     return () => { cancelled = true; };
   }, [pin.latitude, pin.longitude, pin.title, userPhotoUrl]);
+
+  // Same "check it, but never make the pin wait on it" approach as
+  // citinet-mobile's PinDetailScreen: only checked without a user photo, and
+  // the map fallback below renders immediately either way — this silently
+  // swaps in ahead of the map if it resolves with a real nearby match. Runs
+  // independently of (and possibly in parallel with) the Wikidata lookup
+  // above; render order below is what actually decides priority when both
+  // resolve, not which fetch finishes first.
+  useEffect(() => {
+    if (userPhotoUrl) return;
+    let cancelled = false;
+    setPanoramax(null);
+    setPanoramaxFailed(false);
+    findNearestPanoramaxImage(pin.latitude, pin.longitude).then(match => {
+      if (!cancelled) setPanoramax(match);
+    });
+    return () => { cancelled = true; };
+  }, [pin.latitude, pin.longitude, userPhotoUrl]);
 
   const handleShare = () => {
     const url = new URL(window.location.href);
@@ -240,9 +501,31 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
             </a>
           )}
         </div>
+      ) : panoramax && !panoramaxFailed ? (
+        <a
+          href={panoramaxWebViewerUrl(panoramax.pictureId)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="relative h-32 sm:h-36 rounded-2xl overflow-hidden shadow-md block"
+        >
+          <img
+            src={panoramax.thumbnailUrl}
+            alt={pin.title}
+            className="w-full h-full object-cover"
+            onError={() => setPanoramaxFailed(true)}
+          />
+          <div className="absolute top-1.5 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-semibold backdrop-blur-sm">
+            Explore street view
+          </div>
+          <div className="absolute bottom-1.5 left-2 px-1.5 py-0.5 rounded-md bg-black/50 text-white text-[10px] font-medium backdrop-blur-sm">
+            Street view via Panoramax
+          </div>
+        </a>
       ) : (
-        <div className={`h-32 sm:h-36 rounded-2xl bg-gradient-to-br ${cat.gradient} flex items-center justify-center shadow-md`}>
-          <cat.Icon className="w-10 h-10 text-white" />
+        // No real photo anywhere — a map centered on the exact pin is more
+        // useful than a flat category icon (see MiniPinMap above).
+        <div className="relative h-32 sm:h-36 rounded-2xl overflow-hidden shadow-md isolate">
+          <MiniPinMap pin={pin} />
         </div>
       )}
 
@@ -638,11 +921,64 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     if (!locationQuery.trim()) setUnregisteredLocation(null);
   }, [locationQuery]);
 
+  // The user's own live position — gated behind the same "Show my location"
+  // account preference (AccountScreen.tsx) that already controls whether
+  // they appear on the Network map, rather than a second Atlas-only toggle.
+  // This is the device's real GPS position (unlike Network map's privacy-
+  // preserving fuzzed offsets), since the whole point here is literally
+  // seeing where you are relative to real pins.
+  const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+  // Imperative handle onto the map for one-shot camera moves that shouldn't
+  // be modeled as React state — see recenterOnMe/resetToOverview below.
+  const atlasMapRef = useRef<AtlasMapHandle>(null);
+
+  useEffect(() => {
+    if (currentUser?.locationVisible === false) return;
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      pos => setMyLocation([pos.coords.latitude, pos.coords.longitude]),
+      () => {}, // denied/unavailable — no marker, no nag, same as any optional browser permission
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 5 * 60 * 1000 }
+    );
+  }, [currentUser?.locationVisible]);
+
   // Pin list filters — the pin-title filter shares `locationQuery` with the
   // unified search field above (searching a place or an existing pin is now
   // the same box).
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
   const [savedOnly, setSavedOnly] = useState(false);
+
+  // Category-chip row horizontal scroll — chevrons show only on the side(s)
+  // there's still more to scroll toward, recomputed on scroll and on resize
+  // (a narrower column can suddenly make the row overflow).
+  const chipRowRef = useRef<HTMLDivElement>(null);
+  const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
+
+  const updateChipScroll = useCallback(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    setChipScroll({
+      canLeft: el.scrollLeft > 4,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    updateChipScroll();
+    el.addEventListener('scroll', updateChipScroll, { passive: true });
+    const ro = new ResizeObserver(updateChipScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateChipScroll);
+      ro.disconnect();
+    };
+  }, [updateChipScroll]);
+
+  const scrollChips = (dir: 'left' | 'right') => {
+    chipRowRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  };
 
   // Saved/bookmarked pins — persisted across sessions, shared between the detail
   // panel's bookmark toggle and the "Saved" filter chip in the list view.
@@ -757,6 +1093,40 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const handlePinSelect = (pin: AtlasPin) => {
     setSelectedPinId(pin.id);
     setMapCenter([pin.latitude, pin.longitude]);
+  };
+
+  // Recenters the map on the user's own live location. This is a one-shot
+  // imperative camera move (via atlasMapRef), deliberately NOT modeled as
+  // React state the way selecting a pin or searching a location is — an
+  // earlier version set a `focusOnMe` flag that fed into the declarative
+  // center/zoom/fitPoints effect, and it had a real bug: any subsequent
+  // state change that cleared the flag (a plain map click could trigger
+  // MapLibre's own dragstart event even without an actual drag) flipped
+  // isOverviewMode back on and snapped the camera to the all-pins fit,
+  // undoing the recenter the moment the user tried to look around. Going
+  // through the ref instead means the camera just moves once and then sits
+  // wherever it lands — completely free to pan/zoom/click afterward, same
+  // as any normal "locate me" button.
+  const recenterOnMe = () => {
+    if (!myLocation) return;
+    cancelPlacement();
+    setSelectedPinId(null);
+    setUnregisteredLocation(null);
+    atlasMapRef.current?.flyTo(myLocation, MY_LOCATION_ZOOM);
+  };
+
+  // Same one-shot-camera-move principle as recenterOnMe — resets the view to
+  // the all-pins overview without needing to fight or wait on any reactive
+  // state.
+  const resetToOverview = () => {
+    cancelPlacement();
+    setSelectedPinId(null);
+    setUnregisteredLocation(null);
+    if (pinFitPoints) {
+      atlasMapRef.current?.fitAll(pinFitPoints);
+    } else {
+      atlasMapRef.current?.flyTo(mapCenter, DEFAULT_ZOOM);
+    }
   };
 
   // ── Drop-here placement ──────────────────────────────────────────────────
@@ -874,12 +1244,14 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // the full map stays at the normal overview zoom. Only reacts to
   // selectedPinId itself (see MapCenterController below), so it never fights
   // a manual zoom-out afterward — "user can always zoom out if they want."
-  const mapZoom = selectedPinId ? MAX_ZOOM : DEFAULT_ZOOM;
+  const mapZoom = selectedPinId ? PIN_ZOOM : DEFAULT_ZOOM;
   // Genuine "just browsing" overview — not while a pin's focused, nor while
   // previewing/placing a new one (drop-here, a searched location, an
   // unresolved deep-link coordinate), all of which have their own explicit
   // "travel to this exact spot" center that fitting-to-all-pins would
-  // otherwise fight.
+  // otherwise fight. Recentering on "me" deliberately does NOT participate
+  // here — it's a one-shot imperative camera move (see recenterOnMe), not a
+  // mode this declarative effect needs to know about or defend.
   const isOverviewMode = !selectedPinId && !pendingPosition && !placingPin && !unregisteredLocation;
   // Every pin currently on the map (the map itself renders from the full
   // `pins` list, not the sidebar's filtered subset — fitting matches what's
@@ -905,26 +1277,40 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const canDeletePin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername || !!currentUser?.isAdmin;
   const canEditPin = (pin: AtlasPin) => currentUser?.username === pin.authorUsername;
 
-  // CARTO's free basemap CDN (basemaps.cartocdn.com) started refusing
-  // unauthenticated requests — every tile came back stamped "API KEY
-  // REQUIRED", and this app never had a CARTO key configured (it was never
-  // supposed to need one). Switched to OpenStreetMap's own standard tile
-  // server instead — the same free, no-key provider citinet-mobile's Atlas
-  // already uses successfully (components/atlas/leaflet-map.tsx). OSM only
-  // ships one raster style, but the `cn-leaflet-themed` class on the map
-  // wrapper below applies a light/dark filter recipe driven by the same
-  // `--cn-map-tile-filter` design token as the rest of the app's theme
-  // system (see citinet-tokens.css), so the basemap still matches the
-  // app's chrome in both modes without a second tile provider.
-  const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const { resolvedTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
 
   return (
-    <div className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-7 items-start">
+    // lg:h-full lg:flex lg:flex-col (mobile untouched — display:block/auto,
+    // exactly as before): this used to be min-h-screen, which forced this
+    // div to be 100vh tall even though it renders inside HubLayout's own
+    // scrollable content zone — a zone that's already shorter than the full
+    // viewport (HubLayout reserves its own space above it, and a different
+    // amount again depending on which desktop nav layout is active). That
+    // mismatch showed up as a few px of phantom scroll on the *outer* page,
+    // even though the only thing that should ever scroll is the pin list.
+    // Rather than guess a corrected vh number (wrong the moment HubLayout's
+    // chrome changes again) or measure it in JS, this makes height flow
+    // through real CSS layout instead: h-full here resolves against
+    // HubLayout's scroll zone (confirmed live — a flex item's flexed size
+    // counts as "definite" for percentage resolution), flex-1/min-h-0
+    // carries that real, always-correct height down to the two-column grid,
+    // and the grid's own two children each get exactly their share of it
+    // and manage their own internal scrolling — no vh math anywhere below
+    // HubLayout, no matter what changes there.
+    <div className="lg:h-full lg:flex lg:flex-col">
+      <div className="w-full max-w-6xl mx-auto px-4 sm:px-8 py-7 lg:flex-1 lg:min-h-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-7 items-start lg:items-stretch lg:h-full">
 
           {/* ── Left: back + header + search + map ── */}
-          <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0' : 'flex flex-col gap-5 min-w-0'}>
+          {/* lg:min-h-0 lg:overflow-y-auto: now that the grid row is bounded
+              to real available height (not content), this column needs to be
+              able to shrink below its own natural content size and scroll
+              internally on a short lg+ window — otherwise its content (the
+              map alone is up to 560px) could visually spill past its cell
+              on a small laptop screen instead of the old behavior of just
+              letting the whole outer page grow/scroll to fit it. */}
+          <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto' : 'flex flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto'}>
             <button
               onClick={onBack}
               className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
@@ -937,7 +1323,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                 className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md shrink-0"
                 style={{ background: 'var(--cn-grad-atlas)' }}
               >
-                <MapIcon className="w-6 h-6 text-white" />
+                <AtlasGlyph className="w-6 h-6 text-white" />
               </span>
               <div className="flex-1 min-w-0">
                 <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
@@ -975,40 +1361,61 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
             {/* Map */}
             <div className="relative rounded-2xl overflow-hidden border cn-border h-[260px] lg:h-[560px]">
-              <div className="w-full h-full isolate cn-leaflet-themed">
-                <MapContainer
+              <div className="w-full h-full isolate cn-atlas-map">
+                <AtlasMap
+                  ref={atlasMapRef}
                   center={mapCenter}
                   zoom={mapZoom}
-                  style={{ width: '100%', height: '100%' }}
-                  zoomControl={!placingPin}
-                  attributionControl
-                >
-                  <TileLayer
-                    url={tileUrl}
-                    maxZoom={MAX_ZOOM}
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  />
-                  <MapCenterController
-                    center={mapCenter}
-                    zoom={mapZoom}
-                    fitPoints={isOverviewMode ? pinFitPoints : null}
-                  />
-                  <MapCenterTracker active={placingPin} onCenterChange={handleDropHereCenterChange} />
-
-                  {pins.map(pin => (
-                    <Marker
-                      key={pin.id}
-                      position={[pin.latitude, pin.longitude]}
-                      icon={getPinIcon(pin.category, selectedPinId === pin.id)}
-                      eventHandlers={{ click: () => handlePinSelect(pin) }}
-                    />
-                  ))}
-
-                  {pendingPosition && (
-                    <Marker position={pendingPosition} icon={getPinIcon(createCategory, true)} />
-                  )}
-                </MapContainer>
+                  fitPoints={isOverviewMode ? pinFitPoints : null}
+                  dark={isDarkMode}
+                  placingPin={placingPin}
+                  pins={pins}
+                  selectedPinId={selectedPinId}
+                  onPinSelect={handlePinSelect}
+                  pendingPosition={pendingPosition}
+                  createCategory={createCategory}
+                  myLocation={myLocation}
+                  onDropHereCenterChange={handleDropHereCenterChange}
+                />
               </div>
+
+              {/* Same floating legend-chip component NetworkMap.tsx uses for
+                  its Hub/Members/You key (translucent+blurred pill, small
+                  color dot + label per entry) — here made clickable: "You"
+                  recenters on your live location, "Reset" snaps back to the
+                  all-pins overview. Both are one-shot camera moves (see
+                  recenterOnMe/resetToOverview) and stay clickable regardless
+                  of where the map currently is — same as any normal map
+                  app's "locate me" button, they don't hide themselves or
+                  fight whatever you do with the map afterward. Bottom-left,
+                  not bottom-right: MapLibre's own attribution control lives
+                  in that corner by default. */}
+              {(myLocation || pins.length > 0) && (
+                <div className="absolute bottom-4 left-4 z-[1000] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg p-1 border border-slate-200 dark:border-zinc-700 shadow-lg flex items-center gap-1">
+                  {myLocation && (
+                    <button
+                      onClick={recenterOnMe}
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      title="Recenter on my location"
+                      aria-label="Recenter on my location"
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                      <span>You</span>
+                    </button>
+                  )}
+                  {pins.length > 0 && (
+                    <button
+                      onClick={resetToOverview}
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      title="Reset to all pins"
+                      aria-label="Reset to all pins"
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Drop-here overlay */}
               {placingPin && (
@@ -1106,9 +1513,18 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
           </div>
 
           {/* ── Right: pin list or place detail ── */}
-          {/* Bounded to the viewport + sticky on desktop so a long pin list scrolls
-              internally instead of pushing the whole page; mobile keeps normal flow. */}
-          <div className="lg:sticky lg:top-7 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto lg:pr-1 no-scrollbar">
+          {/* lg:h-full (not sticky + a calc(100vh - Nrem) max-height): the
+              grid row above is now bounded to the real available height via
+              flex layout, so this column's cell is already exactly the
+              right size — it just needs to fill it and scroll its own
+              content, the same way the left column now does. Position:
+              sticky served a real purpose against the *old* layout (letting
+              this column "catch up" while an overflowing left column pushed
+              the whole page taller) but has nothing left to stick against
+              now that the page itself never grows past the viewport —
+              dropped rather than left in as dead/misleading code. Mobile
+              keeps normal flow (lg:-scoped, untouched). */}
+          <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1 no-scrollbar">
             {pendingPosition ? (
               <PinFormPanel
                 position={pendingPosition}
@@ -1137,41 +1553,61 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
             ) : (
               <div className="flex flex-col gap-4">
                 {/* Category chips */}
-                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {/* lg:sticky lg:top-0: pinned to the top of this column's own
+                    scroll container (the pin list scrolls underneath) so the
+                    row stays reachable without scrolling back up; still
+                    horizontally scrollable via the existing overflow-x-auto.
+                    No background — sits directly on the page, same as
+                    before. Mobile is untouched (no separate list-scroll
+                    container to stick within there). */}
+                <div className="lg:sticky lg:top-0 lg:z-10 relative">
+                  {chipScroll.canLeft && (
+                    <button
+                      onClick={() => scrollChips('left')}
+                      aria-label="Scroll categories left"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
+                    </button>
+                  )}
+                  {chipScroll.canRight && (
+                    <button
+                      onClick={() => scrollChips('right')}
+                      aria-label="Scroll categories right"
+                      className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
+                    </button>
+                  )}
+                  <div
+                    ref={chipRowRef}
+                    className={`flex gap-2 overflow-x-auto no-scrollbar scroll-smooth ${chipScroll.canLeft ? 'pl-7' : ''} ${chipScroll.canRight ? 'pr-7' : ''}`}
+                  >
                   <button
                     onClick={() => setSavedOnly(s => !s)}
                     className={`flex-none flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                       savedOnly
-                        ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
-                        : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                        ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                        : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                     }`}
                   >
                     <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-purple-300' : ''}`} />
                     Saved{savedPinIds.length > 0 ? ` (${savedPinIds.length})` : ''}
                   </button>
-                  <button
-                    onClick={() => setCategoryFilter('all')}
-                    className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                      categoryFilter === 'all'
-                        ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
-                        : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
-                    }`}
-                  >
-                    All places
-                  </button>
                   {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
                     <button
                       key={key}
-                      onClick={() => setCategoryFilter(key)}
+                      onClick={() => setCategoryFilter(prev => prev === key ? 'all' : key)}
                       className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                         categoryFilter === key
-                          ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
-                          : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                          ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                          : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                       }`}
                     >
                       {cat.label}
                     </button>
                   ))}
+                  </div>
                 </div>
 
                 <span className="text-xs cn-text-3">

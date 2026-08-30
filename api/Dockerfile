@@ -15,6 +15,16 @@ RUN npm run build
 # Stage 2 — Production API image with portal bundled
 FROM node:18-alpine
 WORKDIR /app
+# libheif-tools provides the `heif-convert` CLI server.js shells out to for
+# HEIC/HEIF uploads (iPhone photos) -- Alpine's package links against
+# libde265/x265, so it actually decodes real (HEVC-encoded) device photos.
+# The npm `sharp` package was tried first and rejected: its prebuilt
+# binaries bundle libheif *without* an HEVC decoder (patent licensing), so
+# it recognizes HEIC as a format but fails to decode every real iPhone
+# photo, and building sharp from source against Alpine's system libvips
+# isn't viable either -- sharp 0.34.x needs libvips >= 8.17.3, Alpine's
+# repos only have 8.15.3. See convertHeicUpload's comment in server.js.
+RUN apk add --no-cache libheif-tools
 COPY api/package.json ./
 RUN npm install --omit=dev --ignore-scripts
 # Every top-level api/*.js file gets copied in -- including the Vercel-only

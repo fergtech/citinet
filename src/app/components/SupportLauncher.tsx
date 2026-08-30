@@ -9,7 +9,7 @@ const FEATURE_MAP: Record<string, string> = {
   feed: 'Feed', discover: 'Discover', atlas: 'Atlas',
   marketplace: 'Exchange', neighbors: 'Neighbors', files: 'Files',
   initiatives: 'Initiatives', toolkit: 'Resources', network: 'Network',
-  messages: 'Messages', account: 'Account', profile: 'Profile',
+  messages: 'Communications', account: 'Account', profile: 'Profile',
   settings: 'Settings', 'hub-management': 'Hub Management',
   vendor: 'Vendor Profile', chat: 'Chat', notes: 'Notes',
   'mod-log': 'Mod Log', spaces: 'Spaces', assistant: 'Assistant',

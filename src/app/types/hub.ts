@@ -450,6 +450,20 @@ export interface HubFile {
   is_public: boolean;
   /** true = accessible to anyone with the link, no auth required */
   web_public?: boolean;
+  /** Folder this file lives in — null/undefined means the dashboard root. */
+  folder_id?: string | null;
+}
+
+/** A folder in the Files dashboard's folder hierarchy. */
+export interface HubFolder {
+  id: string;
+  name: string;
+  color: string;
+  parent_folder_id: string | null;
+  owner_id?: string;
+  file_count: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /** A vendor/organization page on the hub */

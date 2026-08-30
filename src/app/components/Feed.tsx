@@ -4,10 +4,11 @@ import { PostCard } from './PostCard';
 import { PollFeedCard } from './PollFeedCard';
 import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
+import { FeedGlyph } from './icons';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
-  MessageCircle, Newspaper, ShieldCheck, ChevronLeft, Send, BarChart2, Vote, Plus, Link2,
+  MessageCircle, ShieldCheck, ChevronLeft, ChevronRight, Send, BarChart2, Vote, Plus, Link2,
   MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -40,7 +41,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 const CAT_TABS = [
-  { value: null,           label: 'All' },
   { value: 'ANNOUNCEMENT', label: 'Announcements' },
   { value: 'EVENT',        label: 'Events' },
   { value: 'REQUEST',      label: 'Requests' },
@@ -56,7 +56,9 @@ function formatTimestamp(iso: string): string {
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return new Date(iso).toLocaleDateString();
+    if (diff < 2629746) return `${Math.floor(diff / 604800)}w ago`;
+    if (diff < 31556952) return `${Math.floor(diff / 2629746)}mo ago`;
+    return `${Math.floor(diff / 31556952)}y ago`;
   } catch { return ''; }
 }
 
@@ -1739,6 +1741,49 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [activeFilter, setActiveFilter] = useState<string | null>(
     HUB_CATEGORIES.find(cat => cat.hubFocus === currentHub?.hubFocus)?.feedDefaultFilter ?? null
   );
+
+  // Category-chip row horizontal scroll — same pattern as Atlas's pin-filter
+  // chips: chevrons show only on the side(s) there's still more to scroll
+  // toward, recomputed on scroll and on resize.
+  const chipRowRef = useRef<HTMLDivElement>(null);
+  const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
+
+  const updateChipScroll = useCallback(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    setChipScroll({
+      canLeft: el.scrollLeft > 4,
+      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    updateChipScroll();
+    el.addEventListener('scroll', updateChipScroll, { passive: true });
+    const ro = new ResizeObserver(updateChipScroll);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateChipScroll);
+      ro.disconnect();
+    };
+  }, [updateChipScroll]);
+
+  const scrollChips = (dir: 'left' | 'right') => {
+    chipRowRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  };
+
+  // Feathers whichever edge(s) still have more chips to scroll toward — a
+  // soft fade instead of a hard clip — via a CSS mask so it dynamically
+  // tracks the same live canLeft/canRight state the chevrons use, rather
+  // than a static gradient overlay that can't react to scroll position.
+  const chipFadeMask = !chipScroll.canLeft && !chipScroll.canRight ? undefined :
+    chipScroll.canLeft && chipScroll.canRight
+      ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+      : chipScroll.canLeft
+        ? 'linear-gradient(to right, transparent, black 24px)'
+        : 'linear-gradient(to right, black calc(100% - 24px), transparent)';
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
   const [composing, setComposing] = useState(false);
   const [focusComposer, setFocusComposer] = useState(false);
@@ -2023,39 +2068,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           {/* Icon + Title + Subtitle */}
           <div className="flex items-center gap-4 mb-3">
             <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-feed)' }}>
-              <Newspaper className="w-6 h-6 text-white" />
+              <FeedGlyph className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Feed</h1>
               <p className="text-sm cn-text-3 mt-0.5">Community posts · members only</p>
             </div>
-          </div>
-
-          {/* Category tabs */}
-          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar -mx-1 px-1 border-b cn-border">
-            {CAT_TABS.map(({ value, label }) => {
-              const count = value ? posts.filter(p => p.category === value).length : 0;
-              return (
-                <button
-                  key={value ?? 'all'}
-                  onClick={() => setActiveFilter(value)}
-                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                    activeFilter === value
-                      ? 'cn-text-1 border-purple-500'
-                      : 'cn-text-4 border-transparent hover:text-slate-700 dark:hover:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  {label}
-                  {count > 0 && (
-                    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
-                      activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
           </div>
         </div>
 
@@ -2065,6 +2083,60 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
 
             {/* Feed column */}
             <div className="flex flex-col gap-4 min-w-0">
+              {/* Category tabs — sticky top-0 like the right rail's widget
+                  column below, so filters stay reachable while scrolling
+                  posts. Chevrons (same pattern as Atlas's pin-filter chips)
+                  appear only on the side(s) there's more to scroll toward. */}
+              <div className="sticky top-7 z-10 relative">
+                {chipScroll.canLeft && (
+                  <button
+                    onClick={() => scrollChips('left')}
+                    aria-label="Scroll categories left"
+                    className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
+                  </button>
+                )}
+                {chipScroll.canRight && (
+                  <button
+                    onClick={() => scrollChips('right')}
+                    aria-label="Scroll categories right"
+                    className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
+                  </button>
+                )}
+                <div
+                  ref={chipRowRef}
+                  className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth -mx-1 px-1 ${chipScroll.canLeft ? 'pl-7' : ''} ${chipScroll.canRight ? 'pr-7' : ''}`}
+                  style={chipFadeMask ? { WebkitMaskImage: chipFadeMask, maskImage: chipFadeMask } : undefined}
+                >
+                  {CAT_TABS.map(({ value, label }) => {
+                    const count = posts.filter(p => p.category === value).length;
+                    return (
+                      <button
+                        key={value}
+                        onClick={() => setActiveFilter(prev => prev === value ? null : value)}
+                        className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
+                          activeFilter === value
+                            ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                            : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                        }`}
+                      >
+                        {label}
+                        {count > 0 && (
+                          <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
+                            activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
+                          }`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Inline composer — Event/Poll expand in place; Photo/Place still hand off to the full modal */}
               <InlineComposer
                 hubSlug={hubSlug}
@@ -2197,7 +2269,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
             </div>
 
             {/* Right rail — desktop only */}
-            <div className="hidden lg:block sticky top-0 self-start">
+            <div className="hidden lg:block sticky top-7 self-start">
               <RightRail
                 hubName={currentHub?.name ?? 'Hub'}
                 posts={posts}

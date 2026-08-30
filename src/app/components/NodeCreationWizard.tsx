@@ -924,7 +924,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                 {step === 'apps' && (() => {
                   const ALL_HUB_APPS = [
                     { id: 'feed',        label: 'Feed',         icon: '/icons/onboard/feed.png',        desc: 'Community posts, events, and conversations' },
-                    { id: 'messages',    label: 'Messages',     icon: '/icons/onboard/messages.png',    desc: 'Private and group messaging' },
+                    { id: 'messages',    label: 'Communications', icon: '/icons/onboard/messages.png',    desc: 'Private and group messaging' },
                     { id: 'atlas',       label: 'Atlas',        icon: '/icons/onboard/atlas.png',       desc: 'Interactive community map' },
                     { id: 'notes',       label: 'Notes',        icon: '/icons/onboard/notes.png',       desc: 'Private notes and journal' },
                     { id: 'spaces',      label: 'Spaces',       icon: '/icons/onboard/spaces-2.png',    desc: 'Topic-based community groups' },

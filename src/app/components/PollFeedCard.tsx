@@ -21,7 +21,9 @@ function formatTimestamp(iso: string): string {
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return new Date(iso).toLocaleDateString();
+    if (diff < 2629746) return `${Math.floor(diff / 604800)}w ago`;
+    if (diff < 31556952) return `${Math.floor(diff / 2629746)}mo ago`;
+    return `${Math.floor(diff / 31556952)}y ago`;
   } catch { return ''; }
 }
 
@@ -107,36 +109,11 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
   return (
     <div className="cn-glass rounded-2xl overflow-hidden">
       <div className="p-4">
-        {/* Header: avatar + author + category + time — matches feed post cards */}
-        <div className="flex items-start gap-3 mb-3">
-          <button
-            onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
-            disabled={!onNavigateToProfile}
-            className="shrink-0 select-none disabled:cursor-default"
-          >
-            <AvatarCircle
-              authorId={post.author_id ?? ''}
-              authorUsername={authorName}
-              authorAvatarUrl={authorAvatarUrl}
-              currentUserId={currentUserId}
-              currentUserAvatarUrl={currentUserAvatarUrl}
-            />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
-                disabled={!onNavigateToProfile}
-                className="text-sm font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
-              >
-                {authorName}
-              </button>
-              <span className="cn-mono text-[11px] cn-text-4">· {formatTimestamp(post.created_at)}</span>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Vote className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
-              <span className="text-[11px] cn-text-3">Poll</span>
-            </div>
+        {/* Top row: category + status + three-dots menu */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5">
+            <Vote className="w-3 h-3 text-indigo-500 dark:text-indigo-400" />
+            <span className="text-[11px] cn-text-3">Poll</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {isClosed ? (
@@ -260,6 +237,34 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
               </div>
             </div>
           )}
+        </div>
+
+        {/* Author row: avatar + author + time */}
+        <div className="flex items-center gap-1.5 mt-3">
+          <button
+            onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
+            disabled={!onNavigateToProfile}
+            className="shrink-0 select-none disabled:cursor-default"
+          >
+            <AvatarCircle
+              authorId={post.author_id ?? ''}
+              authorUsername={authorName}
+              authorAvatarUrl={authorAvatarUrl}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size="sm"
+            />
+          </button>
+          <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
+            <button
+              onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
+              disabled={!onNavigateToProfile}
+              className="text-xs font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+            >
+              {authorName}
+            </button>
+            <span className="cn-mono text-[11px] cn-text-4">· {formatTimestamp(post.created_at)}</span>
+          </div>
         </div>
       </div>
 

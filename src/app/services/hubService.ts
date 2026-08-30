@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 import { clearIndexForHub } from './messageSearchIndex';
@@ -1290,11 +1290,14 @@ class HubService {
     const attachments: HubMessageAttachment[] = [];
     for (const file of files) {
       const uploaded = await this.uploadFile(hubSlug, file, false);
+      // Prefer the server's post-upload metadata over the original `file` —
+      // uploadFile may have converted a HEIC/HEIF file to JPEG internally,
+      // so the original's name/type/size no longer describe what was stored.
       attachments.push({
         id: uploaded.id,
         file_name: uploaded.name || file.name,
-        mime_type: file.type || uploaded.mime_type || 'application/octet-stream',
-        size: file.size,
+        mime_type: uploaded.mime_type || file.type || 'application/octet-stream',
+        size: uploaded.size || file.size,
       });
     }
 
@@ -1529,6 +1532,7 @@ class HubService {
       category: f.category || f.folder || undefined,
       is_public: f.is_public ?? true,
       web_public: f.web_public ?? false,
+      folder_id: f.folder_id ?? null,
     }));
   }
 
@@ -1544,6 +1548,7 @@ class HubService {
     file: File,
     isPublic: boolean,
     onProgress?: (percent: number) => void,
+    folderId?: string | null,
   ): Promise<HubFile> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
@@ -1555,12 +1560,12 @@ class HubService {
     // Encrypt private files client-side — skip for large files to avoid
     // loading gigabytes into the JS heap. Streaming encryption is a future task.
     const ENCRYPTION_SIZE_LIMIT = 100 * 1024 * 1024; // 100 MB
-    if (!isPublic && file.size <= ENCRYPTION_SIZE_LIMIT) {
+    if (!isPublic && uploadFile.size <= ENCRYPTION_SIZE_LIMIT) {
       try {
-        const buf = await file.arrayBuffer();
+        const buf = await uploadFile.arrayBuffer();
         const encBuf = await encryptFileBuffer(this.keyScope(hubSlug), buf);
         if (encBuf) {
-          uploadFile = new File([encBuf], file.name, { type: file.type });
+          uploadFile = new File([encBuf], uploadFile.name, { type: uploadFile.type });
         }
       } catch { /* fall back to unencrypted upload */ }
     }
@@ -1571,7 +1576,8 @@ class HubService {
     // Use XHR instead of fetch so we get upload progress events.
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      const url = `${connection.hub.tunnelUrl}/api/files?is_public=${isPublic}`;
+      const folderQuery = folderId ? `&folder_id=${encodeURIComponent(folderId)}` : '';
+      const url = `${connection.hub.tunnelUrl}/api/files?is_public=${isPublic}${folderQuery}`;
       xhr.open('POST', url);
       if (connection.user?.authToken) {
         xhr.setRequestHeader('Authorization', `Bearer ${connection.user.authToken}`);
@@ -1589,13 +1595,14 @@ class HubService {
             const data = JSON.parse(xhr.responseText);
             resolve({
               id: String(data.file_id || data.id || ''),
-              name: data.file_name || file.name,
-              size: Number(data.size_bytes || file.size || 0),
-              mime_type: file.type || undefined,
+              name: data.file_name || uploadFile.name,
+              size: Number(data.size_bytes || uploadFile.size || 0),
+              mime_type: uploadFile.type || undefined,
               is_public: isPublic,
               web_public: false,
               owner_id: connection.user?.hubUserId || undefined,
               uploaded_at: new Date().toISOString(),
+              folder_id: folderId ?? null,
             });
           } catch {
             reject(new Error('Invalid response from server'));
@@ -1661,6 +1668,94 @@ class HubService {
       const body = await response.text();
       throw new Error(body || `Set visibility failed (${response.status})`);
     }
+  }
+
+  /**
+   * Move a file into a folder, or back to the dashboard root (folderId: null).
+   * PATCH /api/files/{filename} — same route as visibility, keyed by name.
+   */
+  async moveFileToFolder(hubSlug: string, fileName: string, folderId: string | null): Promise<void> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+
+    const response = await fetch(
+      `${connection.hub.tunnelUrl}/api/files/${encodeURIComponent(fileName)}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId }),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Move file failed (${response.status})`);
+    }
+  }
+
+  /**
+   * List folders under a given parent (null/undefined = dashboard root).
+   * GET /api/folders?parent_id=<uuid>
+   */
+  async listFolders(hubSlug: string, parentId?: string | null): Promise<HubFolder[]> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const query = parentId ? `?parent_id=${encodeURIComponent(parentId)}` : '';
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/folders${query}`, { headers });
+
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return (data.folders || []).map((f: any) => ({
+      id: String(f.id),
+      name: f.name,
+      color: f.color || 'amber',
+      parent_folder_id: f.parent_folder_id || null,
+      owner_id: f.owner_id || undefined,
+      file_count: Number(f.file_count || 0),
+      created_at: f.created_at || undefined,
+      updated_at: f.updated_at || undefined,
+    }));
+  }
+
+  /**
+   * Create a folder, optionally nested under a parent folder.
+   * POST /api/folders
+   */
+  async createFolder(hubSlug: string, name: string, color: string, parentFolderId?: string | null): Promise<HubFolder> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/folders`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, color, parent_folder_id: parentFolderId || null }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      let msg = `Failed to create folder (${response.status})`;
+      try { msg = JSON.parse(body)?.error || msg; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
+    const f = await response.json();
+    return {
+      id: String(f.id),
+      name: f.name,
+      color: f.color || 'amber',
+      parent_folder_id: f.parent_folder_id || null,
+      owner_id: f.owner_id || undefined,
+      file_count: Number(f.file_count || 0),
+      created_at: f.created_at || undefined,
+      updated_at: f.updated_at || undefined,
+    };
   }
 
   /**

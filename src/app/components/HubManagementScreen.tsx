@@ -1655,7 +1655,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
                     { screen: 'feed',        label: 'Feed',         Icon: Newspaper },
-                    { screen: 'messages',    label: 'Messages',     Icon: MessageCircle },
+                    { screen: 'messages',    label: 'Communications', Icon: MessageCircle },
                     { screen: 'atlas',       label: 'Atlas',        Icon: Map },
                     { screen: 'notes',       label: 'Notes',        Icon: NotebookPen },
                     { screen: 'spaces',      label: 'Spaces',       Icon: Layers },

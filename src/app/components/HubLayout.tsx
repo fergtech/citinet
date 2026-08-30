@@ -507,7 +507,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       initiatives: 'Initiatives',
       toolkit: 'Resources',
       network: 'Network',
-      messages: 'Messages',
+      messages: 'Communications',
       account: 'Account',
       profile: 'Profile',
       settings: 'Settings',

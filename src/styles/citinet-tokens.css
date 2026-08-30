@@ -89,42 +89,38 @@
 }
 
 /* ============================================================
-   Leaflet maps (Atlas) — restyle the raster basemap to sit inside
-   the app's own light/dark chrome instead of a separate map palette.
-   OSM's tiles are pre-rendered images, so real token *colors* can't
-   be painted onto them directly — the closest honest equivalent is a
-   CSS filter recipe, kept here as tokens (like everything else on this
-   page) and swapped by the same `.dark` class the rest of the app
-   already uses, so a future theme change never needs a second edit.
-   Scoped to `.leaflet-tile-pane` only — markers, clusters, popups and
-   the zoom control live in separate Leaflet panes/controls and are
-   untouched by this. */
-:root {
-  --cn-map-tile-filter: saturate(0.75) brightness(1.02) contrast(0.98);
-}
-.dark {
-  --cn-map-tile-filter: invert(1) hue-rotate(180deg) saturate(0.55) brightness(0.82) contrast(0.92);
-}
-.cn-leaflet-themed .leaflet-tile-pane {
-  filter: var(--cn-map-tile-filter);
-  transition: filter var(--cn-dur-slow) var(--cn-ease-out);
-}
+   Atlas map (MapLibre GL) — restyle the surrounding control chrome to sit
+   inside the app's own light/dark UI. The map's actual geography (land,
+   water, roads, parks, labels) is owned entirely by the vector style in
+   src/app/utils/atlasMapStyle.ts, not CSS — this is just the zoom control
+   and attribution widgets MapLibre renders on top. */
 
-/* Zoom control chrome — same surface/border/text tokens as the rest of the
-   UI, so the +/- box reads as part of the app rather than Leaflet's default
-   white widget. Position, behavior and markup are untouched. */
-.cn-leaflet-themed .leaflet-control-zoom a {
+.cn-atlas-map .maplibregl-ctrl-group {
   background: var(--cn-surface);
-  color: var(--cn-text-1);
-  border-color: var(--cn-border) !important;
+  border: 1px solid var(--cn-border);
+  box-shadow: none;
 }
-.cn-leaflet-themed .leaflet-control-zoom a:hover {
+.cn-atlas-map .maplibregl-ctrl-group button {
+  background: transparent;
+}
+.cn-atlas-map .maplibregl-ctrl-group button:hover {
   background: var(--cn-surface-2);
 }
-.cn-leaflet-themed .leaflet-control-attribution {
+.cn-atlas-map .maplibregl-ctrl-group button:not(:last-child) {
+  border-bottom: 1px solid var(--cn-border);
+}
+/* MapLibre's zoom icons are baked-in dark sprites — fine on the light
+   theme's near-white control, invisible on the dark theme's near-black one. */
+.dark .cn-atlas-map .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+.cn-atlas-map .maplibregl-ctrl-attrib {
   background: var(--cn-glass-bg);
   color: var(--cn-text-3);
 }
-.cn-leaflet-themed .leaflet-control-attribution a {
+.cn-atlas-map .maplibregl-ctrl-attrib a {
   color: var(--cn-text-2);
+}
+.dark .cn-atlas-map .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
 }

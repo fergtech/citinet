@@ -20,10 +20,9 @@ interface MarketplaceScreenProps {
   onVendorClick?: (vendorId: string) => void;
 }
 
-const CATEGORIES = ['All', 'Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts & Crafts', 'Other'] as const;
+const CATEGORIES = ['Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts & Crafts', 'Other'] as const;
 
 const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string }> = {
-  'All':           { Icon: Store,        gradient: 'from-emerald-500 to-teal-600' },
   'Goods':         { Icon: Package,      gradient: 'from-blue-500 to-indigo-600' },
   'Services':      { Icon: HandHelping,  gradient: 'from-violet-500 to-purple-600' },
   'Food':          { Icon: Apple,        gradient: 'from-rose-500 to-pink-600' },
@@ -600,7 +599,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 return (
                   <button
                     key={cat}
-                    onClick={() => setActiveCategory(cat)}
+                    onClick={() => setActiveCategory(prev => prev === cat ? 'All' : cat)}
                     className={`inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
                       active ? 'bg-purple-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
                     }`}

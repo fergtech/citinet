@@ -73,36 +73,11 @@ export function PostCard({
   return (
     <div className="cn-glass rounded-2xl overflow-hidden hover:border-black/15 dark:hover:border-white/15 transition-all duration-200">
       <div className="p-4">
-        {/* Header: avatar + author + category + time */}
-        <div className="flex items-start gap-3 mb-3">
-          <button
-            onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
-            disabled={!authorId || !onNavigateToProfile}
-            className="shrink-0 select-none disabled:cursor-default"
-          >
-            <AvatarCircle
-              authorId={authorId ?? ''}
-              authorUsername={author}
-              authorAvatarUrl={authorAvatarUrl}
-              currentUserId={currentUserId}
-              currentUserAvatarUrl={currentUserAvatarUrl}
-            />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
-                disabled={!authorId || !onNavigateToProfile}
-                className="text-sm font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
-              >
-                {author}
-              </button>
-              <span className="cn-mono text-[11px] cn-text-4">· {timestamp}</span>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Icon className={`w-3 h-3 ${iconColor}`} />
-              <span className="text-[11px] cn-text-3">{label}</span>
-            </div>
+        {/* Top row: category + three-dots menu */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5">
+            <Icon className={`w-3 h-3 ${iconColor}`} />
+            <span className="text-[11px] cn-text-3">{label}</span>
           </div>
           {canEdit || canDelete ? (
             <DropdownMenu>
@@ -207,6 +182,34 @@ export function PostCard({
             </span>
           </button>
         )}
+
+        {/* Author row: avatar + author + time */}
+        <div className="flex items-center gap-1.5 mt-3">
+          <button
+            onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
+            disabled={!authorId || !onNavigateToProfile}
+            className="shrink-0 select-none disabled:cursor-default"
+          >
+            <AvatarCircle
+              authorId={authorId ?? ''}
+              authorUsername={author}
+              authorAvatarUrl={authorAvatarUrl}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size="sm"
+            />
+          </button>
+          <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
+            <button
+              onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
+              disabled={!authorId || !onNavigateToProfile}
+              className="text-xs font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+            >
+              {author}
+            </button>
+            <span className="cn-mono text-[11px] cn-text-4">· {timestamp}</span>
+          </div>
+        </div>
       </div>
 
       {/* Reaction bar */}

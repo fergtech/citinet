@@ -1592,7 +1592,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             >
               <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
             </button>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight flex-1">Messages</h1>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight flex-1">Communications</h1>
             <button
               onClick={openNewConvo}
               className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg shrink-0"
@@ -1655,6 +1655,12 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               </>
             )}
           </div>
+
+          {filteredConversations.length > 0 && (
+            <div className="mt-1 mb-2 px-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Direct messages</span>
+            </div>
+          )}
 
           {filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useHub } from '../context/HubContext';
+import { InitiativesGlyph } from './icons';
 import {
   Plus, Users, CheckCircle2, Circle, Clock,
   X, MessageSquare, TrendingUp, Package,
-  ChevronLeft, Hammer, Share2, Check, UserPlus, Loader2, Trash2,
+  ChevronLeft, Share2, Check, UserPlus, Loader2, Trash2,
   Image as ImageIcon, Upload, Activity, FileText, Download, ExternalLink, Link as LinkIcon,
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -1593,7 +1594,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
           No projects match this filter.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {filtered.map((ini, idx) => (
             <motion.div key={ini.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
               <InitiativeCard
@@ -1715,7 +1716,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
                 </button>
                 <div className="flex items-center gap-3">
                   <span className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm" style={{ background: 'var(--cn-grad-initiatives)' }}>
-                    <Hammer className="w-[22px] h-[22px] text-white" />
+                    <InitiativesGlyph className="w-[22px] h-[22px] text-white" />
                   </span>
                   <div className="flex-1 min-w-0">
                     <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Initiatives</h1>

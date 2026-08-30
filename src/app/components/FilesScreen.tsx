@@ -4,12 +4,13 @@ import {
   File, FileText, FileImage, FileVideo, FileAudio, FileArchive,
   MonitorPlay, Table2, Download, Search, Loader2, AlertCircle, RefreshCw,
   HardDrive, Upload, Trash2, Globe, Lock, X, Eye, Link2, Users, Check,
-  Star, List, LayoutGrid, ArrowUpDown, ChevronLeft,
+  Star, List, LayoutGrid, ArrowUpDown, ChevronLeft, ChevronRight, Folder,
+  FolderPlus, FolderInput, Home,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
-import type { HubFile, HubMember } from '../types/hub';
+import type { HubFile, HubFolder, HubMember } from '../types/hub';
 
 interface FilesScreenProps {
   onBack: () => void;
@@ -79,6 +80,19 @@ function getKind(file: HubFile): FileKind {
   return 'other';
 }
 
+// ── Folder colors ──────────────────────────────────────────────────────────────
+
+const FOLDER_COLORS: Record<string, string> = {
+  amber:   'from-amber-500 to-orange-600',
+  blue:    'from-blue-500 to-blue-600',
+  emerald: 'from-emerald-500 to-teal-600',
+  purple:  'from-purple-500 to-violet-600',
+  rose:    'from-rose-500 to-pink-600',
+  cyan:    'from-cyan-500 to-sky-600',
+  slate:   'from-slate-500 to-slate-600',
+};
+const FOLDER_COLOR_KEYS = Object.keys(FOLDER_COLORS);
+
 function getPreviewCategory(file: HubFile): 'image' | 'video' | 'audio' | 'pdf' | 'other' {
   const kind = getKind(file);
   if (kind === 'image') return 'image';
@@ -90,16 +104,79 @@ function getPreviewCategory(file: HubFile): 'image' | 'video' | 'audio' | 'pdf' 
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function FileKindBadge({ file, size = 40 }: { file: HubFile; size?: number }) {
+/** Lazily loads an image or video file's actual bytes as a thumbnail/preview
+ * — null for every other kind, and null until the badge/tile scrolls into
+ * view. Images go through fetchFileBlob rather than a plain <img src="...">
+ * because a file can be client-side encrypted regardless of its is_public
+ * flag (see openPreview's comment below); that's the one function that
+ * already handles auth + transparent decryption correctly. Videos use
+ * getFileStreamUrl instead — a Range-capable streaming URL — so a muted
+ * autoplay loop only pulls the first couple of seconds over the network
+ * rather than buffering the entire file into memory the way fetchFileBlob
+ * would (fine for a multi-MB photo, not for a multi-hundred-MB video); the
+ * tradeoff is a client-side-encrypted private video won't decrypt for this
+ * preview, same as openPreview's own >100MB fallback already accepts. */
+function useFileThumbnail(slug: string, file: HubFile, elRef: React.RefObject<Element>): { url: string; kind: 'image' | 'video' } | null {
+  const kind = getKind(file);
+  const previewable = kind === 'image' || kind === 'video';
+  const [visible, setVisible] = useState(false);
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewable) return;
+    const el = elRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0]?.isIntersecting) { setVisible(true); observer.disconnect(); } },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewable, file.id]);
+
+  useEffect(() => {
+    if (!previewable || !visible) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    const load = kind === 'video'
+      ? hubService.getFileStreamUrl(slug, file.name)
+      : hubService.fetchFileBlob(slug, file.name, file.mime_type).then(blobUrl => { objectUrl = blobUrl; return blobUrl; });
+    load
+      .then(loadedUrl => {
+        if (cancelled) { if (objectUrl) URL.revokeObjectURL(objectUrl); return; }
+        setUrl(loadedUrl);
+      })
+      .catch(() => { /* fall back to the kind icon */ });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewable, kind, visible, slug, file.id]);
+
+  return url ? { url, kind: kind as 'image' | 'video' } : null;
+}
+
+function FileKindBadge({ file, slug, size = 40 }: { file: HubFile; slug: string; size?: number }) {
   const { Icon, grad } = KIND_CFG[getKind(file)];
   const iconSize = Math.round(size * 0.45);
+  const ref = useRef<HTMLSpanElement>(null);
+  const thumb = useFileThumbnail(slug, file, ref);
   return (
     <span
-      className={`flex items-center justify-center rounded-xl bg-gradient-to-br ${grad} shrink-0 shadow-sm`}
+      ref={ref}
+      className={`flex items-center justify-center rounded-xl overflow-hidden bg-gradient-to-br ${grad} shrink-0 shadow-sm`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
-      <Icon style={{ width: iconSize, height: iconSize }} className="text-white" />
+      {thumb?.kind === 'video' ? (
+        <video src={thumb.url} autoPlay muted loop playsInline preload="metadata" className="w-full h-full object-cover" />
+      ) : thumb ? (
+        <img src={thumb.url} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <Icon style={{ width: iconSize, height: iconSize }} className="text-white" />
+      )}
     </span>
   );
 }
@@ -145,6 +222,75 @@ function UploaderChip({
   );
 }
 
+function GridFileTile({
+  file, slug, index, starred, onToggleStar, onOpen, memberMap, myUserId,
+}: {
+  file: HubFile; slug: string; index: number; starred: boolean;
+  onToggleStar: () => void; onOpen: () => void;
+  memberMap: Map<string, HubMember>; myUserId: string;
+}) {
+  const { Icon, grad } = KIND_CFG[getKind(file)];
+  const fresh = isRecent(file);
+  const ref = useRef<HTMLDivElement>(null);
+  const thumb = useFileThumbnail(slug, file, ref);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: index * 0.02 }}
+      className="group rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer overflow-hidden"
+      onClick={onOpen}
+    >
+      <div ref={ref} className={`relative h-20 ${thumb ? '' : `bg-gradient-to-br ${grad}`} flex items-center justify-center overflow-hidden`}>
+        {thumb?.kind === 'video' ? (
+          <video src={thumb.url} autoPlay muted loop playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+        ) : thumb ? (
+          <img src={thumb.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <Icon className="w-8 h-8 text-white/80" />
+        )}
+        {fresh && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+        <button
+          onClick={e => { e.stopPropagation(); onToggleStar(); }}
+          className="absolute top-2 left-2 w-6 h-6 rounded-md bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          title={starred ? 'Unstar file' : 'Star file'}
+        >
+          <Star className={`w-3 h-3 ${starred ? 'text-amber-400 fill-amber-400' : 'text-white/70'}`} />
+        </button>
+      </div>
+      <div className="p-3 min-w-0">
+        <p className="text-xs font-semibold cn-text-1 truncate max-w-full">{file.name || 'Unnamed'}</p>
+        <p className="font-mono text-[10px] cn-text-4 mt-1 truncate">{formatFileSize(file.size)} · {timeAgo(file.uploaded_at)}</p>
+        <div className="mt-1.5">
+          <UploaderChip file={file} slug={slug} memberMap={memberMap} myUserId={myUserId} />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function FolderCard({ folder, index, onOpen }: { folder: HubFolder; index: number; onOpen: () => void }) {
+  const grad = FOLDER_COLORS[folder.color] || FOLDER_COLORS.amber;
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.02 }}
+      onClick={onOpen}
+      className="flex items-center gap-3 p-3.5 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all text-left"
+    >
+      <span className={`w-11 h-11 rounded-xl bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 shadow-sm`}>
+        <Folder className="w-5 h-5 text-white" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold cn-text-1 truncate">{folder.name}</p>
+        <p className="text-xs cn-text-4 mt-0.5">{folder.file_count} {folder.file_count === 1 ? 'file' : 'files'}</p>
+      </div>
+    </motion.button>
+  );
+}
+
 function StorageCard({ files }: { files: HubFile[] }) {
   const totalBytes = files.reduce((s, f) => s + (f.size || 0), 0);
 
@@ -165,7 +311,7 @@ function StorageCard({ files }: { files: HubFile[] }) {
   );
 }
 
-function RecentUploadsCard({ files, myUserId }: { files: HubFile[]; myUserId: string }) {
+function RecentUploadsCard({ files, myUserId, slug }: { files: HubFile[]; myUserId: string; slug: string }) {
   // Defense in depth: only ever show a file here if it's visible to everyone
   // (hub-public or web-public) or it's mine. Never show another member's
   // private upload, even if this component is ever fed an unfiltered list.
@@ -183,7 +329,7 @@ function RecentUploadsCard({ files, myUserId }: { files: HubFile[]; myUserId: st
       <div className="flex flex-col gap-3">
         {recent.map(f => (
           <div key={f.id} className="overflow-hidden flex items-center gap-3">
-            <FileKindBadge file={f} size={30} />
+            <FileKindBadge file={f} slug={slug} size={30} />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold cn-text-1 truncate">{f.name || 'Unnamed'}</p>
               <p className="text-[10px] font-mono cn-text-4 mt-0.5">{timeAgo(f.uploaded_at)}</p>
@@ -195,7 +341,11 @@ function RecentUploadsCard({ files, myUserId }: { files: HubFile[]; myUserId: st
   );
 }
 
-function TypeBreakdownCard({ files }: { files: HubFile[] }) {
+function TypeBreakdownCard({
+  files, activeKind, onSelectKind,
+}: {
+  files: HubFile[]; activeKind: FileKind | null; onSelectKind: (kind: FileKind) => void;
+}) {
   const counts = files.reduce((acc, f) => {
     const k = getKind(f);
     acc[k] = (acc[k] || 0) + 1;
@@ -215,17 +365,34 @@ function TypeBreakdownCard({ files }: { files: HubFile[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="rounded-2xl cn-glass p-4">
-      <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">By type</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">By type</span>
+        {activeKind && (
+          <button onClick={() => onSelectKind(activeKind)} className="text-[10px] font-semibold cn-text-4 hover:cn-text-2 transition-colors">
+            Clear
+          </button>
+        )}
+      </div>
       <div className="mt-3 flex flex-col gap-1">
-        {rows.map(({ key, label, Icon, grad }) => (
-          <div key={key} className="flex items-center gap-3 py-1">
-            <span className={`w-7 h-7 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shrink-0`}>
-              <Icon className="w-3.5 h-3.5 text-white" />
-            </span>
-            <span className="text-sm cn-text-2 flex-1">{label}</span>
-            <span className="font-mono text-xs cn-text-4">{counts[key]}</span>
-          </div>
-        ))}
+        {rows.map(({ key, label, Icon, grad }) => {
+          const active = activeKind === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onSelectKind(key as FileKind)}
+              title={active ? `Clear ${label.toLowerCase()} filter` : `Show only ${label.toLowerCase()}`}
+              className={`flex items-center gap-3 py-1 px-1.5 -mx-1.5 rounded-lg text-left transition-colors ${
+                active ? 'bg-purple-500/10 dark:bg-purple-500/15' : 'hover:bg-black/5 dark:hover:bg-white/5'
+              }`}
+            >
+              <span className={`w-7 h-7 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 ${active ? 'ring-2 ring-purple-400/60' : ''}`}>
+                <Icon className="w-3.5 h-3.5 text-white" />
+              </span>
+              <span className={`text-sm flex-1 ${active ? 'font-semibold text-purple-600 dark:text-purple-300' : 'cn-text-2'}`}>{label}</span>
+              <span className={`font-mono text-xs ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-4'}`}>{counts[key]}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -245,10 +412,21 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [memberMap, setMemberMap] = useState<Map<string, HubMember>>(new Map());
 
+  // ── folders ──────────────────────────────────────────────────────────────────
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folderPath, setFolderPath] = useState<HubFolder[]>([]);
+  const [folders, setFolders] = useState<HubFolder[]>([]);
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderColor, setNewFolderColor] = useState<string>('amber');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderError, setNewFolderError] = useState('');
+
   // ── UI state ─────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<FileTab>('all');
   const [view, setView] = useState<ViewMode>('list');
   const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState<FileKind | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>('recent');
   const [showSortMenu, setShowSortMenu] = useState(false);
 
@@ -285,6 +463,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [visPopoverId, setVisPopoverId] = useState<string | null>(null);
+  const [movingId, setMovingId] = useState<string | null>(null);
+  const [movePopoverId, setMovePopoverId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // lightbox
@@ -323,6 +503,16 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       .catch(() => {}); // silent — uploader info is display-only
   }, [slug]);
 
+  // fetch the child folders of the currently open folder (null = dashboard root)
+  const fetchFolders = useCallback(async () => {
+    if (!slug) return;
+    try {
+      setFolders(await hubService.listFolders(slug, currentFolderId));
+    } catch { /* folder grid is supplemental — the file list still works without it */ }
+  }, [slug, currentFolderId]);
+
+  useEffect(() => { fetchFolders(); }, [fetchFolders]);
+
   // deep-link: auto-open once list loads
   useEffect(() => {
     if (allFiles.length === 0) return;
@@ -335,21 +525,26 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   }, [allFiles]);
 
   // ── derived lists ─────────────────────────────────────────────────────────────
+  const folderScopedFiles = useMemo(
+    () => allFiles.filter(f => (f.folder_id || null) === currentFolderId),
+    [allFiles, currentFolderId],
+  );
+
   const tabFiles = useMemo(() => {
     switch (tab) {
-      case 'mine':    return allFiles.filter(f => f.owner_id === myUserId);
-      case 'starred': return allFiles.filter(f => starred.has(f.id));
-      case 'shared':  return allFiles.filter(f => f.is_public || f.web_public);
-      default:        return allFiles;
+      case 'mine':    return folderScopedFiles.filter(f => f.owner_id === myUserId);
+      case 'starred': return folderScopedFiles.filter(f => starred.has(f.id));
+      case 'shared':  return folderScopedFiles.filter(f => f.is_public || f.web_public);
+      default:        return folderScopedFiles;
     }
-  }, [tab, allFiles, starred, myUserId]);
+  }, [tab, folderScopedFiles, starred, myUserId]);
 
   const tabCounts = useMemo(() => ({
-    all:     allFiles.length,
-    mine:    allFiles.filter(f => f.owner_id === myUserId).length,
-    starred: allFiles.filter(f => starred.has(f.id)).length,
-    shared:  allFiles.filter(f => f.is_public || f.web_public).length,
-  }), [allFiles, starred, myUserId]);
+    all:     folderScopedFiles.length,
+    mine:    folderScopedFiles.filter(f => f.owner_id === myUserId).length,
+    starred: folderScopedFiles.filter(f => starred.has(f.id)).length,
+    shared:  folderScopedFiles.filter(f => f.is_public || f.web_public).length,
+  }), [folderScopedFiles, starred, myUserId]);
 
   const displayed = useMemo(() => {
     let list = search.trim()
@@ -358,12 +553,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           f.description?.toLowerCase().includes(search.toLowerCase())
         )
       : tabFiles;
+    if (kindFilter) list = list.filter(f => getKind(f) === kindFilter);
     return [...list].sort((a, b) => {
       if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
       if (sortBy === 'size') return (b.size || 0) - (a.size || 0);
       return new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime();
     });
-  }, [tabFiles, search, sortBy]);
+  }, [tabFiles, search, kindFilter, sortBy]);
 
   // ── upload ────────────────────────────────────────────────────────────────────
   const triggerUpload = (isPublic: boolean) => {
@@ -377,8 +573,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     if (!file || !slug) return;
     setUploading(true); setUploadProgress(0); setUploadError('');
     try {
-      const uploaded = await hubService.uploadFile(slug, file, uploadIsPublicRef.current, setUploadProgress);
+      const uploaded = await hubService.uploadFile(slug, file, uploadIsPublicRef.current, setUploadProgress, currentFolderId);
       setAllFiles(prev => [uploaded, ...prev]);
+      fetchFolders(); // refresh this folder's file_count
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -410,8 +607,9 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     const file = droppedFile;
     setDroppedFile(null); setUploading(true); setUploadProgress(0); setUploadError('');
     try {
-      const uploaded = await hubService.uploadFile(slug, file, isPublic, setUploadProgress);
+      const uploaded = await hubService.uploadFile(slug, file, isPublic, setUploadProgress, currentFolderId);
       setAllFiles(prev => [uploaded, ...prev]);
+      fetchFolders(); // refresh this folder's file_count
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally { setUploading(false); setUploadProgress(0); }
@@ -444,6 +642,23 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       setUploadError(err instanceof Error ? err.message : 'Failed to update visibility');
     }
     finally { setTogglingId(null); }
+  };
+
+  // ── move to folder ───────────────────────────────────────────────────────────
+  const handleMoveFile = async (file: HubFile, folderId: string | null) => {
+    if (!slug) return;
+    setMovePopoverId(null); setMovingId(file.id); setUploadError('');
+    try {
+      await hubService.moveFileToFolder(slug, file.name, folderId);
+      // The bottom-tier list is scoped to folder_id === currentFolderId, so
+      // this file naturally drops out of view once its folder no longer
+      // matches — the existing list AnimatePresence handles the exit.
+      setAllFiles(prev => prev.map(f => f.id === file.id ? { ...f, folder_id: folderId } : f));
+      fetchFolders(); // refresh source/destination folder file_counts
+    } catch (err) {
+      console.error('Move failed:', err);
+      setUploadError(err instanceof Error ? err.message : 'Failed to move file');
+    } finally { setMovingId(null); }
   };
 
   const handleCopyLink = (file: HubFile) => {
@@ -487,6 +702,37 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     setPreviewFile(null); setPreviewUrl(null); setPreviewError('');
   };
 
+  // ── folder navigation ────────────────────────────────────────────────────────
+  const openFolder = (folder: HubFolder) => {
+    setFolderPath(prev => [...prev, folder]);
+    setCurrentFolderId(folder.id);
+  };
+
+  // index -1 jumps to the dashboard root ("All files")
+  const jumpToFolder = (index: number) => {
+    if (index < 0) { setFolderPath([]); setCurrentFolderId(null); return; }
+    setFolderPath(prev => {
+      const next = prev.slice(0, index + 1);
+      setCurrentFolderId(next[next.length - 1]?.id ?? null);
+      return next;
+    });
+  };
+
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name || !slug) return;
+    setCreatingFolder(true); setNewFolderError('');
+    try {
+      const folder = await hubService.createFolder(slug, name, newFolderColor, currentFolderId);
+      setFolders(prev => [...prev, folder].sort((a, b) => a.name.localeCompare(b.name)));
+      setShowNewFolderModal(false);
+      setNewFolderName('');
+      setNewFolderColor('amber');
+    } catch (err) {
+      setNewFolderError(err instanceof Error ? err.message : 'Failed to create folder');
+    } finally { setCreatingFolder(false); }
+  };
+
   // ── tab config ────────────────────────────────────────────────────────────────
   const TABS: { key: FileTab; label: string }[] = [
     { key: 'all',     label: 'All files' },
@@ -518,6 +764,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       {showUploadMenu && <div className="fixed inset-0 z-20" onClick={() => setShowUploadMenu(false)} />}
       {showSortMenu && <div className="fixed inset-0 z-20" onClick={() => setShowSortMenu(false)} />}
       {visPopoverId && <div className="fixed inset-0 z-10" onClick={() => setVisPopoverId(null)} />}
+      {movePopoverId && <div className="fixed inset-0 z-10" onClick={() => setMovePopoverId(null)} />}
 
       {/* ── Main content ── */}
       <div className="max-w-5xl mx-auto px-4 sm:px-8 py-7">
@@ -557,6 +804,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     <span className="text-[10px] font-mono cn-text-3 w-7">{uploadProgress}%</span>
                   </div>
                 )}
+                <button
+                  onClick={() => setShowNewFolderModal(true)}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg cn-surface-2 hover:bg-black/10 dark:hover:bg-white/10 cn-text-2 text-sm font-semibold transition-colors"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  <span className="hidden sm:inline">New folder</span>
+                </button>
                 <div className="relative">
                   <button
                     onClick={() => setShowUploadMenu(!showUploadMenu)}
@@ -597,6 +851,40 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                 </button>
               </div>
             </div>
+
+            {/* Breadcrumb */}
+            {folderPath.length > 0 && (
+              <div className="flex items-center gap-1.5 text-sm mb-3 flex-wrap">
+                <button
+                  onClick={() => jumpToFolder(-1)}
+                  className="font-medium cn-text-3 hover:cn-text-1 transition-colors"
+                >
+                  All files
+                </button>
+                {folderPath.map((f, i) => (
+                  <React.Fragment key={f.id}>
+                    <ChevronRight className="w-3.5 h-3.5 cn-text-4 shrink-0" />
+                    <button
+                      onClick={() => jumpToFolder(i)}
+                      className={`font-medium truncate max-w-[160px] transition-colors ${
+                        i === folderPath.length - 1 ? 'cn-text-1' : 'cn-text-3 hover:cn-text-1'
+                      }`}
+                    >
+                      {f.name}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+
+            {/* Folder grid */}
+            {folders.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+                {folders.map((folder, index) => (
+                  <FolderCard key={folder.id} folder={folder} index={index} onOpen={() => openFolder(folder)} />
+                ))}
+              </div>
+            )}
 
             {/* Tabs */}
             <div className="flex gap-0 overflow-x-auto no-scrollbar mb-5 border-b cn-border">
@@ -763,11 +1051,18 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
               </div>
             )}
 
-            {/* No search results */}
+            {/* No search/filter results */}
             {!loading && !error && tabFiles.length > 0 && displayed.length === 0 && (
               <div className="flex flex-col items-center justify-center py-16 cn-text-4">
                 <Search className="w-10 h-10 mb-3 opacity-40" />
-                <p className="text-sm font-medium cn-text-3">No files match "{search}"</p>
+                <p className="text-sm font-medium cn-text-3">
+                  {search.trim() ? `No files match "${search}"` : `No ${kindFilter ? KIND_CFG[kindFilter].label.toLowerCase() : 'files'} match this filter`}
+                </p>
+                {kindFilter && (
+                  <button onClick={() => setKindFilter(null)} className="mt-3 text-xs font-semibold text-purple-600 dark:text-purple-300 hover:underline">
+                    Clear type filter
+                  </button>
+                )}
               </div>
             )}
 
@@ -782,6 +1077,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     const fresh = isRecent(file);
                     const vis = file.web_public ? 'web' : file.is_public ? 'hub' : 'private';
                     const isVisOpen = visPopoverId === file.id;
+                    const isMoveOpen = movePopoverId === file.id;
+                    const canMove = isOwner && (file.folder_id != null || folders.length > 0);
 
                     return (
                       <motion.div
@@ -790,10 +1087,10 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ delay: index * 0.025 }}
-                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer ${isVisOpen ? 'z-20' : 'z-0'}`}
+                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer ${(isVisOpen || isMoveOpen) ? 'z-20' : 'z-0'}`}
                         onClick={() => openPreview(file)}
                       >
-                        <FileKindBadge file={file} size={42} />
+                        <FileKindBadge file={file} slug={slug} size={42} />
 
                         <div className="flex-1 min-w-0" onClick={() => openPreview(file)}>
                           <div className="flex items-center gap-2 min-w-0">
@@ -823,6 +1120,58 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                             <button onClick={() => openPreview(file)} title="Preview" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                               <Eye className="w-4 h-4 cn-text-4" />
                             </button>
+                          )}
+
+                          {/* Move to folder (owner only, when there's somewhere to move to) */}
+                          {canMove && (
+                            <div className="relative">
+                              <button
+                                onClick={() => setMovePopoverId(isMoveOpen ? null : file.id)}
+                                disabled={movingId === file.id}
+                                title="Move to folder"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                              >
+                                {movingId === file.id ? (
+                                  <Loader2 className="w-4 h-4 cn-text-3 animate-spin" />
+                                ) : (
+                                  <FolderInput className="w-4 h-4 cn-text-4" />
+                                )}
+                              </button>
+                              <AnimatePresence>
+                                {isMoveOpen && (
+                                  <motion.div
+                                    initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                    transition={{ duration: 0.12 }}
+                                    className="absolute right-0 top-10 w-52 cn-surface border cn-border rounded-xl shadow-xl z-50 overflow-hidden py-1"
+                                  >
+                                    <p className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide cn-text-4">Move to</p>
+                                    {file.folder_id != null && (
+                                      <button
+                                        onClick={() => handleMoveFile(file, null)}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+                                      >
+                                        <Home className="w-4 h-4 cn-text-3 shrink-0" />
+                                        <span className="text-sm cn-text-1">All files (root)</span>
+                                      </button>
+                                    )}
+                                    {folders.map(folder => (
+                                      <button
+                                        key={folder.id}
+                                        onClick={() => handleMoveFile(file, folder.id)}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+                                      >
+                                        <span className={`w-5 h-5 rounded-md bg-gradient-to-br ${FOLDER_COLORS[folder.color] || FOLDER_COLORS.amber} flex items-center justify-center shrink-0`}>
+                                          <Folder className="w-2.5 h-2.5 text-white" />
+                                        </span>
+                                        <span className="text-sm cn-text-1 truncate">{folder.name}</span>
+                                      </button>
+                                    ))}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
                           )}
 
                           {/* Visibility (owner only) */}
@@ -917,40 +1266,19 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* ── Grid view ── */}
             {!loading && displayed.length > 0 && view === 'grid' && (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-[680px]">
-                {displayed.map((file, index) => {
-                  const { grad } = KIND_CFG[getKind(file)];
-                  const { Icon } = KIND_CFG[getKind(file)];
-                  const fresh = isRecent(file);
-                  return (
-                    <motion.div
-                      key={file.id}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: index * 0.02 }}
-                      className="group rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer overflow-hidden"
-                      onClick={() => openPreview(file)}
-                    >
-                      <div className={`relative h-20 bg-gradient-to-br ${grad} flex items-center justify-center`}>
-                        <Icon className="w-8 h-8 text-white/80" />
-                        {fresh && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
-                        <button
-                          onClick={e => { e.stopPropagation(); toggleStar(file.id); }}
-                          className="absolute top-2 left-2 w-6 h-6 rounded-md bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                          title={starred.has(file.id) ? 'Unstar file' : 'Star file'}
-                        >
-                          <Star className={`w-3 h-3 ${starred.has(file.id) ? 'text-amber-400 fill-amber-400' : 'text-white/70'}`} />
-                        </button>
-                      </div>
-                      <div className="p-3 min-w-0">
-                        <p className="text-xs font-semibold cn-text-1 truncate max-w-full">{file.name || 'Unnamed'}</p>
-                        <p className="font-mono text-[10px] cn-text-4 mt-1 truncate">{formatFileSize(file.size)} · {timeAgo(file.uploaded_at)}</p>
-                        <div className="mt-1.5">
-                          <UploaderChip file={file} slug={slug} memberMap={memberMap} myUserId={myUserId} />
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                {displayed.map((file, index) => (
+                  <GridFileTile
+                    key={file.id}
+                    file={file}
+                    slug={slug}
+                    index={index}
+                    starred={starred.has(file.id)}
+                    onToggleStar={() => toggleStar(file.id)}
+                    onOpen={() => openPreview(file)}
+                    memberMap={memberMap}
+                    myUserId={myUserId}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -958,8 +1286,12 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
           {/* ── Right rail (desktop only) ── */}
           <div className="hidden lg:flex flex-col gap-4 sticky top-7">
             <StorageCard files={allFiles} />
-            <RecentUploadsCard files={allFiles} myUserId={myUserId} />
-            <TypeBreakdownCard files={allFiles} />
+            <RecentUploadsCard files={allFiles} myUserId={myUserId} slug={slug} />
+            <TypeBreakdownCard
+              files={allFiles}
+              activeKind={kindFilter}
+              onSelectKind={kind => setKindFilter(prev => (prev === kind ? null : kind))}
+            />
           </div>
         </div>
       </div>
@@ -1006,6 +1338,62 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                 </button>
               </div>
               <button onClick={() => setDroppedFile(null)} className="mt-4 w-full text-xs cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">Cancel</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── New folder modal ── */}
+      <AnimatePresence>
+        {showNewFolderModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowNewFolderModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+              className="cn-surface border cn-border rounded-2xl shadow-2xl p-6 w-80 mx-4"
+              onClick={e => e.stopPropagation()}
+            >
+              <p className="text-sm font-semibold cn-text-1 mb-4">New folder</p>
+              <input
+                type="text"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); }}
+                placeholder="Folder name"
+                autoFocus
+                className="w-full px-3 py-2.5 rounded-xl border cn-border cn-surface cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-600 focus:ring-2 focus:ring-amber-500/40 focus:border-amber-600/40 focus:outline-none text-sm transition-colors"
+              />
+              <div className="flex items-center gap-2 mt-4">
+                {FOLDER_COLOR_KEYS.map(key => (
+                  <button
+                    key={key}
+                    onClick={() => setNewFolderColor(key)}
+                    title={key}
+                    className={`w-6 h-6 rounded-full bg-gradient-to-br ${FOLDER_COLORS[key]} transition-transform ${
+                      newFolderColor === key ? 'ring-2 ring-offset-2 ring-offset-transparent ring-slate-900 dark:ring-white scale-110' : ''
+                    }`}
+                  />
+                ))}
+              </div>
+              {newFolderError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{newFolderError}</p>}
+              <div className="flex items-center gap-2 mt-5">
+                <button
+                  onClick={() => setShowNewFolderModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border cn-border cn-text-2 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateFolder}
+                  disabled={!newFolderName.trim() || creatingFolder}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-semibold transition-all disabled:opacity-50"
+                >
+                  {creatingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -14,7 +14,9 @@
  *   POST   /api/files                     — upload file (auth required)
  *   GET    /api/files/:filename           — download file (auth required)
  *   DELETE /api/files/:filename           — delete file (auth required)
- *   PATCH  /api/files/:filename           — toggle visibility (auth required)
+ *   PATCH  /api/files/:filename           — update visibility and/or folder_id (auth required)
+ *   GET    /api/folders                   — list folders for a parent scope (auth required)
+ *   POST   /api/folders                   — create folder (auth required)
  *   GET    /api/posts                     — list posts (auth required)
  *   POST   /api/posts                     — create post (auth required)
  *   PATCH  /api/posts/:id                 — update post (auth required)
@@ -33,6 +35,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const multer = require('multer');
+const { execFile } = require('child_process');
 const busboy = require('busboy');
 const { PassThrough } = require('stream');
 const Minio = require('minio');
@@ -188,6 +191,82 @@ const uploadBg = multer({
   limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB cap for background images
   fileFilter: multerFileFilter,
 });
+
+// ── HEIC/HEIF conversion (server-side, applies to every upload path) ──────
+// iPhones default to saving photos as HEIC/HEIF, which no browser can decode
+// — a mobile-app upload (React Native/Expo, no client-side conversion) or a
+// direct API call would otherwise land in storage as an image every viewer
+// on the web sees as a broken link. Converting here, once, for every upload
+// path covers all clients (web and mobile alike) regardless of what — if
+// anything — the client itself already did.
+//
+// This shells out to Alpine's `heif-convert` CLI (apk package
+// `libheif-tools`, installed in api/Dockerfile) rather than using the
+// `sharp`/libvips npm package. sharp's prebuilt binaries bundle libheif
+// *without* an HEVC decoder (patent licensing) — real iPhone photos are
+// HEVC-encoded, so sharp fails on every one of them with "Support for this
+// compression format has not been built in", even though it correctly
+// reports HEIC as a supported format. Alpine's own libheif package links
+// against libde265/x265 and decodes real device photos fine. Building sharp
+// from source against that system libvips isn't a viable alternative either
+// — sharp 0.34.x requires libvips >= 8.17.3, and Alpine's repos currently
+// only ship 8.15.3.
+const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
+const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif']);
+
+function isHeicUpload(file) {
+  if (!file) return false;
+  const ext = path.extname(String(file.originalname || '')).toLowerCase();
+  return HEIC_EXTENSIONS.has(ext) || HEIC_MIME_TYPES.has(String(file.mimetype || '').toLowerCase());
+}
+
+/**
+ * Decodes a HEIC/HEIF buffer to JPEG via the `heif-convert` CLI. heif-convert
+ * only operates on real files (no stdin/stdout support), so this round-trips
+ * through a pair of uniquely-named temp files, cleaned up in `finally`
+ * regardless of outcome. Throws on failure — callers decide the fallback.
+ */
+async function decodeHeicBufferToJpeg(buffer) {
+  const base = path.join(os.tmpdir(), crypto.randomUUID());
+  const inputPath = `${base}.heic`;
+  const outputPath = `${base}.jpg`;
+  try {
+    await fs.promises.writeFile(inputPath, buffer);
+    await new Promise((resolve, reject) => {
+      execFile('heif-convert', ['-q', '90', inputPath, outputPath], { timeout: 20_000 }, (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr?.toString().trim() || err.message));
+        resolve();
+      });
+    });
+    return await fs.promises.readFile(outputPath);
+  } finally {
+    await fs.promises.unlink(inputPath).catch(() => {});
+    await fs.promises.unlink(outputPath).catch(() => {});
+  }
+}
+
+/**
+ * Converts a multer in-memory HEIC/HEIF file to JPEG, returning a new file
+ * object with updated buffer/size/mimetype/originalname. Non-HEIC files
+ * pass through untouched. On conversion failure, logs the real decoder
+ * error and returns the original file rather than failing the upload.
+ */
+async function convertHeicUpload(file) {
+  if (!isHeicUpload(file)) return file;
+  try {
+    const jpegBuffer = await decodeHeicBufferToJpeg(file.buffer);
+    return {
+      ...file,
+      buffer: jpegBuffer,
+      size: jpegBuffer.length,
+      mimetype: 'image/jpeg',
+      originalname: file.originalname.replace(/\.(heic|heif)$/i, '') + '.jpg',
+    };
+  } catch (err) {
+    console.error(`HEIC Conversion Error Details: failed to convert "${file.originalname}" (${file.mimetype}, ${file.size} bytes) — ${err.message}`);
+    return file;
+  }
+}
 
 // ── Middleware ────────────────────────────────────────────
 
@@ -714,6 +793,20 @@ async function initDb() {
         END IF;
       END $$
     `);
+    // One-time cleanup: createMembershipVotePoll() used to run its two inserts
+    // (the post, then its hub_post_polls row) outside a transaction -- a
+    // failure between them left an orphaned system-authored (author_id NULL)
+    // POLL post with no poll data ever attachable, permanently rendering
+    // "This poll's data is unavailable." in the feed. Now fixed at the source
+    // (see createMembershipVotePoll's own transaction); this just sweeps up
+    // any orphans that already exist. Safe to re-run: matches nothing once
+    // cleaned up. Scoped to author_id IS NULL so it can only ever touch this
+    // bug's own system-authored posts, never a real user's poll.
+    await client.query(`
+      DELETE FROM hub_posts p
+      WHERE p.category = 'POLL' AND p.author_id IS NULL
+        AND NOT EXISTS (SELECT 1 FROM hub_post_polls pp WHERE pp.post_id = p.id)
+    `);
     // Post title becomes optional — POLL still requires it (the question) via JS validation;
     // other categories no longer need a synthetic "first line of body" title.
     await client.query(`ALTER TABLE hub_posts ALTER COLUMN title DROP NOT NULL`);
@@ -841,6 +934,33 @@ async function initDb() {
     );
     await client.query(
       `ALTER TABLE hub_files  ADD COLUMN IF NOT EXISTS space_id           UUID    REFERENCES hub_spaces(id) ON DELETE SET NULL`,
+    );
+    // Folders are a lightweight organizational layer over hub_files, not a
+    // separate storage location — a file's folder_id is nullable (root
+    // dashboard) and a folder's parent_folder_id is nullable (root of the
+    // folder tree), so one level of drill-down works today with deeper
+    // nesting free for later. space_id mirrors hub_files' own scoping column
+    // (null = the hub-wide root Files dashboard) so a future per-space file
+    // library can reuse the same table without a schema change. Folders are
+    // hub-wide (visible to every member, like the shared file list itself);
+    // only the creator can rename/delete their own folder.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_folders (
+        id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        name             VARCHAR(200) NOT NULL,
+        color            VARCHAR(20)  NOT NULL DEFAULT 'amber',
+        parent_folder_id UUID         REFERENCES hub_folders(id) ON DELETE CASCADE,
+        space_id         UUID         REFERENCES hub_spaces(id)  ON DELETE CASCADE,
+        owner_id         UUID         REFERENCES hub_users(id)   ON DELETE SET NULL,
+        created_at       TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ  DEFAULT NOW()
+      )
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_folders_parent ON hub_folders(parent_folder_id)`,
+    );
+    await client.query(
+      `ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES hub_folders(id) ON DELETE SET NULL`,
     );
     // Unlike space_id, no FK: an initiative may be an externally-proxied one
     // with a non-UUID id, same reasoning as every other initiative_id column
@@ -2050,6 +2170,7 @@ app.post(
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
+    req.file = await convertHeicUpload(req.file);
     const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
     const avatarKey = `avatars/${req.user.id}.${ext}`;
 
@@ -2119,6 +2240,7 @@ app.post(
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
+    req.file = await convertHeicUpload(req.file);
     const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
     const bannerKey = `profile_banners/${req.user.id}.${ext}`;
 
@@ -2975,7 +3097,7 @@ app.get('/api/files', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id AS file_id, file_name, file_key, mime_type, size_bytes,
-              owner_id, is_public, web_public, uploaded_at
+              owner_id, is_public, web_public, folder_id, uploaded_at
        FROM hub_files
        WHERE (owner_id = $1 OR is_public = true)
          AND file_name NOT LIKE 'bg-%'
@@ -2998,6 +3120,7 @@ app.post('/api/files', authenticate, (req, res) => {
     return res.status(503).json({ error: 'Storage not available' });
 
   const isPublic = req.query.is_public === 'true';
+  const folderId = req.query.folder_id && req.query.folder_id !== 'null' ? req.query.folder_id : null;
 
   // Disable socket/response timeouts for large uploads
   req.socket.setTimeout(0);
@@ -3008,8 +3131,8 @@ app.post('/api/files', authenticate, (req, res) => {
 
   bb.on('file', (fieldName, fileStream, info) => {
     fileHandled = true;
-    const filename = info.filename || 'upload';
-    const mimeType = info.mimeType || 'application/octet-stream';
+    let filename = info.filename || 'upload';
+    let mimeType = info.mimeType || 'application/octet-stream';
 
     if (hasBlockedExtension(filename)) {
       fileStream.resume(); // drain so busboy can finish and release the request
@@ -3027,15 +3150,16 @@ app.post('/api/files', authenticate, (req, res) => {
         .then(() => minioClient.statObject(STORAGE_BUCKET, fileKey))
         .then(async (stat) => {
           const result = await pool.query(
-            `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public, folder_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (file_key) DO UPDATE
                SET size_bytes  = EXCLUDED.size_bytes,
                    mime_type   = EXCLUDED.mime_type,
                    is_public   = EXCLUDED.is_public,
                    web_public  = EXCLUDED.web_public,
+                   folder_id   = EXCLUDED.folder_id,
                    uploaded_at = NOW()
-             RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, uploaded_at`,
+             RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, folder_id, uploaded_at`,
             [
               filename,
               fileKey,
@@ -3044,6 +3168,7 @@ app.post('/api/files', authenticate, (req, res) => {
               req.user.id,
               isPublic,
               false,
+              folderId,
             ],
           );
           if (!res.headersSent) res.json(result.rows[0]);
@@ -3054,6 +3179,35 @@ app.post('/api/files', authenticate, (req, res) => {
             res.status(500).json({ error: 'Upload failed' });
         });
     };
+
+    // iPhone photos often arrive as HEIC/HEIF — no browser can render that
+    // natively. Buffer the (typically few-MB) file fully and re-encode to
+    // JPEG via sharp before it's stored, so every client — this streaming
+    // upload UI, the mobile app, or any future API caller — gets a globally
+    // viewable file regardless of what it already converted client-side.
+    // Bypasses the chunked/streaming path below entirely: a camera photo is
+    // nowhere near the scale that path exists for.
+    const heicExt = path.extname(filename).toLowerCase();
+    const isHeic = heicExt === '.heic' || heicExt === '.heif' ||
+      ['image/heic', 'image/heif'].includes(mimeType.toLowerCase());
+
+    if (isHeic) {
+      const heicChunks = [];
+      fileStream.on('data', (chunk) => heicChunks.push(chunk));
+      fileStream.on('end', async () => {
+        const heicBuffer = Buffer.concat(heicChunks);
+        try {
+          const jpegBuffer = await decodeHeicBufferToJpeg(heicBuffer);
+          filename = filename.replace(/\.(heic|heif)$/i, '') + '.jpg';
+          mimeType = 'image/jpeg';
+          putToStorage(jpegBuffer, jpegBuffer.length);
+        } catch (err) {
+          console.error(`HEIC Conversion Error Details: failed to convert "${filename}" (${mimeType}, ${heicBuffer.length} bytes) — ${err.message}`);
+          if (!res.headersSent) res.status(422).json({ error: 'Could not process this HEIC/HEIF image' });
+        }
+      });
+      return;
+    }
 
     // minio-js's unknown-size uploadStream/multipart path fails on small
     // files ("You must specify at least one part" — completes with zero
@@ -3302,38 +3456,104 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
   }
 });
 
-// Set file visibility — three tiers: private | hub | web
-// private: is_public=false, web_public=false  (owner only)
-// hub:     is_public=true,  web_public=false  (hub members, auth required)
-// web:     is_public=true,  web_public=true   (anyone with the link, no auth)
+// Update a file — visibility and/or folder placement, independently or together.
+// visibility (three tiers): private | hub | web
+//   private: is_public=false, web_public=false  (owner only)
+//   hub:     is_public=true,  web_public=false  (hub members, auth required)
+//   web:     is_public=true,  web_public=true   (anyone with the link, no auth)
+// folder_id: the folder to move this file into, or null to move it to the
+// root of the Files dashboard. Keyed by file_name (not id) like every other
+// file route in this file — a UUID-keyed route would collide with this same
+// path pattern, and the frontend already addresses files by name everywhere.
 app.patch('/api/files/:filename', authenticate, async (req, res) => {
   const fileName = decodeURIComponent(req.params.filename);
-  const { visibility } = req.body;
+  const { visibility, folder_id } = req.body;
 
-  if (!['private', 'hub', 'web'].includes(visibility)) {
+  if (visibility === undefined && folder_id === undefined) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+  if (visibility !== undefined && !['private', 'hub', 'web'].includes(visibility)) {
     return res
       .status(400)
       .json({ error: 'visibility must be private, hub, or web' });
   }
 
-  const is_public = visibility !== 'private';
-  const web_public = visibility === 'web';
+  const sets = [];
+  const values = [];
+  let i = 1;
+  if (visibility !== undefined) {
+    sets.push(`is_public = $${i++}`, `web_public = $${i++}`);
+    values.push(visibility !== 'private', visibility === 'web');
+  }
+  if (folder_id !== undefined) {
+    sets.push(`folder_id = $${i++}`);
+    values.push(folder_id || null);
+  }
+  values.push(fileName, req.user.id);
 
   try {
     const result = await pool.query(
-      `UPDATE hub_files SET is_public = $1, web_public = $2
-       WHERE file_name = $3 AND owner_id = $4
-       RETURNING id`,
-      [is_public, web_public, fileName, req.user.id],
+      `UPDATE hub_files SET ${sets.join(', ')}
+       WHERE file_name = $${i++} AND owner_id = $${i++}
+       RETURNING id, folder_id, is_public, web_public`,
+      values,
     );
 
     if (!result.rows[0])
       return res.status(404).json({ error: 'File not found' });
     publicFileCache.delete(fileName);
-    res.json({ success: true });
+    res.json({ success: true, ...result.rows[0] });
   } catch (err) {
     console.error('Patch error:', err);
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// ── Folder routes ────────────────────────────────────────
+// GET  /api/folders?parent_id=<uuid>  — child folders of that parent, or of
+//                                        the dashboard root when omitted
+// POST /api/folders                   — create a folder (optionally nested)
+app.get('/api/folders', authenticate, async (req, res) => {
+  try {
+    const parentId = req.query.parent_id && req.query.parent_id !== 'null' ? req.query.parent_id : null;
+    const result = await pool.query(
+      `SELECT f.id, f.name, f.color, f.parent_folder_id, f.owner_id, f.created_at, f.updated_at,
+              (SELECT COUNT(*) FROM hub_files hf
+               WHERE hf.folder_id = f.id AND (hf.owner_id = $2 OR hf.is_public = true)) AS file_count
+       FROM hub_folders f
+       WHERE f.space_id IS NULL AND f.parent_folder_id IS NOT DISTINCT FROM $1
+       ORDER BY f.name ASC`,
+      [parentId, req.user.id],
+    );
+    res.json({ folders: result.rows.map(r => ({ ...r, file_count: Number(r.file_count) })) });
+  } catch (err) {
+    console.error('List folders error:', err);
+    res.status(500).json({ error: 'Failed to list folders' });
+  }
+});
+
+app.post('/api/folders', authenticate, async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim().slice(0, 200);
+    if (!name) return res.status(400).json({ error: 'Folder name is required' });
+    const color = String(req.body?.color || 'amber').slice(0, 20);
+    const parentFolderId = req.body?.parent_folder_id || null;
+
+    if (parentFolderId) {
+      const parentCheck = await pool.query(`SELECT id FROM hub_folders WHERE id = $1`, [parentFolderId]);
+      if (!parentCheck.rows[0]) return res.status(400).json({ error: 'Parent folder not found' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO hub_folders (name, color, parent_folder_id, owner_id)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, color, parent_folder_id, owner_id, created_at, updated_at`,
+      [name, color, parentFolderId, req.user.id],
+    );
+    res.json({ ...result.rows[0], file_count: 0 });
+  } catch (err) {
+    console.error('Create folder error:', err);
+    res.status(500).json({ error: 'Failed to create folder' });
   }
 });
 
@@ -4013,6 +4233,7 @@ app.post(
       let mediaFileId = null;
 
       if (req.file) {
+        req.file = await convertHeicUpload(req.file);
         const fileKey = `${req.user.id}/${req.file.originalname}`;
         if (minioClient) {
           await minioClient.putObject(
@@ -4171,6 +4392,7 @@ app.patch(
       let mediaFileId = existing.media_file_id;
       if (remove_media === 'true') mediaFileId = null;
       if (req.file) {
+        req.file = await convertHeicUpload(req.file);
         const fileKey = `${req.user.id}/${req.file.originalname}`;
         if (minioClient) {
           await minioClient.putObject(
@@ -5074,27 +5296,41 @@ app.get('/api/decisions', authenticate, async (req, res) => {
 // to open this vote -- registering did. Fire-and-forget safe; a failure here
 // just means the pending account falls back to needing manual admin approval.
 async function createMembershipVotePoll(userId, username, displayName, tags) {
+  // The post and its poll extension row are two dependent inserts -- without a
+  // transaction, a failure between them (dropped connection, pool hiccup, a
+  // restart mid-request) used to leave a permanently orphaned hub_posts row
+  // (category='POLL', no matching hub_post_polls row), which the feed can
+  // never render as anything but "This poll's data is unavailable." since
+  // there's no poll data to attach and no way to create it after the fact.
+  // BEGIN/COMMIT/ROLLBACK ensures a failed second insert undoes the first
+  // instead of leaving a dead post behind.
+  const client = await pool.connect();
   try {
     const shownName = displayName && displayName !== username ? `${displayName} (@${username})` : `@${username}`;
     const tagsLine = Array.isArray(tags) && tags.length > 0
       ? `Says they're interested in: ${tags.join(', ')}.`
       : "Didn't list any interests yet.";
     const body = `${shownName} just signed up and wants to join. ${tagsLine} If you know who this is, say so in the replies — that's usually enough for people to decide.`;
-    const { rows: postRows } = await pool.query(
+    await client.query('BEGIN');
+    const { rows: postRows } = await client.query(
       `INSERT INTO hub_posts (category, title, body, author_id, visibility)
        VALUES ('POLL', $1, $2, NULL, 'hub')
        RETURNING id, title`,
       [`Approve ${shownName} to join?`, body],
     );
     const post = postRows[0];
-    await pool.query(
+    await client.query(
       `INSERT INTO hub_post_polls (post_id, options, quorum_pct, pass_pct, pending_user_id)
        VALUES ($1, $2, $3, $4, $5)`,
       [post.id, JSON.stringify(['Approve', 'Reject']), 10, 50, userId],
     );
+    await client.query('COMMIT');
     logMod(null, 'create_poll', 'poll', post.id, post.title, 'Opened automatically: join_approval_mode is member_vote', { pending_user_id: userId });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('createMembershipVotePoll error:', err);
+  } finally {
+    client.release();
   }
 }
 
@@ -6633,6 +6869,7 @@ app.post(
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
+    req.file = await convertHeicUpload(req.file);
     const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
     const fileName = `bg-${req.user.id}-${Date.now()}.${ext}`;
 
@@ -7810,6 +8047,7 @@ app.post('/api/initiatives/:id/resources/file', authenticate, upload.single('fil
   if (!req.file) return res.status(400).json({ error: 'No file provided' });
   if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
   try {
+    req.file = await convertHeicUpload(req.file);
     const fileKey = `initiative-resources/${req.params.id}/${crypto.randomUUID()}-${req.file.originalname}`;
     await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
       'Content-Type': req.file.mimetype,
@@ -8173,6 +8411,7 @@ app.post(
     if (!req.file) return res.status(400).json({ error: 'No file provided' });
     try {
       await assertInitiativeCreator(req.params.id, req);
+      req.file = await convertHeicUpload(req.file);
       const fileKey = `initiative-banners/${req.params.id}/${req.file.originalname}`;
       if (minioClient) {
         await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
@@ -9133,6 +9372,7 @@ app.post(
 
       let mediaFileId = null;
       if (req.file) {
+        req.file = await convertHeicUpload(req.file);
         const fileKey = `spaces/${spaceId}/${req.user.id}/${req.file.originalname}`;
         if (minioClient) {
           await minioClient.putObject(
@@ -9243,6 +9483,7 @@ app.post(
           .status(403)
           .json({ error: 'Only space admins can change the banner' });
 
+      req.file = await convertHeicUpload(req.file);
       const fileKey = `space-banners/${spaceRows[0].id}/${req.file.originalname}`;
       if (minioClient) {
         await minioClient.putObject(
