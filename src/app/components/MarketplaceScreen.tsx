@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { marketplaceService } from '../services/marketplaceService';
 import type { MarketplaceBannerConfig } from '../services/marketplaceService';
 import { useHub } from '../context/HubContext';
+import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
 import { CreateVendorModal } from './CreateVendorModal';
 import { AddListingModal } from './AddListingModal';
@@ -91,18 +92,14 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
   const kind = KIND_META[listing.price_type] ?? KIND_META.fixed;
   const imageUrl = listing.image_file_name ? marketplaceService.getListingImageUrl(hubSlug, listing.image_file_name) : null;
   const vendorLogoUrl = listing.vendor_logo_file_name ? marketplaceService.getVendorLogoUrl(hubSlug, listing.vendor_logo_file_name) : null;
-  const [saved, setSaved] = useState(() => {
-    const ids = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('saved_listings') || '[]') : [];
-    return ids.includes(listing.id);
-  });
-
+  // Account-level (hub_user_preferences) — see useSavedIds for why (this
+  // was localStorage-only, so a save never followed the account across
+  // devices/browsers).
+  const { ids: savedIds, toggle: toggleSavedId } = useSavedIds('saved_listings', 'saved_listings');
+  const saved = savedIds.includes(listing.id);
   const toggleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const ids: string[] = JSON.parse(localStorage.getItem('saved_listings') || '[]');
-    const idx = ids.indexOf(listing.id);
-    if (idx !== -1) ids.splice(idx, 1); else ids.push(listing.id);
-    localStorage.setItem('saved_listings', JSON.stringify(ids));
-    setSaved(!saved);
+    toggleSavedId(listing.id);
   };
 
   return (

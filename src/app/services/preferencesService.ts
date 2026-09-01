@@ -15,6 +15,11 @@ export interface UserPreferences {
   nav_pinned?: string;
   /** Desktop nav chrome: floating dock vs. left sidebar. */
   nav_layout?: 'dock' | 'sidebar';
+  /** JSON-encoded arrays of bookmarked ids — account-level so a save follows
+   *  the user across devices/browsers instead of one browser's localStorage. */
+  saved_atlas_pins?: string;
+  saved_listings?: string;
+  saved_vendors?: string;
 }
 
 class PreferencesService {

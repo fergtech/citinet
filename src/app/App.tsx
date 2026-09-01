@@ -67,6 +67,14 @@ const screenDescriptions: Record<string, string> = {
 
 function WelcomeRoute() {
   const navigate = useNavigate();
+  // The marketing splash is only for someone with zero hub history --
+  // anyone who has ever joined a hub goes straight to the picker instead,
+  // regardless of why getSubdomain() came up empty (no active-hub pointer,
+  // mid-Switch-Hub browsing, etc.). Being logged into a hub should make the
+  // welcome screen unreachable, full stop.
+  if (hubService.getJoinedHubs().length > 0) {
+    return <Navigate to="/join" replace />;
+  }
   return (
     <WelcomeScreen
       onJoinNetwork={() => navigate('/join')}

@@ -54,6 +54,13 @@ class MarketplaceService {
     return this.request(hubSlug, `/api/marketplace/listings${params}`);
   }
 
+  /** All vendor pages in the hub — used to find a given member's vendor
+   *  (there's no by-owner-user-id lookup endpoint, so callers filter by
+   *  owner_user_id client-side, same pattern as other member-scoped lists). */
+  async listVendors(hubSlug: string): Promise<HubVendor[]> {
+    return this.request(hubSlug, '/api/vendors');
+  }
+
   async getMyVendor(hubSlug: string): Promise<HubVendor | null> {
     try {
       return await this.request<HubVendor>(hubSlug, '/api/vendors/me');

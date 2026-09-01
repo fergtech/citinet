@@ -6,6 +6,7 @@ import { spacesService } from '../services/spacesService';
 export type ActivityType =
   | 'discussion'
   | 'announcement'
+  | 'event'
   | 'project'
   | 'request'
   | 'file_shared'
@@ -31,6 +32,25 @@ export interface ActivityItem {
   cta?: string;
   /** Reply count for post-type activities */
   replyCount?: number;
+  /** Resolved image/video URL — post media or an image-type file share. Card
+   *  renders this as a thumbnail/banner instead of the plain type icon. */
+  mediaUrl?: string;
+  mediaKind?: 'image' | 'video';
+  /** Non-image file shares: extension + byte size for the document-card preview */
+  fileExt?: string;
+  fileSize?: number;
+  /** A body snippet distinct from `title`, shown as a quoted excerpt for
+   *  text-only posts that have both a title and body. */
+  excerpt?: string;
+  /** EVENT-only fields, mirrored from HubPost */
+  eventDate?: string | null;
+  eventLocation?: string | null;
+  rsvpCount?: number;
+}
+
+function mediaKindForName(name: string): 'image' | 'video' {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext) ? 'video' : 'image';
 }
 
 export function timeAgo(date: Date): string {
@@ -71,6 +91,7 @@ function friendlyFileLabel(mimeType?: string, fileName?: string): string {
 const POST_CATEGORY_MAP: Record<string, ActivityType> = {
   DISCUSSION: 'discussion',
   ANNOUNCEMENT: 'announcement',
+  EVENT: 'event',
   PROJECT: 'project',
   REQUEST: 'request',
 };
@@ -118,6 +139,13 @@ export function useActivityFeed(hubSlug: string) {
       for (const post of postsResult.value.slice(0, 5)) {
         const type: ActivityType = POST_CATEGORY_MAP[post.category?.toUpperCase()] ?? 'discussion';
         const actor = (post as any).author_username || 'A neighbor';
+        const mediaUrl = post.media_file_name
+          ? (hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined)
+          : (post.media_url ?? undefined);
+        const mediaKind = mediaUrl
+          ? mediaKindForName(post.media_file_name || post.media_url || '')
+          : undefined;
+        const hasTitle = !!post.title;
         raw.push({
           id: `post-${post.id}`,
           type,
@@ -130,6 +158,13 @@ export function useActivityFeed(hubSlug: string) {
           navigateTo: 'feed',
           itemId: post.id,
           replyCount: (post as any).reply_count ?? 0,
+          mediaUrl,
+          mediaKind,
+          // Only shown when there's a real title so this doesn't just repeat it.
+          excerpt: hasTitle && post.body ? post.body.slice(0, 160) : undefined,
+          eventDate: type === 'event' ? post.event_date : undefined,
+          eventLocation: type === 'event' ? post.event_location : undefined,
+          rsvpCount: type === 'event' ? post.rsvp_count : undefined,
         });
       }
     }
@@ -143,6 +178,8 @@ export function useActivityFeed(hubSlug: string) {
       for (const file of publicFiles) {
         const member = file.owner_id ? memberByUserId[file.owner_id] : undefined;
         const actor = member?.username || 'A neighbor';
+        const isImage = (file.mime_type ?? '').startsWith('image/')
+          || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg'].includes(file.name.split('.').pop()?.toLowerCase() ?? '');
         raw.push({
           id: `file-${file.id}`,
           type: 'file_shared',
@@ -154,6 +191,10 @@ export function useActivityFeed(hubSlug: string) {
           timestamp: new Date(file.uploaded_at!),
           navigateTo: 'files',
           itemId: file.name,
+          mediaUrl: isImage ? (hubService.getPublicFileUrl(hubSlug, file.name) ?? undefined) : undefined,
+          mediaKind: isImage ? 'image' : undefined,
+          fileExt: isImage ? undefined : (file.name.split('.').pop()?.toLowerCase() || undefined),
+          fileSize: isImage ? undefined : file.size,
         });
       }
     }

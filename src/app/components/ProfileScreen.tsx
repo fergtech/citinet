@@ -4,18 +4,17 @@ import {
   MapPin, Shield, Calendar, MessageCircle,
   Loader2, AlertCircle, Globe,
   ImagePlus, Pencil, ArrowLeft,
-  FileText, Pin, Hash, Building2, Sparkles,
-  BookOpen, Map, Share2, Copy, Check, X, Users, Lock,
+  FileText, Sparkles, Film,
+  Share2, Copy, Check, X, Users, Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
-import { atlasService } from '../services/atlasService';
+import { marketplaceService } from '../services/marketplaceService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
-import { NoteDetailModal } from './NoteDetailModal';
-import type { HubMember, HubPost, HubNote } from '../types/hub';
-import type { AtlasPin } from '../types/atlas';
+import { ListingCard } from './MarketplaceScreen';
+import type { HubMember, HubPost, HubVendor, HubListing } from '../types/hub';
 import type { LucideIcon } from 'lucide-react';
 
 // ── Helpers ────────────────────────────────────────────────
@@ -35,17 +34,25 @@ function formatJoinDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }); }
   catch { return ''; }
 }
+// Relative "time ago" all the way up — no fallback to an absolute date, so
+// a years-old post's card still reads as "2y ago" rather than a raw date.
+// Month/year buckets use average lengths (a la a standard timeAgo utility)
+// so they don't drift as actual calendar months vary.
+const TIMEAGO_MONTH_SECONDS = 2_629_800; // 365.25 / 12 days
+const TIMEAGO_YEAR_SECONDS = 31_557_600; // 365.25 days — accounts for leap years
 function formatTimestamp(iso: string): string {
   try {
     if (!iso) return '';
     const d = new Date(iso);
     if (isNaN(d.getTime())) return '';
     const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-    if (diff < 60) return 'just now';
+    if (diff < 60) return 'just now'; // also covers a future/clock-skewed timestamp
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
+    if (diff < TIMEAGO_MONTH_SECONDS) return `${Math.floor(diff / 604800)}w ago`;
+    if (diff < TIMEAGO_YEAR_SECONDS) return `${Math.floor(diff / TIMEAGO_MONTH_SECONDS)}mo ago`;
+    return `${Math.floor(diff / TIMEAGO_YEAR_SECONDS)}y ago`;
   } catch { return ''; }
 }
 
@@ -63,53 +70,24 @@ const BANNER_GRADIENTS = [
   { from: '#c2410c', to: '#be123c' }, { from: '#374151', to: '#111827' },
 ];
 
-type Tab = 'overview' | 'posts' | 'notes' | 'pins';
+type Tab = 'overview' | 'activity' | 'resources' | 'requests';
 
-// ── Small presentational pieces (mirror the design system's Stat / SkillTag / DetailRow / ListRow) ──
+// ── Small presentational pieces (mirror the design system's SkillTag / ListRow) ──
 
-function Stat({ icon: Icon, value, label }: { icon: LucideIcon; value: number; label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Icon className="w-4 h-4 cn-text-4 shrink-0" />
-      <div>
-        <div className="font-mono text-xl font-bold cn-text-1 leading-tight">{value}</div>
-        <div className="text-[11px] cn-text-3 whitespace-nowrap">{label}</div>
-      </div>
-    </div>
-  );
-}
-
+// Hero-only (see ProfileScreen's hero card below) — the hero now sits on a
+// fixed-dark scrim over the member's own banner image/gradient regardless of
+// site theme, so this uses hardcoded light colors instead of the usual
+// theme-adaptive cn-text-* tokens (which would go near-black-on-near-black
+// in light mode).
 function SkillTag({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full cn-surface-2 border cn-border text-xs font-semibold cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/15 text-xs font-semibold text-white/90 hover:bg-white/20 transition-colors"
     >
-      <Sparkles className="w-3 h-3 cn-text-3 shrink-0" />{children}
+      <Sparkles className="w-3 h-3 text-white/60 shrink-0" />{children}
     </button>
   );
-}
-
-function DetailRow({ icon: Icon, label, children, first, href, onClick }: {
-  icon: LucideIcon; label: string; children: React.ReactNode; first?: boolean; href?: string; onClick?: () => void;
-}) {
-  const row = (
-    <>
-      <span className="w-8 h-8 rounded-lg cn-surface-2 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 cn-text-3" />
-      </span>
-      <span className="text-sm cn-text-3 shrink-0">{label}</span>
-      <span className="text-sm font-semibold cn-text-1 truncate flex-1 text-right">{children}</span>
-    </>
-  );
-  const cls = `w-full flex items-center gap-3 px-3.5 py-3 text-left ${first ? '' : 'border-t cn-border'}`;
-  if (href) {
-    return <a href={href} target="_blank" rel="noopener noreferrer" className={`${cls} hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>{row}</a>;
-  }
-  if (onClick) {
-    return <button onClick={onClick} className={`${cls} hover:bg-black/5 dark:hover:bg-white/5 transition-colors`}>{row}</button>;
-  }
-  return <div className={cls}>{row}</div>;
 }
 
 function ListGroup({ children }: { children: React.ReactNode }) {
@@ -123,6 +101,136 @@ function EmptyTab({ icon: Icon, label, action }: { icon: LucideIcon; label: stri
       <p className="text-sm cn-text-3">{label}</p>
       {action}
     </div>
+  );
+}
+
+/** One post row — shared by the Overview snapshot, Activity tab, and
+ *  Requests tab, which all render the same underlying `posts` data
+ *  (just filtered/sliced differently). */
+function PostRow({ post, first, onClick, showBody = true }: { post: HubPost; first?: boolean; onClick: () => void; showBody?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 ${first ? '' : 'border-t cn-border'}`}
+    >
+      <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
+        <FileText className="w-4 h-4 cn-text-3" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
+            {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
+          </span>
+          <span className="text-xs cn-text-4">{formatTimestamp(post.created_at)}</span>
+        </div>
+        <p className="text-sm font-semibold cn-text-1 truncate">{post.title}</p>
+        {showBody && post.body && (
+          <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
+        )}
+      </div>
+      {post.reply_count > 0 && (
+        <div className="flex items-center gap-1 text-xs cn-text-4 shrink-0 mt-0.5">
+          <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
+        </div>
+      )}
+    </button>
+  );
+}
+
+/** Grid-tile variant of a post — used by Overview's "Recent activity" card,
+ *  styled to match ListingCard (the tile used by the "Shared resources" grid
+ *  right below it) rather than PostRow's bordered-list-row look.
+ *
+ *  Fixed height (not just flex-stretch) so all three tiles in the row stay
+ *  aligned regardless of content — flex-stretch alone wouldn't do it on
+ *  mobile, where the grid drops to one column and each card is the only
+ *  item in its own row.
+ *
+ *  Whenever the post has an attachment, that media fills the card as a
+ *  cover background — same scrim-over-image pattern as the profile hero,
+ *  badge/text/footer switching to white so they stay legible over any
+ *  photo. A video attachment autoplays muted/looped/inline right in the
+ *  tile, same treatment as the video previews in the dashboard's Featured
+ *  section (FeaturedCarousel), rather than a static placeholder; a load
+ *  error on either falls back to the plain themed card. Any post text
+ *  still renders, now overlaid on the cover. Only a genuinely text-only
+ *  post (no media) gets the plain themed card; a post with neither text
+ *  nor media falls back to a "No content preview" note so it never renders
+ *  as dead blank space. */
+function PostGridCard({ post, hubSlug, onClick }: { post: HubPost; hubSlug: string; onClick: () => void }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
+  const excerpt = post.title || post.body?.trim() || '';
+  const mediaName = post.media_file_name || post.media_url || '';
+  const isVideo = ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(mediaName.split('.').pop()?.toLowerCase() ?? '');
+  const rawMediaUrl = post.media_file_name ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) : (post.media_url ?? null);
+  const hasImageCover = !!rawMediaUrl && !isVideo && !imgFailed;
+  const hasVideoCover = !!rawMediaUrl && isVideo && !videoFailed;
+  const isCoverMode = hasImageCover || hasVideoCover;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative h-40 text-left flex flex-col overflow-hidden rounded-2xl transition-all group ${
+        isCoverMode ? '' : 'cn-glass hover:border-black/15 dark:hover:border-white/15'
+      }`}
+    >
+      {hasImageCover && (
+        <img
+          src={rawMediaUrl!}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          onError={() => setImgFailed(true)}
+        />
+      )}
+      {hasVideoCover && (
+        <video
+          src={rawMediaUrl!}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          onError={() => setVideoFailed(true)}
+        />
+      )}
+      {isCoverMode && (
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/0" />
+      )}
+      {hasVideoCover && (
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur-sm">
+          <Film className="w-3 h-3 text-white" />
+        </div>
+      )}
+
+      <div className="relative flex flex-col h-full p-3.5">
+        <span className={`self-start shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${
+          isCoverMode ? 'bg-white/15 backdrop-blur-sm text-white ring-white/25' : (CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION)
+        }`}>
+          {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
+        </span>
+
+        <div className="flex-1 min-h-0 flex items-end py-1.5">
+          {excerpt ? (
+            <p className={`text-sm font-semibold line-clamp-3 leading-snug ${isCoverMode ? 'text-white' : 'cn-text-1'}`}>
+              {excerpt}
+            </p>
+          ) : !isCoverMode ? (
+            <p className="text-[11px] cn-text-4 italic">No content preview</p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-between shrink-0">
+          <span className={`text-[10px] font-mono ${isCoverMode ? 'text-white/70' : 'cn-text-4'}`}>{formatTimestamp(post.created_at)}</span>
+          {post.reply_count > 0 && (
+            <span className={`flex items-center gap-1 text-[10px] ${isCoverMode ? 'text-white/70' : 'cn-text-4'}`}>
+              <MessageCircle className="w-3 h-3" />{post.reply_count}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -141,20 +249,17 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
-  const [notes, setNotes]             = useState<HubNote[]>([]);
-  const [pins, setPins]               = useState<AtlasPin[]>([]);
+  const [vendor, setVendor]           = useState<HubVendor | null>(null);
+  const [listings, setListings]       = useState<HubListing[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [activeTab, setActiveTab]     = useState<Tab>('overview');
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
-  const [selectedNote, setSelectedNote] = useState<HubNote | null>(null);
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showBioModal, setShowBioModal] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [forkingNoteId, setForkingNoteId] = useState<string | null>(null);
-  const [forkedNoteId, setForkedNoteId] = useState<string | null>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = !!currentUser?.hubUserId && currentUser.hubUserId === userId;
@@ -166,20 +271,28 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     setLoading(true);
     setError('');
     setActiveTab('overview');
+    setVendor(null);
+    setListings([]);
     Promise.allSettled([
       hubService.getMember(slug, userId),
       hubService.listPosts(slug),
-      atlasService.getPins(slug),
-      hubService.getPublicNotes(slug, userId),
-    ]).then(([memberRes, postsRes, pinsRes, notesRes]) => {
+      marketplaceService.listVendors(slug),
+    ]).then(([memberRes, postsRes, vendorsRes]) => {
       if (memberRes.status === 'fulfilled') {
         setMember(memberRes.value);
         if (postsRes.status === 'fulfilled')
           setPosts(postsRes.value.filter(p => p.author_id === userId));
-        if (pinsRes.status === 'fulfilled')
-          setPins(pinsRes.value.filter(p => p.authorUsername === memberRes.value?.username));
-        if (notesRes.status === 'fulfilled')
-          setNotes(notesRes.value);
+        // No by-owner-user-id vendor lookup endpoint — find it in the full
+        // vendor list, same client-side-filter pattern as posts above.
+        if (vendorsRes.status === 'fulfilled') {
+          const myVendor = vendorsRes.value.find(v => v.owner_user_id === userId) ?? null;
+          setVendor(myVendor);
+          if (myVendor) {
+            marketplaceService.getVendor(slug, myVendor.id)
+              .then(({ listings }) => setListings(listings))
+              .catch(() => {});
+          }
+        }
       } else {
         setError('Could not load profile.');
       }
@@ -246,16 +359,6 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     onNavigate('messages');
   };
 
-  const handleForkNote = async (noteId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setForkingNoteId(noteId);
-    try {
-      await hubService.forkNote(slug, noteId);
-      setForkedNoteId(noteId);
-      setTimeout(() => setForkedNoteId(null), 2000);
-    } catch { /* silent */ }
-    finally { setForkingNoteId(null); }
-  };
 
   // ── Loading / Error ──────────────────────────────────────
 
@@ -276,11 +379,17 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const bio = member.bio ?? '';
   const bioClamped = bio.length > 280 ? bio.slice(0, 280).trim() + '…' : bio;
 
+  // Requests get their own tab, so "Activity" (general posts, discussions,
+  // announcements) is everything else. Same underlying `posts` fetch, just
+  // split by the category the post already carries — no extra request.
+  const activityPosts = posts.filter(p => p.category !== 'REQUEST');
+  const requestPosts = posts.filter(p => p.category === 'REQUEST');
+
   const TABS: { value: Tab; label: string }[] = [
     { value: 'overview', label: 'Overview' },
-    { value: 'posts', label: `Posts${posts.length ? ` (${posts.length})` : ''}` },
-    { value: 'notes', label: `Notes${notes.length ? ` (${notes.length})` : ''}` },
-    { value: 'pins', label: `Pins${pins.length ? ` (${pins.length})` : ''}` },
+    { value: 'activity', label: `Activity${activityPosts.length ? ` (${activityPosts.length})` : ''}` },
+    { value: 'resources', label: `Resources${listings.length ? ` (${listings.length})` : ''}` },
+    { value: 'requests', label: `Requests${requestPosts.length ? ` (${requestPosts.length})` : ''}` },
   ];
 
   // ── Render ───────────────────────────────────────────────
@@ -299,139 +408,192 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           </button>
         </div>
 
-        {/* ══ Hero card — banner, avatar, name, stats, skills ══ */}
+        {/* ══ Hero card — banner, avatar, name, stats, skills ══
+            The banner (image, solid, or gradient) now extends the full
+            height of the card as an absolute background layer (z-0), with a
+            fixed-dark feathering scrim (z-10) fading it into the card's own
+            surface color at the bottom so avatar/name/buttons/stats/tags
+            (z-20) stay readable over *any* custom image a member uploads —
+            in both themes, which is why this content uses hardcoded white/
+            light colors below instead of the usual theme-adaptive cn-text-*
+            tokens (see the Stat/SkillTag helpers above). */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl overflow-hidden cn-glass mb-6"
+          className="relative rounded-2xl overflow-hidden cn-glass mb-6"
         >
+          {/* Background layer — full-bleed banner image/solid/gradient */}
           <div
-            className={`relative h-32 ${isOwnProfile ? 'cursor-pointer group' : ''}`}
+            className="absolute inset-0 z-0"
             style={hasBannerStyle ? { ...bannerStyle, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: 'var(--cn-grad-identity)' }}
-            onClick={() => isOwnProfile && setShowBannerEditor(v => !v)}
           >
             {!hasBannerStyle && (
               <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 120% at 80% -20%, rgba(255,255,255,.22), transparent 60%)' }} />
             )}
-            {isOwnProfile && (
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
-                  {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Edit banner
-                </span>
-              </div>
-            )}
           </div>
-          {isOwnProfile && (
-            <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
-          )}
 
-          <div className="px-5 sm:px-7 pb-7 pt-3">
-            <div className="flex items-start justify-between gap-4">
-              {/* Avatar — overlaps banner */}
-              <div className="relative -mt-12 shrink-0">
-                {member.avatar_url && avatarUrl
-                  ? <img src={avatarUrl} alt={displayName}
-                      className="w-[88px] h-[88px] rounded-full object-cover ring-4 ring-white dark:ring-zinc-900 shadow-md"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  : <div className={`w-[88px] h-[88px] rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white dark:ring-zinc-900 shadow-md`}>
-                      {(displayName || member.username).charAt(0).toUpperCase()}
-                    </div>
-                }
+          {/* Scrim layer — clear near the top edge, feathering down to the
+              card's own dark surface color by the bottom. Fixed (non-theme)
+              colors, matching the background layer above. */}
+          <div
+            className="absolute inset-0 z-10 pointer-events-none"
+            style={{
+              background: 'linear-gradient(to bottom, rgba(15,23,42,0) 0%, rgba(15,23,42,0.4) 35%, rgba(15,23,42,0.85) 70%, var(--cn-surface-1, #090d16) 100%)',
+            }}
+          />
+
+          {/* Content layer — everything interactive lives above the scrim */}
+          <div className="relative z-20">
+            <div
+              className={`relative h-32 ${isOwnProfile ? 'cursor-pointer group' : ''}`}
+              onClick={() => isOwnProfile && setShowBannerEditor(v => !v)}
+            >
+              {isOwnProfile && (
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/60 text-white text-xs font-semibold">
+                    {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Edit banner
+                  </span>
+                </div>
+              )}
+            </div>
+            {isOwnProfile && (
+              <input ref={bannerInputRef} type="file" accept="image/*" className="hidden" onChange={handleBannerImageUpload} />
+            )}
+
+            <div className="px-5 sm:px-7 pb-7 pt-3">
+              <div className="flex items-start justify-between gap-4">
+                {/* Avatar — overlaps banner */}
+                <div className="relative -mt-12 shrink-0">
+                  {member.avatar_url && avatarUrl
+                    ? <img src={avatarUrl} alt={displayName}
+                        className="w-[88px] h-[88px] rounded-full object-cover ring-4 ring-white/20 backdrop-blur-sm shadow-md"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    : <div className={`w-[88px] h-[88px] rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white/20 backdrop-blur-sm shadow-md`}>
+                        {(displayName || member.username).charAt(0).toUpperCase()}
+                      </div>
+                  }
+                </div>
+
+                {/* Action cluster — desktop: Message/Edit + Share, inline next to the avatar */}
+                <div className="hidden sm:flex items-center gap-2 pt-4 shrink-0">
+                  {isOwnProfile ? (
+                    <button
+                      onClick={() => onNavigate('account')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-white/25 bg-white/10 backdrop-blur-sm hover:bg-white/20 text-xs font-semibold text-white transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Edit Profile
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleMessage}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" /> Message
+                    </button>
+                  )}
+                  {member.profile_visibility !== 'private' && (
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      title="Share profile"
+                      className="w-9 h-9 rounded-lg border border-white/25 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/20 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Action cluster — desktop: Message/Edit + Share, inline next to the avatar */}
-              <div className="hidden sm:flex items-center gap-2 pt-4 shrink-0">
+              {/* Action cluster — mobile, full-width row */}
+              <div className="sm:hidden flex items-center gap-2 mt-3">
                 {isOwnProfile ? (
                   <button
                     onClick={() => onNavigate('account')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border cn-border cn-surface hover:bg-black/5 dark:hover:bg-white/5 text-xs font-semibold cn-text-2 transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-white/25 bg-white/10 backdrop-blur-sm text-sm font-semibold text-white transition-colors"
                   >
-                    <Pencil className="w-3.5 h-3.5" /> Edit Profile
+                    <Pencil className="w-4 h-4" /> Edit Profile
                   </button>
                 ) : (
                   <button
                     onClick={handleMessage}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
                   >
-                    <MessageCircle className="w-3.5 h-3.5" /> Message
+                    <MessageCircle className="w-4 h-4" /> Message
                   </button>
                 )}
                 {member.profile_visibility !== 'private' && (
                   <button
                     onClick={() => setShowShareModal(true)}
                     title="Share profile"
-                    className="w-9 h-9 rounded-lg border cn-border flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    className="w-11 h-11 shrink-0 rounded-xl border border-white/25 bg-white/10 backdrop-blur-sm flex items-center justify-center text-white"
                   >
                     <Share2 className="w-4 h-4" />
                   </button>
                 )}
               </div>
-            </div>
 
-            {/* Action cluster — mobile, full-width row */}
-            <div className="sm:hidden flex items-center gap-2 mt-3">
-              {isOwnProfile ? (
-                <button
-                  onClick={() => onNavigate('account')}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border cn-border cn-surface text-sm font-semibold cn-text-2 transition-colors"
-                >
-                  <Pencil className="w-4 h-4" /> Edit Profile
-                </button>
-              ) : (
-                <button
-                  onClick={handleMessage}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
-                >
-                  <MessageCircle className="w-4 h-4" /> Message
-                </button>
-              )}
-              {member.profile_visibility !== 'private' && (
-                <button
-                  onClick={() => setShowShareModal(true)}
-                  title="Share profile"
-                  className="w-11 h-11 shrink-0 rounded-xl border cn-border flex items-center justify-center cn-text-2"
-                >
-                  <Share2 className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Name block */}
-            <div className="mt-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-bold cn-text-1 leading-tight truncate">
-                  {displayName || member.username}
-                </h1>
-                {member.is_admin && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">
-                    <Shield className="w-3 h-3" /> Admin
-                  </span>
-                )}
-              </div>
-              <p className="cn-mono text-xs cn-text-3 mt-0.5">@{member.username} · {hubName}</p>
-            </div>
-
-            {/* Stats */}
-            <div className="flex gap-7 mt-5">
-              <Stat icon={FileText} value={posts.length} label="Posts" />
-              <Stat icon={BookOpen} value={notes.length} label="Notes" />
-              <Stat icon={Map} value={pins.length} label="Pins" />
-            </div>
-
-            {/* Skills & interests — Community Focus tags */}
-            {(member.tags?.length ?? 0) > 0 && (
-              <div className="mt-5">
-                <span className="cn-eyebrow">Skills &amp; interests</span>
-                <div className="flex flex-wrap gap-2 mt-2.5">
-                  {member.tags!.map(tag => (
-                    <SkillTag key={tag} onClick={() => { sessionStorage.setItem('citinet-deeplink-search', tag); onNavigate('discover'); }}>
-                      {tag}
-                    </SkillTag>
-                  ))}
+              {/* Name block */}
+              <div className="mt-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-bold text-white leading-tight truncate">
+                    {displayName || member.username}
+                  </h1>
+                  {member.is_admin && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white/15 backdrop-blur-sm text-white shrink-0">
+                      <Shield className="w-3 h-3" /> Admin
+                    </span>
+                  )}
                 </div>
+                <p className="cn-mono text-xs text-white/70 mt-0.5">@{member.username} · {hubName}</p>
               </div>
-            )}
+
+              {/* Identity sub-header — Location / Member since / Website,
+                  consolidated up from the old "About" card below (that data
+                  belongs with the rest of the identity block, not repeated
+                  further down the page). Item counts live on the tab bar
+                  (Posts (N), Notes (N), Pins (N)) instead of a separate
+                  stats row here — same numbers, one place. */}
+              {(member.location || member.location_visible === false || member.created_at || member.website) && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 text-xs text-white/70">
+                  {(member.location || member.location_visible === false) && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      {member.location_visible === false ? 'Somewhere in the community' : member.location}
+                    </span>
+                  )}
+                  {member.created_at && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      Member since {formatJoinDate(member.created_at)}
+                    </span>
+                  )}
+                  {member.website && (
+                    <a
+                      href={member.website.startsWith('http') ? member.website : `https://${member.website}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 hover:text-white hover:underline transition-colors"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      {member.website.replace(/^https?:\/\//, '')}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Skills & interests — Community Focus tags */}
+              {(member.tags?.length ?? 0) > 0 && (
+                <div className="mt-5">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-white/60">Skills &amp; interests</span>
+                  <div className="flex flex-wrap gap-2 mt-2.5">
+                    {member.tags!.map(tag => (
+                      <SkillTag key={tag} onClick={() => { sessionStorage.setItem('citinet-deeplink-search', tag); onNavigate('discover'); }}>
+                        {tag}
+                      </SkillTag>
+                    ))}
+                  </div>
+                </div>
+              )}
 
             {/* Banner editor */}
             {isOwnProfile && showBannerEditor && (
@@ -473,6 +635,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 </div>
               </div>
             )}
+            </div>
           </div>
         </motion.div>
 
@@ -504,7 +667,8 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
           {/* Tab content */}
           <AnimatePresence mode="wait">
 
-            {/* ── Overview tab ── */}
+            {/* ── Overview tab — dual-card snapshot: recent activity + a
+                Shared Resources & Skills spotlight ── */}
             {activeTab === 'overview' && (
               <motion.div
                 key="overview"
@@ -536,79 +700,83 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   </div>
                 ) : null}
 
-                {/* About */}
+                {/* Card 1 — recent community activity (Activity + Requests
+                    combined, newest first; the full per-type lists live on
+                    their own tabs). Top 3, three-column grid — matches the
+                    "Shared resources" grid below it. */}
                 <div>
-                  <span className="cn-eyebrow">About</span>
+                  <span className="cn-eyebrow">Recent activity</span>
                   <div className="mt-2.5">
-                    <ListGroup>
-                      <DetailRow icon={Building2} label="Member of" first onClick={() => window.open(`${window.location.origin}/?hub=${slug}`, '_blank')}>
-                        {hubName}
-                      </DetailRow>
-                      {member.created_at && (
-                        <DetailRow icon={Calendar} label="Member since">{formatJoinDate(member.created_at)}</DetailRow>
-                      )}
+                    {posts.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {[...posts]
+                          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                          .slice(0, 3)
+                          .map(post => (
+                            <PostGridCard key={post.id} post={post} hubSlug={slug} onClick={() => setSelectedPost(post)} />
+                          ))}
+                      </div>
+                    ) : (
+                      <EmptyTab
+                        icon={FileText}
+                        label={isOwnProfile ? "You haven't posted yet." : `${displayName || member.username} hasn't posted yet.`}
+                      />
+                    )}
+                  </div>
+                </div>
 
-                      {(member.location || member.location_visible === false) && (
-                        <DetailRow icon={MapPin} label="Lives at">
-                          {member.location_visible === false ? 'Somewhere in the community' : member.location}
-                        </DetailRow>
-                      )}
-                      
-                      <DetailRow icon={Hash} label="Hub handle">
-                        <span className="cn-mono">@{member.username}</span>
-                      </DetailRow>
-                      {member.website && (
-                        <DetailRow icon={Globe} label="Website" href={member.website.startsWith('http') ? member.website : `https://${member.website}`}>
-                          {member.website.replace(/^https?:\/\//, '')}
-                        </DetailRow>
-                      )}
-                    </ListGroup>
+                {/* Card 2 — Shared Resources spotlight: this member's
+                    marketplace listings (offered items/services). Skill/
+                    interest tags live only in the hero above now — showing
+                    them again here was a straight duplicate of the same
+                    chips, not a second data point. */}
+                <div>
+                  <span className="cn-eyebrow">Shared resources</span>
+                  <div className="mt-2.5">
+                    {listings.length > 0 ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {listings.slice(0, 3).map(listing => (
+                          <ListingCard
+                            key={listing.id}
+                            listing={listing}
+                            hubSlug={slug}
+                            onOpen={() => { sessionStorage.setItem('citinet-deeplink-listing', listing.id); onNavigate('marketplace'); }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyTab
+                        icon={Sparkles}
+                        label={isOwnProfile ? "You haven't shared any resources yet." : `${displayName || member.username} hasn't shared any resources yet.`}
+                        action={isOwnProfile && (
+                          <button onClick={() => onNavigate('marketplace')} className="mt-2 text-sm cn-text-3 hover:cn-text-1 font-semibold hover:underline">
+                            Share a resource or skill
+                          </button>
+                        )}
+                      />
+                    )}
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {/* ── Posts tab ── */}
-            {activeTab === 'posts' && (
+            {/* ── Activity tab — general posts: discussions, announcements,
+                projects, events, polls. Requests get their own tab. ── */}
+            {activeTab === 'activity' && (
               <motion.div
-                key="posts"
+                key="activity"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
                 className="p-5"
               >
-                {posts.length > 0 ? (
-                  <ListGroup>
-                    {posts.map((post, i) => (
-                      <button
-                        key={post.id}
-                        onClick={() => setSelectedPost(post)}
-                        className={`w-full text-left px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
-                      >
-                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
-                          <FileText className="w-4 h-4 cn-text-3" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
-                              {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-                            </span>
-                            <span className="text-xs cn-text-4">{formatTimestamp(post.created_at)}</span>
-                          </div>
-                          <p className="text-sm font-semibold cn-text-1 truncate">{post.title}</p>
-                          {post.body && (
-                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{post.body}</p>
-                          )}
-                        </div>
-                        {post.reply_count > 0 && (
-                          <div className="flex items-center gap-1 text-xs cn-text-4 shrink-0 mt-0.5">
-                            <MessageCircle className="w-3.5 h-3.5" />{post.reply_count}
-                          </div>
-                        )}
-                      </button>
+                {activityPosts.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {activityPosts.map(post => (
+                      <PostGridCard key={post.id} post={post} hubSlug={slug} onClick={() => setSelectedPost(post)} />
                     ))}
-                  </ListGroup>
+                  </div>
                 ) : (
                   <EmptyTab
                     icon={FileText}
@@ -623,114 +791,79 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
               </motion.div>
             )}
 
-            {/* ── Notes tab ── */}
-            {activeTab === 'notes' && (
+            {/* ── Resources tab — items, skills, or services this member
+                offers to share locally (their marketplace/Exchange listings). ── */}
+            {activeTab === 'resources' && (
               <motion.div
-                key="notes"
+                key="resources"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
                 className="p-5"
               >
-                {notes.length > 0 ? (
-                  <ListGroup>
-                    {notes.map((note, i) => (
-                      <div
-                        key={note.id}
-                        onClick={() => setSelectedNote(note)}
-                        className={`px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group cursor-pointer flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
+                {listings.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {listings.map(listing => (
+                        <ListingCard
+                          key={listing.id}
+                          listing={listing}
+                          hubSlug={slug}
+                          onOpen={() => { sessionStorage.setItem('citinet-deeplink-listing', listing.id); onNavigate('marketplace'); }}
+                        />
+                      ))}
+                    </div>
+                    {vendor && (
+                      <button
+                        onClick={() => onNavigate(`vendor/${vendor.id}`)}
+                        className="mt-4 text-sm cn-text-3 hover:cn-text-1 font-semibold hover:underline"
                       >
-                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
-                          <BookOpen className="w-4 h-4 cn-text-3" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            {note.is_pinned && <Pin className="w-3.5 h-3.5 text-amber-500" />}
-                            <span className="text-xs cn-text-4">{formatTimestamp(note.updated_at)}</span>
-                          </div>
-                          <p className="text-sm font-semibold cn-text-1 truncate">
-                            {note.title || 'Untitled'}
-                          </p>
-                          {note.body_plain && (
-                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{note.body_plain}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                          {note.color && (
-                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: note.color }} />
-                          )}
-                          {!isOwnProfile && (
-                            <button
-                              onClick={e => handleForkNote(note.id, e)}
-                              disabled={forkingNoteId === note.id}
-                              title="Copy this note into your own notes"
-                              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all opacity-0 group-hover:opacity-100 ${
-                                forkedNoteId === note.id
-                                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                                  : 'cn-surface-2 cn-text-3 cn-border hover:bg-black/5 dark:hover:bg-white/5 hover:cn-text-1'
-                              }`}
-                            >
-                              {forkingNoteId === note.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : forkedNoteId === note.id ? (
-                                <><Check className="w-3 h-3" /> Copied!</>
-                              ) : (
-                                <><Copy className="w-3 h-3" /> Copy</>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </ListGroup>
+                        View full storefront →
+                      </button>
+                    )}
+                  </>
                 ) : (
-                  <EmptyTab icon={BookOpen} label={isOwnProfile ? 'No public notes yet.' : 'No shared notes.'} />
+                  <EmptyTab
+                    icon={Sparkles}
+                    label={isOwnProfile ? "You haven't shared any resources yet." : `${displayName || member.username} hasn't shared any resources yet.`}
+                    action={isOwnProfile && (
+                      <button onClick={() => onNavigate('marketplace')} className="mt-2 text-sm cn-text-3 hover:cn-text-1 font-semibold hover:underline">
+                        Share a resource or skill
+                      </button>
+                    )}
+                  />
                 )}
               </motion.div>
             )}
 
-            {/* ── Pins tab ── */}
-            {activeTab === 'pins' && (
+            {/* ── Requests tab — this member's open calls for help,
+                borrowing, or local support (REQUEST-category posts). ── */}
+            {activeTab === 'requests' && (
               <motion.div
-                key="pins"
+                key="requests"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15 }}
                 className="p-5"
               >
-                {pins.length > 0 ? (
+                {requestPosts.length > 0 ? (
                   <ListGroup>
-                    {pins.map((pin, i) => (
-                      <button
-                        key={pin.id}
-                        onClick={() => {
-                          sessionStorage.setItem('citinet-focus-pin', pin.id);
-                          onNavigate('atlas');
-                        }}
-                        className={`w-full text-left px-3.5 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-start gap-3 ${i === 0 ? '' : 'border-t cn-border'}`}
-                      >
-                        <span className="w-9 h-9 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 mt-0.5">
-                          <Map className="w-4 h-4 cn-text-3" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                              {pin.category}
-                            </span>
-                            <span className="text-xs cn-text-4">{formatTimestamp(pin.createdAt)}</span>
-                          </div>
-                          <p className="text-sm font-semibold cn-text-1 truncate">{pin.title}</p>
-                          {pin.description && (
-                            <p className="text-xs cn-text-3 mt-0.5 line-clamp-2 leading-relaxed">{pin.description}</p>
-                          )}
-                        </div>
-                      </button>
+                    {requestPosts.map((post, i) => (
+                      <PostRow key={post.id} post={post} first={i === 0} onClick={() => setSelectedPost(post)} />
                     ))}
                   </ListGroup>
                 ) : (
-                  <EmptyTab icon={Map} label="No pins yet." />
+                  <EmptyTab
+                    icon={FileText}
+                    label={isOwnProfile ? "You don't have any open requests." : `${displayName || member.username} doesn't have any open requests.`}
+                    action={isOwnProfile && (
+                      <button onClick={() => onNavigate('feed')} className="mt-2 text-sm cn-text-3 hover:cn-text-1 font-semibold hover:underline">
+                        Ask your neighbors
+                      </button>
+                    )}
+                  />
                 )}
               </motion.div>
             )}
@@ -755,15 +888,6 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
         />
       )}
 
-      {selectedNote && (
-        <NoteDetailModal
-          isOpen
-          onClose={() => setSelectedNote(null)}
-          note={selectedNote}
-          isOwnNote={isOwnProfile}
-          onEdit={isOwnProfile ? () => { onNavigate('notes'); setSelectedNote(null); } : undefined}
-        />
-      )}
 
       {/* Bio modal — portaled to <body>: HubLayout's content area is `position: relative;
           z-index: 10`, its own stacking context, so nothing inside it can out-rank the

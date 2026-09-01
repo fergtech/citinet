@@ -7,6 +7,7 @@ import {
 import type { HubVendor, HubListing } from '../types/hub';
 import { marketplaceService } from '../services/marketplaceService';
 import { hubService } from '../services/hubService';
+import { useSavedIds } from '../hooks/useSavedIds';
 import { AddListingModal } from './AddListingModal';
 import { CreateVendorModal } from './CreateVendorModal';
 import { ListingCard } from './MarketplaceScreen';
@@ -69,10 +70,13 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
   const [showBannerEditor, setShowBannerEditor] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
-  const [isSaved, setIsSaved] = useState(() => {
-    const saved = typeof localStorage !== 'undefined' ? JSON.parse(localStorage.getItem('saved_vendors') || '[]') : [];
-    return saved.includes(initialVendor.id);
-  });
+  // Account-level (hub_user_preferences) — see useSavedIds for why (this
+  // was localStorage-only, so a save never followed the account across
+  // devices/browsers). Anonymous public-share viewers (hubBaseUrl set, no
+  // real hub session) still degrade gracefully to localStorage-only, same
+  // as before, since there's no account to sync to.
+  const { ids: savedVendorIds, toggle: toggleSavedVendor } = useSavedIds('saved_vendors', 'saved_vendors');
+  const isSaved = savedVendorIds.includes(initialVendor.id);
   const [togglingPublic, setTogglingPublic] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -192,13 +196,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
     } catch { /* silent */ }
   };
 
-  const handleToggleSave = () => {
-    const saved = JSON.parse(localStorage.getItem('saved_vendors') || '[]');
-    if (isSaved) { const idx = saved.indexOf(vendor.id); if (idx !== -1) saved.splice(idx, 1); }
-    else saved.push(vendor.id);
-    localStorage.setItem('saved_vendors', JSON.stringify(saved));
-    setIsSaved(!isSaved);
-  };
+  const handleToggleSave = () => toggleSavedVendor(vendor.id);
 
   const handleTogglePublic = async () => {
     if (!vendor.slug) return;

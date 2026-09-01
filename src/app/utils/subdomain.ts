@@ -9,6 +9,11 @@
 
 const HUB_SLUG_KEY = 'citinet-active-hub';
 const HUBS_KEY = 'citinet-hubs';
+// sessionStorage (not localStorage): tab-scoped on purpose. A genuinely new
+// tab/dev-restart should still auto-restore the last hub below -- only an
+// explicit "Switch Hub" click in THIS tab should suppress it, and closing
+// the tab is exactly when that intent should stop applying too.
+const BROWSING_KEY = 'citinet-browsing-hubs';
 
 /** Returns the hub slug from environment variable or URL/storage cache.
  *  Falls back to the most recently connected hub from citinet-hubs if the
@@ -20,11 +25,17 @@ export function getSubdomain(): string | null {
 
   // ?hub= in URL is the authoritative source — write it to localStorage so it
   // survives client-side React Router navigations that drop query params.
+  // Picking a hub this explicitly always wins, even mid-browse.
   const hub = new URLSearchParams(window.location.search).get('hub');
   if (hub) {
     localStorage.setItem(HUB_SLUG_KEY, hub);
+    sessionStorage.removeItem(BROWSING_KEY);
     return hub;
   }
+
+  // Explicitly browsing hubs right now (Switch Hub) -- don't auto-restore
+  // below, or /join would bounce straight back into the hub just left.
+  if (sessionStorage.getItem(BROWSING_KEY)) return null;
 
   const cached = localStorage.getItem(HUB_SLUG_KEY);
   if (cached) return cached;
@@ -51,6 +62,13 @@ export function getSubdomain(): string | null {
 /** Call when the user explicitly leaves a hub so the cache is cleared. */
 export function clearSubdomainCache(): void {
   localStorage.removeItem(HUB_SLUG_KEY);
+}
+
+/** Call right before navigating to the hub picker (Switch Hub) so
+ * getSubdomain()'s auto-restore fallback doesn't immediately bounce back
+ * into the hub just left -- see BROWSING_KEY above. */
+export function beginHubBrowsing(): void {
+  sessionStorage.setItem(BROWSING_KEY, '1');
 }
 
 /** Returns the full URL for a hub slug, relative to the current origin. */

@@ -6858,6 +6858,14 @@ const PREF_KEYS = [
   // instead of living only in one browser's localStorage.
   'nav_pinned',
   'nav_layout',
+  // Saved/bookmarked items (Atlas pins, Exchange listings, Exchange vendors)
+  // — previously localStorage-only (citinet-saved-atlas-pins / saved_listings
+  // / saved_vendors), so a bookmark never followed the account across
+  // devices/browsers and looked "unsaved" after clearing site data. Each
+  // value is a JSON-stringified array of ids, same encoding as nav_pinned.
+  'saved_atlas_pins',
+  'saved_listings',
+  'saved_vendors',
 ];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {

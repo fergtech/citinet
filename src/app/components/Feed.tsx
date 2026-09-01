@@ -72,25 +72,33 @@ function getVariant(mediaFileName?: string | null): 'text' | 'image' | 'video' {
 
 // ── Right Rail ───────────────────────────────────────────────
 
-const RAIL_CAT_COLORS: Record<string, string> = {
-  DISCUSSION:   'text-blue-400',
-  ANNOUNCEMENT: 'text-rose-400',
-  PROJECT:      'text-emerald-400',
-  REQUEST:      'text-orange-400',
-  EVENT:        'text-purple-400',
-  POLL:         'text-indigo-400',
-};
+function RightRail({ hubName, hubSlug, posts, onNavigateToProfile }: {
+  hubName: string;
+  hubSlug: string;
+  posts: HubPost[];
+  onNavigateToProfile?: (userId: string) => void;
+}) {
+  const { currentHub } = useHub();
+  // Kept live by HubContext's existing 60s /api/status poll (currentHub.meta)
+  // — no extra fetch needed here.
+  const activeMembers = currentHub?.meta?.activeMembers;
+  const onlineNow = currentHub?.meta?.onlineNow;
 
-const RAIL_CAT_LABELS: Record<string, string> = {
-  DISCUSSION: 'Discussions', ANNOUNCEMENT: 'Announcements',
-  PROJECT: 'Projects', REQUEST: 'Requests', EVENT: 'Events', POLL: 'Polls',
-};
-
-function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
-  const breakdown = useMemo(() => {
-    const counts: Record<string, number> = {};
-    posts.forEach(p => { counts[p.category] = (counts[p.category] ?? 0) + 1; });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  // Ranked from whatever's already loaded in `posts` — no extra fetch.
+  // Real hub members only: proxied/external-source posts have no local
+  // author to rank or link to a profile.
+  const topContributors = useMemo(() => {
+    const byAuthor = new Map<string, { username: string; count: number }>();
+    posts.forEach(p => {
+      if (!p.author_id || isExternalSourcePost(p)) return;
+      const entry = byAuthor.get(p.author_id) ?? { username: p.author_username, count: 0 };
+      entry.count++;
+      byAuthor.set(p.author_id, entry);
+    });
+    return Array.from(byAuthor.entries())
+      .map(([authorId, v]) => ({ authorId, ...v }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
   }, [posts]);
 
   return (
@@ -102,26 +110,52 @@ function RightRail({ hubName, posts }: { hubName: string; posts: HubPost[] }) {
           <span className="cn-eyebrow">{hubName}</span>
         </div>
         <p className="text-xs cn-text-3 leading-relaxed">
-          Posts are visible to verified members of this hub only. No algorithms — nothing ranked or hidden.
+          Posts are visible to verified members of this hub only. No algorithms. Nothing ranked or hidden.
         </p>
       </div>
 
-      {/* Category breakdown */}
-      {breakdown.length > 0 && (
-        <div className="cn-glass rounded-2xl p-4">
-          <span className="cn-eyebrow block mb-3">In this feed</span>
-          <div className="flex flex-col gap-2">
-            {breakdown.map(([cat, count]) => (
-              <div key={cat} className="flex items-center justify-between">
-                <span className={`text-sm ${RAIL_CAT_COLORS[cat] ?? 'cn-text-3'}`}>
-                  {RAIL_CAT_LABELS[cat] ?? cat}
-                </span>
-                <span className="cn-mono text-xs cn-text-4">{count}</span>
-              </div>
-            ))}
+      {/* Hub pulse — live member/online counts (same /api/status data the
+          dashboard's Node Status card uses) plus this feed's top
+          contributors. Replaces the old per-category post-count list, which
+          just re-stated numbers already visible on the pill filters above
+          the feed. */}
+      <div className="cn-glass rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="cn-live-dot w-1.5 h-1.5 shrink-0" />
+          <span className="cn-eyebrow">Hub pulse</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[11px] cn-text-3 mb-0.5">Members</div>
+            <div className="font-mono text-xl font-bold cn-text-1">{activeMembers ?? '—'}</div>
+          </div>
+          <div>
+            <div className="text-[11px] cn-text-3 mb-0.5">Online now</div>
+            <div className="font-mono text-xl font-bold cn-text-1">{onlineNow ?? '—'}</div>
           </div>
         </div>
-      )}
+
+        {topContributors.length > 0 && (
+          <>
+            <div className="mt-3.5 mb-3 h-px cn-border border-t" />
+            <span className="text-[11px] cn-text-3 block mb-2">Top contributors</span>
+            <div className="flex flex-col gap-2">
+              {topContributors.map(c => (
+                <button
+                  key={c.authorId}
+                  onClick={() => onNavigateToProfile?.(c.authorId)}
+                  disabled={!onNavigateToProfile}
+                  className="flex items-center gap-2 w-full text-left disabled:cursor-default hover:opacity-80 transition-opacity"
+                >
+                  <AvatarCircle authorId={c.authorId} authorUsername={c.username} authorAvatarUrl={hubService.getAvatarUrl(hubSlug, c.authorId) ?? undefined} size="sm" />
+                  <span className="text-sm cn-text-2 truncate flex-1">{c.username}</span>
+                  <span className="cn-mono text-xs cn-text-4">{c.count}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Guidelines */}
       <div className="cn-glass rounded-2xl p-4">
@@ -1745,33 +1779,64 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   // Category-chip row horizontal scroll — same pattern as Atlas's pin-filter
   // chips: chevrons show only on the side(s) there's still more to scroll
   // toward, recomputed on scroll and on resize.
-  const chipRowRef = useRef<HTMLDivElement>(null);
+  //
+  // Two things this used to get wrong (a plain useRef + a mount-only
+  // useEffect couldn't handle either):
+  //  1. The chip row lives in the list-view branch of the `selectedPost ?
+  //     <PostDetailView/> : (...)` ternary below, so it fully unmounts and
+  //     remounts every time a post's detail view opens/closes. A useEffect
+  //     keyed to a stable dependency only ever runs once (Feed itself never
+  //     unmounts across that navigation), so the listener/observer stayed
+  //     attached to the *old*, now-detached DOM node — the remounted row had
+  //     nothing recomputing its scroll state, so whatever chevrons were
+  //     showing right before navigating away kept showing, correct or not.
+  //  2. `posts` (and therefore each pill's count badge) loads in async after
+  //     mount. That changes the *content* row's natural width without
+  //     changing the outer scroll container's own box size, which is the
+  //     only thing a ResizeObserver on the container itself would notice —
+  //     so a right-chevron could go stale the moment counts arrived.
+  // Fixed by: a ref *callback* (re-fires on every mount/unmount of that
+  // specific node, not just Feed's own) that observes both the scroll
+  // container and the inner content wrapper.
+  const chipRowElRef = useRef<HTMLDivElement | null>(null);
+  const chipContentRef = useRef<HTMLDivElement | null>(null);
+  const chipRowCleanupRef = useRef<() => void>(() => {});
   const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
 
   const updateChipScroll = useCallback(() => {
-    const el = chipRowRef.current;
+    const el = chipRowElRef.current;
     if (!el) return;
+    // Round off fractional/subpixel scrollLeft (common with smooth-scroll
+    // and some display scale factors) before comparing against the edges.
+    const scrollLeft = Math.round(el.scrollLeft);
     setChipScroll({
-      canLeft: el.scrollLeft > 4,
-      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
+      canLeft: scrollLeft > 1,
+      canRight: scrollLeft + el.clientWidth < el.scrollWidth - 1,
     });
   }, []);
 
-  useEffect(() => {
-    const el = chipRowRef.current;
+  const chipRowRef = useCallback((el: HTMLDivElement | null) => {
+    chipRowCleanupRef.current();
+    chipRowCleanupRef.current = () => {};
+    chipRowElRef.current = el;
     if (!el) return;
-    updateChipScroll();
+    // rAF, not a synchronous call — guarantees this measures after the
+    // browser has actually laid out this paint (fonts, this row's own
+    // just-committed DOM included), rather than racing it.
+    const raf = requestAnimationFrame(updateChipScroll);
     el.addEventListener('scroll', updateChipScroll, { passive: true });
     const ro = new ResizeObserver(updateChipScroll);
     ro.observe(el);
-    return () => {
+    if (chipContentRef.current) ro.observe(chipContentRef.current);
+    chipRowCleanupRef.current = () => {
+      cancelAnimationFrame(raf);
       el.removeEventListener('scroll', updateChipScroll);
       ro.disconnect();
     };
   }, [updateChipScroll]);
 
   const scrollChips = (dir: 'left' | 'right') => {
-    chipRowRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+    chipRowElRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
   };
 
   // Feathers whichever edge(s) still have more chips to scroll toward — a
@@ -2108,32 +2173,39 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 )}
                 <div
                   ref={chipRowRef}
-                  className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth -mx-1 px-1 ${chipScroll.canLeft ? 'pl-7' : ''} ${chipScroll.canRight ? 'pr-7' : ''}`}
+                  className={`overflow-x-auto no-scrollbar scroll-smooth -mx-1 px-1 ${chipScroll.canLeft ? 'pl-7' : ''} ${chipScroll.canRight ? 'pr-7' : ''}`}
                   style={chipFadeMask ? { WebkitMaskImage: chipFadeMask, maskImage: chipFadeMask } : undefined}
                 >
-                  {CAT_TABS.map(({ value, label }) => {
-                    const count = posts.filter(p => p.category === value).length;
-                    return (
-                      <button
-                        key={value}
-                        onClick={() => setActiveFilter(prev => prev === value ? null : value)}
-                        className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
-                          activeFilter === value
-                            ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
-                            : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
-                        }`}
-                      >
-                        {label}
-                        {count > 0 && (
-                          <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
-                            activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
-                          }`}>
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                  {/* Separate from the scroll container above so a ResizeObserver can
+                      watch this row's own natural (unclipped) width — e.g. pill count
+                      badges arriving once `posts` loads grow this without changing the
+                      scroll container's own box size, which a container-only observer
+                      would never notice. */}
+                  <div ref={chipContentRef} className="flex items-center gap-2">
+                    {CAT_TABS.map(({ value, label }) => {
+                      const count = posts.filter(p => p.category === value).length;
+                      return (
+                        <button
+                          key={value}
+                          onClick={() => setActiveFilter(prev => prev === value ? null : value)}
+                          className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
+                            activeFilter === value
+                              ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                              : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                          }`}
+                        >
+                          {label}
+                          {count > 0 && (
+                            <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
+                              activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
+                            }`}>
+                              {count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -2272,7 +2344,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
             <div className="hidden lg:block sticky top-7 self-start">
               <RightRail
                 hubName={currentHub?.name ?? 'Hub'}
+                hubSlug={hubSlug}
                 posts={posts}
+                onNavigateToProfile={onNavigate ? (userId) => onNavigate(`profile/${userId}`) : undefined}
               />
             </div>
           </div>

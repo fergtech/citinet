@@ -8,6 +8,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
 import { useHub } from '../context/HubContext';
+import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
@@ -980,19 +981,11 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     chipRowRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
   };
 
-  // Saved/bookmarked pins — persisted across sessions, shared between the detail
-  // panel's bookmark toggle and the "Saved" filter chip in the list view.
-  const [savedPinIds, setSavedPinIds] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(SAVED_PINS_KEY) || '[]'); } catch { return []; }
-  });
-
-  const toggleSavedPin = (pinId: string) => {
-    setSavedPinIds(prev => {
-      const next = prev.includes(pinId) ? prev.filter(id => id !== pinId) : [...prev, pinId];
-      localStorage.setItem(SAVED_PINS_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
+  // Saved/bookmarked pins — account-level (hub_user_preferences), shared
+  // between the detail panel's bookmark toggle and the "Saved" filter chip
+  // in the list view. See useSavedIds for why (previously localStorage-only,
+  // so a save never followed the account across devices/browsers).
+  const { ids: savedPinIds, toggle: toggleSavedPin } = useSavedIds('saved_atlas_pins', SAVED_PINS_KEY);
 
   const reverseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

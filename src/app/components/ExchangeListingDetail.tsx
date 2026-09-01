@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bookmark, Share2, MessageCircle, Check, Loader2, Clock, Store, BadgeCheck } from 'lucide-react';
 import { marketplaceService } from '../services/marketplaceService';
 import { useHub } from '../context/HubContext';
+import { useSavedIds } from '../hooks/useSavedIds';
 import type { HubListing, HubVendor } from '../types/hub';
 import { formatPrice, formatRelative, ListingCard, KIND_META } from './MarketplaceScreen';
 
@@ -33,19 +34,12 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
       .finally(() => setVendorLoading(false));
   }, [hubSlug, listing.vendor_id, listing.id]);
 
-  const [saved, setSaved] = useState(() => {
-    const ids = JSON.parse(localStorage.getItem('saved_listings') || '[]');
-    return ids.includes(listing.id);
-  });
+  // Account-level (hub_user_preferences) — see useSavedIds for why (this
+  // was localStorage-only, so a save never followed the account across
+  // devices/browsers).
+  const { ids: savedIds, toggle: toggleSave } = useSavedIds('saved_listings', 'saved_listings');
+  const saved = savedIds.includes(listing.id);
   const [copied, setCopied] = useState(false);
-
-  const toggleSave = () => {
-    const ids: string[] = JSON.parse(localStorage.getItem('saved_listings') || '[]');
-    const idx = ids.indexOf(listing.id);
-    if (idx !== -1) ids.splice(idx, 1); else ids.push(listing.id);
-    localStorage.setItem('saved_listings', JSON.stringify(ids));
-    setSaved(!saved);
-  };
 
   const handleShare = () => {
     const url = `${window.location.href.split('?')[0]}?item=${listing.id}`;
@@ -85,7 +79,7 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
           </button>
           <div className="flex-1" />
           <button
-            onClick={toggleSave}
+            onClick={() => toggleSave(listing.id)}
             title={saved ? 'Remove from saved' : 'Save for later'}
             className="w-9 h-9 rounded-full flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >

@@ -561,23 +561,7 @@ class HubService {
   /** Get a specific hub connection by slug */
   getHubConnection(slug: string): HubConnection | null {
     const hubs = this.getAllHubConnections();
-    if (hubs[slug]) return hubs[slug];
-
-    // Self-healing: if there's no direct key match but exactly one hub exists,
-    // the connection was likely re-keyed under the wrong slug by an older bug.
-    // Re-key it to the requested slug so routing works again.
-    const keys = Object.keys(hubs);
-    if (keys.length === 1) {
-      const only = hubs[keys[0]];
-      const healed: typeof only = { ...only, hub: { ...only.hub, slug } };
-      hubs[slug] = healed;
-      delete hubs[keys[0]];
-      localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(hubs));
-      if (this.getActiveHubSlug() !== slug) this.setActiveHub(slug);
-      return healed;
-    }
-
-    return null;
+    return hubs[slug] ?? null;
   }
 
   /** Get the currently active hub slug */

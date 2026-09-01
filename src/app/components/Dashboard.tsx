@@ -3,6 +3,7 @@ import {
   Calendar, Lightbulb, Activity, MapPin, FolderOpen,
   RefreshCw, Loader2, Plus, Layers, Bot, ChevronRight,
   X, Clock, Share2, Check,
+  FileText, FileArchive, FileAudio, FileVideo, File, Table2, MonitorPlay,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -480,7 +481,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                       <button
                         key={item.actor}
                         onClick={() => {
-                          const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                          const postTypes = ['discussion', 'announcement', 'event', 'project', 'request'];
                           if (postTypes.includes(item.type) && item.itemId) handleFeaturedPostClick(item.itemId);
                           else onNavigate(item.navigateTo);
                         }}
@@ -525,7 +526,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               const visible = activityExpanded ? activityItems : activityItems.slice(0, PAGE);
               const hiddenCount = activityItems.length - PAGE;
               const handleClick = (item: ActivityItem) => {
-                const postTypes = ['discussion', 'announcement', 'project', 'request'];
+                const postTypes = ['discussion', 'announcement', 'event', 'project', 'request'];
                 if (postTypes.includes(item.type) && item.itemId) {
                   handleFeaturedPostClick(item.itemId);
                 } else if (item.type === 'file_shared' && item.itemId) {
@@ -787,6 +788,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
 }> = {
   discussion:      { Icon: MessageCircle, iconBg: 'bg-blue-500',    label: 'Discussion',   barColor: 'bg-blue-500',   verbColor: 'text-blue-600 dark:text-blue-400' },
   announcement:    { Icon: Radio,         iconBg: 'bg-amber-500',   label: 'Announcement', barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
+  event:           { Icon: Calendar,      iconBg: 'bg-indigo-500',  label: 'Event',        barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
   project:         { Icon: Lightbulb,     iconBg: 'bg-emerald-500', label: 'Project',      barColor: 'bg-emerald-500',verbColor: 'text-emerald-600 dark:text-emerald-400' },
   request:         { Icon: Users,         iconBg: 'bg-rose-500',    label: 'Request',      barColor: 'bg-rose-500',   verbColor: 'text-rose-600 dark:text-rose-400' },
   file_shared:     { Icon: FolderOpen,    iconBg: 'bg-amber-500',   label: 'File Shared',  barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
@@ -803,20 +805,105 @@ const ACTIVITY_LOCATION: Record<string, string> = {
   marketplace: 'in Exchange',
 };
 
+// Header banner types get a full-width cover (real image, or this gradient
+// when there's none/it fails to load) instead of the small corner icon.
+const BANNER_FALLBACK_GRAD: Partial<Record<ActivityType, string>> = {
+  event: 'from-indigo-500 to-purple-600',
+  announcement: 'from-amber-500 to-orange-600',
+};
+
+type DocKind = 'pdf' | 'doc' | 'sheet' | 'slides' | 'zip' | 'audio' | 'video' | 'other';
+const DOC_KIND_CFG: Record<DocKind, { Icon: React.ElementType; grad: string; label: string }> = {
+  pdf:    { Icon: FileText,    grad: 'from-rose-500 to-pink-600',      label: 'PDF' },
+  doc:    { Icon: FileText,    grad: 'from-blue-500 to-blue-600',      label: 'Doc' },
+  sheet:  { Icon: Table2,      grad: 'from-emerald-500 to-teal-600',   label: 'Sheet' },
+  slides: { Icon: MonitorPlay, grad: 'from-purple-500 to-violet-600',  label: 'Slides' },
+  zip:    { Icon: FileArchive, grad: 'from-fuchsia-500 to-violet-600', label: 'Archive' },
+  audio:  { Icon: FileAudio,   grad: 'from-cyan-500 to-sky-600',       label: 'Audio' },
+  video:  { Icon: FileVideo,   grad: 'from-purple-500 to-violet-600',  label: 'Video' },
+  other:  { Icon: File,        grad: 'from-slate-500 to-slate-600',    label: 'File' },
+};
+function docKindForExt(ext?: string): DocKind {
+  const e = (ext ?? '').toLowerCase();
+  if (e === 'pdf') return 'pdf';
+  if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(e)) return 'doc';
+  if (['xls', 'xlsx', 'csv'].includes(e)) return 'sheet';
+  if (['ppt', 'pptx'].includes(e)) return 'slides';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(e)) return 'zip';
+  if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(e)) return 'audio';
+  if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(e)) return 'video';
+  return 'other';
+}
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return '';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
+}
+function eventDateBadge(dateStr?: string | null): { month: string; day: string } | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return { month: d.toLocaleDateString(undefined, { month: 'short' }).toUpperCase(), day: String(d.getDate()) };
+}
+
 function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
   const cfg = ACTIVITY_CONFIG[item.type];
   const initial = item.actor.charAt(0).toUpperCase();
   const location = ACTIVITY_LOCATION[item.navigateTo] ?? '';
   const isLive = Date.now() - item.timestamp.getTime() < 3_600_000;
+  // Per-card: a media URL that 404s/fails falls back to the plain icon
+  // treatment rather than showing a broken image.
+  const [mediaError, setMediaError] = useState(false);
+
+  const isBannerType = item.type === 'event' || item.type === 'announcement';
+  const hasUsableMedia = !!item.mediaUrl && !mediaError;
+  const showBannerImage = isBannerType && hasUsableMedia;
+  const showSideThumb = !isBannerType && item.mediaKind === 'image' && hasUsableMedia;
+  const showDocBadge = item.type === 'file_shared' && !hasUsableMedia && !!item.fileExt;
+  const showTypeIcon = !isBannerType && !showSideThumb && !showDocBadge;
+  const dateBadge = item.type === 'event' ? eventDateBadge(item.eventDate) : null;
+  const docCfg = showDocBadge ? DOC_KIND_CFG[docKindForExt(item.fileExt)] : null;
 
   return (
     <button
       onClick={onClick}
-      className="w-full relative overflow-hidden rounded-2xl p-4 cn-glass hover:shadow-md hover:-translate-y-0.5 transition-all text-left group flex"
+      className="w-full relative overflow-hidden rounded-2xl cn-glass hover:shadow-md hover:-translate-y-0.5 transition-all text-left group"
     >
-      {/* Left accent bar removed — type is already communicated via verb text color */}
+      {/* Header banner — events & announcements only. Real cover image when
+          available, otherwise a type-colored gradient so the card still reads
+          as "this is a banner item" rather than silently degrading. */}
+      {isBannerType && (
+        <div className="relative w-full aspect-video overflow-hidden">
+          {showBannerImage ? (
+            <img
+              src={item.mediaUrl}
+              alt={item.title}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              onError={() => setMediaError(true)}
+            />
+          ) : (
+            <div className={`w-full h-full bg-gradient-to-br ${BANNER_FALLBACK_GRAD[item.type]} flex items-center justify-center`}>
+              <cfg.Icon className="w-8 h-8 text-white/70" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+          {dateBadge && (
+            <div className="absolute top-2 left-2 rounded-lg bg-white/95 dark:bg-zinc-900/95 backdrop-blur px-2 py-1 text-center shadow-sm min-w-[38px]">
+              <div className="text-[9px] font-bold text-rose-500 uppercase leading-none">{dateBadge.month}</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white leading-none mt-0.5">{dateBadge.day}</div>
+            </div>
+          )}
+          {item.eventLocation && (
+            <div className="absolute bottom-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur text-white text-[10px] font-medium max-w-[80%]">
+              <MapPin className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate">{item.eventLocation}</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="flex items-start gap-2 flex-1 min-w-0">
+      <div className="flex items-start gap-2 p-4">
         <div className="flex-1 min-w-0 space-y-1.5">
           {/* Title leads — this is the content, make it the hero */}
           <p className="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug pr-1">{item.title}</p>
@@ -831,7 +918,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
             </div>
             <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{item.actor}</span>
             <span className={`text-xs font-medium ${cfg.verbColor}`}>{item.summary}</span>
-            {location && <><span className="text-xs cn-text-4">·</span><span className="text-xs cn-text-3">{location}</span></>}
+            {!isBannerType && location && <><span className="text-xs cn-text-4">·</span><span className="text-xs cn-text-3">{location}</span></>}
             <span className="text-xs cn-text-4">·</span>
             <span className="font-mono text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
               {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
@@ -839,13 +926,28 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
             </span>
           </div>
 
-          {/* Social signals row: reply count + CTA */}
-          {((item.replyCount !== undefined && item.replyCount > 0) || item.cta) && (
-            <div className="flex items-center gap-3 pt-0.5">
+          {/* Text-post excerpt — quoted body snippet, only when there's a
+              title distinct from the body (otherwise this would just repeat
+              the title above). */}
+          {item.excerpt && (
+            <p className="text-xs cn-text-2 border-l-2 border-slate-200 dark:border-zinc-700 pl-2 italic line-clamp-2">
+              "{item.excerpt}"
+            </p>
+          )}
+
+          {/* Social signals row: reply count + RSVP + CTA */}
+          {((item.replyCount !== undefined && item.replyCount > 0) || item.cta || item.type === 'event') && (
+            <div className="flex items-center gap-3 pt-0.5 flex-wrap">
               {item.replyCount !== undefined && item.replyCount > 0 && (
                 <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                   <MessageCircle className="w-3 h-3" />
                   {item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}
+                </span>
+              )}
+              {item.type === 'event' && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/40 transition-colors">
+                  <Check className="w-3 h-3" />
+                  {item.rsvpCount ?? 0} going
                 </span>
               )}
               {item.cta && (
@@ -857,10 +959,31 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
           )}
         </div>
 
-        {/* Type icon */}
-        <span className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center text-white shrink-0`}>
-          <cfg.Icon className="w-4 h-4" />
-        </span>
+        {/* Compact-type media: square thumbnail (images) or a document badge
+            (non-image file shares) in place of the plain type icon. */}
+        {showSideThumb && (
+          <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-slate-200 dark:border-zinc-800 shrink-0 bg-slate-100 dark:bg-zinc-800">
+            <img
+              src={item.mediaUrl}
+              alt={item.title}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+              onError={() => setMediaError(true)}
+            />
+          </div>
+        )}
+        {showDocBadge && docCfg && (
+          <div className="flex flex-col items-center gap-1 shrink-0 w-14">
+            <span className={`w-10 h-10 rounded-lg bg-gradient-to-br ${docCfg.grad} flex items-center justify-center text-white shadow-sm`}>
+              <docCfg.Icon className="w-4 h-4" />
+            </span>
+            <span className="text-[9px] font-mono cn-text-4 leading-none truncate max-w-full">{formatFileSize(item.fileSize) || docCfg.label}</span>
+          </div>
+        )}
+        {showTypeIcon && (
+          <span className={`w-8 h-8 rounded-lg ${cfg.iconBg} flex items-center justify-center text-white shrink-0`}>
+            <cfg.Icon className="w-4 h-4" />
+          </span>
+        )}
 
         {/* Chevron */}
         <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />

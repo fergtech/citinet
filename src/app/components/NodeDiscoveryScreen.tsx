@@ -60,6 +60,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const [registryHubs, setRegistryHubs] = useState<RegistryHub[]>([]);
   const [registryLoading, setRegistryLoading] = useState(true);
   const [registryRefreshKey, setRegistryRefreshKey] = useState(0);
+  // Slug currently running the quick-enter session-verify check (see
+  // handleQuickEnter) -- shows a busy state on just that row.
+  const [quickEnterSlug, setQuickEnterSlug] = useState<string | null>(null);
   const [hubSearchQuery, setHubSearchQuery] = useState('');
   const filteredRegistryHubs = registryHubs.filter(hub => {
     const q = hubSearchQuery.trim().toLowerCase();
@@ -156,6 +159,31 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     setProbingHubName(hub.name);
     setTunnelUrl(hub.tunnel_url);
     await handleProbeUrl(hub.tunnel_url);
+  };
+
+  // A hub we already have a valid session for (isOnboarded) shouldn't make
+  // someone re-type credentials -- but isOnboarded() only checks that SOME
+  // token string is stored, never that the server still accepts it. A stale/
+  // expired token would otherwise look like a successful "quick enter" (page
+  // shell loads, unauthenticated data like member counts still works) while
+  // every authenticated call -- avatars, images, everything -- silently
+  // 401s, only surfacing as broken on the next reload. So this actually
+  // verifies with the server first (the same lightweight session-status
+  // check the pending-approval screen uses) and only then hands back the
+  // real stored Hub straight to onNodeFound, same as a fresh login would. A
+  // token that no longer works falls back to a real login instead of a
+  // silently-broken "logged in" state.
+  const handleQuickEnter = async (hub: RegistryHub) => {
+    const connection = hubService.getHubConnection(hub.slug);
+    if (!connection) return; // shouldn't happen -- caller only offers this when isOnboarded() is true
+    setQuickEnterSlug(hub.slug);
+    const status = await hubService.checkAccountStatus(hub.slug);
+    setQuickEnterSlug(null);
+    if (status === null) {
+      handleProbeDirectoryHub(hub);
+      return;
+    }
+    onNodeFound(hub.slug, connection.hub.name, connection.hub);
   };
 
   const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
@@ -347,7 +375,10 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   <DirectoryHubRow
                     key={hub.id}
                     hub={hub}
+                    alreadyJoined={hubService.isOnboarded(hub.slug)}
+                    entering={quickEnterSlug === hub.slug}
                     onJoin={() => handleProbeDirectoryHub(hub)}
+                    onQuickEnter={() => handleQuickEnter(hub)}
                   />
                 ))}
               </div>
@@ -708,7 +739,13 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 // Directory Hub Row
 // ──────────────────────────────────────────────
 
-function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
+function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }: {
+  hub: RegistryHub;
+  alreadyJoined: boolean;
+  entering: boolean;
+  onJoin: () => void;
+  onQuickEnter: () => void;
+}) {
   const isOnline = hub.online !== false;
   const [showFullDescription, setShowFullDescription] = useState(false);
   return (
@@ -735,6 +772,9 @@ function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void
             <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500">
               <Users className="w-3 h-3" />{hub.member_count}
             </span>
+          )}
+          {alreadyJoined && (
+            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Signed in</span>
           )}
         </div>
         {hub.description && (
@@ -793,11 +833,15 @@ function DirectoryHubRow({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void
       </AnimatePresence>
 
       {/* Enter button — could be a first join or a returning member, so "Enter"
-          reads right either way instead of assuming this is always a new join. */}
+          reads right either way instead of assuming this is always a new join.
+          Already-signed-in hubs skip straight past probe/auth (onQuickEnter);
+          everyone else still goes through the normal probe+login flow. */}
       <button
-        onClick={onJoin}
-        className="flex-shrink-0 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all active:scale-95"
+        onClick={alreadyJoined ? onQuickEnter : onJoin}
+        disabled={entering}
+        className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all active:scale-95 disabled:opacity-60"
       >
+        {entering && <Loader2 className="w-3 h-3 animate-spin" />}
         Enter
       </button>
     </div>

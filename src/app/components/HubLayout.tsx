@@ -32,7 +32,7 @@ import { MinimizedCallBar } from './comms/MinimizedCallBar';
 import { BroadcastOverlay } from './comms/BroadcastOverlay';
 import { MinimizedBroadcastBar } from './comms/MinimizedBroadcastBar';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
-import { hubPath, clearSubdomainCache } from '../utils/subdomain';
+import { hubPath, clearSubdomainCache, beginHubBrowsing } from '../utils/subdomain';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
@@ -135,7 +135,7 @@ function NavDragPreview({ app }: { app: NavTile }) {
 export function HubLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { currentHub, currentUser, leaveHub, signOutOfHub, updateTunnelUrl, userPreferences, updateUserPreferences } = useHub();
+  const { currentHub, currentUser, joinedHubs, switchHub, signOutOfHub, updateTunnelUrl, userPreferences, updateUserPreferences } = useHub();
   const { dotColor, label: statusLabel, status: connectionStatus } = useHubStatus();
   const { resolvedTheme, setTheme } = useTheme();
   const isDarkMode = resolvedTheme === 'dark';
@@ -234,11 +234,30 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       )
     : registryHubs;
 
+  // The "Update tunnel URL" reconnect panel below is for pointing THIS hub's
+  // own connection at its own new address (e.g. its Tailscale/Cloudflare
+  // tunnel rotated) -- updateTunnelUrl() always rewrites currentHub's own
+  // record. Picking a *different* hub's registry entry here used to silently
+  // rewrite this connection to point at that other hub's server while
+  // keeping this hub's own slug and auth token -- the UI would show the
+  // other hub's name (the URL "worked"), but every authenticated request
+  // (avatars, images, everything) would then send the wrong hub's token and
+  // fail. Scoped to same-slug matches only so this can never happen; genuine
+  // hub-to-hub switching belongs to the hub-info modal's "You're also signed
+  // into" list instead, which switches by picking up the OTHER hub's own
+  // stored connection rather than mutating this one.
+  const ownRegistryMatches = filteredRegistryHubs.filter(hub => hub.slug === currentHub?.slug);
+
   const tunnelUrl = currentHub?.tunnelUrl ?? '';
   const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
   const displayName = currentUser?.displayName || currentUser?.username || 'Neighbor';
   const nodeName = currentHub?.name || hubSlug || 'Community Hub';
+  // Other hubs this browser is already signed into -- surfaced in the hub
+  // info modal as a quick "you're here, but you could go there" switcher.
+  // switchHub() (HubContext) already handles the cross-subdomain navigation;
+  // this is its first real UI entry point (previously wired but unused).
+  const otherJoinedHubs = joinedHubs.filter((hub) => hub.slug !== currentHub?.slug);
   const resolvedAvatarUrl = (currentHub?.slug && currentUser?.hubUserId)
     ? hubService.getAvatarUrl(currentHub.slug, currentUser.hubUserId)
     : (currentUser?.avatarUrl ?? null);
@@ -282,7 +301,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     // Account-level, not just this browser — see the reconciliation effect
     // above for why "Customize navigation" needs to follow the user across
     // devices/sessions rather than living only in localStorage.
-    updateUserPreferences({ nav_pinned: JSON.stringify(next) }).catch(() => {});
+    updateUserPreferences({ nav_pinned: JSON.stringify(next) }).catch((err) =>
+      console.error('Failed to sync pinned nav to hub', err),
+    );
   };
   const updatePinnedNav = (next: string[]) => {
     setPinnedNavScreens(next);
@@ -410,12 +431,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     navigate(hubPath('/onboard'));
   };
 
-  /** Full disconnect — forgets this hub entirely and returns to hub discovery.
-   * Distinct from handleSignOut: this is for switching to a different hub. */
-  const handleLeaveHub = () => {
-    const slug = currentHub?.slug || hubSlug;
-    if (slug) leaveHub(slug);
+  /** Go pick a different hub — clears which hub is "active" so the picker
+   * doesn't just bounce back here, but deliberately does NOT call leaveHub():
+   * this hub's connection/session stays intact so it still shows up as a
+   * quick "Enter" in the browse list (see NodeDiscoveryScreen) instead of
+   * being deleted. Actually forgetting a hub is a separate, explicit action
+   * (still hubService.leaveHub, used elsewhere) -- not something a plain
+   * "switch" should ever do. */
+  const handleSwitchHub = () => {
     clearSubdomainCache();
+    beginHubBrowsing();
     window.location.href = window.location.origin + '/join';
   };
 
@@ -476,13 +501,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   };
 
   const toggleDesktopNavLayout = () => {
-    setDesktopNavLayout(prev => {
-      const next = prev === 'dock' ? 'sidebar' : 'dock';
-      localStorage.setItem('citinet-desktop-nav-layout', next);
-      // Account-level — see updatePinnedNav's own note.
-      updateUserPreferences({ nav_layout: next }).catch(() => {});
-      return next;
-    });
+    // Computed outside the setState updater (not inside it, the way this used
+    // to read) — an updater must stay pure, and calling updateUserPreferences
+    // (HubProvider's own setState) from inside one is the same "Cannot update
+    // a component while rendering a different component" issue already fixed
+    // for the pin drag-and-drop below.
+    const next = desktopNavLayout === 'dock' ? 'sidebar' : 'dock';
+    setDesktopNavLayout(next);
+    localStorage.setItem('citinet-desktop-nav-layout', next);
+    // Account-level — see updatePinnedNav's own note.
+    updateUserPreferences({ nav_layout: next }).catch((err) =>
+      console.error('Failed to sync nav layout to hub', err),
+    );
   };
 
   const projectInfoUrlRaw = (import.meta.env.VITE_PROJECT_INFO_URL || 'https://info.citinet.cloud').trim();
@@ -627,9 +657,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             />
             {registrySearchQuery.trim() && (
               <div className="space-y-1 max-h-36 overflow-y-auto">
-                {filteredRegistryHubs.length === 0 ? (
-                  <p className="text-[10px] text-slate-400 px-1">No hubs found.</p>
-                ) : filteredRegistryHubs.map(hub => (
+                {ownRegistryMatches.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 px-1">No listing found for this hub.</p>
+                ) : ownRegistryMatches.map(hub => (
                   <button
                     key={hub.id}
                     onClick={() => handleRegistryReconnect(hub.tunnel_url)}
@@ -757,7 +787,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <span className="text-sm text-slate-700 dark:text-slate-300">Sign Out</span>
                 </button>
                 <button
-                  onClick={() => { setShowAccountMenu(false); handleLeaveHub(); }}
+                  onClick={() => { setShowAccountMenu(false); handleSwitchHub(); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
                 >
                   <ArrowRightLeft className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
@@ -1009,9 +1039,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   />
                   {registrySearchQuery.trim() && (
                     <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {filteredRegistryHubs.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No hubs found — try the URL option below.</p>
-                      ) : filteredRegistryHubs.map(hub => (
+                      {ownRegistryMatches.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No listing found for this hub — try the URL option below.</p>
+                      ) : ownRegistryMatches.map(hub => (
                         <button
                           key={hub.id}
                           onClick={() => handleRegistryReconnect(hub.tunnel_url)}
@@ -1255,7 +1285,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <span className="text-sm text-slate-800 dark:text-slate-200">Sign Out</span>
                 </button>
                 <button
-                  onClick={() => { setShowMobileAccountMenu(false); handleLeaveHub(); }}
+                  onClick={() => { setShowMobileAccountMenu(false); handleSwitchHub(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
                 >
                   <ArrowRightLeft className="w-4 h-4 text-red-500 dark:text-red-400" />
@@ -1383,6 +1413,31 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     <span>{nodeStatus.activeMembers} {nodeStatus.activeMembers === 1 ? 'member' : 'members'}</span>
                   </div>
                 </div>
+                {otherJoinedHubs.length > 0 && (
+                  <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-zinc-800">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide pt-3">
+                      You're also signed into
+                    </p>
+                    <div className="space-y-1">
+                      {otherJoinedHubs.map((hub) => (
+                        <button
+                          key={hub.id}
+                          onClick={() => { setShowHubInfoModal(false); switchHub(hub.slug); }}
+                          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                        >
+                          <HubIcon hub={hub} baseUrl={hub.tunnelUrl} size={32} variant="badge" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{hub.name}</p>
+                            {hub.location && (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{hub.location}</p>
+                            )}
+                          </div>
+                          <ArrowRightLeft className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => { setShowHubInfoModal(false); navigate(hubPath('/hub-management')); }}
