@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, MapPin, Clock } from 'lucide-react';
 import { searchGeocode, type NominatimResult } from '../utils/geocoding';
 
@@ -33,19 +34,52 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
   const [history, setHistory] = useState<SearchHistoryItem[]>(() => {
     try { return JSON.parse(localStorage.getItem(historyKey) ?? '[]'); } catch { return []; }
   });
+  // Where the portaled dropdown paints, in viewport coordinates — recomputed
+  // whenever it opens or the page scrolls/resizes underneath it.
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // The dropdown itself now renders via a portal (see below), so it's no
+  // longer a DOM descendant of containerRef — the outside-click handler needs
+  // its own ref to still recognize a click landing inside the dropdown.
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setShowDropdown(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Portaled to <body> (see render below) specifically so this dropdown can
+  // never end up trapped behind later page content — anything with its own
+  // backdrop-filter (any cn-glass card, which this input is very often
+  // nested inside) creates a new stacking context, and a plain in-tree
+  // absolute/z-index child can't out-rank a LATER sibling of that ancestor
+  // (e.g. the feed posts rendered below the composer) no matter how high its
+  // z-index goes — it's boxed in by its own parent's stacking context. A
+  // portal sidesteps that entirely by rendering outside the tree altogether.
+  useEffect(() => {
+    if (!showDropdown) return;
+    const updateRect = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    updateRect();
+    window.addEventListener('scroll', updateRect, true);
+    window.addEventListener('resize', updateRect);
+    return () => {
+      window.removeEventListener('scroll', updateRect, true);
+      window.removeEventListener('resize', updateRect);
+    };
+  }, [showDropdown]);
 
   const handleInput = (v: string) => {
     onChange(v);
@@ -110,8 +144,12 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
         className={inputClassName ?? DEFAULT_INPUT_CLASSES}
       />
 
-      {showDropdown && (
-        <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden" style={{ zIndex: 1100 }}>
+      {showDropdown && dropdownRect && createPortal(
+        <div
+          ref={dropdownRef}
+          className="fixed bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden"
+          style={{ top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, zIndex: 1100 }}
+        >
           {!value && history.length > 0 && (
             <>
               <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
@@ -159,7 +197,8 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
               No places found
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

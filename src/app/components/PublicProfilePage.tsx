@@ -79,14 +79,6 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-500/15 text-blue-400',
-  ANNOUNCEMENT: 'bg-amber-500/15 text-amber-400',
-  PROJECT:      'bg-emerald-500/15 text-emerald-400',
-  REQUEST:      'bg-rose-500/15 text-rose-400',
-  EVENT:        'bg-purple-500/15 text-purple-400',
-};
-
 const PIN_CATEGORY_COLORS: Record<string, string> = {
   food:         'bg-orange-500/15 text-orange-400',
   service:      'bg-blue-500/15 text-blue-400',
@@ -129,7 +121,6 @@ function PostMiniCard({ post, src }: { post: PublicPost; src: string }) {
   const mediaUrl = post.media_file_name
     ? `${src}/api/public/files/${encodeURIComponent(post.media_file_name)}`
     : null;
-  const catColor = CATEGORY_COLORS[post.category] ?? 'bg-zinc-500/15 text-zinc-400';
 
   return (
     <div className="bg-zinc-800/60 rounded-xl overflow-hidden border border-zinc-700/50 flex flex-col">
@@ -153,7 +144,7 @@ function PostMiniCard({ post, src }: { post: PublicPost; src: string }) {
         </div>
       )}
       <div className="p-2.5 flex-1 flex flex-col gap-1">
-        <span className={`self-start text-[9px] font-bold px-1.5 py-0.5 rounded-md ${catColor}`}>
+        <span className="self-start text-[9px] font-semibold text-zinc-500">
           {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
         </span>
         <p className="text-xs font-semibold text-zinc-200 leading-snug line-clamp-2">{post.title}</p>

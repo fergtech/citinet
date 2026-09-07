@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Mic, MicOff, Video, VideoOff, Radio } from 'lucide-react';
 
 import { useBroadcast } from '../../context/BroadcastContext';
 
-export function BroadcastSetupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function BroadcastSetupModal({ open, onClose, initialTitle }: { open: boolean; onClose: () => void; initialTitle?: string }) {
   const { broadcast, startBroadcast, toggleMic, toggleCam } = useBroadcast();
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(initialTitle ?? '');
+
+  useEffect(() => { if (open) setTitle(initialTitle ?? ''); }, [open, initialTitle]);
 
   if (!open) return null;
 

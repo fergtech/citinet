@@ -469,6 +469,24 @@ async function initDb() {
         UNIQUE(post_id, user_id)
       )
     `);
+    // Unique per-viewer post impressions — same shape as hub_post_likes right
+    // above (one row per post+user, UNIQUE constraint doubling as the
+    // dedup), deliberately not a bare counter: this is what lets
+    // POST /api/posts/:id/view answer "has this person already been
+    // counted" instead of just incrementing blindly, and — like
+    // hub_post_likes already could, if a "liked by" list ever gets built —
+    // it can back a future "seen by <names>" list the same way Instagram's
+    // view count does, since the per-viewer rows (not just a total) are
+    // what a name list needs.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_post_views (
+        id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id    UUID        NOT NULL REFERENCES hub_posts(id) ON DELETE CASCADE,
+        user_id    UUID        NOT NULL REFERENCES hub_users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(post_id, user_id)
+      )
+    `);
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_post_embeddings (
         post_id     UUID PRIMARY KEY REFERENCES hub_posts(id) ON DELETE CASCADE,
@@ -930,6 +948,16 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_location     VARCHAR(300)`,
     );
+    // Superseded by hub_post_views below (one row per post+viewer, same
+    // shape as hub_post_likes/hub_event_rsvps) — a bare counter can't answer
+    // "has this specific person already viewed it," which per-user
+    // deduplication and any future "seen by" list both need. Left as a
+    // no-op migration (column already exists on any DB that ran the earlier
+    // version of this file) rather than an ALTER...DROP — an unused column
+    // costs nothing, and nothing reads hub_posts.view_count anymore.
+    await client.query(
+      `ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS view_count         INTEGER NOT NULL DEFAULT 0`,
+    );
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_hub_posts_space_id ON hub_posts(space_id)`,
     );
@@ -999,6 +1027,13 @@ async function initDb() {
     );
     await client.query(
       `ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    // Optional interest-group tag (civic/hobby/outdoors/parents/sports) — spaces
+    // stay free-form/user-created either way, this just powers the Discover
+    // filter chips; existing spaces are simply uncategorized until an admin
+    // tags them via space settings.
+    await client.query(
+      `ALTER TABLE hub_spaces ADD COLUMN IF NOT EXISTS category TEXT`,
     );
     // Session expiry column (migration for existing installs)
     await client.query(
@@ -1284,6 +1319,40 @@ async function initDb() {
     // File visibility — web_public allows anyone-with-link access (no auth required)
     await client.query(
       `ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS web_public BOOLEAN NOT NULL DEFAULT FALSE`,
+    );
+    // is_public alone only controls whether a file's bytes are fetchable by
+    // other hub members (needed so e.g. a post's photo still renders inline
+    // in the feed via the unauthenticated file route) — it does NOT mean the
+    // file should show up in the browsable hub-wide Files library. That's a
+    // separate, explicit opt-in (shared_to_library), set only at the actual
+    // "share to hub" gestures (the Files-screen visibility toggle, adding a
+    // file as a project resource). Attaching a photo to a post/reply is not
+    // one of those gestures, so it must never flip this on.
+    // Nullable (no default) so the one-time backfill below can tell "never
+    // classified" apart from an explicit false, and only ever runs once.
+    await client.query(
+      `ALTER TABLE hub_files ADD COLUMN IF NOT EXISTS shared_to_library BOOLEAN`,
+    );
+    await client.query(`
+      UPDATE hub_files SET shared_to_library = (
+        is_public = true
+        AND file_name NOT LIKE 'bg-%'
+        AND space_id IS NULL
+        AND id NOT IN (SELECT media_file_id FROM hub_posts WHERE media_file_id IS NOT NULL)
+      )
+      WHERE shared_to_library IS NULL
+    `);
+    // GET /api/files' WHERE clause (owner_id = $1 OR (is_public AND
+    // shared_to_library)) had no supporting index at all until now — every
+    // call (including the Storage screen's listFiles(), which has no other
+    // filtering of its own) was a full sequential scan of hub_files, which
+    // only gets worse as the table grows (every post/reply image attachment
+    // is a row here too, not just explicit Files uploads).
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_files_owner_id ON hub_files(owner_id)`,
+    );
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_files_public_library ON hub_files(is_public, shared_to_library) WHERE is_public = true AND shared_to_library = true`,
     );
     // E2E Encryption — key registry
     await client.query(`
@@ -3108,10 +3177,18 @@ app.get('/api/conversations/:id/typing', authenticate, async (req, res) => {
 app.get('/api/files', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
+      // is_public is reported here as "actually shared to the hub library"
+      // (is_public AND shared_to_library), not the raw column — a file can be
+      // is_public=true for an unrelated reason (e.g. a post attachment, kept
+      // fetchable so it renders inline in the feed) without the owner having
+      // ever taken the "share with hub" action. Reporting the raw column here
+      // would show the owner a "Hub Shared" badge on a file nobody else can
+      // actually browse to, and would fight the visibility toggle below.
       `SELECT id AS file_id, file_name, file_key, mime_type, size_bytes,
-              owner_id, is_public, web_public, folder_id, uploaded_at
+              owner_id, (is_public AND COALESCE(shared_to_library, false)) AS is_public,
+              web_public, folder_id, uploaded_at
        FROM hub_files
-       WHERE (owner_id = $1 OR is_public = true)
+       WHERE (owner_id = $1 OR (is_public = true AND shared_to_library = true))
          AND file_name NOT LIKE 'bg-%'
          AND space_id IS NULL
        ORDER BY uploaded_at DESC`,
@@ -3162,15 +3239,16 @@ app.post('/api/files', authenticate, (req, res) => {
         .then(() => minioClient.statObject(STORAGE_BUCKET, fileKey))
         .then(async (stat) => {
           const result = await pool.query(
-            `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public, folder_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, web_public, folder_id, shared_to_library)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $6)
              ON CONFLICT (file_key) DO UPDATE
-               SET size_bytes  = EXCLUDED.size_bytes,
-                   mime_type   = EXCLUDED.mime_type,
-                   is_public   = EXCLUDED.is_public,
-                   web_public  = EXCLUDED.web_public,
-                   folder_id   = EXCLUDED.folder_id,
-                   uploaded_at = NOW()
+               SET size_bytes        = EXCLUDED.size_bytes,
+                   mime_type         = EXCLUDED.mime_type,
+                   is_public         = EXCLUDED.is_public,
+                   web_public        = EXCLUDED.web_public,
+                   folder_id         = EXCLUDED.folder_id,
+                   shared_to_library = EXCLUDED.shared_to_library,
+                   uploaded_at       = NOW()
              RETURNING id AS file_id, file_name, size_bytes, mime_type, is_public, web_public, folder_id, uploaded_at`,
             [
               filename,
@@ -3473,6 +3551,10 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
 //   private: is_public=false, web_public=false  (owner only)
 //   hub:     is_public=true,  web_public=false  (hub members, auth required)
 //   web:     is_public=true,  web_public=true   (anyone with the link, no auth)
+// This is THE explicit "share with hub" gesture, so it's also the one place
+// (besides an intentional resource/project attach) allowed to flip
+// shared_to_library — the flag that actually gates hub-wide visibility in the
+// Files library, independent of is_public (see GET /api/files above).
 // folder_id: the folder to move this file into, or null to move it to the
 // root of the Files dashboard. Keyed by file_name (not id) like every other
 // file route in this file — a UUID-keyed route would collide with this same
@@ -3494,8 +3576,8 @@ app.patch('/api/files/:filename', authenticate, async (req, res) => {
   const values = [];
   let i = 1;
   if (visibility !== undefined) {
-    sets.push(`is_public = $${i++}`, `web_public = $${i++}`);
-    values.push(visibility !== 'private', visibility === 'web');
+    sets.push(`is_public = $${i++}`, `web_public = $${i++}`, `shared_to_library = $${i++}`);
+    values.push(visibility !== 'private', visibility === 'web', visibility !== 'private');
   }
   if (folder_id !== undefined) {
     sets.push(`folder_id = $${i++}`);
@@ -3772,7 +3854,25 @@ app.get('/api/public/files/:filename', async (req, res) => {
       `${disposition}; filename="${sanitizeFilename(file.file_name)}"`,
     );
     res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    // A year, not a day — file_key is a random UUID minted fresh per upload
+    // (never reused for different content; a post's media never gets edited
+    // in place, only replaced with a new file), so this really is the
+    // `immutable` case, not just "usually doesn't change." Public feed
+    // images/videos are the main beneficiary — see hub-media.tsx's own note
+    // on why this route (not the token/download one) is what post media
+    // should be fetched through in the first place.
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // A video player fetches a non-faststart MP4 in (at least) two bites: a
+    // Range request for the tail to read the moov atom (duration/codec —
+    // which is why a stuck player still shows a correct duration), then
+    // separate Range requests for the actual frame data as it buffers. If
+    // the connection sits idle between those, Node's default socket timeout
+    // can cut it before the second fetch ever happens, leaving playback
+    // stuck at a known duration but zero decoded frames. The token/download
+    // route already disables this for exactly this reason; this route
+    // needs the same treatment now that post media (video included) is
+    // served through it.
+    res.socket.setTimeout(0);
 
     const rangeHeader = req.headers['range'];
     if (rangeHeader && totalSize) {
@@ -3984,6 +4084,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
               EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $${myUserIdParam}) AS my_rsvp,
               (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
               EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked,
+              (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count,
               pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
               pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
               rq.problem AS poll_request_problem
@@ -4274,7 +4375,7 @@ app.post(
 
       if (req.file) {
         req.file = await convertHeicUpload(req.file);
-        const fileKey = `${req.user.id}/${req.file.originalname}`;
+        const fileKey = `${req.user.id}/${crypto.randomUUID()}`;
         if (minioClient) {
           await minioClient.putObject(
             STORAGE_BUCKET,
@@ -4285,8 +4386,12 @@ app.post(
           );
         }
         const fileResult = await pool.query(
-          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
-         VALUES ($1, $2, $3, $4, $5, true)
+          // is_public=true only so the image renders inline in the feed via
+          // the unauthenticated file route — shared_to_library stays false so
+          // attaching a photo to a post never surfaces it in the hub-wide
+          // Files library the way an explicit "share to hub" action would.
+          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, shared_to_library)
+         VALUES ($1, $2, $3, $4, $5, true, false)
          ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW(), is_public = true
          RETURNING id`,
           [
@@ -4366,6 +4471,7 @@ app.post(
         author_username: req.user.username,
         media_file_name: req.file?.originalname || null,
         reply_count: 0,
+        view_count: 0,
         ...(pollFields ? {
           poll: {
             options: pollFields.options,
@@ -4433,7 +4539,7 @@ app.patch(
       if (remove_media === 'true') mediaFileId = null;
       if (req.file) {
         req.file = await convertHeicUpload(req.file);
-        const fileKey = `${req.user.id}/${req.file.originalname}`;
+        const fileKey = `${req.user.id}/${crypto.randomUUID()}`;
         if (minioClient) {
           await minioClient.putObject(
             STORAGE_BUCKET,
@@ -4444,8 +4550,10 @@ app.patch(
           );
         }
         const fileResult = await pool.query(
-          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public)
-         VALUES ($1, $2, $3, $4, $5, true)
+          // See the create-post handler above — shared_to_library stays false
+          // for post attachments regardless of is_public.
+          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, shared_to_library)
+         VALUES ($1, $2, $3, $4, $5, true, false)
          ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW(), is_public = true
          RETURNING id`,
           [
@@ -4488,7 +4596,8 @@ app.patch(
 
       const result = await pool.query(
         `UPDATE hub_posts SET ${sets.join(', ')} WHERE id = $${params.length}
-       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at, visibility`,
+       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at, visibility,
+                 (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = hub_posts.id)::int AS view_count`,
         params,
       );
       if (!result.rows[0])
@@ -4573,7 +4682,8 @@ app.get('/api/events/upcoming', authenticate, async (req, res) => {
               f.file_name AS media_file_name,
               (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
               (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
-              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp
+              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
+              (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count
        FROM hub_posts p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
@@ -4692,6 +4802,7 @@ app.get('/api/posts/:id', authenticate, async (req, res) => {
               EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
               (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
               EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked,
+              (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count,
               pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
               pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
               rq.problem AS poll_request_problem
@@ -4738,6 +4849,29 @@ app.post('/api/posts/:id/like', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Toggle like error:', err);
     res.status(500).json({ error: 'Failed to update like' });
+  }
+});
+
+// Record a view/impression on a post — a real per-viewer row (hub_post_views,
+// same shape as hub_post_likes), not a blind increment, so a given user only
+// ever gets counted once per post no matter how many times they revisit it
+// (across app relaunches/devices, unlike the client's own one-per-session
+// dedupe in lib/ui/post-consumption.tsx). Same two-step
+// mutate-then-recount shape as toggleLike above.
+app.post('/api/posts/:id/view', authenticate, async (req, res) => {
+  try {
+    await pool.query(
+      `INSERT INTO hub_post_views (post_id, user_id) VALUES ($1, $2) ON CONFLICT (post_id, user_id) DO NOTHING`,
+      [req.params.id, req.user.id],
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM hub_post_views WHERE post_id = $1`,
+      [req.params.id],
+    );
+    res.json({ count: countRows[0].count });
+  } catch (err) {
+    console.error('Record post view error:', err);
+    res.status(500).json({ error: 'Failed to record view' });
   }
 });
 
@@ -6858,14 +6992,17 @@ const PREF_KEYS = [
   // instead of living only in one browser's localStorage.
   'nav_pinned',
   'nav_layout',
-  // Saved/bookmarked items (Atlas pins, Exchange listings, Exchange vendors)
-  // — previously localStorage-only (citinet-saved-atlas-pins / saved_listings
-  // / saved_vendors), so a bookmark never followed the account across
-  // devices/browsers and looked "unsaved" after clearing site data. Each
-  // value is a JSON-stringified array of ids, same encoding as nav_pinned.
+  // Saved/bookmarked items (Atlas pins, Exchange listings, Exchange vendors,
+  // feed posts) — previously localStorage-only (citinet-saved-atlas-pins /
+  // saved_listings / saved_vendors), so a bookmark never followed the
+  // account across devices/browsers and looked "unsaved" after clearing
+  // site data. Each value is a JSON-stringified array of ids, same encoding
+  // as nav_pinned. saved_posts (the Feed's Bookmark button) was added later,
+  // following the exact same pattern.
   'saved_atlas_pins',
   'saved_listings',
   'saved_vendors',
+  'saved_posts',
 ];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {
@@ -8096,13 +8233,13 @@ app.post('/api/initiatives/:id/resources/file', authenticate, upload.single('fil
   if (!minioClient) return res.status(503).json({ error: 'Storage not available' });
   try {
     req.file = await convertHeicUpload(req.file);
-    const fileKey = `initiative-resources/${req.params.id}/${crypto.randomUUID()}-${req.file.originalname}`;
+    const fileKey = `initiative-resources/${req.params.id}/${crypto.randomUUID()}`;
     await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
       'Content-Type': req.file.mimetype,
     });
     const { rows: fileRows } = await pool.query(
-      `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, initiative_id)
-       VALUES ($1, $2, $3, $4, $5, TRUE, $6) RETURNING *`,
+      `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, initiative_id, shared_to_library)
+       VALUES ($1, $2, $3, $4, $5, TRUE, $6, TRUE) RETURNING *`,
       [req.file.originalname, fileKey, req.file.mimetype, req.file.size, req.user.id, req.params.id],
     );
     const { rows } = await pool.query(
@@ -8148,6 +8285,14 @@ app.post('/api/initiatives/:id/resources/attach-file', authenticate, async (req,
         [req.params.id, file_id],
       );
     }
+    // Attaching a file as a project resource is itself an explicit "share to
+    // hub" gesture, so it always earns a spot in the library — including a
+    // file that was already public but never explicitly library-shared
+    // (e.g. a post attachment). Kept separate from the block above so it
+    // never overwrites an existing initiative_id tag.
+    await pool.query(`UPDATE hub_files SET shared_to_library = TRUE WHERE id = $1`, [
+      file_id,
+    ]);
     const { rows } = await pool.query(
       `INSERT INTO hub_initiative_resources (initiative_id, item, kind, file_id, created_by)
        VALUES ($1, $2, 'file', $3, $4) RETURNING *`,
@@ -8460,7 +8605,8 @@ app.post(
     try {
       await assertInitiativeCreator(req.params.id, req);
       req.file = await convertHeicUpload(req.file);
-      const fileKey = `initiative-banners/${req.params.id}/${req.file.originalname}`;
+      const bannerKey = crypto.randomUUID();
+      const fileKey = `initiative-banners/${req.params.id}/${bannerKey}`;
       if (minioClient) {
         await minioClient.putObject(STORAGE_BUCKET, fileKey, req.file.buffer, req.file.size, {
           'Content-Type': req.file.mimetype,
@@ -8470,7 +8616,7 @@ app.post(
         `INSERT INTO hub_initiative_meta (initiative_id, banner_mode, banner_image_file_name, created_by)
          VALUES ($1, 'image', $2, $3)
          ON CONFLICT (initiative_id) DO UPDATE SET banner_mode = 'image', banner_image_file_name = $2, updated_at = NOW()`,
-        [req.params.id, req.file.originalname, req.user.id],
+        [req.params.id, bannerKey, req.user.id],
       );
       res.json({ file_name: req.file.originalname, file_key: fileKey });
     } catch (err) {
@@ -8664,6 +8810,7 @@ function spaceRole(members, userId) {
 function canManageSpace(role) {
   return role === 'owner' || role === 'admin';
 }
+const SPACE_CATEGORIES = ['civic', 'hobby', 'outdoors', 'parents', 'sports'];
 
 // POST /api/spaces — create a space (any hub member)
 app.post('/api/spaces', authenticate, async (req, res) => {
@@ -8682,11 +8829,13 @@ app.post('/api/spaces', authenticate, async (req, res) => {
       return res.status(502).json({ error: err.message });
     }
   }
-  const { name, slug, description, visibility = 'public' } = req.body;
+  const { name, slug, description, visibility = 'public', category } = req.body;
   if (!name || !slug)
     return res.status(400).json({ error: 'name and slug required' });
   if (!['public', 'private', 'invite-only'].includes(visibility))
     return res.status(400).json({ error: 'invalid visibility' });
+  if (category && !SPACE_CATEGORIES.includes(category))
+    return res.status(400).json({ error: `category must be one of: ${SPACE_CATEGORIES.join(', ')}` });
   const cleanSlug = slug
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
@@ -8694,9 +8843,9 @@ app.post('/api/spaces', authenticate, async (req, res) => {
     .replace(/^-|-$/g, '');
   try {
     const { rows } = await pool.query(
-      `INSERT INTO hub_spaces (slug, name, description, visibility, created_by)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [cleanSlug, name, description || null, visibility, req.user.id],
+      `INSERT INTO hub_spaces (slug, name, description, visibility, category, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [cleanSlug, name, description || null, visibility, category || null, req.user.id],
     );
     const space = rows[0];
     // creator becomes owner
@@ -8707,10 +8856,12 @@ app.post('/api/spaces', authenticate, async (req, res) => {
     // Return full space with caller's role/status/member_count so frontend has correct state immediately
     const { rows: full } = await pool.query(
       `
-      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.category, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
+        (SELECT COUNT(*) FROM hub_space_members om JOIN hub_users ou ON ou.id = om.user_id
+          WHERE om.space_id = s.id AND om.status = 'active' AND ou.last_seen_at > NOW() - INTERVAL '5 minutes')::int AS online_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8736,11 +8887,13 @@ app.get('/api/spaces', authenticate, async (req, res) => {
   try {
     const localQuery = pool.query(
       `
-      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.category, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
+        (SELECT COUNT(*) FROM hub_space_members om JOIN hub_users ou ON ou.id = om.user_id
+          WHERE om.space_id = s.id AND om.status = 'active' AND ou.last_seen_at > NOW() - INTERVAL '5 minutes')::int AS online_count,
         sm2.role  AS my_role,
         sm2.status AS my_status
       FROM hub_spaces s
@@ -8772,11 +8925,13 @@ app.get('/api/spaces/mine', authenticate, async (req, res) => {
   try {
     const localQuery = pool.query(
       `
-      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.category, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
+        (SELECT COUNT(*) FROM hub_space_members om JOIN hub_users ou ON ou.id = om.user_id
+          WHERE om.space_id = s.id AND om.status = 'active' AND ou.last_seen_at > NOW() - INTERVAL '5 minutes')::int AS online_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8864,11 +9019,13 @@ app.get('/api/spaces/:slug', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `
-      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.created_by, s.created_at, s.updated_at,
+      SELECT s.id, s.slug, s.name, s.description, s.visibility, s.category, s.created_by, s.created_at, s.updated_at,
              s.banner_mode, s.banner_color, s.banner_gradient_from, s.banner_gradient_to, s.banner_image_file_name,
              s.web_public,
         COUNT(DISTINCT sm.user_id) FILTER (WHERE sm.status = 'active') AS member_count,
         (SELECT COUNT(*) FROM hub_posts WHERE space_id = s.id)::int AS post_count,
+        (SELECT COUNT(*) FROM hub_space_members om JOIN hub_users ou ON ou.id = om.user_id
+          WHERE om.space_id = s.id AND om.status = 'active' AND ou.last_seen_at > NOW() - INTERVAL '5 minutes')::int AS online_count,
         me.role   AS my_role,
         me.status AS my_status
       FROM hub_spaces s
@@ -8929,12 +9086,15 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
       banner_gradient_from,
       banner_gradient_to,
       web_public,
+      category,
     } = req.body;
     if (
       visibility &&
       !['public', 'private', 'invite-only'].includes(visibility)
     )
       return res.status(400).json({ error: 'invalid visibility' });
+    if (category && !SPACE_CATEGORIES.includes(category))
+      return res.status(400).json({ error: `category must be one of: ${SPACE_CATEGORIES.join(', ')}` });
 
     const { rows } = await pool.query(
       `
@@ -8947,6 +9107,7 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
         banner_gradient_from = COALESCE($6, banner_gradient_from),
         banner_gradient_to   = COALESCE($7, banner_gradient_to),
         web_public           = COALESCE($9, web_public),
+        category             = COALESCE($10, category),
         updated_at           = NOW()
       WHERE id = $8 RETURNING *
     `,
@@ -8960,6 +9121,9 @@ app.patch('/api/spaces/:slug', authenticate, async (req, res) => {
         banner_gradient_to || null,
         space.id,
         web_public !== undefined ? web_public : null,
+        // '' means "clear the category" — COALESCE only skips actual SQL NULL,
+        // so an empty string still writes through and reads back as falsy.
+        category !== undefined ? category : null,
       ],
     );
     res.json(rows[0]);
@@ -9359,6 +9523,7 @@ app.get('/api/spaces/:slug/posts', authenticate, async (req, res) => {
              EXISTS(SELECT 1 FROM hub_event_rsvps er WHERE er.post_id = p.id AND er.user_id = $2) AS my_rsvp,
              (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
              EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $2) AS my_liked,
+             (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count,
              pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
              pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
              rq.problem AS poll_request_problem
@@ -9421,7 +9586,7 @@ app.post(
       let mediaFileId = null;
       if (req.file) {
         req.file = await convertHeicUpload(req.file);
-        const fileKey = `spaces/${spaceId}/${req.user.id}/${req.file.originalname}`;
+        const fileKey = `spaces/${spaceId}/${req.user.id}/${crypto.randomUUID()}`;
         if (minioClient) {
           await minioClient.putObject(
             STORAGE_BUCKET,
@@ -9532,7 +9697,8 @@ app.post(
           .json({ error: 'Only space admins can change the banner' });
 
       req.file = await convertHeicUpload(req.file);
-      const fileKey = `space-banners/${spaceRows[0].id}/${req.file.originalname}`;
+      const bannerKey = crypto.randomUUID();
+      const fileKey = `space-banners/${spaceRows[0].id}/${bannerKey}`;
       if (minioClient) {
         await minioClient.putObject(
           STORAGE_BUCKET,
@@ -9542,12 +9708,11 @@ app.post(
           { 'Content-Type': req.file.mimetype },
         );
       }
-      const fileName = req.file.originalname;
       await pool.query(
         `UPDATE hub_spaces SET banner_mode = 'image', banner_image_file_name = $1, updated_at = NOW() WHERE id = $2`,
-        [fileName, spaceRows[0].id],
+        [bannerKey, spaceRows[0].id],
       );
-      res.json({ file_name: fileName, file_key: fileKey });
+      res.json({ file_name: req.file.originalname, file_key: fileKey });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

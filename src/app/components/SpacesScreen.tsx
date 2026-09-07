@@ -5,17 +5,44 @@ import {
   Loader2, AlertCircle, Settings, LogOut, UserPlus,
   Check, X, ChevronRight, MessageCircle, Share2,
   LayoutGrid, Send, Image as ImageIcon, Video, FileText,
-  Download, Palette, ImagePlus, Link2,
+  Download, Palette, ImagePlus, Link2, Radio, User as UserIcon,
+  Landmark, Trees, Baby, Dumbbell, type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub } from '../context/HubContext';
 import { spacesService } from '../services/spacesService';
 import { hubService } from '../services/hubService';
+import { initiativesService, type Initiative } from '../services/initiativesService';
+import { COLOR, STATUS_BADGE, STATUS_LABEL, categoryMeta, categoryPresetImage, AvatarStack } from './InitiativeCard';
+import { BroadcastSetupModal } from './comms/BroadcastSetupModal';
+import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
+import { hubPath } from '../utils/subdomain';
 import { PostDetailModal } from './PostDetailModal';
-import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile } from '../types/hub';
+import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile, HubSpaceCategory } from '../types/hub';
 
 interface SpacesScreenProps {
   onBack: () => void;
+}
+
+// ── Category taxonomy ─────────────────────────────────────
+// Purely a Discover filter aid — spaces stay free-form/user-created either
+// way (see HubSpaceCategory). Gradients reuse the same app-section tokens
+// Feed/Dashboard already draw from, so a category badge reads as "this kind
+// of thing" using colors the rest of the app has already taught people.
+
+const SPACE_CATEGORY: Record<HubSpaceCategory, { label: string; Icon: LucideIcon; grad: string }> = {
+  civic:    { label: 'Civic',     Icon: Landmark, grad: 'var(--cn-grad-initiatives)' },
+  hobby:    { label: 'Hobbies',   Icon: Palette,  grad: 'var(--cn-grad-spaces)' },
+  outdoors: { label: 'Outdoors',  Icon: Trees,    grad: 'var(--cn-grad-atlas)' },
+  parents:  { label: 'Parenting', Icon: Baby,     grad: 'var(--cn-grad-exchange)' },
+  sports:   { label: 'Sports',    Icon: Dumbbell, grad: 'var(--cn-grad-files)' },
+};
+const CATEGORY_FILTERS: { value: HubSpaceCategory | 'all'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  ...(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(value => ({ value, label: SPACE_CATEGORY[value].label })),
+];
+function categoryOf(space: HubSpace) {
+  return space.category && space.category in SPACE_CATEGORY ? SPACE_CATEGORY[space.category as HubSpaceCategory] : null;
 }
 
 // ── Constants (same as AccountScreen) ────────────────────
@@ -127,6 +154,7 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
   const [slug, setSlug] = useState('');
   const [desc, setDesc] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private' | 'invite-only'>('public');
+  const [category, setCategory] = useState<HubSpaceCategory | ''>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [slugManual, setSlugManual] = useState(false);
@@ -140,7 +168,7 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
     e.preventDefault();
     setError(''); setLoading(true);
     try {
-      const space = await spacesService.create(hubSlug, { name, slug, description: desc, visibility });
+      const space = await spacesService.create(hubSlug, { name, slug, description: desc, visibility, category: category || undefined });
       onCreated(space);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
@@ -188,6 +216,24 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5">
               {visibility === 'public' ? 'Anyone on the hub can join directly.' : visibility === 'private' ? 'Members request to join; admin approves.' : 'Members can only join via invitation.'}
             </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-2">Category <span className="text-slate-400 dark:text-zinc-600">(optional — helps neighbors find it in Discover)</span></label>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => setCategory('')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === '' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                None
+              </button>
+              {(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(c => {
+                const { label, Icon } = SPACE_CATEGORY[c];
+                return (
+                  <button key={c} type="button" onClick={() => setCategory(c)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === c ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                    <Icon className="w-3.5 h-3.5" /> {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
           <div className="flex gap-2 pt-1">
@@ -265,6 +311,97 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
         </div>
       </motion.div>
     </div>
+  );
+}
+
+// ── Member Preview ────────────────────────────────────────
+// A real anchored popover — not a modal — using the app's existing Radix
+// Popover primitive (ui/popover.tsx), which already portals its content and
+// handles anchored positioning with viewport collision avoidance, plus
+// outside-click/Escape dismissal, for free. Card content (identity + a real
+// handoff to the full profile, plus the same "Message" deep-link
+// ProfileScreen's own Message button uses — sessionStorage flag
+// MessagesScreen reads on mount) is split out so both member-row locations
+// (the compact sidebar list and the full Members tab) can each wrap their
+// own trigger in <MemberPopoverRow> without duplicating the card markup.
+
+function MemberAvatar({ member, hubSlug, size }: { member: HubSpaceMember; hubSlug: string; size: 'row' | 'popover' }) {
+  const avatarUrl = member.avatar_url ? hubService.getAvatarUrl(hubSlug, member.user_id) : null;
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
+
+  if (avatarUrl && !avatarFailed) {
+    return <img src={avatarUrl} alt="" className={`${size === 'row' ? 'w-7 h-7' : 'w-14 h-14'} rounded-full object-cover ${size === 'popover' ? 'mb-2.5' : ''}`} onError={() => setAvatarFailed(true)} />;
+  }
+
+  return (
+    <div className={`${size === 'row' ? 'w-7 h-7 text-[10px]' : 'w-14 h-14 text-lg mb-2.5'} rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-bold flex-shrink-0`}>
+      {getInitials(member.display_name || member.username)}
+    </div>
+  );
+}
+
+function MemberPreviewCard({ member, hubSlug, myUserId, onClose }: { member: HubSpaceMember; hubSlug: string; myUserId?: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const isSelf = member.user_id === myUserId;
+
+  function viewProfile() {
+    onClose();
+    navigate(hubPath(`/profile/${member.user_id}`));
+  }
+  function message() {
+    sessionStorage.setItem('citinet-deeplink-message-peer', JSON.stringify({ userId: member.user_id, username: member.username }));
+    onClose();
+    navigate(hubPath('/messages'));
+  }
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <button onClick={onClose} title="Close" aria-label="Close" className="self-end -mt-1 -mr-1 mb-1 w-6 h-6 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center">
+        <X className="w-3.5 h-3.5 cn-text-4" />
+      </button>
+      <MemberAvatar member={member} hubSlug={hubSlug} size="popover" />
+      <p className="text-sm font-semibold cn-text-1">{member.display_name || member.username}</p>
+      <p className="text-xs cn-text-4">@{member.username}</p>
+      {member.profile_headline && (
+        <p className="text-xs cn-text-3 mt-1.5">{member.profile_headline}</p>
+      )}
+      <span className="mt-2 inline-block text-[10.5px] font-medium capitalize px-2 py-0.5 rounded-full cn-surface-3 cn-text-3">
+        {member.role}
+      </span>
+
+      <div className="flex gap-2 w-full mt-4">
+        {!isSelf && (
+          <button onClick={message}
+            className="flex-1 py-2 rounded-xl cn-surface-3 text-xs font-medium cn-text-2 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5" /> Message
+          </button>
+        )}
+        <button onClick={viewProfile}
+          className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5">
+          <UserIcon className="w-3.5 h-3.5" /> View Profile
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Wraps a member row (passed as children, e.g. a button) so clicking it
+ * pops this member's preview card right where it was clicked — each row
+ * owns its own open state, so no shared "which member is open" state needs
+ * threading up to a parent. */
+function MemberPopoverRow({ member, hubSlug, myUserId, align = 'start', children }: {
+  member: HubSpaceMember; hubSlug: string; myUserId?: string; align?: 'start' | 'center' | 'end'; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverContent align={align} className="w-64 p-4 cn-surface border cn-border">
+        <MemberPreviewCard member={member} hubSlug={hubSlug} myUserId={myUserId} onClose={() => setOpen(false)} />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -425,18 +562,40 @@ function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: strin
 
 // ── Space Info Sidebar ────────────────────────────────────
 
-function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
+function SpaceInfoSidebar({ space, hubSlug, members, membersLoading, posts, myUserId }: {
   space: HubSpace;
+  hubSlug: string;
   members: HubSpaceMember[];
   membersLoading: boolean;
   posts: HubPost[];
+  myUserId?: string;
 }) {
   const activeMembers = members.filter(m => m.status === 'active');
+  const memberCount = Number(space.member_count) || 0;
+  const canViewMembers = space.my_status === 'active';
   const topPosters = [...posts]
     .reduce((acc, p) => { acc.set(p.author_username, (acc.get(p.author_username) ?? 0) + 1); return acc; }, new Map<string, number>());
+  const [showBroadcastSetup, setShowBroadcastSetup] = useState(false);
 
   return (
     <div className="p-4 space-y-5">
+      {/* Live — same comms system Messages uses, just launched with this
+          space's name as a starting point so members recognize what it's
+          about. Stays hub-wide visible under the hood — there's no per-
+          audience targeting in the comms backend to restrict one to "just
+          this space's members." (No call button here — 1:1 calls don't fit
+          a space's membership and group-room calling has no UI yet.) */}
+      <div>
+        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Live</p>
+        <button onClick={() => setShowBroadcastSetup(true)}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-950/60 text-red-600 dark:text-red-400 text-xs font-semibold transition-colors">
+          <Radio className="w-3.5 h-3.5" /> Broadcast to space
+        </button>
+      </div>
+      {showBroadcastSetup && (
+        <BroadcastSetupModal open={showBroadcastSetup} onClose={() => setShowBroadcastSetup(false)} initialTitle={`Live from ${space.name}`} />
+      )}
+      
       {/* About */}
       {space.description && (
         <div>
@@ -445,20 +604,7 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
         </div>
       )}
 
-      {/* Stats */}
-      <div>
-        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Stats</p>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="cn-surface-2 border cn-border rounded-xl p-3 text-center">
-            <p className="text-lg font-bold cn-text-1">{Number(space.member_count) || 0}</p>
-            <p className="text-[11px] cn-text-4 mt-0.5">Members</p>
-          </div>
-          <div className="cn-surface-2 border cn-border rounded-xl p-3 text-center">
-            <p className="text-lg font-bold cn-text-1">{posts.length}</p>
-            <p className="text-[11px] cn-text-4 mt-0.5">Posts</p>
-          </div>
-        </div>
-      </div>
+      
 
       {/* Members */}
       <div>
@@ -466,25 +612,34 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
         {membersLoading && (
           <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin cn-text-4" /></div>
         )}
-        {!membersLoading && activeMembers.length === 0 && (
+        {!membersLoading && !canViewMembers && (
+          <p className="text-xs cn-text-4">
+            {memberCount > 0
+              ? `${memberCount} member${memberCount !== 1 ? 's' : ''} have joined. Join to see who they are.`
+              : 'No members yet.'}
+          </p>
+        )}
+        {!membersLoading && canViewMembers && activeMembers.length === 0 && (
           <p className="text-xs cn-text-4">No members yet.</p>
         )}
-        <div className="space-y-1">
-          {activeMembers.slice(0, 8).map(m => (
-            <div key={m.user_id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-default transition-colors">
-              <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
-                {getInitials(m.display_name || m.username)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium cn-text-2 truncate">{m.display_name || m.username}</p>
-                <p className="text-[10px] cn-text-4 capitalize">{m.role}</p>
-              </div>
-            </div>
-          ))}
-          {activeMembers.length > 8 && (
-            <p className="text-[11px] cn-text-4 px-2 pt-1">+{activeMembers.length - 8} more members</p>
-          )}
-        </div>
+        {canViewMembers && (
+          <div className="space-y-1">
+            {activeMembers.slice(0, 8).map(m => (
+              <MemberPopoverRow key={m.user_id} member={m} hubSlug={hubSlug} myUserId={myUserId}>
+                <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors">
+                  <MemberAvatar member={m} hubSlug={hubSlug} size="row" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium cn-text-2 truncate">{m.display_name || m.username}</p>
+                    <p className="text-[10px] cn-text-4 capitalize">{m.role}</p>
+                  </div>
+                </button>
+              </MemberPopoverRow>
+            ))}
+            {activeMembers.length > 8 && (
+              <p className="text-[11px] cn-text-4 px-2 pt-1">+{activeMembers.length - 8} more members</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Top contributors */}
@@ -504,6 +659,118 @@ function SpaceInfoSidebar({ space, members, membersLoading, posts }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Space Initiatives ─────────────────────────────────────
+// Projects that named this space as their home (Initiative.space_id) — real
+// initiatives, pre-filtered to this space rather than a new endpoint. The
+// compact row below reuses InitiativeCard's own building blocks (status/
+// category styling, ProgressBar, AvatarStack) so a project looks the same
+// "kind of thing" here as it does on its own screen — just condensed into a
+// row, and without InitiativeCard's SpaceChip (redundant on a page that's
+// already scoped to this one space).
+
+function spaceInitiativeTaskCount(tasks: Initiative['tasks']) {
+  return { done: tasks.filter(t => t.status === 'done').length, total: tasks.length };
+}
+
+function CompactInitiativeRow({ initiative, hubSlug, onOpen }: { initiative: Initiative; hubSlug: string; onOpen: () => void }) {
+  const c = COLOR[initiative.color];
+  const cat = categoryMeta(initiative.category);
+  const CatIcon = cat.icon;
+  const tc = spaceInitiativeTaskCount(initiative.tasks);
+  const pct = tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0;
+  const openRoles = initiative.open_roles_count ?? 0;
+  const bannerUrl = initiative.banner_mode === 'image' && initiative.banner_image_file_name ? initiativesService.getBannerUrl(hubSlug, initiative.id) : null;
+  const presetImage = categoryPresetImage(initiative.category);
+  const customGradient = initiative.banner_mode === 'gradient' && initiative.banner_gradient_from && initiative.banner_gradient_to
+    ? `linear-gradient(135deg, ${initiative.banner_gradient_from}, ${initiative.banner_gradient_to})`
+    : null;
+  const bgImage = bannerUrl || (!customGradient ? presetImage : null);
+
+  return (
+    <button onClick={onOpen}
+      className="w-full flex items-center gap-3 p-2.5 rounded-xl border cn-border hover:border-purple-300/60 dark:hover:border-purple-500/30 cn-surface-2 transition-colors text-left">
+      {/* Cover swatch — same image/gradient/brand-color fallback chain as the
+          real card, just square and small instead of full-bleed. */}
+      <div
+        className={`relative w-12 h-12 rounded-lg shrink-0 overflow-hidden ${!bgImage && !customGradient ? `bg-gradient-to-br ${c.gradient}` : ''}`}
+        style={bgImage ? { background: `center/cover no-repeat url(${bgImage})` } : customGradient ? { background: customGradient } : undefined}
+      >
+        <span className="absolute inset-0 flex items-center justify-center bg-black/10">
+          <CatIcon className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+        </span>
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{initiative.title}</span>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
+          <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-3">{cat.label}</span>
+          {openRoles > 0 && (
+            <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+              {openRoles} role{openRoles > 1 ? 's' : ''} open
+            </span>
+          )}
+        </div>
+        {tc.total > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1 rounded-full cn-surface-3 overflow-hidden">
+              <div className={`h-full rounded-full bg-gradient-to-r ${c.bar}`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className="cn-mono text-[10px] cn-text-4 shrink-0">{tc.done}/{tc.total}</span>
+          </div>
+        )}
+      </div>
+
+      {initiative.members.length > 0 && <AvatarStack names={initiative.members.map(m => m.name)} size="sm" max={3} />}
+    </button>
+  );
+}
+
+function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceId: string }) {
+  const navigate = useNavigate();
+  const [items, setItems] = useState<Initiative[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    initiativesService.listAll(hubSlug)
+      .then(all => { if (!cancelled) setItems(all.filter(i => i.space_id === spaceId)); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [hubSlug, spaceId]);
+
+  function startInitiative() {
+    sessionStorage.setItem('citinet-deeplink-initiative-space', spaceId);
+    navigate(hubPath('/initiatives'));
+  }
+
+  if (loading) return null; // avoids a flash of "no initiatives yet" before the real list arrives
+
+  return (
+    <div className="max-w-2xl mx-auto w-full flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold cn-text-3">Initiatives from this space</span>
+        <button onClick={startInitiative}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-surface-2 hover:bg-black/10 dark:hover:bg-white/10 text-xs font-medium cn-text-2 transition-colors">
+          <Plus className="w-3.5 h-3.5" /> Start an initiative
+        </button>
+      </div>
+      {items.length === 0 && (
+        <div className="cn-surface-2 border cn-border rounded-xl px-4 py-3 text-xs cn-text-4">
+          No projects started from this space yet — any member can start one.
+        </div>
+      )}
+      {items.map(i => (
+        <CompactInitiativeRow key={i.id} initiative={i} hubSlug={hubSlug} onOpen={() => navigate(hubPath(`/initiatives/${i.id}`))} />
+      ))}
     </div>
   );
 }
@@ -534,6 +801,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const [settingsName, setSettingsName] = useState(space.name);
   const [settingsDesc, setSettingsDesc] = useState(space.description || '');
   const [settingsVis, setSettingsVis] = useState(space.visibility);
+  const [settingsCategory, setSettingsCategory] = useState<HubSpaceCategory | ''>((space.category as HubSpaceCategory) || '');
   const [settingsWebPublic, setSettingsWebPublic] = useState(!!space.web_public);
   const [spaceLinkCopied, setSpaceLinkCopied] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -567,6 +835,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   useEffect(() => {
     setTab('feed'); setPosts([]); setMembers([]);
     setSettingsName(space.name); setSettingsDesc(space.description || ''); setSettingsVis(space.visibility);
+    setSettingsCategory((space.category as HubSpaceCategory) || '');
     setSettingsWebPublic(!!space.web_public);
     setSettingsSaved(false); setShowBannerEditor(false);
     setScrollY(0);
@@ -660,7 +929,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
     e.preventDefault();
     setSettingsSaving(true); setSettingsError(''); setSettingsSaved(false);
     try {
-      const updated = await spacesService.update(hubSlug, space.slug, { name: settingsName, description: settingsDesc, visibility: settingsVis, web_public: settingsWebPublic });
+      const updated = await spacesService.update(hubSlug, space.slug, { name: settingsName, description: settingsDesc, visibility: settingsVis, web_public: settingsWebPublic, category: settingsCategory });
       onSpaceUpdated(updated); setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 2500);
     } catch (err: any) { setSettingsError(err.message); }
@@ -698,7 +967,18 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const bannerContentOpacity = 1 - collapseRatio * 1.6; // fades out before fully collapsed
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    // Two-column at lg+ (feed/tabs on the left, About/Live/Members flush with
+    // the banner's own top edge on the right); a single stacked column below
+    // that, main content first then the sidebar's info — same content, just
+    // reflowed, not hidden. Scroll ownership is responsive too: below lg this
+    // OUTER div is the one true scrolling surface (so the sidebar stacked
+    // beneath the feed is actually reachable), which is also what the mobile
+    // banner-collapse effect below tracks (contentRef moved here from the
+    // inner tab-content div for exactly that reason). At lg+ this div stops
+    // scrolling itself (lg:overflow-hidden) and each column scrolls on its
+    // own instead, like a normal two-pane layout.
+    <div ref={contentRef} className="flex flex-col lg:flex-row h-full overflow-y-auto lg:overflow-hidden">
+    <div className="flex flex-col flex-1 min-w-0 lg:overflow-hidden">
       {/* Banner — collapses on mobile as user scrolls */}
       <div className="relative flex-shrink-0" style={{ ...bannerStyle, height: `${bannerHeight}px`, transition: 'height 0.15s ease-out' }}>
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950/80 via-zinc-950/20 to-transparent" />
@@ -716,6 +996,11 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm ${space.visibility === 'public' ? 'bg-emerald-900/70 text-emerald-300' : space.visibility === 'private' ? 'bg-amber-900/70 text-amber-300' : 'bg-zinc-800/70 text-zinc-400'}`}>
                 {visibilityIcon(space.visibility)} {visibilityLabel(space.visibility)}
               </span>
+              {(() => { const cat = categoryOf(space); return cat && (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium backdrop-blur-sm bg-white/15 text-white">
+                  <cat.Icon className="w-3 h-3" /> {cat.label}
+                </span>
+              ); })()}
               {space.web_public && (
                 <button
                   type="button"
@@ -731,7 +1016,14 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               {space.my_role && <span className="text-xs text-white/60 capitalize">{space.my_role}</span>}
             </div>
             <h1 className="text-xl font-bold text-white drop-shadow leading-tight">{space.name}</h1>
-            <p className="text-sm text-white/60 mt-0.5">{Number(space.member_count) || 0} member{Number(space.member_count) !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-white/60 mt-0.5 flex items-center gap-2">
+              <span>{Number(space.member_count) || 0} member{Number(space.member_count) !== 1 ? 's' : ''}</span>
+              {Number(space.online_count) > 0 && (
+                <span className="inline-flex items-center gap-1 text-emerald-400">
+                  <span className="cn-live-dot w-1.5 h-1.5" />{space.online_count} online
+                </span>
+              )}
+            </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
             {error && <p className="text-xs text-red-400">{error}</p>}
@@ -809,29 +1101,32 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto" ref={contentRef}>
+      {/* Content — scrolls on its own only at lg+ (see the outer wrapper's
+          comment above); below lg it's just normal block flow inside that
+          outer scroll. */}
+      <div className="flex-1 lg:overflow-y-auto">
         {/* Not a member */}
         {!isActive && !isPending && !isInvited && (
-          <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
+          <div className="flex flex-col items-center justify-center min-h-[50vh] py-16 px-8 text-center">
             <div className="w-16 h-16 rounded-2xl cn-surface-2 flex items-center justify-center mb-4"><Users className="w-7 h-7 cn-text-4" /></div>
             <h3 className="text-base font-semibold cn-text-1 mb-1">Join to participate</h3>
             <p className="text-sm cn-text-4">{space.visibility === 'invite-only' ? 'This space is invite-only. Ask an admin to invite you.' : space.visibility === 'private' ? 'Request to join — an admin will approve you.' : 'Join this space to read posts and contribute.'}</p>
           </div>
         )}
         {isPending && (
-          <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
+          <div className="flex flex-col items-center justify-center min-h-[50vh] py-16 px-8 text-center">
             <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-800 flex items-center justify-center mb-4"><Loader2 className="w-7 h-7 text-amber-600 dark:text-amber-400 animate-spin" /></div>
             <h3 className="text-base font-semibold cn-text-1 mb-1">Request pending</h3>
             <p className="text-sm cn-text-4">An admin will review your request to join.</p>
           </div>
         )}
 
-        {/* Feed tab — two columns on desktop */}
+        {/* Feed tab — About/Live/Members now live in the persistent right
+            column below (sibling to this whole left column), not nested in
+            here, so they show next to every tab, not just Feed. */}
         {isActive && tab === 'feed' && (
-          <div className="flex gap-0">
-            {/* Main feed column */}
-            <div className="flex-1 min-w-0 p-5 space-y-4">
+            <div className="p-5 space-y-4">
+              <SpaceInitiativesSection hubSlug={hubSlug} spaceId={space.id} />
               <ComposePost hubSlug={hubSlug} spaceSlug={space.slug} onPosted={p => setPosts(prev => [p, ...prev])} />
               {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
               {!postsLoading && posts.length === 0 && <div className="text-center py-12 cn-text-4 text-sm">No posts yet. Be the first to share something.</div>}
@@ -913,12 +1208,6 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 );
               })}
             </div>
-
-            {/* Info sidebar — desktop only, sticky within outer scroll container */}
-            <div className="hidden lg:flex flex-col w-72 flex-shrink-0 border-l cn-border sticky top-0 self-start max-h-screen overflow-y-auto">
-              <SpaceInfoSidebar space={space} members={members} membersLoading={membersLoading} posts={posts} />
-            </div>
-          </div>
         )}
 
         {/* Members tab */}
@@ -951,11 +1240,15 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 <p className="text-xs font-semibold uppercase tracking-widest cn-text-4 mb-2">Members</p>
                 {members.filter(m => m.status === 'active').map(m => (
                   <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
-                    <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
-                      <p className="text-xs cn-text-4 capitalize">{m.role}</p>
-                    </div>
+                    <MemberPopoverRow member={m} hubSlug={hubSlug} myUserId={myUserId}>
+                      <button className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                        <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
+                          <p className="text-xs cn-text-4 capitalize">{m.role}</p>
+                        </div>
+                      </button>
+                    </MemberPopoverRow>
                     {isAdmin && m.user_id !== myUserId && m.role !== 'owner' && (
                       <button onClick={() => handleRemoveMember(m.user_id)} title={`Remove ${m.display_name || m.username}`} aria-label={`Remove ${m.display_name || m.username}`} className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 cn-text-4 hover:text-red-500 dark:hover:text-red-400 transition-colors"><X className="w-3.5 h-3.5" /></button>
                     )}
@@ -993,6 +1286,24 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                     {visibilityLabel(v)}
                   </button>
                 ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium cn-text-3 mb-2">Category <span className="cn-text-4">(helps neighbors find it in Discover)</span></label>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" onClick={() => setSettingsCategory('')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === '' ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                  None
+                </button>
+                {(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(c => {
+                  const { label, Icon } = SPACE_CATEGORY[c];
+                  return (
+                    <button key={c} type="button" onClick={() => setSettingsCategory(c)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === c ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                      <Icon className="w-3.5 h-3.5" /> {label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {/* Web sharing */}
@@ -1055,6 +1366,17 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
           </form>
         )}
       </div>
+    </div>
+
+    {/* Right column — About/Live/Members. A flex sibling of the left column
+        above, so at lg+ its top edge starts at the same row-start as the
+        banner (the left column's own first child) with no extra gap; below
+        lg it just stacks after the entire left column instead of vanishing,
+        as part of the outer div's single scroll. Shown for every tab, not
+        just Feed. */}
+    <div className="lg:w-72 lg:flex-shrink-0 border-t lg:border-t-0 lg:border-l cn-border lg:overflow-y-auto">
+      <SpaceInfoSidebar space={space} hubSlug={hubSlug} members={members} membersLoading={membersLoading} posts={posts} myUserId={myUserId} />
+    </div>
 
       <AnimatePresence>
         {showInvite && <InviteMemberModal hubSlug={hubSlug} spaceSlug={space.slug} onClose={() => setShowInvite(false)} />}
@@ -1105,6 +1427,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<HubSpaceCategory | 'all'>('all');
   const [showCreate, setShowCreate] = useState(false);
 
   function selectSpace(space: HubSpace | null) {
@@ -1166,7 +1489,9 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
     selectSpace(null);
   }
 
-  const displaySpaces = (showAll ? allSpaces : mySpaces).filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  const displaySpaces = (showAll ? allSpaces : mySpaces)
+    .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(s => categoryFilter === 'all' || s.category === categoryFilter);
   const pendingInvites = allSpaces.filter(s => s.my_status === 'invited');
 
   return (
@@ -1185,8 +1510,16 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
               className="w-full cn-surface-2 border cn-border rounded-xl pl-9 pr-3 py-2 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
           </div>
           <div className="flex gap-1 mt-2">
-            <button onClick={() => setShowAll(false)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${!showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>My Spaces</button>
             <button onClick={() => setShowAll(true)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Discover</button>
+            <button onClick={() => setShowAll(false)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${!showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Joined{mySpaces.length > 0 ? ` (${mySpaces.length})` : ''}</button>
+          </div>
+          <div className="flex gap-1.5 mt-2 overflow-x-auto no-scrollbar">
+            {CATEGORY_FILTERS.map(f => (
+              <button key={f.value} onClick={() => setCategoryFilter(f.value)}
+                className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors border ${categoryFilter === f.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
         {pendingInvites.length > 0 && !showAll && (
@@ -1209,11 +1542,23 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
               <p className="text-xs cn-text-4">{showAll ? 'Be the first to create one.' : 'Switch to Discover to find spaces to join.'}</p>
             </div>
           )}
-          {displaySpaces.map(space => (
+          {displaySpaces.map(space => {
+            const cat = categoryOf(space);
+            const onlineCount = Number(space.online_count) || 0;
+            return (
             <button key={space.id} onClick={() => selectSpace(space)}
               className={`w-full flex items-start gap-3 px-4 py-3.5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left border-b cn-border ${selected?.id === space.id ? 'bg-black/5 dark:bg-white/5' : ''}`}>
-              <div className="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden" style={getBannerStyle(space, tunnelUrl)}>
-                <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold bg-black/10">{space.name[0]?.toUpperCase()}</div>
+              <div className="relative flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl overflow-hidden" style={getBannerStyle(space, tunnelUrl)}>
+                  <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold bg-black/10">{space.name[0]?.toUpperCase()}</div>
+                </div>
+                {/* Floating category badge — same "this kind of space" cue the
+                    detail banner and card grid use, just scaled to a list row. */}
+                {cat && (
+                  <span className="absolute -bottom-1 -right-1 w-4.5 h-4.5 rounded-md flex items-center justify-center ring-2 ring-white dark:ring-zinc-900" style={{ width: 18, height: 18, background: cat.grad }}>
+                    <cat.Icon className="w-2.5 h-2.5 text-white" />
+                  </span>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
@@ -1221,11 +1566,20 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
                   <span className="cn-text-4 flex-shrink-0">{visibilityIcon(space.visibility)}</span>
                 </div>
                 <p className="text-xs cn-text-4 truncate">{space.description || `${Number(space.member_count) || 0} members`}</p>
+                <div className="flex items-center gap-2.5 mt-0.5">
+                  {space.description && <span className="text-[11px] cn-text-4">{Number(space.member_count) || 0} members</span>}
+                  {onlineCount > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                      <span className="cn-live-dot w-1.5 h-1.5" />{onlineCount} online
+                    </span>
+                  )}
+                </div>
                 {space.my_status === 'pending' && <span className="text-xs text-amber-600 dark:text-amber-400">Pending approval</span>}
                 {space.my_status === 'invited' && <span className="text-xs text-purple-600 dark:text-purple-400">Invited — tap to accept</span>}
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 

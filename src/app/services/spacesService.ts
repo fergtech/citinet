@@ -31,7 +31,7 @@ class SpacesService {
     return res.json();
   }
 
-  async create(hubSlug: string, data: { name: string; slug: string; description?: string; visibility?: string }): Promise<HubSpace> {
+  async create(hubSlug: string, data: { name: string; slug: string; description?: string; visibility?: string; category?: string }): Promise<HubSpace> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/spaces`, {
       method: 'POST',
@@ -45,7 +45,7 @@ class SpacesService {
     return res.json();
   }
 
-  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string; web_public: boolean; banner_mode: string; banner_color: string; banner_gradient_from: string; banner_gradient_to: string }>): Promise<HubSpace> {
+  async update(hubSlug: string, spaceSlug: string, data: Partial<{ name: string; description: string; visibility: string; web_public: boolean; banner_mode: string; banner_color: string; banner_gradient_from: string; banner_gradient_to: string; category: string }>): Promise<HubSpace> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/spaces/${spaceSlug}`, {
       method: 'PATCH',

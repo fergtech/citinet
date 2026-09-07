@@ -493,11 +493,16 @@ export interface HubVendor {
 }
 
 /** A community space within a hub */
+/** Optional interest-group tag — purely a Discover filter aid, spaces stay
+ * free-form/user-created either way. Absent/null/'' all mean "uncategorized". */
+export type HubSpaceCategory = 'civic' | 'hobby' | 'outdoors' | 'parents' | 'sports';
+
 export interface HubSpace {
   id: string;
   slug: string;
   name: string;
   description?: string | null;
+  category?: HubSpaceCategory | string | null;
   visibility: 'public' | 'private' | 'invite-only';
   banner_mode?: 'image' | 'solid' | 'gradient' | null;
   banner_color?: string | null;
@@ -510,6 +515,8 @@ export interface HubSpace {
   created_at: string;
   updated_at?: string;
   member_count?: number;
+  /** Active members with a presence heartbeat inside the last 5 minutes (see utils/presence.ts) */
+  online_count?: number;
   /** Caller's role in this space (null if not a member) */
   my_role?: 'owner' | 'admin' | 'moderator' | 'member' | null;
   /** Caller's membership status */

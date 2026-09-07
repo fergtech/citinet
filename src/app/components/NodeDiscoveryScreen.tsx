@@ -13,13 +13,13 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Loader2, AlertCircle,
   Globe, User, Lock, Eye, EyeOff, Mail,
-  RefreshCw, WifiOff, Users, MapPin, Search, ChevronLeft, Info, X,
+  RefreshCw, WifiOff, Users, MapPin, Search, ChevronLeft, Info, X, RotateCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { hubService } from '../services/hubService';
 import { clearSubdomainCache } from '../utils/subdomain';
-import { registryService, type RegistryHub } from '../services/registryService';
+import { registryService, type RegistryHub, isHubRestarting } from '../services/registryService';
 import type { Hub, HubInfoResponse, HubStatusResponse } from '../types/hub';
 import { OnboardingBackground } from './OnboardingBackground';
 import { HubIcon } from './HubIcon';
@@ -747,13 +747,16 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
   onQuickEnter: () => void;
 }) {
   const isOnline = hub.online !== false;
+  const isRestarting = isHubRestarting(hub);
   const [showFullDescription, setShowFullDescription] = useState(false);
   return (
     <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
       <div className="relative flex-shrink-0">
         <HubIcon hub={hub} baseUrl={hub.tunnel_url ?? ''} size={34} variant="badge" />
         <span
-          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 ${isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'}`}
+          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-zinc-900 ${
+            isRestarting ? 'bg-amber-500' : isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'
+          }`}
         />
       </div>
 
@@ -775,6 +778,11 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
           )}
           {alreadyJoined && (
             <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Signed in</span>
+          )}
+          {isRestarting && (
+            <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
+              <RotateCw className="w-3 h-3 animate-spin" /> Restarting
+            </span>
           )}
         </div>
         {hub.description && (

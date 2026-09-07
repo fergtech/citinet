@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useHub } from '../context/HubContext';
 import type { UserPreferences } from '../services/preferencesService';
 
-type SavedIdsPrefKey = 'saved_atlas_pins' | 'saved_listings' | 'saved_vendors';
+type SavedIdsPrefKey = 'saved_atlas_pins' | 'saved_listings' | 'saved_vendors' | 'saved_posts';
 
 /**
  * Account-synced list of saved/bookmarked ids (Atlas pins, Exchange

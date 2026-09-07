@@ -4,9 +4,8 @@ import { PostCard } from './PostCard';
 import { PollFeedCard } from './PollFeedCard';
 import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
-import { FeedGlyph } from './icons';
 import {
-  Loader2, AlertCircle, RefreshCw, X, Image, Film,
+  Loader2, AlertCircle, RefreshCw, X, Image, Film, Newspaper,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
   MessageCircle, ShieldCheck, ChevronLeft, ChevronRight, Send, BarChart2, Vote, Plus, Link2,
   MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
@@ -18,6 +17,9 @@ import { notificationsService } from '../services/notificationsService';
 import { openLocationInAtlas } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
 import { requestsService, type HubRequest } from '../services/requestsService';
+import { useSavedIds } from '../hooks/useSavedIds';
+import { useHubGeoCenter } from '../hooks/useHubGeoCenter';
+import { readCache, writeCache } from '../utils/dataCache';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubPost, HubPostReply, HubEventAttendee } from '../types/hub';
 import {
@@ -48,6 +50,31 @@ const CAT_TABS = [
   { value: 'DISCUSSION',   label: 'Discussions' },
   { value: 'POLL',         label: 'Polls' },
 ] as const;
+
+// Categories selectable from the quick inline composer's plain post mode —
+// Event and Poll are excluded here since they already have their own
+// dedicated composer modes (with their own required fields) rather than a
+// plain-post + category label.
+const QUICK_POST_CATEGORIES = [
+  { value: 'DISCUSSION',   label: 'Discussion' },
+  { value: 'ANNOUNCEMENT', label: 'Announcement' },
+  { value: 'PROJECT',      label: 'Project' },
+  { value: 'REQUEST',      label: 'Request' },
+] as const;
+
+// Same idea for the full New Post modal, which additionally supports Event
+// as a selectable category (it has its own date/location fields inline).
+const COMPOSE_MODAL_CATEGORIES = ['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'] as const;
+
+/** Whatever category tab the feed is currently filtered to becomes the
+ *  composer's starting category too — e.g. opening the composer while
+ *  viewing the "Requests" tab defaults it to Request instead of always
+ *  Discussion. Falls back to Discussion when the active filter isn't one
+ *  the given composer actually supports (e.g. "All" or "Polls" for the
+ *  quick composer, which has no plain-post Poll option). */
+function contextualDefaultCategory(activeFilter: string | null, allowed: readonly string[]): string {
+  return activeFilter && allowed.includes(activeFilter) ? activeFilter : 'DISCUSSION';
+}
 
 function formatTimestamp(iso: string): string {
   try {
@@ -110,7 +137,7 @@ function RightRail({ hubName, hubSlug, posts, onNavigateToProfile }: {
           <span className="cn-eyebrow">{hubName}</span>
         </div>
         <p className="text-xs cn-text-3 leading-relaxed">
-          Posts are visible to verified members of this hub only. No algorithms. Nothing ranked or hidden.
+          Posts are visible to verified members of this hub only. No exploitative algorithms. Nothing manipulative or hidden.
         </p>
       </div>
 
@@ -295,9 +322,12 @@ interface PostDetailViewProps {
   currentUserId?: string;
   currentUserAvatarUrl?: string;
   isAdmin?: boolean;
-  categoryColors: Record<string, string>;
   publicFileUrl: (name: string) => string;
   onBack: () => void;
+  // Label on the top-left back control — defaults to this screen's own copy.
+  // Callers embedding this view elsewhere (e.g. Dashboard's activity-stream
+  // modal) pass "Close" so it reads correctly outside the Feed page.
+  backLabel?: string;
   onDeleted: (postId: string) => void;
   onLike: (post: HubPost) => void;
   onNavigateToProfile?: (userId: string) => void;
@@ -316,11 +346,15 @@ interface PostDetailViewProps {
   // Copy-permalink — not poll-specific; shared by the regular post Share button too.
   onCopyLink: (postId: string) => void;
   copyLinkActive: boolean;
+  // Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange listings/vendors.
+  saved?: boolean;
+  onToggleSave?: () => void;
 }
 
-function PostDetailView({
-  post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, categoryColors, publicFileUrl, onBack, onDeleted, onLike, onNavigateToProfile, onNavigate,
+export function PostDetailView({
+  post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin, publicFileUrl, onBack, backLabel = 'Back to Feed', onDeleted, onLike, onNavigateToProfile, onNavigate,
   canManagePoll, pollVoting, pollClosing, pollReopening, pollDeleting, onPollVote, onPollClose, onPollReopen, onPollEdit, onPollDelete, onCopyLink, copyLinkActive,
+  saved, onToggleSave,
 }: PostDetailViewProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
@@ -484,7 +518,7 @@ function PostDetailView({
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border cn-border hover:border-zinc-500 text-sm cn-text-3 hover:text-zinc-200 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          Back to Feed
+          {backLabel}
         </button>
       </div>
 
@@ -519,6 +553,8 @@ function PostDetailView({
               authorAvatarUrl={post.author_id ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
               currentUserId={currentUserId}
               currentUserAvatarUrl={currentUserAvatarUrl}
+              saved={saved}
+              onToggleSave={onToggleSave}
             />
           </div>
         ) : (
@@ -662,6 +698,16 @@ function PostDetailView({
                     <div className="flex items-center gap-1 text-xs cn-text-4 mt-0.5">
                       <Clock className="w-3 h-3 shrink-0" />
                       <span>{formatTimestamp(post.created_at)}</span>
+                      {/* Category — understated, folded into the metadata line rather than
+                          a standalone high-contrast pill; a status-worthy category (were one
+                          ever added) can still earn its own accent here without disturbing
+                          the default look of everyday post types like Discussion. */}
+                      {post.category && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   {(canEdit || canDelete) && (
@@ -683,13 +729,6 @@ function PostDetailView({
                     </DropdownMenu>
                   )}
                 </div>
-
-                {/* Category badge */}
-                {post.category && (
-                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ring-1 mb-3 ${categoryColors[post.category] ?? 'cn-surface-2 cn-text-3 ring-zinc-700'}`}>
-                    {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-                  </span>
-                )}
 
                 {/* Title */}
                 {post.title && <h2 className="text-lg font-bold cn-text-1 mb-2 leading-snug">{post.title}</h2>}
@@ -756,8 +795,13 @@ function PostDetailView({
                     <span>{copyLinkActive ? 'Copied' : 'Share'}</span>
                   </button>
                   <div className="flex-1" />
-                  <button title="Bookmark" aria-label="Bookmark post" className="cn-text-4 hover:text-purple-400 transition-colors">
-                    <Bookmark className="w-4 h-4" />
+                  <button
+                    title={saved ? 'Remove from saved' : 'Save post'}
+                    aria-label={saved ? 'Remove from saved' : 'Save post'}
+                    onClick={() => onToggleSave?.()}
+                    className={`transition-colors ${saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-400'}`}
+                  >
+                    <Bookmark className={`w-4 h-4 ${saved ? 'fill-purple-500' : ''}`} />
                   </button>
                 </div>
               </>
@@ -865,6 +909,9 @@ interface ComposeModalProps {
   onCreated: (post: HubPost) => void;
   initialTitle?: string;
   initialBody?: string;
+  // Same context-aware defaulting as the inline composer — the calling feed
+  // tab's category, when it's one this modal can actually create.
+  initialCategory?: string;
 }
 
 type PostVisibility = 'inherit' | 'hub' | 'private';
@@ -875,8 +922,8 @@ const VISIBILITY_OPTIONS: { value: PostVisibility; label: string; icon: ReactNod
   { value: 'private', label: 'Only me',  icon: <Lock   className="w-3.5 h-3.5" />, desc: 'Visible only to you' },
 ];
 
-function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = '' }: ComposeModalProps) {
-  const [category, setCategory] = useState('DISCUSSION');
+function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = '', initialCategory = 'DISCUSSION' }: ComposeModalProps) {
+  const [category, setCategory] = useState(initialCategory);
   const [labelOpen, setLabelOpen] = useState(false);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const [visibility, setVisibility] = useState<PostVisibility>('inherit');
@@ -1312,8 +1359,11 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
 // open the device's native file picker directly and preview inline, right below
 // the caption. Place drops in the same location search Atlas/Event use, and
 // collapses to a small removable chip once picked — carried over as the
-// event's location if you then switch into Event mode. The full ComposeModal
-// is only a fallback for the empty-everything case (category/visibility picker).
+// event's location if you then switch into Event mode. A category picker
+// (Discussion/Announcement/Project/Request) lives right in the action row too,
+// defaulting to whatever tab the feed is currently filtered to. The full
+// ComposeModal remains a fallback for the empty-everything case, plus the
+// one thing this inline form doesn't cover: visibility.
 
 interface InlineComposerProps {
   hubSlug: string;
@@ -1325,20 +1375,42 @@ interface InlineComposerProps {
   onPostCreated: (post: HubPost) => void;
   onOpenFullComposer: (initialBody: string) => void;
   autoFocus?: boolean;
+  // Whichever feed tab is currently active — used to default the quick-post
+  // category picker (e.g. viewing "Requests" defaults a new plain post to
+  // Request instead of always Discussion).
+  activeFilter: string | null;
 }
 
-function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus }: InlineComposerProps) {
+function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus, activeFilter }: InlineComposerProps) {
   const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
   const bodyInputRef = useRef<HTMLInputElement>(null);
+  const eventTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const pollTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Dashboard's "Share something with your neighbors" deep-links here instead of
   // popping the full modal — just put the cursor where neighbors already know to type.
   useEffect(() => {
     if (autoFocus) bodyInputRef.current?.focus();
   }, [autoFocus]);
+
+  // Focus + place the caret at the END of whatever's already in `body` the
+  // moment either mode's textarea appears — covers both entry paths (clicking
+  // Event/Poll explicitly with text already typed, and the auto-switch below
+  // that promotes mid-keystroke). Plain `autoFocus` isn't enough: a freshly
+  // mounted, pre-filled <textarea> puts Chromium's caret at position 0, not
+  // the end, so the very next keystroke lands BEFORE the carried-over text
+  // instead of after it — e.g. typing "Block party…" would land as "lock
+  // party…B". Runs only on mode transitions (not every keystroke), so it
+  // never yanks the caret away from someone editing mid-text afterward.
+  useEffect(() => {
+    const el = mode === 'event' ? eventTextareaRef.current : mode === 'poll' ? pollTextareaRef.current : null;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [mode]);
 
   // Idle-mode attachments — a plain post can carry a photo/video and/or a place
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -1348,6 +1420,20 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
   const [place, setPlace] = useState<{ label: string; lat: number; lng: number } | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Idle-mode post intent — which of the feed's own category tabs this quick
+  // post should land under. Starts out following the active feed tab.
+  const [category, setCategory] = useState(() => contextualDefaultCategory(activeFilter, QUICK_POST_CATEGORIES.map(c => c.value)));
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+
+  // Re-sync to the active tab whenever it changes — but only while the box is
+  // still empty/untouched, so switching feed tabs never yanks a category out
+  // from under someone who's already mid-post.
+  useEffect(() => {
+    if (body.trim() || mediaFile || place) return;
+    setCategory(contextualDefaultCategory(activeFilter, QUICK_POST_CATEGORIES.map(c => c.value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilter]);
 
   // Event-only fields
   const [eventDate, setEventDate] = useState('');
@@ -1372,6 +1458,8 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
 
   const reset = () => {
     setMode('idle'); setBody(''); setPostError('');
+    setCategory(contextualDefaultCategory(activeFilter, QUICK_POST_CATEGORIES.map(c => c.value)));
+    setCategoryMenuOpen(false);
     if (mediaPreview) URL.revokeObjectURL(mediaPreview);
     setMediaFile(null); setMediaPreview(null);
     setPlaceOpen(false); setPlaceQuery(''); setPlace(null);
@@ -1399,7 +1487,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
     setPostError('');
     try {
       const post = await hubService.createPost(hubSlug, {
-        category: 'DISCUSSION',
+        category,
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventLocation: place?.label,
@@ -1465,6 +1553,12 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
   }
 
   const fieldCls = 'w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
+  // LocationSearchInput draws its own search icon at left-3/w-4 and (while
+  // there's a value) a clear button at right-3 — fieldCls's plain px-3 sits
+  // the caret right underneath the icon instead of after it. pl-9/pr-8 match
+  // the clearance ComposeModal's and Atlas's own LocationSearchInput fields
+  // already use.
+  const locationFieldCls = 'w-full cn-surface-2 border cn-border rounded-lg pl-9 pr-8 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
 
   const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
   const mediaChipsRow = (
@@ -1502,10 +1596,10 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           </button>
         </div>
         <textarea
+          ref={pollTextareaRef}
           value={body}
           onChange={e => setBody(e.target.value)}
           rows={2}
-          autoFocus
           placeholder="Ask your neighbors something…"
           className={`${fieldCls} resize-none`}
         />
@@ -1606,10 +1700,10 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           </button>
         </div>
         <textarea
+          ref={eventTextareaRef}
           value={body}
           onChange={e => setBody(e.target.value)}
           rows={2}
-          autoFocus
           placeholder="What's the event? Add details for your neighbors…"
           className={`${fieldCls} resize-none`}
         />
@@ -1627,7 +1721,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           hubCenter={hubCenter}
           historyKey="citinet-feed-event-location-history"
           placeholder="Location — optional"
-          inputClassName={fieldCls}
+          inputClassName={locationFieldCls}
         />
         {eventCoords && <p className="text-[11px] text-emerald-500">Linked to Atlas — this exact spot will be clickable on the post.</p>}
 
@@ -1651,7 +1745,10 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
   }
 
   return (
-    <div className="cn-glass rounded-2xl overflow-hidden">
+    // No overflow-hidden here (unlike the other cn-glass cards) — every child
+    // that needs corner-clipping already clips itself (media preview), and the
+    // category picker below needs to pop up past this card's own edge.
+    <div className="cn-glass rounded-2xl">
       <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
         <AvatarCircle
           authorId={currentUserId ?? ''}
@@ -1664,9 +1761,27 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         <input
           ref={bodyInputRef}
           value={body}
-          onChange={e => setBody(e.target.value)}
+          onChange={e => {
+            const v = e.target.value;
+            setBody(v);
+            // Typing here is exactly the moment someone acts on "Event/Poll is
+            // hinted, so this must already be what I'm writing" — the ring
+            // alone can't stop that assumption, only actually becoming true
+            // can. So the first character typed while that tab's hinted and
+            // nothing else has been picked promotes straight into the real
+            // form, carrying the text along (mirrors what clicking Event
+            // itself already does with a pending Place, below).
+            if (mode === 'idle' && v.trim() && (activeFilter === 'EVENT' || activeFilter === 'POLL')) {
+              if (activeFilter === 'EVENT' && place) { setEventLocation(place.label); setEventCoords({ lat: place.lat, lng: place.lng }); }
+              setMode(activeFilter === 'EVENT' ? 'event' : 'poll');
+            }
+          }}
           onKeyDown={e => { if (e.key === 'Enter' && canQuickPost) submitQuickPost(); }}
-          placeholder="Share something with your neighbors…"
+          placeholder={
+            activeFilter === 'EVENT' ? "What's the event? Add details for your neighbors…"
+              : activeFilter === 'POLL' ? 'Ask your neighbors something…'
+              : 'Share something with your neighbors…'
+          }
           className="flex-1 bg-transparent text-sm cn-text-1 placeholder:cn-text-4 focus:outline-none"
         />
       </div>
@@ -1704,13 +1819,44 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
               hubCenter={hubCenter}
               historyKey="citinet-feed-place-history"
               placeholder="Search a place…"
-              inputClassName={fieldCls}
+              inputClassName={locationFieldCls}
             />
           )}
         </div>
       )}
 
       <div className="border-t cn-border px-3 py-2 flex items-center gap-1">
+        {/* Post intent — subtle, text-only picker (matches the muted category
+            treatment used everywhere else now) rather than a loud colored pill.
+            Built on the shared Radix DropdownMenu (same one the post-actions
+            "⋮" menu uses below) rather than a hand-rolled absolute div: Radix
+            portals its content straight to <body>, which is required here —
+            this card's own cn-glass backdrop-blur creates a stacking context,
+            so a plain in-tree absolute/z-10 popover can never paint above the
+            sticky, z-indexed category-filter tabs row that sits right above
+            this composer, no matter how high its z-index goes. */}
+        <DropdownMenu open={categoryMenuOpen} onOpenChange={setCategoryMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            >
+              {QUICK_POST_CATEGORIES.find(c => c.value === category)?.label ?? 'Discussion'}
+              <ChevronDown className={`w-3 h-3 transition-transform ${categoryMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-36">
+            {QUICK_POST_CATEGORIES.map(opt => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => setCategory(opt.value)}
+                className={category === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : ''}
+              >
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
           <button onClick={() => photoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
             <Image className="w-3.5 h-3.5" />Photo
@@ -1728,16 +1874,31 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           >
             <MapPin className="w-3.5 h-3.5" />Place
           </button>
+          {/* Event/Poll switch into their own dedicated modes (own category),
+              so — unlike Photo/Video/Place — they pick up a thin ring whenever
+              that's the feed tab you're currently viewing: a "you're probably
+              looking for this" nudge, not a solid pill. A filled pill here
+              would read as "already on" (that's what the tab bar's own
+              selected state looks like right above this), when clicking is
+              still required to actually switch into that mode — a filled
+              state that isn't backed by the real mode would be misleading. */}
           <button
             onClick={() => {
               if (place) { setEventLocation(place.label); setEventCoords({ lat: place.lat, lng: place.lng }); }
               setMode('event');
             }}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeFilter === 'EVENT' ? 'ring-1 ring-inset ring-purple-400/50 dark:ring-purple-500/40 text-purple-600 dark:text-purple-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
           >
             <Calendar className="w-3.5 h-3.5" />Event
           </button>
-          <button onClick={() => setMode('poll')} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+          <button
+            onClick={() => setMode('poll')}
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeFilter === 'POLL' ? 'ring-1 ring-inset ring-purple-400/50 dark:ring-purple-500/40 text-purple-600 dark:text-purple-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+          >
             <BarChart2 className="w-3.5 h-3.5" />Poll
           </button>
         </div>
@@ -1763,11 +1924,24 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
 export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  // Real center to bound place search to the hub's own area — falls back to
+  // geocoding the hub's free-text location when it has no stored lat/lng
+  // (the common case; see useHubGeoCenter). Composing here used to pass
+  // `undefined` whenever that was null, which silently drops Nominatim's
+  // viewbox/bounded params entirely and returns fully worldwide results.
+  const hubGeoCenter = useHubGeoCenter();
   const navigate = useNavigate();
   const { postId: urlPostId } = useParams<{ postId?: string }>();
 
-  const [posts, setPosts] = useState<HubPost[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seeded from the last successful load — see utils/dataCache.ts. Paints
+  // instantly on a cold start/reload, and survives the hub being briefly
+  // unreachable (e.g. an admin restart) instead of opening to an empty feed.
+  // `loading` starts false right along with it — posts only render once
+  // `!loading` below, so if it stayed true here the cached posts would sit
+  // hidden behind the spinner until the very first fetch settles, defeating
+  // the whole point of seeding them.
+  const [posts, setPosts] = useState<HubPost[]>(() => readCache<HubPost[]>(hubSlug, 'feed-posts')?.data ?? []);
+  const [loading, setLoading] = useState(() => !readCache<HubPost[]>(hubSlug, 'feed-posts'));
   const [error, setError] = useState('');
   // Hubs created via a wizard category with a feedDefaultFilter (e.g. HOA)
   // open straight to that tab instead of the general feed, since that's
@@ -1775,6 +1949,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   const [activeFilter, setActiveFilter] = useState<string | null>(
     HUB_CATEGORIES.find(cat => cat.hubFocus === currentHub?.hubFocus)?.feedDefaultFilter ?? null
   );
+  const [savedOnly, setSavedOnly] = useState(false);
+  // Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange
+  // listings/vendors (see useSavedIds). Shared between every post's Bookmark
+  // button (feed cards + detail view) and the "Saved" filter chip below.
+  const { ids: savedPostIds, toggle: toggleSavedPost } = useSavedIds('saved_posts', 'saved_posts');
 
   // Category-chip row horizontal scroll — same pattern as Atlas's pin-filter
   // chips: chevrons show only on the side(s) there's still more to scroll
@@ -1935,7 +2114,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     try {
       const postData = await hubService.listPosts(hubSlug);
       setPosts(postData);
+      writeCache(hubSlug, 'feed-posts', postData);
     } catch (err) {
+      // Leave whatever's already on screen (fresh or cache-seeded) alone —
+      // a failed fetch (e.g. the hub is mid-restart) shouldn't blank the feed.
       if (!silent) {
         const msg = err instanceof Error ? err.message : 'Could not load posts';
         if (!msg.includes('Failed to fetch')) setError(msg);
@@ -1945,7 +2127,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     }
   }, [hubSlug]);
 
-  useEffect(() => { load(); }, [load]);
+  // Silent (no loading spinner) when cache already seeded `posts` above — a
+  // background revalidation, not a first paint. A genuinely first-ever visit
+  // (no cache yet) still shows the normal loading state.
+  useEffect(() => { load(!!readCache<HubPost[]>(hubSlug, 'feed-posts')); }, [load]);
   useEffect(() => {
     const id = setInterval(() => load(true), 30_000);
     return () => clearInterval(id);
@@ -1954,9 +2139,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   // Posts already come back chronologically sorted from the API — polls are just
   // another post category now, no separate fetch/merge needed.
   const filteredPosts = useMemo(() => {
-    if (!activeFilter) return posts;
-    return posts.filter(p => p.category === activeFilter);
-  }, [posts, activeFilter]);
+    return posts
+      .filter(p => !activeFilter || p.category === activeFilter)
+      .filter(p => !savedOnly || savedPostIds.includes(p.id));
+  }, [posts, activeFilter, savedOnly, savedPostIds]);
 
   // A post's detail view lives at /feed/:postId — real, shareable, survives refresh/back.
   // These only ever touch the URL; the effect above is solely responsible for reacting
@@ -2097,7 +2283,6 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           currentUserId={currentUser?.hubUserId}
           currentUserAvatarUrl={currentUser?.avatarUrl}
           isAdmin={currentUser?.isAdmin}
-          categoryColors={CATEGORY_COLORS}
           publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
           onBack={closePost}
           onDeleted={handlePostDeleted}
@@ -2116,6 +2301,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           onPollDelete={handlePollDelete}
           onCopyLink={handleCopyPostLink}
           copyLinkActive={copyLinkFeedback === selectedPost.id}
+          saved={savedPostIds.includes(selectedPost.id)}
+          onToggleSave={() => toggleSavedPost(selectedPost.id)}
         />
       ) : (
       <>
@@ -2133,7 +2320,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
           {/* Icon + Title + Subtitle */}
           <div className="flex items-center gap-4 mb-3">
             <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-feed)' }}>
-              <FeedGlyph className="w-6 h-6 text-white" />
+              <Newspaper className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Feed</h1>
@@ -2182,6 +2369,17 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       scroll container's own box size, which a container-only observer
                       would never notice. */}
                   <div ref={chipContentRef} className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSavedOnly(s => !s)}
+                      className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
+                        savedOnly
+                          ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                          : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                      }`}
+                    >
+                      <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-purple-300' : ''}`} />
+                      Saved{savedPostIds.length > 0 ? ` (${savedPostIds.length})` : ''}
+                    </button>
                     {CAT_TABS.map(({ value, label }) => {
                       const count = posts.filter(p => p.category === value).length;
                       return (
@@ -2212,7 +2410,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {/* Inline composer — Event/Poll expand in place; Photo/Place still hand off to the full modal */}
               <InlineComposer
                 hubSlug={hubSlug}
-                hubCenter={currentHub?.lat && currentHub?.lng ? [currentHub.lat, currentHub.lng] : undefined}
+                hubCenter={hubGeoCenter ?? undefined}
                 isMod={isMod}
                 currentUserId={currentUser?.hubUserId}
                 currentUserName={currentUser?.displayName || currentUser?.username || '?'}
@@ -2220,6 +2418,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 onPostCreated={handleCreated}
                 onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
                 autoFocus={focusComposer}
+                activeFilter={activeFilter}
               />
 
               {/* Loading */}
@@ -2244,7 +2443,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {!loading && !error && filteredPosts.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center cn-glass rounded-2xl">
                   <p className="cn-text-3 text-sm mb-3">
-                    {activeFilter === 'POLL' ? 'No polls yet.' : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
+                    {savedOnly
+                      ? 'No saved posts yet.'
+                      : activeFilter === 'POLL' ? 'No polls yet.' : activeFilter ? `No ${activeFilter.toLowerCase()} posts yet.` : 'No posts yet.'}
                   </p>
                   {activeFilter === 'POLL' ? (
                     <button onClick={() => setComposingPoll(true)} className="cn-text-3 hover:cn-text-1 text-sm font-medium transition-colors">
@@ -2290,6 +2491,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       authorAvatarUrl={post.author_id ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
                       currentUserId={currentUser?.hubUserId}
                       currentUserAvatarUrl={currentUser?.avatarUrl}
+                      saved={savedPostIds.includes(post.id)}
+                      onToggleSave={() => toggleSavedPost(post.id)}
                     />
                     </div>
                   );
@@ -2334,6 +2537,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       authorAvatarUrl={post.author_id && !isExternalSourcePost(post) ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined}
                       currentUserId={currentUser?.hubUserId}
                       currentUserAvatarUrl={currentUser?.avatarUrl}
+                      saved={savedPostIds.includes(post.id)}
+                      onToggleSave={() => toggleSavedPost(post.id)}
                     />
                   </div>
                 );
@@ -2359,11 +2564,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
       {composing && (
         <ComposeModal
           hubSlug={hubSlug}
-          hubCenter={currentHub?.lat && currentHub?.lng ? [currentHub.lat, currentHub.lng] : undefined}
+          hubCenter={hubGeoCenter ?? undefined}
           onClose={() => { setComposing(false); setComposeInitial(null); }}
           onCreated={handleCreated}
           initialTitle={composeInitial?.title}
           initialBody={composeInitial?.body}
+          initialCategory={contextualDefaultCategory(activeFilter, COMPOSE_MODAL_CATEGORIES)}
         />
       )}
 

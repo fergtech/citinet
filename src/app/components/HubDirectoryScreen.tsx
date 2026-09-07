@@ -7,9 +7,9 @@
  */
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Globe, Users, Wifi, WifiOff, RefreshCw, Search, MapPin } from 'lucide-react';
+import { ArrowLeft, Globe, Users, Wifi, WifiOff, RefreshCw, Search, MapPin, RotateCw } from 'lucide-react';
 import { motion } from 'motion/react';
-import { registryService, type RegistryHub } from '../services/registryService';
+import { registryService, type RegistryHub, isHubRestarting } from '../services/registryService';
 
 interface HubDirectoryScreenProps {
   onBack: () => void;
@@ -203,6 +203,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
 
 function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
   const isOnline = hub.online !== false;
+  const isRestarting = isHubRestarting(hub);
 
   const lastSeen = hub.last_seen
     ? formatRelative(hub.last_seen)
@@ -222,7 +223,7 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
           <div className="flex items-center gap-2 mb-1">
             <span
               className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'
+                isRestarting ? 'bg-amber-500' : isOnline ? 'bg-green-500' : 'bg-slate-300 dark:bg-zinc-600'
               }`}
             />
             <h3 className="font-bold text-slate-900 dark:text-white truncate text-base">
@@ -253,11 +254,15 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
               </span>
             )}
             <span className={`flex items-center gap-1 text-xs font-medium ${
-              isOnline
+              isRestarting
+                ? 'text-amber-600 dark:text-amber-400'
+                : isOnline
                 ? 'text-green-600 dark:text-green-400'
                 : 'text-slate-400 dark:text-slate-500'
             }`}>
-              {isOnline ? (
+              {isRestarting ? (
+                <><RotateCw className="w-3.5 h-3.5 animate-spin" /> Restarting</>
+              ) : isOnline ? (
                 <><Wifi className="w-3.5 h-3.5" /> Online</>
               ) : (
                 <><WifiOff className="w-3.5 h-3.5" /> Offline</>

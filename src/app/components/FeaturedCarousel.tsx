@@ -3,6 +3,7 @@ import Slider from 'react-slick';
 import { Play } from 'lucide-react';
 import type { FeaturedItem } from '../types/featured';
 import { hubService } from '../services/hubService';
+import { AutoplayVideo } from './AutoplayVideo';
 
 interface FeaturedCarouselProps {
   items: FeaturedItem[];
@@ -99,13 +100,8 @@ export function FeaturedCarousel({ items, hubSlug, onPostClick }: FeaturedCarous
               >
                 {/* Background */}
                 {item.mediaType === 'video' && mediaUrl ? (
-                  <video
+                  <AutoplayVideo
                     src={mediaUrl}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="auto"
                     className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 ) : item.mediaType === 'image' && mediaUrl ? (

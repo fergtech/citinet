@@ -13,14 +13,15 @@ export function AtlasGlyph({ className }: { className?: string }) {
   );
 }
 
-// "table-rows" (Android Material Symbols glyph, from H:\Apps\custom-icons\
-// table-rows-android.zip) — citinet-web's Feed icon, replacing the earlier
-// "commentDots" pick. Path lifted verbatim (0-24 viewBox matches the source
-// vector's own declared 24dp width/height, no rescale needed).
-export function FeedGlyph({ className }: { className?: string }) {
+// "cloud-upload-alt" (Android Material Symbols glyph, from H:\Apps\custom-icons\
+// cloud-upload-alt-android.zip) — citinet-web's Files icon, replacing the
+// earlier lucide `FolderOpen` pick. Path lifted verbatim (0-24 viewBox
+// matches the source vector's own declared 24dp width/height, no rescale
+// needed).
+export function FilesGlyph({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M7,2h14c1.654,0,3,1.346,3,3v6H7V2Zm0,11v9H24V13H7ZM5,2H3C1.346,2,0,3.346,0,5V22H5V2Z" />
+      <path d="M17.974,7.146c-.331-.066-.602-.273-.742-.569-1.55-3.271-5.143-5.1-8.734-4.438-3.272,.6-5.837,3.212-6.384,6.501-.162,.971-.15,1.943,.033,2.89,.06,.309-.073,.653-.346,.901-1.145,1.041-1.801,2.524-1.801,4.07,0,3.032,2.467,5.5,5.5,5.5h11c4.136,0,7.5-3.364,7.5-7.5,0-3.565-2.534-6.658-6.026-7.354Zm-2.853,6.562c-.195,.195-.451,.293-.707,.293s-.512-.098-.707-.293l-1.707-1.707v5c0,.553-.448,1-1,1s-1-.447-1-1v-5l-1.707,1.707c-.391,.391-1.023,.391-1.414,0s-.391-1.023,0-1.414l2.707-2.707c.386-.386,.893-.58,1.4-.583l.014-.003,.014,.003c.508,.003,1.014,.197,1.4,.583l2.707,2.707c.391,.391,.391,1.023,0,1.414Z" />
     </svg>
   );
 }

@@ -55,9 +55,12 @@ interface PollFeedCardProps {
   authorAvatarUrl?: string;
   currentUserId?: string;
   currentUserAvatarUrl?: string;
+  /** Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange listings/vendors. */
+  saved?: boolean;
+  onToggleSave?: () => void;
 }
 
-export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl }: PollFeedCardProps) {
+export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl, saved, onToggleSave }: PollFeedCardProps) {
   // Parent only renders this component when post.category === 'POLL', where the
   // backend always attaches `poll` — safe to assert non-null here.
   const poll = post.poll!;
@@ -322,8 +325,15 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
             {closing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Close poll'}
           </button>
         ))}
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-          <Bookmark className="w-3.5 h-3.5" />
+        <button
+          title={saved ? 'Remove from saved' : 'Save post'}
+          aria-label={saved ? 'Remove from saved' : 'Save post'}
+          onClick={() => onToggleSave?.()}
+          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+            saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-500 dark:hover:text-purple-400'
+          } hover:bg-black/5 dark:hover:bg-white/5`}
+        >
+          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-purple-500' : ''}`} />
         </button>
       </div>
     </div>

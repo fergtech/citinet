@@ -76,16 +76,19 @@ const fieldClass = 'w-full px-3 py-2.5 rounded-lg border cn-border cn-surface-2 
 
 // ── Modals ─────────────────────────────────────────────────
 
-function NewInitiativeModal({ onClose, onSubmit, mySpaces }: {
+function NewInitiativeModal({ onClose, onSubmit, mySpaces, initialSpaceId }: {
   onClose: () => void;
   onSubmit: (data: { title: string; goal: string; category: string; color: Initiative['color']; space_id: string | null; bannerFile: File | null }) => void;
   mySpaces: HubSpace[];
+  /** Pre-selects the space picker — set when arriving via a space's own
+   * "Start an initiative" handoff (see SpacesScreen's SpaceInitiativesSection). */
+  initialSpaceId?: string;
 }) {
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
   const [category, setCategory] = useState(CATEGORY_OPTIONS[0]?.value ?? '');
   const [color, setColor] = useState<Initiative['color']>('purple');
-  const [spaceId, setSpaceId] = useState('');
+  const [spaceId, setSpaceId] = useState(initialSpaceId ?? '');
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
 
@@ -1471,6 +1474,16 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  // Deep-link: a space's "Start an initiative" hands off here with its id,
+  // same sessionStorage-flag pattern Feed uses for its own compose deep-links.
+  const [deepLinkSpaceId, setDeepLinkSpaceId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const spaceId = sessionStorage.getItem('citinet-deeplink-initiative-space');
+    if (!spaceId) return;
+    sessionStorage.removeItem('citinet-deeplink-initiative-space');
+    setDeepLinkSpaceId(spaceId);
+    setShowNewModal(true);
+  }, []);
 
   const load = useCallback(async () => {
     if (!hubSlug) return;
@@ -1758,7 +1771,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
         </div>
       </div>
 
-      {showNewModal && <NewInitiativeModal onClose={() => setShowNewModal(false)} onSubmit={handleCreate} mySpaces={mySpaces} />}
+      {showNewModal && <NewInitiativeModal onClose={() => { setShowNewModal(false); setDeepLinkSpaceId(undefined); }} onSubmit={handleCreate} mySpaces={mySpaces} initialSpaceId={deepLinkSpaceId} />}
       {showShareModal && current && <ShareModal item={current} hubSlug={hubSlug} onClose={() => setShowShareModal(false)} />}
     </div>
   );

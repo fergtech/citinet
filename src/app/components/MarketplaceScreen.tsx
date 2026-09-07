@@ -156,6 +156,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   const isAdmin = currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
 
   const [listings, setListings] = useState<HubListing[]>([]);
+  const [vendors, setVendors] = useState<HubVendor[]>([]);
   const [myVendor, setMyVendor] = useState<HubVendor | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -164,6 +165,13 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [activeTab, setActiveTab] = useState<typeof TABS[number]['key']>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'price-low' | 'price-high'>('newest');
+  const [savedOnly, setSavedOnly] = useState(false);
+  // Account-synced (hub_user_preferences) — read here only to power the
+  // "Saved" listings filter chip and the right rail's "Saved vendors" card;
+  // the actual save toggle lives on ListingCard/ExchangeListingDetail and
+  // VendorProfileScreen. Safe to call multiple times — see useSavedIds.
+  const { ids: savedListingIds } = useSavedIds('saved_listings', 'saved_listings');
+  const { ids: savedVendorIds } = useSavedIds('saved_vendors', 'saved_vendors');
 
   const [selectedListing, setSelectedListing] = useState<HubListing | null>(null);
   const [showCreateVendor, setShowCreateVendor] = useState(false);
@@ -189,12 +197,14 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
     setLoading(true);
     setError('');
     try {
-      const [fetchedListings, vendor, banner] = await Promise.all([
+      const [fetchedListings, fetchedVendors, vendor, banner] = await Promise.all([
         marketplaceService.getListings(slug),
+        marketplaceService.listVendors(slug).catch(() => []),
         marketplaceService.getMyVendor(slug).catch(() => null),
         marketplaceService.getBannerConfig(slug).catch((): MarketplaceBannerConfig => ({})),
       ]);
       setListings(fetchedListings);
+      setVendors(fetchedVendors);
       setMyVendor(vendor);
       setBannerConfig(banner);
       setBannerY(Number((banner as MarketplaceBannerConfig).marketplace_banner_position) || 50);
@@ -310,6 +320,9 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   // ── Filtering / sorting ───────────────────────────────────
   const filtered = useMemo(() => {
     let items = listings;
+    if (savedOnly) {
+      items = items.filter(l => savedListingIds.includes(l.id));
+    }
     if (activeCategory !== 'All') {
       items = items.filter(l => l.category.toLowerCase() === activeCategory.toLowerCase());
     }
@@ -329,7 +342,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
       if (sortBy === 'price-high') return (b.price ?? -Infinity) - (a.price ?? -Infinity);
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [listings, activeCategory, activeTab, searchQuery, sortBy]);
+  }, [listings, savedOnly, savedListingIds, activeCategory, activeTab, searchQuery, sortBy]);
 
   // ── Right rail — real data derived from loaded listings ───
   const stats = useMemo(() => {
@@ -351,6 +364,14 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
     }
     return Array.from(byVendor.values()).sort((a, b) => b.count - a.count).slice(0, 3);
   }, [listings]);
+
+  // Full vendor records (not derived from listings like topVendors above) so
+  // a saved vendor still shows up here even if they currently have zero
+  // active listings.
+  const savedVendors = useMemo(
+    () => vendors.filter(v => savedVendorIds.includes(v.id)),
+    [vendors, savedVendorIds],
+  );
 
   const handleVendorCreated = (vendor: HubVendor) => {
     setMyVendor(vendor);
@@ -590,6 +611,15 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Category chips */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+              <button
+                onClick={() => setSavedOnly(s => !s)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
+                  savedOnly ? 'bg-purple-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
+                }`}
+              >
+                <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-white' : ''}`} />
+                Saved{savedListingIds.length > 0 ? ` (${savedListingIds.length})` : ''}
+              </button>
               {CATEGORIES.map(cat => {
                 const meta = CATEGORY_META[cat];
                 const active = activeCategory === cat;
@@ -680,9 +710,11 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             {!loading && !error && listings.length > 0 && filtered.length === 0 && (
               <div className="flex flex-col items-center justify-center py-14 cn-text-4">
                 <Search className="w-9 h-9 mb-3 opacity-30" />
-                <p className="text-sm font-medium">No listings match your filters</p>
+                <p className="text-sm font-medium">
+                  {savedOnly ? 'No saved listings yet' : 'No listings match your filters'}
+                </p>
                 <button
-                  onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveTab('all'); }}
+                  onClick={() => { setSearchQuery(''); setActiveCategory('All'); setActiveTab('all'); setSavedOnly(false); }}
                   className="mt-2 text-xs cn-text-3 hover:cn-text-1 hover:underline"
                 >
                   Clear filters
@@ -731,6 +763,30 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 </div>
               </div>
             </div>
+
+            {savedVendors.length > 0 && (
+              <div className="rounded-2xl p-4 cn-glass">
+                <div className="flex items-center gap-2 mb-1">
+                  <Bookmark className="w-3.5 h-3.5 text-purple-500 dark:text-purple-300 fill-purple-500 dark:fill-purple-300" />
+                  <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Saved vendors</span>
+                </div>
+                <div className="flex flex-col gap-1 mt-2">
+                  {savedVendors.map(v => (
+                    <button
+                      key={v.id}
+                      onClick={() => onVendorClick?.(v.id)}
+                      className="flex items-center gap-2.5 py-1.5 -mx-1 px-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
+                    >
+                      {v.logo_file_name
+                        ? <img src={marketplaceService.getVendorLogoUrl(slug, v.logo_file_name) ?? undefined} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                        : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">{v.name.charAt(0).toUpperCase()}</span>
+                      }
+                      <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{v.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {topVendors.length > 0 && (
               <div className="rounded-2xl p-4 cn-glass">

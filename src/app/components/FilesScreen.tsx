@@ -10,6 +10,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { useHub } from '../context/HubContext';
+import { AutoplayVideo } from './AutoplayVideo';
+import { FilesGlyph } from './icons';
 import type { HubFile, HubFolder, HubMember } from '../types/hub';
 
 interface FilesScreenProps {
@@ -171,7 +173,7 @@ function FileKindBadge({ file, slug, size = 40 }: { file: HubFile; slug: string;
       aria-hidden="true"
     >
       {thumb?.kind === 'video' ? (
-        <video src={thumb.url} autoPlay muted loop playsInline preload="metadata" className="w-full h-full object-cover" />
+        <AutoplayVideo src={thumb.url} preload="metadata" className="w-full h-full object-cover" />
       ) : thumb ? (
         <img src={thumb.url} alt="" className="w-full h-full object-cover" />
       ) : (
@@ -244,7 +246,7 @@ function GridFileTile({
     >
       <div ref={ref} className={`relative h-20 ${thumb ? '' : `bg-gradient-to-br ${grad}`} flex items-center justify-center overflow-hidden`}>
         {thumb?.kind === 'video' ? (
-          <video src={thumb.url} autoPlay muted loop playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+          <AutoplayVideo src={thumb.url} preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
         ) : thumb ? (
           <img src={thumb.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
         ) : (
@@ -828,9 +830,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             <div className="flex items-center justify-between gap-4 flex-wrap mb-5">
               <div className="flex items-center gap-3 min-w-0">
                 <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shrink-0">
-                  <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
+                  <FilesGlyph className="w-6 h-6 text-white" />
                 </span>
                 <div>
                   <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Files</h1>

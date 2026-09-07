@@ -2,14 +2,15 @@
  * Registry Service for Citinet
  *
  * Fetches the public hub listing from the registry API.
- * The registry is a Cloudflare Worker backed by KV storage.
- * Hubs self-register via their admin panel (Public Access section).
+ * The registry is a Vercel serverless function (api/registry.js) backed by a
+ * registry.json file in a separate GitHub repo (fergtech/citinet-registry).
+ * Hubs self-register via their admin panel (Public Registry section) and via
+ * a periodic self-heartbeat (api/registryHeartbeat.js) running on the hub itself.
  *
  * Registry API:
- *   GET  /hubs              → { hubs: RegistryHub[], updated_at: string }
- *   GET  /hubs/by-slug/:slug → single hub lookup by slug
- *   POST /hubs              → register / update a hub (called by admin panel)
- *   DELETE /hubs/:id        → deregister (called by admin panel)
+ *   GET    /api/registry         → { hubs: RegistryHub[], updated_at: string }
+ *   POST   /api/registry         → register / update a hub (admin panel + heartbeat)
+ *   DELETE /api/registry?id=:id  → deregister (called by admin panel)
  */
 
 import type { HubIconFields } from '../types/hub';
@@ -35,10 +36,33 @@ export interface RegistryHub extends HubIconFields {
   member_count?: number;
   /** Whether the hub was reachable on last registry ping */
   online?: boolean;
+  /**
+   * ISO timestamp of when a hub admin last announced an intentional restart.
+   * Set via registerHub's `restarting: true` flag; cleared by any subsequent
+   * registration call that omits it (the hub's own post-boot heartbeat, an
+   * admin's next "Update listing" click, etc.). Also treated as expired by
+   * consumers after RESTART_SIGNAL_TTL_MS regardless — see isHubRestarting.
+   */
+  restarting_since?: string | null;
   /** ISO timestamp of when the hub first registered */
   registered_at: string;
   /** ISO timestamp of last heartbeat / update */
   last_seen?: string;
+}
+
+/** How long an announced restart is honored before consumers treat it as
+ * stale and fall back to plain online/offline — covers an admin who forgot
+ * to expect a longer outage, or a restart that never came back. */
+export const RESTART_SIGNAL_TTL_MS = 15 * 60 * 1000;
+
+/** Whether a hub's admin recently announced an intentional restart that
+ * hasn't expired yet. Distinguishes "briefly rebooting on purpose" from a
+ * generic unreachable/offline hub in join and directory UIs. */
+export function isHubRestarting(hub: Pick<RegistryHub, 'restarting_since'>): boolean {
+  if (!hub.restarting_since) return false;
+  const since = new Date(hub.restarting_since).getTime();
+  if (Number.isNaN(since)) return false;
+  return Date.now() - since < RESTART_SIGNAL_TTL_MS;
 }
 
 interface RegistryResponse {
@@ -107,7 +131,11 @@ class RegistryService {
    * Fires automatically when a hub admin saves a tunnel URL.
    */
   async registerHub(
-    hub: Omit<RegistryHub, 'registered_at' | 'last_seen'>,
+    hub: Omit<RegistryHub, 'registered_at' | 'last_seen' | 'restarting_since'> & {
+      /** Set true to announce an intentional restart (see RegistryHub.restarting_since).
+       * Omit or leave undefined for a normal sync — that also clears any prior announcement. */
+      restarting?: boolean;
+    },
   ): Promise<{ ok: boolean; error?: string }> {
     try {
       const res = await fetch(REGISTRY_API_URL, {

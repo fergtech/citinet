@@ -20,6 +20,7 @@ export interface UserPreferences {
   saved_atlas_pins?: string;
   saved_listings?: string;
   saved_vendors?: string;
+  saved_posts?: string;
 }
 
 class PreferencesService {

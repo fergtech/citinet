@@ -1,5 +1,6 @@
 import { MessageCircle, Megaphone, Target, HelpCircle, Calendar, MapPin, Play, MoreVertical, Bookmark, Heart, ArrowUpRight, Trash2, Loader2, Edit2, Share2, Check } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { AutoplayVideo } from './AutoplayVideo';
 import { AvatarCircle } from './AvatarCircle';
 
 interface CatConfig {
@@ -58,6 +59,9 @@ export interface PostCardProps {
   /** Copies a real permalink to this post — same behavior as PollFeedCard's Share button. */
   onShare?: () => void;
   shareCopied?: boolean;
+  /** Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange listings/vendors. */
+  saved?: boolean;
+  onToggleSave?: () => void;
 }
 
 export function PostCard({
@@ -65,7 +69,7 @@ export function PostCard({
   mediaUrl, replyCount, likeCount, myLiked, onLike, onCommentClick,
   eventDate, eventLocation, onOpenInAtlas, autoPlay,
   authorId, onNavigateToProfile, canDelete, onDelete, deleting, canEdit, onEdit, onShare, shareCopied,
-  authorAvatarUrl, currentUserId, currentUserAvatarUrl,
+  authorAvatarUrl, currentUserId, currentUserAvatarUrl, saved, onToggleSave,
 }: PostCardProps) {
   const cat = CAT_CONFIG[category] ?? CAT_CONFIG.DISCUSSION;
   const { Icon, label, iconColor } = cat;
@@ -147,21 +151,17 @@ export function PostCard({
         )}
         {variant === 'video' && mediaUrl && (
           <div className="mt-3 rounded-xl overflow-hidden aspect-video bg-black relative">
-            <video
-              src={mediaUrl}
-              preload={autoPlay ? 'auto' : 'metadata'}
-              autoPlay={autoPlay}
-              muted={autoPlay}
-              loop={autoPlay}
-              playsInline
-              className="w-full h-full object-contain"
-            />
-            {!autoPlay && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                  <Play className="w-6 h-6 text-white fill-white" />
+            {autoPlay ? (
+              <AutoplayVideo src={mediaUrl} className="w-full h-full object-contain" />
+            ) : (
+              <>
+                <video src={mediaUrl} preload="metadata" playsInline className="w-full h-full object-contain" />
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+                    <Play className="w-6 h-6 text-white fill-white" />
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
@@ -249,8 +249,15 @@ export function PostCard({
           <span>{shareCopied ? 'Copied' : 'Share'}</span>
         </button>
         <div className="flex-1" />
-        <button className="w-8 h-8 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-          <Bookmark className="w-3.5 h-3.5" />
+        <button
+          title={saved ? 'Remove from saved' : 'Save post'}
+          aria-label={saved ? 'Remove from saved' : 'Save post'}
+          onClick={() => onToggleSave?.()}
+          className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+            saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-500 dark:hover:text-purple-400'
+          } hover:bg-black/5 dark:hover:bg-white/5`}
+        >
+          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-purple-500' : ''}`} />
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Layers, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Layers, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -350,6 +350,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [registryError, setRegistryError] = useState('');
   const [registryListed, setRegistryListed] = useState<boolean | null>(null);
   const [hubNodeId, setHubNodeId] = useState<string | null>(null);
+  const [announcingRestart, setAnnouncingRestart] = useState(false);
+  const [restartAnnounced, setRestartAnnounced] = useState(false);
 
   // Fetch stable node_id from hub and check registry listing status
   useEffect(() => {
@@ -420,6 +422,35 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     else setRegistryListed(true);
     setRegistrySyncing(false);
     if (result.ok) setTimeout(() => setRegistryResult(null), 4000);
+  };
+
+  // Tells the public registry this hub is about to intentionally restart, so
+  // the join/directory UI can show "restarting" instead of a generic
+  // unreachable/offline state for the next few minutes. Purely a courtesy
+  // flag — it doesn't touch anything on the hub machine itself.
+  const handleAnnounceRestart = async () => {
+    if (!currentHub?.tunnelUrl) return;
+    setAnnouncingRestart(true);
+    const stableId = hubNodeId ?? currentHub.slug;
+    const result = await registryService.registerHub({
+      id: stableId,
+      name: currentHub.name,
+      slug: currentHub.slug,
+      location: currentHub.location ?? '',
+      lat: currentHub.lat,
+      lng: currentHub.lng,
+      description: currentHub.description ?? '',
+      tunnel_url: currentHub.tunnelUrl,
+      ...hubIconRegistryFields(currentHub),
+      member_count: 0,
+      online: true,
+      restarting: true,
+    });
+    setAnnouncingRestart(false);
+    if (result.ok) {
+      setRestartAnnounced(true);
+      setTimeout(() => setRestartAnnounced(false), 5000);
+    }
   };
 
   const saveName = async () => {
@@ -1058,6 +1089,29 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               )}
               {registryError && (
                 <p className="text-xs text-red-500 dark:text-red-400 mt-2 break-words">{registryError}</p>
+              )}
+              {registryListed && (
+                <div className="flex items-start justify-between gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    About to restart the hub machine? Let people trying to join know it's a brief planned restart, not down for good.
+                  </p>
+                  <button
+                    onClick={handleAnnounceRestart}
+                    disabled={announcingRestart || !currentHub?.tunnelUrl}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                      restartAnnounced
+                        ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                        : 'border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    {announcingRestart
+                      ? <><RotateCw className="w-3.5 h-3.5 animate-spin" /> Announcing…</>
+                      : restartAnnounced
+                      ? <><Check className="w-3.5 h-3.5" /> Announced</>
+                      : <><RotateCw className="w-3.5 h-3.5" /> Announce restart</>
+                    }
+                  </button>
+                </div>
               )}
             </div>
 

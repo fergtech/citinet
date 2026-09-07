@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { spacesService } from '../services/spacesService';
+import { readCache, writeCache } from '../utils/dataCache';
+
+const CACHE_KEY = 'activity-feed';
 
 export type ActivityType =
   | 'discussion'
@@ -96,21 +99,44 @@ const POST_CATEGORY_MAP: Record<string, ActivityType> = {
   REQUEST: 'request',
 };
 
+// `timestamp` round-trips through JSON as a string, not a real Date — revive
+// it back on the way out of the cache.
+function reviveActivityItem(item: ActivityItem): ActivityItem {
+  return { ...item, timestamp: new Date(item.timestamp) };
+}
+
 export function useActivityFeed(hubSlug: string) {
-  const [items, setItems] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // `loading` starts false right along with any cache-seeded items — the
+  // caller (Dashboard) hides the real list behind a loading skeleton while
+  // this is true, so if it stayed true here the cached items would sit
+  // hidden until the very first refresh() settles, defeating the seed.
+  const [items, setItems] = useState<ActivityItem[]>(() => {
+    const cached = readCache<ActivityItem[]>(hubSlug, CACHE_KEY);
+    return cached ? cached.data.map(reviveActivityItem) : [];
+  });
+  const [loading, setLoading] = useState(() => !readCache<ActivityItem[]>(hubSlug, CACHE_KEY));
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     if (!hubSlug) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
 
-    const [postsResult, filesResult, membersResult, pinsResult, spacesResult] = await Promise.allSettled([
+    const settled = await Promise.allSettled([
       hubService.listPosts(hubSlug),
       hubService.listFiles(hubSlug),
       hubService.listMembers(hubSlug),
       atlasService.getPins(hubSlug),
       spacesService.listAll(hubSlug),
     ]);
+    const [postsResult, filesResult, membersResult, pinsResult, spacesResult] = settled;
+
+    // Every source failed — almost certainly the hub itself is briefly
+    // unreachable (e.g. an admin restarting it), not "there's no activity."
+    // Leave whatever's already on screen (fresh or cache-seeded) alone
+    // rather than blanking it out with an empty result.
+    if (settled.every(r => r.status === 'rejected')) {
+      setLoading(false);
+      return;
+    }
 
     const raw: ActivityItem[] = [];
 
@@ -272,12 +298,17 @@ export function useActivityFeed(hubSlug: string) {
 
     // Sort newest first, cap at 10
     raw.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    setItems(raw.slice(0, 10));
+    const sliced = raw.slice(0, 10);
+    setItems(sliced);
+    writeCache(hubSlug, CACHE_KEY, sliced);
     setLoading(false);
   }, [hubSlug]);
 
   useEffect(() => {
-    refresh();
+    // Silent (no loading skeleton) when cache already seeded `items` above —
+    // a background revalidation, not a first paint. A genuinely first-ever
+    // visit (no cache yet) still shows the normal loading state.
+    refresh(!!readCache<ActivityItem[]>(hubSlug, CACHE_KEY));
   }, [refresh]);
 
   return { items, loading, refresh };

@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useHub } from '../context/HubContext';
+import { AutoplayVideo } from './AutoplayVideo';
 import { PostDetailModal } from './PostDetailModal';
 import { ListingCard } from './MarketplaceScreen';
 import type { HubMember, HubPost, HubVendor, HubListing } from '../types/hub';
@@ -117,11 +118,10 @@ function PostRow({ post, first, onClick, showBody = true }: { post: HubPost; fir
         <FileText className="w-4 h-4 cn-text-3" />
       </span>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION}`}>
-            {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
-          </span>
-          <span className="text-xs cn-text-4">{formatTimestamp(post.created_at)}</span>
+        <div className="flex items-center gap-1.5 mb-1 text-xs cn-text-4">
+          <span>{formatTimestamp(post.created_at)}</span>
+          <span aria-hidden="true">·</span>
+          <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
         </div>
         <p className="text-sm font-semibold cn-text-1 truncate">{post.title}</p>
         {showBody && post.body && (
@@ -184,13 +184,8 @@ function PostGridCard({ post, hubSlug, onClick }: { post: HubPost; hubSlug: stri
         />
       )}
       {hasVideoCover && (
-        <video
+        <AutoplayVideo
           src={rawMediaUrl!}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
           className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           onError={() => setVideoFailed(true)}
         />
@@ -205,8 +200,8 @@ function PostGridCard({ post, hubSlug, onClick }: { post: HubPost; hubSlug: stri
       )}
 
       <div className="relative flex flex-col h-full p-3.5">
-        <span className={`self-start shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset ${
-          isCoverMode ? 'bg-white/15 backdrop-blur-sm text-white ring-white/25' : (CATEGORY_COLORS[post.category] ?? CATEGORY_COLORS.DISCUSSION)
+        <span className={`self-start shrink-0 text-[10px] font-semibold ${
+          isCoverMode ? 'px-2 py-0.5 rounded-full ring-1 ring-inset bg-white/15 backdrop-blur-sm text-white ring-white/25' : 'cn-text-4'
         }`}>
           {post.category.charAt(0) + post.category.slice(1).toLowerCase()}
         </span>

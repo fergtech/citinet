@@ -1,17 +1,17 @@
 import {
-  Layers, Compass, Store, FolderOpen,
+  Layers, Compass, Store, Newspaper,
   Package, Radio, ScrollText, NotebookPen,
 } from 'lucide-react';
-import { AtlasGlyph, FeedGlyph, MessagesGlyph, InitiativesGlyph } from '../components/icons';
+import { AtlasGlyph, FilesGlyph, MessagesGlyph, InitiativesGlyph } from '../components/icons';
 import type { NotificationFeature } from '../services/notificationsService';
 
 export const APP_TILES: { Icon: React.ElementType; label: string; screen: string; gradient: string; notifyFeature?: NotificationFeature }[] = [
   { Icon: Layers,        label: 'Spaces',      screen: 'spaces',      gradient: 'bg-gradient-to-br from-purple-500 to-violet-600' },
-  { Icon: FeedGlyph,     label: 'Feed',        screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
+  { Icon: Newspaper,     label: 'Feed',        screen: 'feed',        gradient: 'bg-gradient-to-br from-blue-500 to-blue-600',     notifyFeature: 'feed' },
   { Icon: Compass,       label: 'Discover',    screen: 'discover',    gradient: 'bg-gradient-to-br from-cyan-500 to-sky-600' },
   { Icon: AtlasGlyph,    label: 'Atlas',       screen: 'atlas',       gradient: 'bg-gradient-to-br from-indigo-500 to-indigo-600' },
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: 'bg-gradient-to-br from-emerald-500 to-teal-600' },
-  { Icon: FolderOpen,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
+  { Icon: FilesGlyph,    label: 'Files',       screen: 'files',       gradient: 'bg-gradient-to-br from-amber-500 to-orange-600' },
   { Icon: InitiativesGlyph, label: 'Initiatives', screen: 'initiatives', gradient: 'bg-gradient-to-br from-rose-500 to-pink-600' },
   { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: 'bg-gradient-to-br from-orange-500 to-amber-600' },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: 'bg-gradient-to-br from-teal-500 to-cyan-600' },

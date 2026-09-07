@@ -98,6 +98,7 @@ export default async function handler(req, res) {
       hub_icon_mode, hub_icon_symbol, hub_icon_bg_mode,
       hub_icon_gradient_from, hub_icon_gradient_to,
       hub_icon_solid_color, hub_icon_image_file_name,
+      restarting,
     } = req.body || {};
     if (!tunnel_url || !name || !slug) {
       return res.status(400).json({ error: 'name, slug, and tunnel_url are required' });
@@ -140,6 +141,13 @@ export default async function handler(req, res) {
         // (or its admin's browser) reached out to us. See comment above on
         // why we don't gate this on verifyHub's inbound probe succeeding.
         online:        true,
+        // Explicit intentional-restart signal, admin-triggered (see
+        // HubManagementScreen's "Announce restart" action). Any registration
+        // call that doesn't pass `restarting: true` clears it — the hub's own
+        // post-boot heartbeat, a manual "Update listing" click, all count as
+        // proof the flag is no longer needed. Consumers additionally treat it
+        // as expired after RESTART_SIGNAL_TTL_MS regardless (see registryService).
+        restarting_since: restarting === true ? now : null,
         registered_at: existingIndex >= 0 ? content.hubs[existingIndex].registered_at : now,
         last_seen:     now,
         hub_icon_mode,

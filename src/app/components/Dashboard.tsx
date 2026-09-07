@@ -8,18 +8,21 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
-import { PostDetailModal } from './PostDetailModal';
+import { PostDetailView } from './Feed';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { featuredService } from '../services/featuredService';
 import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
+import { useSavedIds } from '../hooks/useSavedIds';
 import { isOnline } from '../utils/presence';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import { aiService } from '../services/aiService';
 import { openLocationInAtlas } from '../utils/geocoding';
+import { hubPath } from '../utils/subdomain';
+import { readCache, writeCache } from '../utils/dataCache';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
@@ -252,13 +255,14 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
 export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps) {
   const { currentHub, currentUser } = useHub();
   const { status: connectionStatus } = useHubStatus();
+  const hubSlug = currentHub?.slug ?? '';
 
-  // Featured
-  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
+  // Featured — seeded from the last successful fetch so a hub restart (or
+  // any brief unreachability) shows the last-known lineup instead of a
+  // blank section; see utils/dataCache.ts.
+  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>(() => readCache<FeaturedItem[]>(hubSlug, 'featured-items')?.data ?? []);
   const [featuredPost, setFeaturedPost] = useState<HubPost | null>(null);
   const [myVendor, setMyVendor] = useState<HubVendor | null>(null);
-
-  const hubSlug = currentHub?.slug ?? '';
 
   const [aiEnabled, setAiEnabled] = useState(false);
 
@@ -267,7 +271,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
   const isConnected = connectionStatus === 'connected';
   useEffect(() => {
     if (!hubSlug) return;
-    featuredService.getFeatured(hubSlug).then(setFeaturedItems);
+    featuredService.getFeatured(hubSlug)
+      .then(items => { setFeaturedItems(items); writeCache(hubSlug, 'featured-items', items); })
+      .catch(() => {}); // leave last-known (fresh or cached) items on screen
     marketplaceService.getMyVendor(hubSlug).then(setMyVendor).catch(() => {});
     aiService.getStatus(hubSlug).then(s => setAiEnabled(s.enabled)).catch(() => {});
     setActivityExpanded(false);
@@ -307,6 +313,69 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
       // ignore — fall through silently
     }
   }
+
+  // ── Featured/activity post detail modal — engagement handlers ──────────
+  // Mirrors Feed's own PostDetailView handlers (handlePostLike/handleCopyPostLink/
+  // handlePollVote) so a post opened from here behaves identically to the one
+  // opened from Feed itself, just scoped to the single `featuredPost` in view
+  // rather than a whole `posts` list.
+  const { ids: savedPostIds, toggle: toggleSavedPost } = useSavedIds('saved_posts', 'saved_posts');
+  const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+  const [featuredPollVoting, setFeaturedPollVoting] = useState(false);
+
+  async function handleFeaturedPostLike(post: HubPost) {
+    const wasLiked = !!post.my_liked;
+    const optimistic: HubPost = {
+      ...post,
+      my_liked: !wasLiked,
+      like_count: Math.max(0, (post.like_count ?? 0) + (wasLiked ? -1 : 1)),
+    };
+    setFeaturedPost(optimistic);
+    try {
+      const result = await hubService.toggleLike(hubSlug, post.id);
+      setFeaturedPost(fp => (fp && fp.id === post.id ? { ...fp, my_liked: result.liked, like_count: result.count } : fp));
+    } catch {
+      setFeaturedPost(post);
+    }
+  }
+
+  function handleFeaturedCopyPostLink(postId: string) {
+    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopyLinkFeedback(postId);
+      setTimeout(() => setCopyLinkFeedback(null), 2000);
+    });
+  }
+
+  async function handleFeaturedPollVote(post: HubPost, optionIndex: number) {
+    const poll = post.poll;
+    if (!poll || poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
+    setFeaturedPollVoting(true);
+    const newCounts = [...poll.vote_counts];
+    if (poll.my_vote != null) newCounts[poll.my_vote] = Math.max(0, newCounts[poll.my_vote] - 1);
+    newCounts[optionIndex]++;
+    const totalDelta = poll.my_vote != null ? 0 : 1;
+    setFeaturedPost({ ...post, poll: { ...poll, vote_counts: newCounts, my_vote: optionIndex, total_votes: poll.total_votes + totalDelta } });
+    try {
+      await hubService.votePoll(hubSlug, post.id, optionIndex);
+    } catch {
+      setFeaturedPost(post);
+    } finally {
+      setFeaturedPollVoting(false);
+    }
+  }
+
+  // Escape-to-close + scroll lock for the featured/activity post detail modal.
+  useEffect(() => {
+    if (!featuredPost) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFeaturedPost(null); };
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [Boolean(featuredPost)]);
 
   // Feature request modal — triggered from the mobile launchpad's "Suggest" tile
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -449,7 +518,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 )}
               </div>
               <button
-                onClick={refreshActivity}
+                onClick={() => refreshActivity()}
                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                 aria-label="Refresh activity"
               >
@@ -747,21 +816,52 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
         />
       )}
 
-      {/* Featured post detail modal */}
+      {/* Featured/activity post detail modal — same PostDetailView Feed itself
+          renders when you click a post there, just wrapped in an overlay shell
+          so it can float above the dashboard instead of taking the full page. */}
       {featuredPost && (
-        <PostDetailModal
-          isOpen
-          onClose={() => setFeaturedPost(null)}
-          post={featuredPost}
-          hubSlug={hubSlug}
-          currentUserId={currentUser?.hubUserId}
-          currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
-          isAdmin={isAdmin}
-          categoryColors={CATEGORY_COLORS}
-          publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
-          onDeleted={() => setFeaturedPost(null)}
-          onNavigateToProfile={(userId) => { setFeaturedPost(null); onNavigate(`profile/${userId}`); }}
-        />
+        <AnimatePresence>
+          <motion.div
+            key="featured-post-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setFeaturedPost(null)}
+            className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
+          />
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto pointer-events-none">
+            <motion.div
+              key="featured-post-panel"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              onClick={e => e.stopPropagation()}
+              className="cn-surface border cn-border rounded-2xl shadow-2xl w-full max-w-3xl my-8 pointer-events-auto overflow-hidden"
+            >
+              <PostDetailView
+                post={featuredPost}
+                hubSlug={hubSlug}
+                currentUserId={currentUser?.hubUserId}
+                currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
+                isAdmin={isAdmin}
+                publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
+                onBack={() => setFeaturedPost(null)}
+                backLabel="Close"
+                onDeleted={() => setFeaturedPost(null)}
+                onLike={handleFeaturedPostLike}
+                onNavigateToProfile={(userId) => { setFeaturedPost(null); onNavigate(`profile/${userId}`); }}
+                onNavigate={(screen) => { setFeaturedPost(null); onNavigate(screen); }}
+                onCopyLink={handleFeaturedCopyPostLink}
+                copyLinkActive={copyLinkFeedback === featuredPost.id}
+                canManagePoll={false}
+                pollVoting={featuredPollVoting}
+                onPollVote={handleFeaturedPollVote}
+                saved={savedPostIds.includes(featuredPost.id)}
+                onToggleSave={() => toggleSavedPost(featuredPost.id)}
+              />
+            </motion.div>
+          </div>
+        </AnimatePresence>
       )}
 
       {/* ── Event Detail — compact RSVP overlay; "View full post" deep-links into Feed's own post view ── */}
@@ -992,10 +1092,4 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
   );
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
-  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
-  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
-  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
-};
 
