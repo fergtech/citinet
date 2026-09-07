@@ -11,6 +11,7 @@ import { hubService } from '../services/hubService';
 import { registryService } from '../services/registryService';
 import { preferencesService, type UserPreferences } from '../services/preferencesService';
 import { getSubdomain, navigateToHub, clearSubdomainCache } from '../utils/subdomain';
+import { flushQueuedWrites } from '../services/writeQueueService';
 
 interface HubContextValue {
   /** Current hub connection (null if not connected to any hub) */
@@ -187,6 +188,27 @@ export function HubProvider({ children }: { children: ReactNode }) {
       clearTimeout(timer);
     };
   }, [currentHub?.slug, currentHub?.tunnelUrl]);
+
+  // Sends anything queued by writeQueueService (posts/replies/votes made
+  // while the hub was unreachable) whenever the health check above reports
+  // 'connected' -- both a genuine reconnect and a fresh mount that's already
+  // connected (e.g. reopening the app after the hub came back). This lives
+  // here rather than in Feed/Dashboard because HubContext is the one thing
+  // guaranteed mounted regardless of which screen the user's on when the hub
+  // comes back; interested screens react via these window events instead of
+  // a direct callback. listQueued is a cheap no-op when nothing's queued.
+  useEffect(() => {
+    const hubSlug = currentHub?.slug;
+    if (!hubSlug || currentHub?.connectionStatus !== 'connected') return;
+    flushQueuedWrites(hubSlug, {
+      onPostSent: (post) => window.dispatchEvent(new CustomEvent('citinet:queued-write-sent', { detail: { hubSlug, kind: 'post', post } })),
+      onPostFailed: (payload, error) => window.dispatchEvent(new CustomEvent('citinet:queued-write-failed', { detail: { hubSlug, kind: 'post', payload, error: error instanceof Error ? error.message : String(error) } })),
+      onReplySent: (postId, reply) => window.dispatchEvent(new CustomEvent('citinet:queued-write-sent', { detail: { hubSlug, kind: 'reply', postId, reply } })),
+      onReplyFailed: (payload, error) => window.dispatchEvent(new CustomEvent('citinet:queued-write-failed', { detail: { hubSlug, kind: 'reply', payload, error: error instanceof Error ? error.message : String(error) } })),
+      onVoteSent: (postId, optionIndex) => window.dispatchEvent(new CustomEvent('citinet:queued-write-sent', { detail: { hubSlug, kind: 'vote', postId, optionIndex } })),
+      onVoteFailed: (payload, error) => window.dispatchEvent(new CustomEvent('citinet:queued-write-failed', { detail: { hubSlug, kind: 'vote', payload, error: error instanceof Error ? error.message : String(error) } })),
+    });
+  }, [currentHub?.slug, currentHub?.connectionStatus]);
 
   const switchHub = useCallback((slug: string) => {
     if (getSubdomain()) {

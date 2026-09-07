@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Search, Users, Lock, Eye, Globe,
   Loader2, AlertCircle, Settings, LogOut, UserPlus,
-  Check, X, ChevronRight, MessageCircle, Share2,
+  Check, X, ChevronLeft, ChevronRight, MessageCircle, Share2,
   LayoutGrid, Send, Image as ImageIcon, Video, FileText,
   Download, Palette, ImagePlus, Link2, Radio, User as UserIcon,
   Landmark, Trees, Baby, Dumbbell, type LucideIcon,
@@ -37,10 +37,8 @@ const SPACE_CATEGORY: Record<HubSpaceCategory, { label: string; Icon: LucideIcon
   parents:  { label: 'Parenting', Icon: Baby,     grad: 'var(--cn-grad-exchange)' },
   sports:   { label: 'Sports',    Icon: Dumbbell, grad: 'var(--cn-grad-files)' },
 };
-const CATEGORY_FILTERS: { value: HubSpaceCategory | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  ...(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(value => ({ value, label: SPACE_CATEGORY[value].label })),
-];
+const CATEGORY_FILTERS: { value: HubSpaceCategory; label: string }[] =
+  (Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(value => ({ value, label: SPACE_CATEGORY[value].label }));
 function categoryOf(space: HubSpace) {
   return space.category && space.category in SPACE_CATEGORY ? SPACE_CATEGORY[space.category as HubSpaceCategory] : null;
 }
@@ -676,7 +674,7 @@ function spaceInitiativeTaskCount(tasks: Initiative['tasks']) {
   return { done: tasks.filter(t => t.status === 'done').length, total: tasks.length };
 }
 
-function CompactInitiativeRow({ initiative, hubSlug, onOpen }: { initiative: Initiative; hubSlug: string; onOpen: () => void }) {
+function InitiativeGridCard({ initiative, hubSlug, onOpen }: { initiative: Initiative; hubSlug: string; onOpen: () => void }) {
   const c = COLOR[initiative.color];
   const cat = categoryMeta(initiative.category);
   const CatIcon = cat.icon;
@@ -692,56 +690,57 @@ function CompactInitiativeRow({ initiative, hubSlug, onOpen }: { initiative: Ini
 
   return (
     <button onClick={onOpen}
-      className="w-full flex items-center gap-3 p-2.5 rounded-xl border cn-border hover:border-purple-300/60 dark:hover:border-purple-500/30 cn-surface-2 transition-colors text-left">
+      className="flex flex-col gap-2 p-2 rounded-xl border cn-border hover:border-purple-300/60 dark:hover:border-purple-500/30 cn-surface-2 transition-colors text-left min-w-0">
       {/* Cover swatch — same image/gradient/brand-color fallback chain as the
-          real card, just square and small instead of full-bleed. */}
+          real card, just a compact tile instead of full-bleed. */}
       <div
-        className={`relative w-12 h-12 rounded-lg shrink-0 overflow-hidden ${!bgImage && !customGradient ? `bg-gradient-to-br ${c.gradient}` : ''}`}
+        className={`relative w-full aspect-[16/10] rounded-lg overflow-hidden ${!bgImage && !customGradient ? `bg-gradient-to-br ${c.gradient}` : ''}`}
         style={bgImage ? { background: `center/cover no-repeat url(${bgImage})` } : customGradient ? { background: customGradient } : undefined}
       >
         <span className="absolute inset-0 flex items-center justify-center bg-black/10">
-          <CatIcon className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
+          <CatIcon className="w-5 h-5 text-white" />
         </span>
       </div>
 
-      <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5">
-          <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{initiative.title}</span>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
-          <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-3">{cat.label}</span>
+      <div className="flex flex-col gap-1 min-w-0">
+        <span className="text-xs font-semibold cn-text-1 truncate leading-tight">{initiative.title}</span>
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className={`text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
           {openRoles > 0 && (
-            <span className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
-              {openRoles} role{openRoles > 1 ? 's' : ''} open
+            <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+              {openRoles} open
             </span>
           )}
         </div>
         {tc.total > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div className="flex-1 h-1 rounded-full cn-surface-3 overflow-hidden">
               <div className={`h-full rounded-full bg-gradient-to-r ${c.bar}`} style={{ width: `${pct}%` }} />
             </div>
-            <span className="cn-mono text-[10px] cn-text-4 shrink-0">{tc.done}/{tc.total}</span>
+            <span className="cn-mono text-[9px] cn-text-4 shrink-0">{tc.done}/{tc.total}</span>
           </div>
         )}
+        {initiative.members.length > 0 && <AvatarStack names={initiative.members.map(m => m.name)} size="sm" max={3} />}
       </div>
-
-      {initiative.members.length > 0 && <AvatarStack names={initiative.members.map(m => m.name)} size="sm" max={3} />}
     </button>
   );
 }
+
+// One full row at the grid's widest breakpoint (see grid-cols-2 sm:grid-cols-4
+// below) — "latest" because the API already returns initiatives newest-first.
+const INITIATIVES_PAGE_SIZE = 4;
 
 function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceId: string }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<Initiative[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     initiativesService.listAll(hubSlug)
-      .then(all => { if (!cancelled) setItems(all.filter(i => i.space_id === spaceId)); })
+      .then(all => { if (!cancelled) { setItems(all.filter(i => i.space_id === spaceId)); setPage(0); } })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -753,6 +752,10 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
   }
 
   if (loading) return null; // avoids a flash of "no initiatives yet" before the real list arrives
+
+  const pageCount = Math.ceil(items.length / INITIATIVES_PAGE_SIZE);
+  const clampedPage = Math.min(page, Math.max(0, pageCount - 1));
+  const pageItems = items.slice(clampedPage * INITIATIVES_PAGE_SIZE, (clampedPage + 1) * INITIATIVES_PAGE_SIZE);
 
   return (
     <div className="max-w-2xl mx-auto w-full flex flex-col gap-2">
@@ -768,9 +771,43 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
           No projects started from this space yet — any member can start one.
         </div>
       )}
-      {items.map(i => (
-        <CompactInitiativeRow key={i.id} initiative={i} hubSlug={hubSlug} onOpen={() => navigate(hubPath(`/initiatives/${i.id}`))} />
-      ))}
+      {items.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {pageItems.map(i => (
+            <InitiativeGridCard key={i.id} initiative={i} hubSlug={hubSlug} onOpen={() => navigate(hubPath(`/initiatives/${i.id}`))} />
+          ))}
+        </div>
+      )}
+      {pageCount > 1 && (
+        <div className="flex items-center justify-center gap-3 pt-1">
+          <button
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={clampedPage === 0}
+            aria-label="Previous initiatives"
+            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
+          </button>
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: pageCount }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setPage(i)}
+                aria-label={`Go to page ${i + 1}`}
+                className={`rounded-full transition-all ${i === clampedPage ? 'w-4 h-1.5 bg-purple-500' : 'w-1.5 h-1.5 cn-surface-3 hover:bg-purple-300/60 dark:hover:bg-purple-500/30'}`}
+              />
+            ))}
+          </div>
+          <button
+            onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+            disabled={clampedPage === pageCount - 1}
+            aria-label="Next initiatives"
+            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+          >
+            <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1427,7 +1464,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<HubSpaceCategory | 'all'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<HubSpaceCategory | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
   function selectSpace(space: HubSpace | null) {
@@ -1491,8 +1528,56 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
 
   const displaySpaces = (showAll ? allSpaces : mySpaces)
     .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
-    .filter(s => categoryFilter === 'all' || s.category === categoryFilter);
+    .filter(s => !categoryFilter || s.category === categoryFilter);
   const pendingInvites = allSpaces.filter(s => s.my_status === 'invited');
+
+  // Category-chip row horizontal scroll — same pattern as Feed's category
+  // tabs: chevrons show only on the side(s) there's still more to scroll
+  // toward, recomputed on scroll and on resize. A ref callback (not a plain
+  // useRef + mount-only effect) so it keeps working correctly even if this
+  // row's container is ever conditionally unmounted/remounted elsewhere.
+  const chipRowElRef = useRef<HTMLDivElement | null>(null);
+  const chipContentRef = useRef<HTMLDivElement | null>(null);
+  const chipRowCleanupRef = useRef<() => void>(() => {});
+  const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
+
+  const updateChipScroll = useCallback(() => {
+    const el = chipRowElRef.current;
+    if (!el) return;
+    const scrollLeft = Math.round(el.scrollLeft);
+    setChipScroll({
+      canLeft: scrollLeft > 1,
+      canRight: scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    });
+  }, []);
+
+  const chipRowRef = useCallback((el: HTMLDivElement | null) => {
+    chipRowCleanupRef.current();
+    chipRowCleanupRef.current = () => {};
+    chipRowElRef.current = el;
+    if (!el) return;
+    const raf = requestAnimationFrame(updateChipScroll);
+    el.addEventListener('scroll', updateChipScroll, { passive: true });
+    const ro = new ResizeObserver(updateChipScroll);
+    ro.observe(el);
+    if (chipContentRef.current) ro.observe(chipContentRef.current);
+    chipRowCleanupRef.current = () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', updateChipScroll);
+      ro.disconnect();
+    };
+  }, [updateChipScroll]);
+
+  const scrollChips = (dir: 'left' | 'right') => {
+    chipRowElRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  };
+
+  const chipFadeMask = !chipScroll.canLeft && !chipScroll.canRight ? undefined :
+    chipScroll.canLeft && chipScroll.canRight
+      ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+      : chipScroll.canLeft
+        ? 'linear-gradient(to right, transparent, black 24px)'
+        : 'linear-gradient(to right, black calc(100% - 24px), transparent)';
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -1513,13 +1598,42 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
             <button onClick={() => setShowAll(true)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Discover</button>
             <button onClick={() => setShowAll(false)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${!showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Joined{mySpaces.length > 0 ? ` (${mySpaces.length})` : ''}</button>
           </div>
-          <div className="flex gap-1.5 mt-2 overflow-x-auto no-scrollbar">
-            {CATEGORY_FILTERS.map(f => (
-              <button key={f.value} onClick={() => setCategoryFilter(f.value)}
-                className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors border ${categoryFilter === f.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
-                {f.label}
+          <div className="relative mt-2">
+            {chipScroll.canLeft && (
+              <button
+                onClick={() => scrollChips('left')}
+                aria-label="Scroll categories left"
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-5 h-5 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+              >
+                <ChevronLeft className="w-3 h-3 cn-text-2" />
               </button>
-            ))}
+            )}
+            {chipScroll.canRight && (
+              <button
+                onClick={() => scrollChips('right')}
+                aria-label="Scroll categories right"
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-5 h-5 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+              >
+                <ChevronRight className="w-3 h-3 cn-text-2" />
+              </button>
+            )}
+            <div
+              ref={chipRowRef}
+              className={`flex gap-1.5 overflow-x-auto no-scrollbar scroll-smooth ${chipScroll.canLeft ? 'pl-6' : ''} ${chipScroll.canRight ? 'pr-6' : ''}`}
+              style={chipFadeMask ? { WebkitMaskImage: chipFadeMask, maskImage: chipFadeMask } : undefined}
+            >
+              {/* Separate from the scroll container above so a ResizeObserver can
+                  watch this row's own natural (unclipped) width independent of the
+                  scroll container's own (clipped) box size. */}
+              <div ref={chipContentRef} className="flex items-center gap-1.5">
+                {CATEGORY_FILTERS.map(f => (
+                  <button key={f.value} onClick={() => setCategoryFilter(prev => prev === f.value ? null : f.value)}
+                    className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors border ${categoryFilter === f.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
         {pendingInvites.length > 0 && !showAll && (

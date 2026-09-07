@@ -23,6 +23,7 @@ import { aiService } from '../services/aiService';
 import { openLocationInAtlas } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
 import { readCache, writeCache } from '../utils/dataCache';
+import { voteOrQueue } from '../services/writeQueueService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
@@ -357,7 +358,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
     const totalDelta = poll.my_vote != null ? 0 : 1;
     setFeaturedPost({ ...post, poll: { ...poll, vote_counts: newCounts, my_vote: optionIndex, total_votes: poll.total_votes + totalDelta } });
     try {
-      await hubService.votePoll(hubSlug, post.id, optionIndex);
+      // If the hub's unreachable, this queues the vote and leaves the
+      // optimistic update above in place — still accurate, and it'll
+      // actually reach the server once HubContext's reconnect flush runs.
+      await voteOrQueue(hubSlug, post.id, optionIndex);
     } catch {
       setFeaturedPost(post);
     } finally {

@@ -20,6 +20,7 @@ import { requestsService, type HubRequest } from '../services/requestsService';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { useHubGeoCenter } from '../hooks/useHubGeoCenter';
 import { readCache, writeCache } from '../utils/dataCache';
+import { createPostOrQueue, createReplyOrQueue, voteOrQueue } from '../services/writeQueueService';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubPost, HubPostReply, HubEventAttendee } from '../types/hub';
 import {
@@ -361,6 +362,7 @@ export function PostDetailView({
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [sendQueued, setSendQueued] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editBody, setEditBody] = useState(post.body || '');
@@ -428,10 +430,17 @@ export function PostDetailView({
     e.preventDefault();
     if (!replyText.trim()) return;
     setSendError('');
+    setSendQueued(false);
     setSending(true);
     try {
-      const reply = await hubService.createReply(hubSlug, post.id, replyText.trim(), replyingTo?.replyId ?? null, replyingTo?.userId ?? null);
-      setReplies(prev => [...prev, reply]);
+      const reply = await createReplyOrQueue(hubSlug, post.id, replyText.trim(), replyingTo?.replyId ?? null, replyingTo?.userId ?? null);
+      if (reply) {
+        setReplies(prev => [...prev, reply]);
+      } else {
+        // Hub unreachable — queued, will auto-send once it's back (see HubContext's reconnect flush)
+        setSendQueued(true);
+        setTimeout(() => setSendQueued(false), 5000);
+      }
       setReplyText('');
       setReplyingTo(null);
       setTimeout(() => repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -836,6 +845,11 @@ export function PostDetailView({
               </div>
             )}
             {sendError && <p className="text-xs text-rose-400 mb-2">{sendError}</p>}
+            {sendQueued && (
+              <p className="text-xs text-amber-500 mb-2 flex items-center gap-1">
+                <Clock className="w-3 h-3" /> Hub's unreachable — this reply will send once it's back.
+              </p>
+            )}
             <form onSubmit={handleSendReply} className="flex gap-3">
               <textarea
                 ref={textareaRef}
@@ -932,6 +946,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [queued, setQueued] = useState(false);
   const [eventDate, setEventDate] = useState('');
   const [eventLocation, setEventLocation] = useState('');
   // Real coordinates, only set when the location was picked from search — not typed free text.
@@ -967,7 +982,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
     setError('');
     setSubmitting(true);
     try {
-      const post = await hubService.createPost(hubSlug, {
+      const post = await createPostOrQueue(hubSlug, {
         category,
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
@@ -977,8 +992,16 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
         eventLng: category === 'EVENT' && eventCoords ? eventCoords.lng : undefined,
         visibility,
       });
-      onCreated(post);
-      onClose();
+      if (post) {
+        onCreated(post);
+        onClose();
+      } else {
+        // Hub unreachable — queued in IndexedDB, will auto-send once it's back
+        // (see Feed's reconnect effect). Briefly confirm before closing so the
+        // user isn't left wondering whether their post went anywhere.
+        setQueued(true);
+        setTimeout(onClose, 1600);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to post');
     } finally {
@@ -1065,6 +1088,11 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
             )}
 
             {error && <p className="text-sm text-rose-400">{error}</p>}
+            {queued && (
+              <p className="text-sm text-amber-500 flex items-center gap-1.5">
+                <Clock className="w-4 h-4" /> Hub's unreachable — this'll send once it's back.
+              </p>
+            )}
           </form>
 
           <div className="px-6 py-4 border-t cn-border space-y-3">
@@ -1155,6 +1183,7 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
   const [showGovernance, setShowGovernance] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [createQueued, setCreateQueued] = useState(false);
 
   useEffect(() => {
     if (isEditing || !isMod) return; // editing doesn't support (re)linking a request; linking is mod-only
@@ -1189,7 +1218,7 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
         });
         onUpdated(post);
       } else {
-        const post = await hubService.createPost(hubSlug, {
+        const post = await createPostOrQueue(hubSlug, {
           category: 'POLL',
           title: question.trim(),
           body: '',
@@ -1199,7 +1228,14 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
           quorumPct,
           passPct,
         });
-        onCreated(post);
+        if (post) {
+          onCreated(post);
+        } else {
+          // Hub unreachable — queued, will auto-send once it's back (see Feed's reconnect effect)
+          setCreateQueued(true);
+          setTimeout(onClose, 1600);
+          return;
+        }
       }
       onClose();
     } catch (e) {
@@ -1334,6 +1370,11 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
             </div>
 
             {createError && <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">{createError}</p>}
+            {createQueued && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> Hub's unreachable — this poll will post once it's back.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t cn-border">
@@ -1386,6 +1427,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
+  // true when postError is actually a "queued for later" notice (hub
+  // unreachable), not a real failure -- styled differently in the JSX below.
+  const [postQueued, setPostQueued] = useState(false);
   const bodyInputRef = useRef<HTMLInputElement>(null);
   const eventTextareaRef = useRef<HTMLTextAreaElement>(null);
   const pollTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1485,8 +1529,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
     if (!canQuickPost || posting) return;
     setPosting(true);
     setPostError('');
+    setPostQueued(false);
     try {
-      const post = await hubService.createPost(hubSlug, {
+      const post = await createPostOrQueue(hubSlug, {
         category,
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
@@ -1494,8 +1539,8 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         eventLat: place?.lat,
         eventLng: place?.lng,
       });
-      onPostCreated(post);
-      reset();
+      if (post) { onPostCreated(post); reset(); }
+      else { reset(); setPostQueued(true); setPostError("Hub's unreachable — this'll send once it's back."); setTimeout(() => { setPostQueued(false); setPostError(''); }, 5000); }
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to post');
     } finally {
@@ -1507,8 +1552,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
     if (!body.trim() || !eventDate || posting) return;
     setPosting(true);
     setPostError('');
+    setPostQueued(false);
     try {
-      const post = await hubService.createPost(hubSlug, {
+      const post = await createPostOrQueue(hubSlug, {
         category: 'EVENT',
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
@@ -1517,8 +1563,8 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         eventLat: eventCoords?.lat,
         eventLng: eventCoords?.lng,
       });
-      onPostCreated(post);
-      reset();
+      if (post) { onPostCreated(post); reset(); }
+      else { reset(); setPostQueued(true); setPostError("Hub's unreachable — this event will post once it's back."); setTimeout(() => { setPostQueued(false); setPostError(''); }, 5000); }
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to post event');
     } finally {
@@ -1531,8 +1577,9 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
     if (!body.trim() || validOptions.length < 2 || posting) return;
     setPosting(true);
     setPostError('');
+    setPostQueued(false);
     try {
-      const post = await hubService.createPost(hubSlug, {
+      const post = await createPostOrQueue(hubSlug, {
         category: 'POLL',
         title: body.trim(),
         body: '',
@@ -1543,8 +1590,8 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         quorumPct,
         passPct,
       });
-      onPostCreated(post);
-      reset();
+      if (post) { onPostCreated(post); reset(); }
+      else { reset(); setPostQueued(true); setPostError("Hub's unreachable — this poll will post once it's back."); setTimeout(() => { setPostQueued(false); setPostError(''); }, 5000); }
     } catch (err) {
       setPostError(err instanceof Error ? err.message : 'Failed to create poll');
     } finally {
@@ -1671,7 +1718,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           )}
         </div>
 
-        {postError && <p className="text-xs text-rose-500">{postError}</p>}
+        {postError && <p className={`text-xs flex items-center gap-1 ${postQueued ? 'text-amber-500' : 'text-rose-500'}`}>{postQueued && <Clock className="w-3 h-3" />}{postError}</p>}
 
         <div className="flex justify-end gap-2">
           <button onClick={reset} className="px-3.5 py-1.5 rounded-lg text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
@@ -1728,7 +1775,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         {mediaPreviewBlock}
         {mediaChipsRow}
 
-        {postError && <p className="text-xs text-rose-500">{postError}</p>}
+        {postError && <p className={`text-xs flex items-center gap-1 ${postQueued ? 'text-amber-500' : 'text-rose-500'}`}>{postQueued && <Clock className="w-3 h-3" />}{postError}</p>}
 
         <div className="flex justify-end gap-2">
           <button onClick={reset} className="px-3.5 py-1.5 rounded-lg text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
@@ -1911,7 +1958,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           {posting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Post
         </button>
       </div>
-      {postError && <p className="text-xs text-rose-500 px-4 pb-2">{postError}</p>}
+      {postError && <p className={`text-xs px-4 pb-2 flex items-center gap-1 ${postQueued ? 'text-amber-500' : 'text-rose-500'}`}>{postQueued && <Clock className="w-3 h-3" />}{postError}</p>}
 
       <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
       <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
@@ -2136,6 +2183,38 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     return () => clearInterval(id);
   }, [load]);
 
+  // Reacts to queued posts/replies/votes (see writeQueueService) actually
+  // being sent -- the flush attempt itself runs centrally in HubContext
+  // (guaranteed mounted regardless of which screen the user's on when the
+  // hub comes back), which re-broadcasts each outcome as a window event.
+  const [queueBanner, setQueueBanner] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  useEffect(() => {
+    function handleSent(e: Event) {
+      const detail = (e as CustomEvent).detail as
+        | { hubSlug: string; kind: 'post'; post: HubPost }
+        | { hubSlug: string; kind: 'reply'; postId: string }
+        | { hubSlug: string; kind: 'vote'; postId: string };
+      if (detail.hubSlug !== hubSlug) return;
+      if (detail.kind === 'post') {
+        setPosts(prev => prev.some(p => p.id === detail.post.id) ? prev : [detail.post, ...prev]);
+      }
+      setQueueBanner({ text: `A queued ${detail.kind} was sent.`, tone: 'ok' });
+      setTimeout(() => setQueueBanner(null), 4000);
+    }
+    function handleFailed(e: Event) {
+      const { hubSlug: evtHub, kind, error } = (e as CustomEvent).detail as { hubSlug: string; kind: string; error: string };
+      if (evtHub !== hubSlug) return;
+      setQueueBanner({ text: `A queued ${kind} couldn't be sent: ${error}`, tone: 'error' });
+      setTimeout(() => setQueueBanner(null), 6000);
+    }
+    window.addEventListener('citinet:queued-write-sent', handleSent);
+    window.addEventListener('citinet:queued-write-failed', handleFailed);
+    return () => {
+      window.removeEventListener('citinet:queued-write-sent', handleSent);
+      window.removeEventListener('citinet:queued-write-failed', handleFailed);
+    };
+  }, [hubSlug]);
+
   // Posts already come back chronologically sorted from the API — polls are just
   // another post category now, no separate fetch/merge needed.
   const filteredPosts = useMemo(() => {
@@ -2228,8 +2307,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setPosts(ps => ps.map(p => (p.id === post.id ? optimistic(p) : p)));
     setSelectedPost(sp => (sp && sp.id === post.id ? optimistic(sp) : sp));
     try {
-      await hubService.votePoll(hubSlug, post.id, optionIndex);
-      load(true);
+      const sent = await voteOrQueue(hubSlug, post.id, optionIndex);
+      // If queued (hub unreachable), leave the optimistic update in place —
+      // it's still an accurate reflection of what the user did, and it'll
+      // actually reach the server once HubContext's reconnect flush runs.
+      if (sent) load(true);
     } catch {
       setPosts(prevPosts);
       setSelectedPost(sp => (sp && sp.id === post.id ? prevPosts.find(p => p.id === post.id) ?? sp : sp));
@@ -2406,6 +2488,17 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   </div>
                 </div>
               </div>
+
+              {queueBanner && (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium ${
+                  queueBanner.tone === 'ok'
+                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+                }`}>
+                  {queueBanner.tone === 'ok' ? <Check className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+                  {queueBanner.text}
+                </div>
+              )}
 
               {/* Inline composer — Event/Poll expand in place; Photo/Place still hand off to the full modal */}
               <InlineComposer

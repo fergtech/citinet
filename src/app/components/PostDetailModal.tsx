@@ -2,6 +2,7 @@ import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Ch
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { hubService } from '../services/hubService';
+import { createReplyOrQueue } from '../services/writeQueueService';
 import type { HubPost, HubPostReply } from '../types/hub';
 import {
   DropdownMenu,
@@ -156,6 +157,7 @@ export function PostDetailModal({
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [sendQueued, setSendQueued] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [, setEditTitle] = useState(post.title);
@@ -233,14 +235,21 @@ export function PostDetailModal({
     e.preventDefault();
     if (!replyText.trim()) return;
     setSendError('');
+    setSendQueued(false);
     setSending(true);
     try {
-      const reply = await hubService.createReply(
+      const reply = await createReplyOrQueue(
         hubSlug, post.id, replyText.trim(),
         replyingTo?.replyId ?? null,
         replyingTo?.userId ?? null,
       );
-      setReplies(prev => [...prev, reply]);
+      if (reply) {
+        setReplies(prev => [...prev, reply]);
+      } else {
+        // Hub unreachable — queued, will auto-send once it's back (see HubContext's reconnect flush)
+        setSendQueued(true);
+        setTimeout(() => setSendQueued(false), 5000);
+      }
       setReplyText('');
       setReplyingTo(null);
       setTimeout(() => repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
@@ -758,6 +767,11 @@ export function PostDetailModal({
                 )}
                 {sendError && (
                   <p className="text-xs text-rose-500 mb-2">{sendError}</p>
+                )}
+                {sendQueued && (
+                  <p className="text-xs text-amber-500 mb-2 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Hub's unreachable — this reply will send once it's back.
+                  </p>
                 )}
                 <form onSubmit={handleSendReply} className="flex gap-3">
                   <textarea

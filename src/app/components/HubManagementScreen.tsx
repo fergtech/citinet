@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Layers, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -8,6 +8,7 @@ import { requestsService, type HubRequest, type RequestStatus, type RequestType 
 import type { HubMember, HubPost, HubIconFields } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
+import { SpacesGlyph } from './icons';
 import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import { registryService } from '../services/registryService';
 import { JoinQrCard } from './JoinQrCard';
@@ -1712,7 +1713,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'messages',    label: 'Communications', Icon: MessageCircle },
                     { screen: 'atlas',       label: 'Atlas',        Icon: Map },
                     { screen: 'notes',       label: 'Notes',        Icon: NotebookPen },
-                    { screen: 'spaces',      label: 'Spaces',       Icon: Layers },
+                    { screen: 'spaces',      label: 'Spaces',       Icon: SpacesGlyph },
                     { screen: 'marketplace', label: 'Exchange',     Icon: Store },
                     { screen: 'files',       label: 'Files',        Icon: FolderOpen },
                     { screen: 'discover',    label: 'Discover',     Icon: Compass },
