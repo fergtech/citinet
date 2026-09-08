@@ -1796,14 +1796,25 @@ app.get('/api/info', async (_req, res) => {
   // Postgres itself is already healthy; without a retry here that one bad
   // request silently ships stale env-var placeholders anywhere its result
   // gets used, notably the registry heartbeat's one-shot startup call.
+  // A 2026-08-10 full-host reboot hit exactly this (see incident notes) and
+  // a 900ms budget (3x/300ms) was enough to fix it then; a 2026-09-08 repeat
+  // reboot still won the race against that budget, so this also retries an
+  // empty-but-not-erroring result (hub_config always has at least
+  // hub_node_id — zero rows this early means the query beat DB readiness,
+  // not a genuinely empty config) and widens the total budget to ~4s.
   let cfg = {};
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const CFG_RETRY_ATTEMPTS = 8;
+  for (let attempt = 0; attempt < CFG_RETRY_ATTEMPTS; attempt++) {
+    const isLastAttempt = attempt === CFG_RETRY_ATTEMPTS - 1;
     try {
       const r = await pool.query('SELECT key, value FROM hub_config');
-      for (const row of r.rows) cfg[row.key] = row.value;
-      break;
+      if (r.rows.length > 0 || isLastAttempt) {
+        for (const row of r.rows) cfg[row.key] = row.value;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     } catch {
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 300));
+      if (!isLastAttempt) await new Promise((resolve) => setTimeout(resolve, 500));
       /* db may not be ready yet — use env fallback after final attempt */
     }
   }

@@ -58,8 +58,12 @@ async function heartbeat() {
 // Give the DB pool a moment to settle before the very first call -- under a
 // full-host reboot (every container starting at once) an immediate call can
 // race a not-yet-ready pool. /api/info now retries internally too, but this
-// costs nothing and adds a second layer of margin.
-const STARTUP_DELAY_MS = 10 * 1000;
+// costs nothing and adds a second layer of margin. Widened from 10s after a
+// 2026-09-08 full-host reboot still won that race ~8min post-boot and shipped
+// placeholder location/description + default hub_icon fields to the public
+// registry, where they sat for the full 6h heartbeat interval since nothing
+// else re-syncs in between.
+const STARTUP_DELAY_MS = 60 * 1000;
 
 /** Call once at server startup. Registers after a short delay, then every 6 hours. */
 function startRegistryHeartbeat() {
