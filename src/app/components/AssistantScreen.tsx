@@ -75,7 +75,7 @@ function ActionConfirmCard({ action, onConfirm, onCancel, confirming }: {
 }) {
   return (
     <div className="flex justify-start">
-      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
+      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
         <Bot className="w-3.5 h-3.5 text-white" />
       </div>
       <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white dark:bg-zinc-900 border border-violet-300 dark:border-violet-700/60 overflow-hidden shadow-sm">
@@ -376,7 +376,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
       <div className="p-3 border-b border-slate-200 dark:border-zinc-800 shrink-0">
         <button
           onClick={newConversation}
-          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2.5 cn-action bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
           New conversation
@@ -471,7 +471,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
               <button onClick={() => setSidebarOpen(true)} className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="History">
                 <Clock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               </button>
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center shrink-0">
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="flex-1 min-w-0">
@@ -507,7 +507,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
               </div>
             ) : empty ? (
               <div className="flex flex-col items-center justify-center py-16 space-y-6">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center shadow-lg">
                   <Bot className="w-8 h-8 text-white" />
                 </div>
                 <div className="text-center space-y-1">
@@ -529,7 +529,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
               ).map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
                       <Bot className="w-3.5 h-3.5 text-white" />
                     </div>
                   )}

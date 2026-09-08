@@ -122,9 +122,9 @@ export function NetworkReachTab({ hubSlug, hubName }: NetworkReachTabProps) {
     ? 'powershell -ExecutionPolicy Bypass -File citinet-ap-setup.ps1'
     : 'sudo bash citinet-ap-setup.sh';
 
-  const inputClass = 'w-full px-3 py-2 rounded-lg border cn-border cn-surface-2 text-sm cn-text-1 font-mono focus:border-purple-500 focus:outline-none transition-colors';
+  const inputClass = 'w-full px-3 py-2 rounded-lg border cn-border cn-surface-2 text-sm cn-text-1 font-mono focus:border-blue-500 focus:outline-none transition-colors';
   const cardBaseClass = 'flex-1 flex items-center gap-3 p-3 rounded-xl border text-left transition-colors';
-  const cardActiveClass = 'border-purple-500 bg-purple-50 dark:bg-purple-500/10';
+  const cardActiveClass = 'border-blue-500 bg-blue-50 dark:bg-blue-500/10';
   const cardInactiveClass = 'cn-border cn-surface-2 hover:bg-black/5 dark:hover:bg-white/5';
 
   return (
@@ -293,7 +293,7 @@ export function NetworkReachTab({ hubSlug, hubName }: NetworkReachTabProps) {
         <button
           onClick={handleDownload}
           disabled={!canDownload}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
         >
           <Download className="w-4 h-4" />
           {platform === 'windows' ? 'Download Windows Setup Script' : 'Download Pi Setup Script'}

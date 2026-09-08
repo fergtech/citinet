@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
+import { AvatarFallback } from './icons';
 import { useHub } from '../context/HubContext';
 import type { HubMember } from '../types/hub';
 
@@ -23,28 +24,6 @@ function formatJoinDate(dateStr?: string): string {
   } catch {
     return dateStr;
   }
-}
-
-function getInitials(username: string): string {
-  return username.slice(0, 2).toUpperCase();
-}
-
-function getAvatarColor(username: string): string {
-  const colors = [
-    'from-purple-500 to-indigo-500',
-    'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500',
-    'from-orange-500 to-amber-500',
-    'from-pink-500 to-rose-500',
-    'from-violet-500 to-purple-500',
-    'from-sky-500 to-blue-500',
-    'from-lime-500 to-green-500',
-  ];
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) {
-    hash = username.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
 }
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -189,7 +168,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search neighbors by name or interest…"
-            className="w-full h-[46px] pl-10 pr-4 rounded-xl cn-surface-2 border cn-border text-sm cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-colors"
+            className="w-full h-[46px] pl-10 pr-4 rounded-xl cn-surface-2 border cn-border text-sm cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-colors"
           />
         </div>
 
@@ -204,7 +183,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                 onClick={() => setFilter(f.value)}
                 className={`inline-flex items-center gap-1.5 shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                   active
-                    ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent'
+                    ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 border-transparent'
                     : 'cn-surface-2 cn-text-2 cn-border'
                 }`}
               >
@@ -222,7 +201,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
             {activeTag && (
               <button
                 onClick={() => setActiveTag(null)}
-                className="inline-flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+                className="inline-flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
                 <X className="w-3 h-3" />
                 Clear
@@ -234,8 +213,8 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                 onClick={() => setActiveTag(activeTag === tag ? null : tag)}
                 className={`inline-flex items-center gap-1 shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                   activeTag === tag
-                    ? 'bg-purple-600 text-white border-purple-600'
-                    : 'cn-surface-2 cn-text-2 cn-border hover:border-purple-400 dark:hover:border-purple-600'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'cn-surface-2 cn-text-2 cn-border hover:border-blue-400 dark:hover:border-blue-600'
                 }`}
               >
                 <Tag className="w-3 h-3" />
@@ -270,7 +249,7 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
               <p className="text-sm text-red-400 mb-3">{error}</p>
               <button
                 onClick={loadMembers}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white cn-action text-sm hover:bg-blue-700 transition-colors"
               >
                 Try Again
               </button>
@@ -314,11 +293,11 @@ export function NeighborsScreen({ onBack, onNavigate, onViewProfile }: Neighbors
                         if (isYou) onNavigate?.('account'); else onViewProfile?.(member.user_id);
                       }
                     }}
-                    className="cn-glass rounded-2xl p-4 flex flex-col gap-2.5 text-left cursor-pointer hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+                    className="cn-glass rounded-2xl p-4 flex flex-col gap-2.5 text-left cursor-pointer hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} ring-2 ring-white dark:ring-zinc-900 flex items-center justify-center text-white font-semibold text-sm shadow-sm relative overflow-hidden shrink-0`}>
-                        {getInitials(member.username)}
+                      <div className="w-10 h-10 rounded-full ring-2 ring-white dark:ring-zinc-900 shadow-sm relative overflow-hidden shrink-0">
+                        <AvatarFallback className="absolute inset-0" name={member.username} />
                         <img
                           src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}
                           alt={member.username}

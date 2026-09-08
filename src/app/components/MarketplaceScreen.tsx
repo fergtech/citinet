@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { marketplaceService } from '../services/marketplaceService';
 import type { MarketplaceBannerConfig } from '../services/marketplaceService';
+import { VendorAvatarFallback } from './icons';
 import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
@@ -25,7 +26,7 @@ const CATEGORIES = ['Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts 
 
 const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string }> = {
   'Goods':         { Icon: Package,      gradient: 'from-blue-500 to-indigo-600' },
-  'Services':      { Icon: HandHelping,  gradient: 'from-violet-500 to-purple-600' },
+  'Services':      { Icon: HandHelping,  gradient: 'from-violet-500 to-blue-600' },
   'Food':          { Icon: Apple,        gradient: 'from-rose-500 to-pink-600' },
   'Electronics':   { Icon: Cpu,          gradient: 'from-cyan-500 to-sky-600' },
   'Events':        { Icon: CalendarDays, gradient: 'from-amber-500 to-orange-600' },
@@ -36,7 +37,7 @@ const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string 
 export const KIND_META: Record<HubListing['price_type'], { label: string; classes: string }> = {
   fixed:      { label: 'For sale',   classes: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30' },
   negotiable: { label: 'Negotiable', classes: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30' },
-  free:       { label: 'Free',       classes: 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' },
+  free:       { label: 'Free',       classes: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30' },
   hourly:     { label: 'Hourly',     classes: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/30' },
   contact:    { label: 'Contact',    classes: 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30' },
 };
@@ -131,7 +132,7 @@ export function ListingCard({ listing, hubSlug, onOpen, onVendorClick }: {
         <div className="flex items-center gap-2 mt-auto pt-1">
           {vendorLogoUrl
             ? <img src={vendorLogoUrl} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
-            : <span className="w-4 h-4 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
+            : <VendorAvatarFallback className="w-4 h-4 rounded-full shrink-0" name={listing.vendor_name ?? undefined} />
           }
           <button
             onClick={e => { e.stopPropagation(); onVendorClick?.(listing.vendor_id); }}
@@ -419,7 +420,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
 
             {/* Header */}
             <div className="flex items-center gap-3">
-              <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shrink-0">
+              <span className="w-11 h-11 cn-action bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shrink-0">
                 <Store className="w-6 h-6 text-white" />
               </span>
               <div className="flex-1 min-w-0">
@@ -428,7 +429,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
               </div>
               <button
                 onClick={handlePostListing}
-                className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors shadow-sm shrink-0"
+                className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors shadow-sm shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 {myVendor ? 'Post a listing' : 'Start selling'}
@@ -436,7 +437,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             </div>
             <button
               onClick={handlePostListing}
-              className="sm:hidden w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+              className="sm:hidden w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
             >
               <Plus className="w-4 h-4" />
               {myVendor ? 'Post a listing' : 'Start selling'}
@@ -508,7 +509,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                   <div className="flex items-start gap-3">
                     <div
                       onClick={() => !uploadingBannerImage && bannerFileRef.current?.click()}
-                      className="relative w-28 h-16 rounded-xl cn-surface-2 border-2 border-dashed cn-border hover:border-purple-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
+                      className="relative w-28 h-16 rounded-xl cn-surface-2 border-2 border-dashed cn-border hover:border-blue-500 cursor-pointer overflow-hidden transition-colors flex items-center justify-center shrink-0"
                     >
                       {bannerImageUrl ? (
                         <img src={bannerImageUrl} alt="" className="w-full h-full object-cover" style={{ objectPosition: `center ${bannerY}%` }} />
@@ -532,7 +533,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                         {bannerImageUrl && (
                           <button
                             onClick={() => setIsRepositioning(r => !r)}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-purple-600 text-white' : 'cn-surface-3 cn-text-2 hover:bg-black/10 dark:hover:bg-white/10'}`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isRepositioning ? 'bg-blue-600 text-white' : 'cn-surface-3 cn-text-2 hover:bg-black/10 dark:hover:bg-white/10'}`}
                           >
                             <MoveVertical className="w-3 h-3" />
                             {isRepositioning ? 'Done' : 'Reposition'}
@@ -555,7 +556,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                         onChange={e => setEditTitle(e.target.value)}
                         placeholder="Everything local, right here"
                         maxLength={80}
-                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-600/40"
                       />
                     </div>
                     <div>
@@ -565,7 +566,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                         onChange={e => setEditSubtitle(e.target.value)}
                         placeholder="Buy, sell & trade with your neighbors"
                         maxLength={100}
-                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-600/40"
+                        className="w-full px-3 py-2 cn-surface-2 border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-600/40"
                       />
                     </div>
                   </div>
@@ -576,7 +577,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     <button
                       onClick={handleSaveBanner}
                       disabled={savingBanner || uploadingBannerImage}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-purple-500 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-blue-500 transition-colors"
                     >
                       {savingBanner ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       Save
@@ -614,7 +615,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
               <button
                 onClick={() => setSavedOnly(s => !s)}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
-                  savedOnly ? 'bg-purple-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
+                  savedOnly ? 'bg-blue-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
                 }`}
               >
                 <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-white' : ''}`} />
@@ -628,7 +629,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     key={cat}
                     onClick={() => setActiveCategory(prev => prev === cat ? 'All' : cat)}
                     className={`inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 border transition-colors ${
-                      active ? 'bg-purple-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
+                      active ? 'bg-blue-600 border-transparent text-white' : 'cn-surface cn-border cn-text-2 hover:border-black/20 dark:hover:border-white/20'
                     }`}
                   >
                     <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-white/20' : `bg-gradient-to-br ${meta.gradient}`}`}>
@@ -648,7 +649,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === t.key ? 'bg-purple-600 text-white' : 'cn-text-3 hover:text-slate-700 dark:hover:text-slate-200'
+                      activeTab === t.key ? 'bg-blue-600 text-white' : 'cn-text-3 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                   >
                     {t.label}
@@ -659,7 +660,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 <select
                   value={sortBy}
                   onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                  className="text-xs cn-surface border cn-border cn-text-2 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                  className="text-xs cn-surface border cn-border cn-text-2 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 >
                   {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
@@ -699,7 +700,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 <p className="text-sm cn-text-3 max-w-xs mb-5">Be the first to list something for the neighborhood.</p>
                 <button
                   onClick={handlePostListing}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-500 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 transition-colors"
                 >
                   <Plus className="w-4 h-4" /> {myVendor ? 'Add your first listing' : 'Create a vendor page'}
                 </button>
@@ -767,7 +768,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             {savedVendors.length > 0 && (
               <div className="rounded-2xl p-4 cn-glass">
                 <div className="flex items-center gap-2 mb-1">
-                  <Bookmark className="w-3.5 h-3.5 text-purple-500 dark:text-purple-300 fill-purple-500 dark:fill-purple-300" />
+                  <Bookmark className="w-3.5 h-3.5 text-blue-500 dark:text-blue-300 fill-blue-500 dark:fill-blue-300" />
                   <span className="text-[10px] font-bold uppercase tracking-wide cn-text-3">Saved vendors</span>
                 </div>
                 <div className="flex flex-col gap-1 mt-2">
@@ -779,7 +780,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     >
                       {v.logo_file_name
                         ? <img src={marketplaceService.getVendorLogoUrl(slug, v.logo_file_name) ?? undefined} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
-                        : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">{v.name.charAt(0).toUpperCase()}</span>
+                        : <VendorAvatarFallback className="w-9 h-9 rounded-lg shrink-0" name={v.name} />
                       }
                       <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{v.name}</span>
                     </button>
@@ -800,7 +801,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     >
                       {v.vendor_logo_file_name
                         ? <img src={marketplaceService.getVendorLogoUrl(slug, v.vendor_logo_file_name) ?? undefined} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
-                        : <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0">{v.vendor_name.charAt(0).toUpperCase()}</span>
+                        : <VendorAvatarFallback className="w-9 h-9 rounded-lg shrink-0" name={v.vendor_name} />
                       }
                       <span className="flex-1 min-w-0 text-sm font-semibold cn-text-1 truncate">{v.vendor_name}</span>
                       <span className="font-mono text-xs cn-text-4">{v.count}</span>

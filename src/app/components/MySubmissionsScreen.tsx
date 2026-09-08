@@ -60,7 +60,7 @@ function SubmissionCard({ submission }: { submission: ToolSubmission }) {
             href={submission.websiteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 flex items-center gap-1"
+            className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
           >
             {submission.websiteUrl}
             <ExternalLink className="w-3 h-3" />

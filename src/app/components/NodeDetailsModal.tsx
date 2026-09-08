@@ -47,7 +47,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                 <Server className="w-7 h-7 text-white" />
               </div>
             ) : (
-              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center flex-shrink-0 text-white text-xl font-bold">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-700 to-blue-500 flex items-center justify-center flex-shrink-0 text-white text-xl font-bold">
                 {node.avatar || node.name.charAt(0).toUpperCase()}
               </div>
             )}
@@ -124,8 +124,8 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
 
               {node.servicesHosted && node.servicesHosted.length > 0 && (
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1">
                     <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">Services Hosted</div>
@@ -133,7 +133,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                       {node.servicesHosted.map((service, idx) => (
                         <span
                           key={idx}
-                          className="px-2 py-1 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 text-xs rounded-md"
+                          className="px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-xs rounded-md"
                         >
                           {service}
                         </span>
@@ -171,7 +171,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
               )}
 
               <div className="pt-4 border-t border-slate-200 dark:border-zinc-800">
-                <button className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-colors">
+                <button className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors">
                   Send Message
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Compass, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -8,7 +8,7 @@ import { requestsService, type HubRequest, type RequestStatus, type RequestType 
 import type { HubMember, HubPost, HubIconFields } from '../types/hub';
 import type { FeaturedItem } from '../types/featured';
 import { LocationPicker, type LocationResult } from './LocationPicker';
-import { SpacesGlyph } from './icons';
+import { SpacesGlyph, SearchGlyph } from './icons';
 import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import { registryService } from '../services/registryService';
 import { JoinQrCard } from './JoinQrCard';
@@ -765,7 +765,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="cn-glass rounded-2xl p-8 text-center max-w-xs mx-4">
-          <span className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center mx-auto mb-3">
+          <span className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mx-auto mb-3">
             <Shield className="w-6 h-6 text-white" />
           </span>
           <p className="text-sm cn-text-2 mb-4">Admin access required</p>
@@ -800,7 +800,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <p className="text-[13px] cn-text-3 mt-0.5">Admin tools for {currentHub?.name}</p>
             </div>
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full cn-surface-3 cn-text-2 text-xs font-semibold shrink-0">
-              <Crown className="w-3 h-3 text-purple-500 dark:text-purple-400" /> Admin
+              <Crown className="w-3 h-3 text-blue-500 dark:text-blue-400" /> Admin
             </span>
           </div>
         </div>
@@ -825,11 +825,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 onClick={() => setActiveTab(tab.id)}
                 className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3.5 md:px-3 py-1.5 md:py-2.5 rounded-full md:rounded-lg text-xs md:text-[13px] font-semibold whitespace-nowrap shrink-0 md:shrink md:w-full text-left border md:border-0 transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent md:bg-black/[0.04] md:dark:bg-white/[0.06] md:text-slate-900 md:dark:text-white'
+                    ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 border-transparent md:bg-black/[0.04] md:dark:bg-white/[0.06] md:text-slate-900 md:dark:text-white'
                     : 'cn-surface-2 cn-text-2 cn-border md:bg-transparent md:border-0 md:cn-text-3 md:hover:bg-black/5 md:dark:hover:bg-white/5'
                 }`}
               >
-                <span className={activeTab === tab.id ? 'text-purple-500 dark:text-purple-300 shrink-0' : 'cn-text-4 shrink-0'}>{tab.icon}</span>
+                <span className={activeTab === tab.id ? 'text-blue-500 dark:text-blue-300 shrink-0' : 'cn-text-4 shrink-0'}>{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
@@ -868,15 +868,15 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       placeholder="Hub name…"
                       className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
                         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
-                        focus:border-purple-500 focus:outline-none transition-colors"
+                        focus:border-blue-500 focus:outline-none transition-colors"
                     />
                     <p className="text-xs text-slate-400 dark:text-slate-500">Slug stays unchanged — only the display name updates.</p>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={saveName}
                         disabled={nameSaving || !nameValue.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
-                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium
+                          hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Check className="w-3.5 h-3.5" />
                         Save
@@ -944,14 +944,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       placeholder="Describe your hub…"
                       className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
                         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
-                        focus:border-purple-500 focus:outline-none transition-colors resize-none"
+                        focus:border-blue-500 focus:outline-none transition-colors resize-none"
                     />
                     <div className="flex items-center gap-2">
                       <button
                         onClick={saveDescription}
                         disabled={descriptionSaving}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
-                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium
+                          hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Check className="w-3.5 h-3.5" />
                         Save
@@ -998,14 +998,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       placeholder="Search for your hub's neighborhood or city…"
                       inputClassName="w-full p-2.5 pr-9 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
                         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
-                        focus:border-purple-500 focus:outline-none transition-colors"
+                        focus:border-blue-500 focus:outline-none transition-colors"
                     />
                     <div className="flex items-center gap-2">
                       <button
                         onClick={saveLocation}
                         disabled={!locationResult || locationSaving}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium
-                          hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium
+                          hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Check className="w-3.5 h-3.5" />
                         Save
@@ -1065,7 +1065,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
                       : registryResult === 'error'
                       ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                      : 'bg-purple-600 hover:bg-purple-700 text-white'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
                   {registrySyncing
@@ -1213,7 +1213,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       {/* Edit */}
                       <button
                         onClick={() => editingId === item.id ? setEditingId(null) : handleStartEdit(item)}
-                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${editingId === item.id ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${editingId === item.id ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                         aria-label="Edit"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -1238,7 +1238,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             value={editDraft.title}
                             onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))}
                             placeholder="Title *"
-                            className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                            className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
                           />
                         )}
                         <input
@@ -1246,14 +1246,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           value={editDraft.caption}
                           onChange={e => setEditDraft(d => ({ ...d, caption: e.target.value }))}
                           placeholder="Caption"
-                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
                         />
                         <input
                           type="text"
                           value={editDraft.categoryLabel}
                           onChange={e => setEditDraft(d => ({ ...d, categoryLabel: e.target.value }))}
                           placeholder="Category label (e.g. EVENT)"
-                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                          className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
                         />
                         {item.type === 'custom' && (
                           <div className="space-y-2">
@@ -1278,7 +1278,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                                 </div>
                               ) : (
                                 <label
-                                  className="flex flex-col items-center justify-center gap-2 h-24 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-purple-400 hover:bg-purple-50/30 dark:hover:bg-purple-900/10 transition-colors cursor-pointer"
+                                  className="flex flex-col items-center justify-center gap-2 h-24 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors cursor-pointer"
                                   onDragOver={e => e.preventDefault()}
                                   onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleEditImageFileSelect(f); }}
                                 >
@@ -1296,7 +1296,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                                 value={editDraft.imageUrl}
                                 onChange={e => setEditDraft(d => ({ ...d, imageUrl: e.target.value }))}
                                 placeholder="https://… (leave blank to keep current)"
-                                className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-purple-500 focus:outline-none"
+                                className="w-full p-2 text-sm border border-slate-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
                               />
                             )}
                           </div>
@@ -1305,7 +1305,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           <button
                             onClick={handleSaveEdit}
                             disabled={savingEdit || (item.type === 'custom' && !editDraft.title.trim())}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium transition-colors"
                           >
                             {savingEdit ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                             Save
@@ -1356,7 +1356,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         <button
                           onClick={() => handlePinPost(post.id)}
                           disabled={pinning === post.id}
-                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
                         >
                           {pinning === post.id ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1393,21 +1393,21 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       value={customTitle}
                       onChange={e => setCustomTitle(e.target.value)}
                       placeholder="Title *"
-                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
+                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       type="text"
                       value={customCaption}
                       onChange={e => setCustomCaption(e.target.value)}
                       placeholder="Caption (optional)"
-                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
+                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       type="text"
                       value={customLabel}
                       onChange={e => setCustomLabel(e.target.value)}
                       placeholder="Category label (e.g. EVENT)"
-                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
+                      className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none"
                     />
                     {/* Image — upload or URL */}
                     <div className="space-y-2">
@@ -1442,7 +1442,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           </div>
                         ) : (
                           <label
-                            className="flex flex-col items-center justify-center gap-2 h-28 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-purple-400 hover:bg-purple-50/30 dark:hover:bg-purple-900/10 transition-colors cursor-pointer"
+                            className="flex flex-col items-center justify-center gap-2 h-28 rounded-lg border-2 border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800/50 hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors cursor-pointer"
                             onDragOver={e => e.preventDefault()}
                             onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFileSelect(f); }}
                           >
@@ -1457,7 +1457,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           value={customImageUrl}
                           onChange={e => setCustomImageUrl(e.target.value)}
                           placeholder="https://… (optional — leave blank for gradient)"
-                          className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none"
+                          className="w-full p-2.5 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none"
                         />
                       )}
                     </div>
@@ -1466,7 +1466,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       <button
                         onClick={handleAddCustom}
                         disabled={customSaving || !customTitle.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-medium hover:bg-purple-700 transition-colors disabled:opacity-40"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors disabled:opacity-40"
                       >
                         <Check className="w-3.5 h-3.5" />
                         Add card
@@ -1506,8 +1506,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 disabled={joinModeSaving}
                 className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
                   (currentHub?.joinApprovalMode ?? 'admin') === 'admin'
-                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
-                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-blue-400'
                 }`}
               >
                 Admin approval
@@ -1517,8 +1517,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 disabled={joinModeSaving}
                 className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
                   currentHub?.joinApprovalMode === 'member_vote'
-                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400'
-                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-purple-400'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-blue-400'
                 }`}
               >
                 Member vote
@@ -1623,7 +1623,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 const memRole  = member.role ?? (member.is_admin ? 'admin' : 'member');
                 return (
                   <div key={member.user_id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-semibold shrink-0 relative overflow-hidden">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-semibold shrink-0 relative overflow-hidden">
                       {member.username.charAt(0).toUpperCase()}
                       {currentHub?.slug && (
                         <img src={hubService.getAvatarUrl(currentHub.slug, member.user_id) ?? undefined} alt={member.username} className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -1637,7 +1637,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         </span>
                         {memRole === 'admin' && (
                           <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0 font-semibold">
-                            <Crown className="w-2.5 h-2.5 text-purple-500 dark:text-purple-400" /> Admin
+                            <Crown className="w-2.5 h-2.5 text-blue-500 dark:text-blue-400" /> Admin
                           </span>
                         )}
                         {memRole === 'moderator' && (
@@ -1716,7 +1716,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'spaces',      label: 'Spaces',       Icon: SpacesGlyph },
                     { screen: 'marketplace', label: 'Exchange',     Icon: Store },
                     { screen: 'files',       label: 'Files',        Icon: FolderOpen },
-                    { screen: 'discover',    label: 'Discover',     Icon: Compass },
+                    { screen: 'discover',    label: 'Discover',     Icon: SearchGlyph },
                     { screen: 'toolkit',     label: 'Resources',    Icon: Package },
                     { screen: 'initiatives', label: 'Initiatives',  Icon: Target },
                     { screen: 'network',     label: 'Network',      Icon: Radio },
@@ -1730,7 +1730,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         onClick={() => toggleApp(screen)}
                         className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${
                           on
-                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
                             : 'border-slate-200 dark:border-zinc-700 text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-80'
                         }`}
                       >
@@ -1747,7 +1747,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   <button
                     onClick={saveEnabledApps}
                     disabled={appToggleSaving}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
                   >
                     {appToggleSaving ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1777,7 +1777,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               <div className="cn-glass rounded-2xl overflow-hidden">
                 {/* Card header */}
                 <div className="flex items-start gap-3 px-5 pt-5 pb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/40 dark:to-purple-900/40 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/40 dark:to-blue-900/40 flex items-center justify-center shrink-0">
                     <LayoutGrid className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1864,7 +1864,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                                 value={appUrl}
                                 onChange={e => setAppUrl(e.target.value)}
                                 placeholder="https://your-app.example.com"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
                             <div>
@@ -1874,7 +1874,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                                 value={appKey}
                                 onChange={e => setAppKey(e.target.value)}
                                 placeholder="Shared secret from the app"
-                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
                             {appSaveError && (
@@ -1890,7 +1890,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             <button
                               onClick={() => saveAppConfig('initiatives')}
                               disabled={appSaving || !appUrl.trim() || !appKey.trim()}
-                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
                             >
                               {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                               {appSaving ? 'Connecting…' : 'Update & verify'}
@@ -1916,7 +1916,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               value={appUrl}
                               onChange={e => setAppUrl(e.target.value)}
                               placeholder="https://your-app.example.com"
-                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
                           <div>
@@ -1926,7 +1926,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               value={appKey}
                               onChange={e => setAppKey(e.target.value)}
                               placeholder="Shared secret from the app"
-                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
 
@@ -1944,7 +1944,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           <button
                             onClick={() => saveAppConfig('initiatives')}
                             disabled={appSaving || !appUrl.trim() || !appKey.trim()}
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
                           >
                             {appSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                             {appSaving ? 'Connecting…' : 'Connect & verify'}
@@ -2453,7 +2453,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       onClick={() => saveHubIcon({ hub_icon_mode: 'preset', hub_icon_symbol: id })}
                       title={id}
                       className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all cn-text-2 ${
-                        selected ? 'border-purple-500 ring-2 ring-purple-300 dark:ring-purple-700 bg-purple-50 dark:bg-purple-900/20' : 'cn-border hover:border-purple-300 dark:hover:border-purple-700'
+                        selected ? 'border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700 bg-blue-50 dark:bg-blue-900/20' : 'cn-border hover:border-blue-300 dark:hover:border-blue-700'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
@@ -2506,7 +2506,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
             <button
               onClick={() => setShowIconEditor(false)}
-              className="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors"
+              className="w-full py-2 px-4 cn-action bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
             >
               Done
             </button>

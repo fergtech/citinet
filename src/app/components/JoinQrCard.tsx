@@ -18,7 +18,7 @@ export function JoinQrCard({ tunnelUrl, embedded }: JoinQrCardProps) {
       {!embedded && (
         <>
           <div className="flex items-center gap-2 mb-1">
-            <QrCode className="w-4 h-4 text-purple-500 dark:text-purple-400" />
+            <QrCode className="w-4 h-4 text-blue-500 dark:text-blue-400" />
             <h3 className="text-sm font-semibold cn-text-1">Member join QR code</h3>
           </div>
           <p className="text-xs cn-text-3 mb-4">Anyone can scan this to join the hub instantly.</p>

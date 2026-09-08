@@ -12,15 +12,20 @@ The connection is:
 - **Hot-reloaded** — no server restart required after connecting an app
 - **Attributed** automatically — the app's name and favicon are fetched and displayed in the UI alongside its content
 
-If no app is configured for a capability, that section of the UI degrades gracefully (no broken states, no mock data).
+If no app is configured for a capability, that section of the UI degrades gracefully (no broken states, no mock data). For `initiatives` specifically this goes further: the entire feature set — CRUD, join/leave, checklists, task notes/replies, resources, roles, updates, activity log, banner — works fully standalone against a local Postgres table (`hub_initiatives_local`) with no hub app configured at all. Connecting an `initiatives` app doesn't unlock new functionality, it swaps the backing store for that data to the external app instead.
 
 ---
 
 ## Capabilities
 
-| Capability | UI Surface | Routes proxied |
+| Capability | UI Surface | Routes proxied when an app is connected |
 |---|---|---|
 | `initiatives` | Dashboard card block + full Initiatives screen | `GET/POST /api/initiatives`, `GET/PATCH/DELETE /api/initiatives/:id`, `POST /api/initiatives/:id/goals`, `PATCH/DELETE /api/initiatives/goals/:goalId` |
+
+This is only the subset of the Initiatives API that mirrors to an external app — join/leave,
+checklists, task notes, resources, roles, updates, activity log, and the banner are always
+served locally (`api/server.js`) regardless of whether an app is connected, since they aren't
+part of the hub-app contract.
 
 Additional capabilities can be added by defining new entries in `APP_PROVIDERS` (`api/server.js`) and adding corresponding proxy routes.
 

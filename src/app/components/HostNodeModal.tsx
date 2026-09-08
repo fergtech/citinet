@@ -24,7 +24,7 @@ export function HostNodeModal({ isOpen, onClose, onNavigate }: HostNodeModalProp
     <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="cn-surface border cn-border rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
             <Server className="w-5 h-5 text-white" />
           </span>
           <h2 className="flex-1 text-lg font-bold cn-text-1">Host a node</h2>
@@ -40,7 +40,7 @@ export function HostNodeModal({ isOpen, onClose, onNavigate }: HostNodeModalProp
         <div className="flex flex-col gap-3">
           {REQUIREMENTS.map(({ icon: Icon, text }) => (
             <div key={text} className="flex items-start gap-3">
-              <span className="w-8 h-8 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 text-purple-500 dark:text-purple-300">
+              <span className="w-8 h-8 rounded-lg cn-surface-2 flex items-center justify-center shrink-0 text-blue-500 dark:text-blue-300">
                 <Icon className="w-4 h-4" />
               </span>
               <p className="text-sm cn-text-2 leading-snug pt-1.5">{text}</p>
@@ -50,7 +50,7 @@ export function HostNodeModal({ isOpen, onClose, onNavigate }: HostNodeModalProp
 
         <button
           onClick={handleStart}
-          className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
         >
           Continue
         </button>

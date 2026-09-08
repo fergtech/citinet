@@ -1,4 +1,5 @@
 import { Lightbulb, Antenna, Shield, Sprout, Landmark, Users, Layers } from 'lucide-react';
+import { AvatarFallback } from './icons';
 import type { Initiative } from '../services/initiativesService';
 
 // ── Shared display constants/helpers — owned here since this is the natural
@@ -72,21 +73,6 @@ export function categoryPresetImage(category: string): string | null {
   return CATEGORY_PRESET_IMAGES[category?.toLowerCase()] ?? null;
 }
 
-export function initials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-}
-
-const AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500',  'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',     'from-violet-500 to-purple-500',
-];
-export function avatarColor(name: string) {
-  let h = 0;
-  for (const c of name) h = name.charCodeAt(name.indexOf(c)) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
 export function AvatarStack({ names, max = 4, size = 'md' }: { names: string[]; max?: number; size?: 'sm' | 'md' }) {
   const shown = names.slice(0, max);
   const extra = names.length - shown.length;
@@ -96,9 +82,7 @@ export function AvatarStack({ names, max = 4, size = 'md' }: { names: string[]; 
     <div className="flex items-center">
       {shown.map((n, i) => (
         <span key={n + i} className={`${i === 0 ? '' : overlap} rounded-full ring-2 ring-white dark:ring-zinc-950`}>
-          <span className={`${dim} rounded-full bg-gradient-to-br ${avatarColor(n)} flex items-center justify-center text-white font-bold`}>
-            {initials(n)}
-          </span>
+          <AvatarFallback className={`${dim} rounded-full`} name={n} />
         </span>
       ))}
       {extra > 0 && (
@@ -166,7 +150,7 @@ export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpe
   return (
     <button
       onClick={onOpen}
-      className="relative w-full h-[22rem] rounded-2xl overflow-hidden flex flex-col text-left border cn-border hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+      className="relative w-full h-[22rem] rounded-2xl overflow-hidden flex flex-col text-left border cn-border hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
     >
       {/* Full-bleed cover — uploaded banner, a custom gradient, the category
           preset photo, or (nothing set at all) the initiative's own brand

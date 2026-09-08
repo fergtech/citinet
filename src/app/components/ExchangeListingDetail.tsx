@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bookmark, Share2, MessageCircle, Check, Loader2, Clock, Store, BadgeCheck } from 'lucide-react';
 import { marketplaceService } from '../services/marketplaceService';
+import { VendorAvatarFallback } from './icons';
 import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import type { HubListing, HubVendor } from '../types/hub';
@@ -83,7 +84,7 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
             title={saved ? 'Remove from saved' : 'Save for later'}
             className="w-9 h-9 rounded-full flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <Bookmark className={`w-4 h-4 ${saved ? 'fill-purple-500 text-purple-500 dark:fill-purple-300 dark:text-purple-300' : ''}`} />
+            <Bookmark className={`w-4 h-4 ${saved ? 'fill-blue-500 text-blue-500 dark:fill-blue-300 dark:text-blue-300' : ''}`} />
           </button>
           <button
             onClick={handleShare}
@@ -97,7 +98,7 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
         <div className="grid grid-cols-1 md:grid-cols-[1.1fr_1fr] gap-7 items-start">
           {/* Gallery */}
           <div className="rounded-2xl overflow-hidden border cn-border">
-            <div className={`relative flex items-center justify-center bg-gradient-to-br ${kind.classes.includes('emerald') ? 'from-emerald-600/40' : 'from-purple-600/40'} via-zinc-900 to-zinc-950`} style={{ height: 340 }}>
+            <div className={`relative flex items-center justify-center bg-gradient-to-br ${kind.classes.includes('emerald') ? 'from-emerald-600/40' : 'from-blue-600/40'} via-zinc-900 to-zinc-950`} style={{ height: 340 }}>
               {imageUrl
                 ? <img src={imageUrl} alt={listing.title} className="absolute inset-0 w-full h-full object-cover" />
                 : <Store className="w-24 h-24 text-white/20" />
@@ -134,12 +135,12 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
                   <div className="flex items-center gap-3">
                     {listing.vendor_logo_file_name
                       ? <img src={marketplaceService.getVendorLogoUrl(hubSlug, listing.vendor_logo_file_name) ?? undefined} alt="" className="w-11 h-11 rounded-full object-cover shrink-0" />
-                      : <span className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold shrink-0">{(listing.vendor_name ?? '?').charAt(0).toUpperCase()}</span>
+                      : <VendorAvatarFallback className="w-11 h-11 rounded-full shrink-0" name={listing.vendor_name ?? undefined} />
                     }
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-semibold cn-text-1 truncate">{listing.vendor_name ?? 'Unknown seller'}</span>
-                        <BadgeCheck className="w-3.5 h-3.5 text-purple-500 dark:text-purple-300 shrink-0" />
+                        <BadgeCheck className="w-3.5 h-3.5 text-blue-500 dark:text-blue-300 shrink-0" />
                       </div>
                       <div className="text-xs cn-text-3 truncate">
                         {vendor?.category ? vendor.category : 'Hub member'}
@@ -177,7 +178,7 @@ export function ExchangeListingDetail({ listing, hubSlug, allListings, onBack, o
               <button
                 onClick={handleMessageSeller}
                 disabled={vendorLoading || !vendor?.owner_user_id}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 cn-action bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 <MessageCircle className="w-4 h-4" />
                 Message seller

@@ -58,7 +58,7 @@ export function ShareVendorPage() {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
           <p className="text-sm text-zinc-400">Loading…</p>
         </div>
       </div>

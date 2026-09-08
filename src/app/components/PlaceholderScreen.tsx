@@ -19,7 +19,7 @@ export function PlaceholderScreen({ title, description, onBack }: PlaceholderScr
 
       {/* Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-4xl mx-auto w-full">
-        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 flex items-center justify-center mb-6">
+        <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-blue-600 via-blue-600 to-pink-600 flex items-center justify-center mb-6">
           <Construction className="w-12 h-12 text-white" />
         </div>
         <h3 className="text-card-foreground mb-2">Coming Soon</h3>

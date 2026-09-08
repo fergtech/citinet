@@ -96,7 +96,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
     }
   };
 
-  const inputCls = 'w-full px-3 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500';
+  const inputCls = 'w-full px-3 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500';
 
   return (
     <AnimatePresence>
@@ -118,7 +118,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-zinc-800 shrink-0">
               <div className="flex items-center gap-2">
-                <Plus className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <Plus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">{isEdit ? 'Edit Listing' : 'Add Listing'}</h2>
               </div>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
@@ -134,7 +134,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Photo (optional)</label>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="relative w-full aspect-video rounded-xl bg-slate-100 dark:bg-zinc-800 border-2 border-dashed border-slate-300 dark:border-zinc-600 flex items-center justify-center cursor-pointer hover:border-purple-400 transition-colors overflow-hidden"
+                    className="relative w-full aspect-video rounded-xl bg-slate-100 dark:bg-zinc-800 border-2 border-dashed border-slate-300 dark:border-zinc-600 flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors overflow-hidden"
                   >
                     {imagePreview ? (
                       <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
@@ -197,8 +197,8 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                         onClick={() => setPriceType(pt.value as HubListing['price_type'])}
                         className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors text-left ${
                           priceType === pt.value
-                            ? 'bg-purple-600 text-white border-purple-600'
-                            : 'bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-700 hover:border-purple-400'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-700 hover:border-blue-400'
                         }`}
                       >
                         {pt.label}
@@ -247,7 +247,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                   <button
                     type="submit"
                     disabled={saving || !title.trim() || uploadingImage}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 transition-all"
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-700 text-white text-sm font-semibold hover:from-blue-600 hover:to-blue-800 disabled:opacity-50 transition-all"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Tag className="w-4 h-4" />}
                     {saving ? (isEdit ? 'Saving…' : 'Listing…') : (isEdit ? 'Save Changes' : 'Post Listing')}

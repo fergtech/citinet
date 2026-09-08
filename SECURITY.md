@@ -121,13 +121,26 @@ membership — was already correctly scoped, mostly via ownership checks embedde
 directly in SQL `WHERE` clauses or existing per-feature helper functions
 (`assertTaskOwner`, `canManageSpace`).
 
-### Network exposure (2026-08-05)
+### Network exposure (2026-08-05, narrowed again since)
 `citinet-api`'s container port (9090) was published on `0.0.0.0`, reachable from
 anywhere on the hub's LAN (and the WAN, if a router forwarded it) in **plain HTTP**,
 completely bypassing Caddy's TLS termination — including `/api/auth/login`, meaning
 credentials could be sent unencrypted if that path were ever hit. Every legitimate use
-(setup-script health checks, the tray app) only needs loopback access. Now bound to
-`127.0.0.1:9090:9090` in both `scriptGenerator.ts` (new hubs) and existing hub configs.
+(setup-script health checks, the tray app) only needs loopback access. `scriptGenerator.ts`
+(what new, wizard-created hubs get) binds it to `127.0.0.1:9090:9090` only — no LAN/WAN
+plain-HTTP path exists for a new hub today.
+
+**hub1's own running config has since reopened a scoped version of this**, as of the
+mDNS/Tailscale-mesh work (2026-08-30): its `docker-compose.yml` additionally binds port
+9090 on the LAN interface (`${LAN_IP}`) and the Tailscale interface (`${TAILSCALE_IP}`),
+still plain HTTP, with the reasoning inline in that file — a phone that discovers the hub
+via mDNS needs a plain-HTTP path because Docker Desktop/WSL2 can't run the mDNS advertiser
+as a proper host-networked container, and a Tailscale-enrolled phone off-LAN needs direct
+port access since WireGuard already encrypts that transport. This is a deliberate,
+narrower trade-off specific to that hub's manual config, not something `scriptGenerator.ts`
+currently produces for new hubs, and not yet reflected as an accepted trade-off in this
+doc's "Accepted trade-offs" table below — worth a decision on whether to formalize it there
+or roll it back once the HTTPS bridge/dns-bridge path covers the same discovery use case.
 
 ### Dependencies
 `npm audit` on `api/` is clean (0 vulnerabilities) as of 2026-08-05 — patched
@@ -164,6 +177,18 @@ payloads from an admin/moderator account (or one that's been compromised).
   automatically, and reading the response requires already knowing a valid token. Do
   not "fix" this by restricting `Access-Control-Allow-Origin` without also reconsidering
   the auth model; it isn't currently a gap.
+
+---
+
+## Scope gap: Comms (calls/broadcasts) not yet covered by this audit
+
+`api/comms.js` (self-hosted LiveKit integration for 1:1 calls and broadcasts, shipped
+2026-08-28) postdates the 2026-08-05 route-by-route audit above and hasn't had an
+equivalent pass. Confirmed in passing: token minting (`POST /api/comms/token`) and the
+other REST routes require `authenticate`. Not yet reviewed: LiveKit token scoping (does a
+minted token grant access to only the intended room?), the exposed media ports
+(`7881/tcp`, `50000-50100/udp` in the hub's `docker-compose.yml`) as new network attack
+surface, and the in-memory WebSocket signaling registry's authorization.
 
 ---
 
@@ -221,6 +246,10 @@ if (description?.length > 1000) return res.status(400).json({ error: 'Descriptio
 #### 3. Session/user-agent binding
 See "Session token access via direct DB access" above.
 
+#### 6. Comms (LiveKit) security review
+See "Scope gap: Comms (calls/broadcasts) not yet covered by this audit" above — needs a
+dedicated pass now that it's shipped, not a placeholder gap left over from before it existed.
+
 #### 4. ~~Raise password minimum from 8 to 10~~ — done 2026-08-05
 
 #### 5. ~~Resolve the unused Redis container~~ — done 2026-08-05
@@ -260,7 +289,10 @@ container list, plus doc references in `README.md`, `docs/hub-setup.md`, and
 - [x] Join approval — new accounts are `pending` until a hub admin approves them (founding admin auto-approved)
 - [x] Route-by-route authorization audit — all 191 routes reviewed, two gaps found and fixed (see above)
 - [x] Recovery secret decoupled from login password (app-generated recovery phrase, Argon2id)
-- [x] API port bound to loopback only — no plaintext LAN/WAN path bypassing TLS
+- [x] API port bound to loopback only for new, wizard-created hubs (`scriptGenerator.ts`)
+- [ ] hub1's own config reopened a scoped LAN/Tailscale plain-HTTP path for mobile
+      discovery/mesh (2026-08-30) — see "Network exposure" above; needs a decision on
+      whether to accept and document this trade-off or close it
 - [x] Username charset validated (email-header-injection surface closed)
 - [x] Dependencies patched — `npm audit` clean on `api/`
 - [ ] `CORS_ORIGIN` env var is currently inert — either wire it up or remove it from `.env.example`/`docker-compose.yml` to stop implying it does something
@@ -268,6 +300,7 @@ container list, plus doc references in `README.md`, `docs/hub-setup.md`, and
 - [ ] Input length limits on posts, pins, descriptions
 - [ ] Session binding to user-agent/IP (optional hardening)
 - [ ] Encrypt file names client-side (closes last plaintext metadata gap)
+- [ ] Comms (LiveKit) security review — token scoping, exposed media ports, WS signaling auth
 
 **Note:** none of the code fixes on this page take effect on a running hub until the
 Docker image (`ghcr.io/fergtech/citinet-api:latest`) is rebuilt, pushed, and the

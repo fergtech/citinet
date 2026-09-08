@@ -69,7 +69,7 @@ export function ShareFilePage() {
   const fileIcon = (() => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'ogv'].includes(ext))
-      return <FileVideo className="w-12 h-12 text-purple-400" />;
+      return <FileVideo className="w-12 h-12 text-blue-400" />;
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'].includes(ext))
       return <FileImage className="w-12 h-12 text-pink-400" />;
     if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext))
@@ -90,7 +90,7 @@ export function ShareFilePage() {
       <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-6">
-            <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
             <p className="text-sm text-zinc-400">Loading…</p>
           </div>
         ) : error ? (
@@ -117,7 +117,7 @@ export function ShareFilePage() {
 
             <button
               onClick={handleDownload}
-              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold text-sm transition-all shadow-lg shadow-purple-900/30 active:scale-95"
+              className="w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white font-semibold text-sm transition-all shadow-lg shadow-blue-900/30 active:scale-95"
             >
               <Download className="w-4 h-4" />
               Download file

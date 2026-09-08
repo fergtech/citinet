@@ -37,7 +37,7 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
     <div className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="cn-surface border cn-border rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
+          <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
             <UserPlus className="w-5 h-5 text-white" />
           </span>
           <h2 className="flex-1 text-lg font-bold cn-text-1">Invite neighbors</h2>
@@ -61,7 +61,7 @@ export function InviteNeighborsModal({ isOpen, onClose }: InviteNeighborsModalPr
               <button
                 onClick={handleCopy}
                 className={`px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center gap-1.5 shrink-0 ${
-                  copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'
+                  copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'
                 }`}
               >
                 {copied ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}

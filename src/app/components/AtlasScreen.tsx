@@ -10,6 +10,7 @@ import { useTheme } from 'next-themes';
 import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
+import { AvatarFallback } from './icons';
 import { atlasService } from '../services/atlasService';
 import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
 import { LocationSearchInput } from './LocationSearchInput';
@@ -545,9 +546,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
       )}
 
       <div className="cn-glass rounded-xl p-3 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-xs shrink-0">
-          {pin.authorUsername.charAt(0).toUpperCase()}
-        </div>
+        <AvatarFallback className="w-8 h-8 rounded-full shrink-0" name={pin.authorUsername} />
         <div className="min-w-0">
           <div className="text-xs font-semibold cn-text-1 truncate">@{pin.authorUsername}</div>
           <div className="text-[11px] cn-text-4">Added this pin</div>
@@ -557,7 +556,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
       <div className="flex items-center gap-2">
         <button
           onClick={handleDirections}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
         >
           <Navigation className="w-3.5 h-3.5" />
           Directions
@@ -567,7 +566,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
           title={saved ? 'Remove from saved' : 'Save'}
           className="w-10 h-10 rounded-xl cn-glass flex items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors shrink-0"
         >
-          <Bookmark className={`w-4 h-4 ${saved ? 'fill-purple-300 text-purple-300' : ''}`} />
+          <Bookmark className={`w-4 h-4 ${saved ? 'fill-blue-300 text-blue-300' : ''}`} />
         </button>
         <button
           onClick={handleShare}
@@ -710,8 +709,8 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
         </button>
         {step !== 'success' && !isEditing && (
           <div className="flex items-center gap-1.5">
-            <span className={`h-1.5 rounded-full transition-all ${step === 'details' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
-            <span className={`h-1.5 rounded-full transition-all ${step === 'review' ? 'w-4 bg-purple-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
+            <span className={`h-1.5 rounded-full transition-all ${step === 'details' ? 'w-4 bg-blue-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
+            <span className={`h-1.5 rounded-full transition-all ${step === 'review' ? 'w-4 bg-blue-500' : 'w-1.5 bg-black/10 dark:bg-white/15'}`} />
           </div>
         )}
       </div>
@@ -731,7 +730,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
               onChange={e => setTitle(e.target.value)}
               placeholder="e.g. Free Little Library"
               autoFocus
-              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
@@ -754,7 +753,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
                   onClick={() => onCategoryChange(key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                     category === key
-                      ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30'
+                      ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'
                       : 'bg-black/5 dark:bg-white/5 cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                   }`}
                 >
@@ -773,7 +772,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
               onChange={e => setDescription(e.target.value)}
               rows={4}
               placeholder="What should neighbors know about this place?"
-              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
           </div>
           <div>
@@ -792,7 +791,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
                 </button>
               </div>
             ) : (
-              <label className="flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-purple-400 dark:hover:border-purple-500 cursor-pointer transition-colors">
+              <label className="flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-colors">
                 <ImagePlus className="w-3.5 h-3.5 cn-text-4" />
                 <span className="text-xs cn-text-4">Add a photo</span>
                 <input
@@ -808,7 +807,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
           <button
             onClick={isEditing ? handlePublish : () => setStep('review')}
             disabled={!title.trim() || publishing}
-            className="w-full px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+            className="w-full px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
           >
             {isEditing ? (publishing ? 'Saving…' : 'Save changes') : 'Review pin'}
           </button>
@@ -846,7 +845,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
             <button
               onClick={handlePublish}
               disabled={publishing}
-              className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
+              className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors"
             >
               {publishing ? 'Publishing…' : 'Publish pin'}
             </button>
@@ -874,7 +873,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
           </div>
           <button
             onClick={() => onDone(publishedPin)}
-            className="w-full px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+            className="w-full px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
           >
             Done
           </button>
@@ -1313,7 +1312,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
             <div className="flex items-center gap-3">
               <span
-                className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md shrink-0"
+                className="w-11 h-11 cn-action flex items-center justify-center shadow-md shrink-0"
                 style={{ background: 'var(--cn-grad-atlas)' }}
               >
                 <AtlasGlyph className="w-6 h-6 text-white" />
@@ -1325,7 +1324,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               <button
                 onClick={placingPin ? cancelPlacement : enterPlacingMode}
                 className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
-                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
               >
                 <Plus className="w-4 h-4" />
@@ -1335,7 +1334,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
             <button
               onClick={placingPin ? cancelPlacement : enterPlacingMode}
               className={`sm:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
+                placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
             >
               <Plus className="w-4 h-4" />
@@ -1349,7 +1348,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               onSelect={handleLocationSelect}
               hubCenter={hubGeoCenter}
               historyKey={SEARCH_HISTORY_KEY}
-              inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
 
             {/* Map */}
@@ -1423,7 +1422,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                       boxShadow: '0 0 0 4px rgba(124,58,237,0.25), 0 4px 14px rgba(0,0,0,0.35)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
                     }}>📍</div>
-                    <div className="w-0.5 h-3 bg-purple-600 mx-auto opacity-70" />
+                    <div className="w-0.5 h-3 bg-blue-600 mx-auto opacity-70" />
                   </div>
 
                   <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] max-w-[280px]">
@@ -1441,7 +1440,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                     </button>
                     <button
                       onClick={handleDropHereConfirm}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg transition-colors"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg transition-colors"
                     >
                       <MapPin className="w-4 h-4" />
                       Place pin here
@@ -1482,7 +1481,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                         setCreateCategory('poi');
                         setUnregisteredLocation(null);
                       }}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg transition-colors"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg transition-colors"
                     >
                       <MapPin className="w-4 h-4" />
                       Add pin here
@@ -1580,11 +1579,11 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                     onClick={() => setSavedOnly(s => !s)}
                     className={`flex-none flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                       savedOnly
-                        ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
                         : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                     }`}
                   >
-                    <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-purple-300' : ''}`} />
+                    <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-blue-300' : ''}`} />
                     Saved{savedPinIds.length > 0 ? ` (${savedPinIds.length})` : ''}
                   </button>
                   {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
@@ -1593,7 +1592,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                       onClick={() => setCategoryFilter(prev => prev === key ? 'all' : key)}
                       className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                         categoryFilter === key
-                          ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
                           : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                       }`}
                     >
@@ -1621,10 +1620,10 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                           setCreateCategory('poi');
                           setUnregisteredLocation(null);
                         }}
-                        className="flex items-center gap-3 p-4 rounded-xl border-2 border-dashed border-purple-300 dark:border-purple-500/40 bg-purple-50/50 dark:bg-purple-500/5 hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors text-left"
+                        className="flex items-center gap-3 p-4 rounded-xl border-2 border-dashed border-blue-300 dark:border-blue-500/40 bg-blue-50/50 dark:bg-blue-500/5 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors text-left"
                       >
-                        <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center shrink-0">
-                          <MapPin className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                        <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-500/15 flex items-center justify-center shrink-0">
+                          <MapPin className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium cn-text-1 truncate">{unregisteredLocation.label}</p>

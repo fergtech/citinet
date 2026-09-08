@@ -9,10 +9,17 @@ How to get a Citinet hub running on your hardware, what to expect, and how to ma
 A hub is several Docker containers running as a single unit:
 
 ```
-citinet-api       (port 9090)  — API, auth, posts, messages, files, atlas
-citinet-db        (internal)   — PostgreSQL 16 — all structured data
-citinet-storage   (internal)   — MinIO — file and media object storage
+citinet-api       (127.0.0.1:9090) — API, auth, posts, messages, files, atlas
+citinet-db        (internal)       — PostgreSQL 16 — all structured data
+citinet-storage   (internal)       — MinIO — file and media object storage
+citinet-caddy     (port 443/80)    — automatic HTTPS + reverse proxy (the actual LAN/public entry point)
+citinet-backup    (internal)       — nightly DB + file backups, rotated (see Backups below)
+citinet-ollama    (internal)       — local AI assistant, only if enabled in the wizard
 ```
+
+`citinet-api` binds to `127.0.0.1` only, deliberately — it's not reachable from the LAN
+directly. `citinet-caddy` is the only intended path in from outside the hub machine; see
+[Accessing the Hub](#accessing-the-hub) below.
 
 Everything lives in a directory on a drive you choose. Moving the hub to a different drive means changing one line in a file and restarting.
 
@@ -69,7 +76,9 @@ When it finishes, the hub is running. Visit `http://localhost:9090/health` to co
 
 ## Part 3 — First Login
 
-Navigate to `http://localhost:9090` on the hub machine, or use your LAN hostname / tunnel URL from another device.
+Navigate to `http://localhost:9090` on the hub machine itself, or
+`https://<hub-slug>.hub.citinet.cloud` from any other device — see
+[Accessing the Hub](#accessing-the-hub) below.
 
 The first account you register on the hub becomes the **admin**. Sign up with whatever username and password you want.
 
@@ -77,14 +86,18 @@ The first account you register on the hub becomes the **admin**. Sign up with wh
 
 ## Where Your Data Lives
 
-All hub data is controlled by two variables in `~/citinet-hub/.env`:
+All hub data is controlled by variables in `~/citinet-hub/.env`:
 
 ```env
-DATA_DIR=./data         # database
+DATA_DIR=./data           # Postgres (DATA_DIR/db) + Caddy's HTTPS certs (DATA_DIR/caddy)
 FILES_DIR=./data/storage  # uploaded user files (MinIO)
+BACKUP_DIR=./data/backups # nightly DB + file backups (see Backups below)
+OLLAMA_DIR=./data/ollama  # local AI model cache, only if AI was enabled
 ```
 
-By default both point to subdirectories under `~/citinet-hub/data/`. You can point either to any path — a different drive, an external HDD, a network share.
+By default all point to subdirectories under `~/citinet-hub/data/`. You can point any of
+them to a different path — a different drive, an external HDD, a network share —
+independently of the others.
 
 **To move your database to a new drive:**
 
@@ -105,19 +118,31 @@ See [remote-file-storage.md](./remote-file-storage.md) for the full guide.
 
 | From | URL |
 |---|---|
-| Hub machine | `http://localhost:9090` |
-| Local network | `http://<hub-ip>:9090` |
-| LAN hostname (if configured in router DNS) | `http://citinet:9090` |
-| Anywhere (Tailscale Funnel) | `https://<machine>.<tailnet>.ts.net` |
+| Hub machine only | `http://localhost:9090` (loopback-only, doesn't work from other devices) |
+| Any device on the LAN, or off it | `https://<hub-slug>.hub.citinet.cloud` |
+| Anywhere (Tailscale Funnel, if configured) | `https://<machine>.<tailnet>.ts.net` |
 
-### Making the Hub Reachable at `citinet:9090` on Your LAN
+Every hub gets a real, browser-trusted HTTPS certificate for
+`<hub-slug>.hub.citinet.cloud` automatically at creation time — no router
+configuration, no DNS entry to add, no port number to remember. See
+[hub-https-bridge.md](./hub-https-bridge.md) for how this works and why it
+also solves plain LAN access with zero setup.
 
-Quick reference: [router-dns-quick-reference.md](./router-dns-quick-reference.md)
+`citinet-api` itself only binds to `127.0.0.1:9090` on the hub machine — it is
+never reachable directly from the LAN. `citinet-caddy` (ports 80/443) is the
+only intended entry point from any other device.
 
-1. **Set a static IP on the hub machine** (via NetworkManager, router reservation, or dhcpcd)
-2. **Add a DNS entry in your router**: `citinet` → the hub's IP
+### If DNS resolution to `.hub.citinet.cloud` isn't an option
 
-After this, any device on your LAN can reach the hub at `http://citinet:9090` — no IP address needed.
+For a guest device with no internet access at all (so it can't resolve any
+public hostname), see
+[hub-wireless-reach-standard.md](./hub-wireless-reach-standard.md) for a
+dedicated access point that still serves the same real certificate. A manual
+router DNS override to a raw `citinet:9090` address
+([router-dns-quick-reference.md](./router-dns-quick-reference.md)) is a
+legacy fallback from before the HTTPS bridge shipped — it still works, but
+gives you plain HTTP with no certificate (no Web Crypto/E2E encryption), so
+prefer the hostname above whenever the hub has any internet access.
 
 ---
 

@@ -14,10 +14,12 @@ import { spacesService } from '../services/spacesService';
 import { hubService } from '../services/hubService';
 import { initiativesService, type Initiative } from '../services/initiativesService';
 import { COLOR, STATUS_BADGE, STATUS_LABEL, categoryMeta, categoryPresetImage, AvatarStack } from './InitiativeCard';
+import { AvatarFallback } from './icons';
 import { BroadcastSetupModal } from './comms/BroadcastSetupModal';
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
 import { hubPath } from '../utils/subdomain';
 import { PostDetailModal } from './PostDetailModal';
+import { SpacesGlyph } from './icons';
 import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile, HubSpaceCategory } from '../types/hub';
 
 interface SpacesScreenProps {
@@ -88,20 +90,11 @@ function formatBytes(b?: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
-function getAvatarColor(name: string) {
-  const colors = ['from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-    'from-pink-500 to-rose-500', 'from-violet-500 to-purple-500'];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return colors[Math.abs(h) % colors.length];
-}
 
 function fileTypeIcon(mime?: string) {
   if (!mime) return <FileText className="w-5 h-5 cn-text-3" />;
   if (mime.startsWith('image/')) return <ImageIcon className="w-5 h-5 text-blue-500 dark:text-blue-400" />;
-  if (mime.startsWith('video/')) return <Video className="w-5 h-5 text-purple-500 dark:text-purple-400" />;
+  if (mime.startsWith('video/')) return <Video className="w-5 h-5 text-blue-500 dark:text-blue-400" />;
   return <FileText className="w-5 h-5 cn-text-3" />;
 }
 
@@ -186,11 +179,11 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Space Name</label>
             <input value={name} onChange={e => handleNameChange(e.target.value)} placeholder="Neighborhood Garden Club" required
-              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Slug (URL)</label>
-            <div className="flex items-center bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 focus-within:border-purple-500 overflow-hidden">
+            <div className="flex items-center bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 focus-within:border-blue-500 overflow-hidden">
               <span className="text-slate-400 dark:text-zinc-500 text-sm mr-1">spaces/</span>
               <input value={slug} onChange={e => { setSlug(e.target.value); setSlugManual(true); }} placeholder="garden-club" required
                 className="flex-1 bg-transparent py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none" />
@@ -199,14 +192,14 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Description <span className="text-slate-400 dark:text-zinc-600">(optional)</span></label>
             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="What is this space about?"
-              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-2">Visibility</label>
             <div className="grid grid-cols-3 gap-2">
               {(['public', 'private', 'invite-only'] as const).map(v => (
                 <button key={v} type="button" onClick={() => setVisibility(v)}
-                  className={`py-2 rounded-xl text-xs font-medium border transition-colors ${visibility === v ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                  className={`py-2 rounded-xl text-xs font-medium border transition-colors ${visibility === v ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                   {visibilityLabel(v)}
                 </button>
               ))}
@@ -219,14 +212,14 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-2">Category <span className="text-slate-400 dark:text-zinc-600">(optional — helps neighbors find it in Discover)</span></label>
             <div className="flex flex-wrap gap-1.5">
               <button type="button" onClick={() => setCategory('')}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === '' ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === '' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                 None
               </button>
               {(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(c => {
                 const { label, Icon } = SPACE_CATEGORY[c];
                 return (
                   <button key={c} type="button" onClick={() => setCategory(c)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === c ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${category === c ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-50 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-500 dark:text-zinc-400 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                     <Icon className="w-3.5 h-3.5" /> {label}
                   </button>
                 );
@@ -237,7 +230,7 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700">Cancel</button>
             <button type="submit" disabled={loading || !name || !slug}
-              className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 cn-action bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
               {loading && <Loader2 className="w-4 h-4 animate-spin" />} Create Space
             </button>
           </div>
@@ -284,20 +277,20 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-zinc-500" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search hub members…"
-              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl pl-9 pr-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl pl-9 pr-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500" />
           </div>
           {error && <p className="text-xs text-red-500 dark:text-red-400 mb-2">{error}</p>}
           <div className="space-y-1 max-h-64 overflow-y-auto">
             {loading && <div className="py-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-zinc-500" /></div>}
             {!loading && filtered.map(m => (
               <div key={m.user_id} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800">
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
+                <AvatarFallback className="w-8 h-8 rounded-full flex-shrink-0" name={m.username} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{m.display_name || m.username}</p>
                   <p className="text-xs text-slate-400 dark:text-zinc-500">@{m.username}</p>
                 </div>
                 <button onClick={() => invite(m.user_id)} disabled={inviting === m.user_id || invited.has(m.user_id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${invited.has(m.user_id) ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${invited.has(m.user_id) ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
                   {inviting === m.user_id ? <Loader2 className="w-3 h-3 animate-spin" /> : invited.has(m.user_id) ? <><Check className="w-3 h-3" /> Invited</> : <><UserPlus className="w-3 h-3" /> Invite</>}
                 </button>
               </div>
@@ -333,11 +326,7 @@ function MemberAvatar({ member, hubSlug, size }: { member: HubSpaceMember; hubSl
     return <img src={avatarUrl} alt="" className={`${size === 'row' ? 'w-7 h-7' : 'w-14 h-14'} rounded-full object-cover ${size === 'popover' ? 'mb-2.5' : ''}`} onError={() => setAvatarFailed(true)} />;
   }
 
-  return (
-    <div className={`${size === 'row' ? 'w-7 h-7 text-[10px]' : 'w-14 h-14 text-lg mb-2.5'} rounded-full bg-gradient-to-br ${getAvatarColor(member.username)} flex items-center justify-center text-white font-bold flex-shrink-0`}>
-      {getInitials(member.display_name || member.username)}
-    </div>
-  );
+  return <AvatarFallback className={`${size === 'row' ? 'w-7 h-7' : 'w-14 h-14 mb-2.5'} rounded-full flex-shrink-0`} name={member.username} />;
 }
 
 function MemberPreviewCard({ member, hubSlug, myUserId, onClose }: { member: HubSpaceMember; hubSlug: string; myUserId?: string; onClose: () => void }) {
@@ -377,7 +366,7 @@ function MemberPreviewCard({ member, hubSlug, myUserId, onClose }: { member: Hub
           </button>
         )}
         <button onClick={viewProfile}
-          className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5">
+          className="flex-1 py-2 cn-action bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5">
           <UserIcon className="w-3.5 h-3.5" /> View Profile
         </button>
       </div>
@@ -455,7 +444,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
   return (
     <form onSubmit={submit} className="w-full max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 space-y-3">
       <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with this space…" rows={3}
-        className="w-full cn-surface border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500 resize-none" />
+        className="w-full cn-surface border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
       {mediaPreview && (
         <div className="relative rounded-xl overflow-hidden">
           {isVid ? <video src={mediaPreview} controls className="w-full max-h-48 object-contain bg-black" /> : <img src={mediaPreview} alt="Preview" className="w-full max-h-48 object-cover" />}
@@ -472,7 +461,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
         <div className="flex-1" />
         <button type="button" onClick={() => { removeMedia(); setOpen(false); }} className="px-3 py-2 rounded-xl cn-surface-3 text-sm cn-text-2 hover:bg-black/10 dark:hover:bg-white/10">Cancel</button>
         <button type="submit" disabled={loading || (!body.trim() && !mediaFile)}
-          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
+          className="px-4 py-2 cn-action bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}<Send className="w-4 h-4" /> Post
         </button>
       </div>
@@ -647,9 +636,7 @@ function SpaceInfoSidebar({ space, hubSlug, members, membersLoading, posts, myUs
           <div className="space-y-1">
             {[...topPosters.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([username, count]) => (
               <div key={username} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
-                <div className={`w-6 h-6 rounded-full bg-gradient-to-br ${getAvatarColor(username)} flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0`}>
-                  {getInitials(username)}
-                </div>
+                <AvatarFallback className="w-6 h-6 rounded-full flex-shrink-0" name={username} />
                 <span className="text-xs cn-text-2 flex-1 truncate">{username}</span>
                 <span className="text-[11px] cn-text-4">{count} post{count !== 1 ? 's' : ''}</span>
               </div>
@@ -690,7 +677,7 @@ function InitiativeGridCard({ initiative, hubSlug, onOpen }: { initiative: Initi
 
   return (
     <button onClick={onOpen}
-      className="flex flex-col gap-2 p-2 rounded-xl border cn-border hover:border-purple-300/60 dark:hover:border-purple-500/30 cn-surface-2 transition-colors text-left min-w-0">
+      className="flex flex-col gap-2 p-2 rounded-xl border cn-border hover:border-blue-300/60 dark:hover:border-blue-500/30 cn-surface-2 transition-colors text-left min-w-0">
       {/* Cover swatch — same image/gradient/brand-color fallback chain as the
           real card, just a compact tile instead of full-bleed. */}
       <div
@@ -784,7 +771,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={clampedPage === 0}
             aria-label="Previous initiatives"
-            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
           >
             <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
           </button>
@@ -794,7 +781,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
                 key={i}
                 onClick={() => setPage(i)}
                 aria-label={`Go to page ${i + 1}`}
-                className={`rounded-full transition-all ${i === clampedPage ? 'w-4 h-1.5 bg-purple-500' : 'w-1.5 h-1.5 cn-surface-3 hover:bg-purple-300/60 dark:hover:bg-purple-500/30'}`}
+                className={`rounded-full transition-all ${i === clampedPage ? 'w-4 h-1.5 bg-blue-500' : 'w-1.5 h-1.5 cn-surface-3 hover:bg-blue-300/60 dark:hover:bg-blue-500/30'}`}
               />
             ))}
           </div>
@@ -802,7 +789,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
             onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
             disabled={clampedPage === pageCount - 1}
             aria-label="Next initiatives"
-            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+            className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
           >
             <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
           </button>
@@ -1066,14 +1053,14 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             {error && <p className="text-xs text-red-400">{error}</p>}
             {isInvited && (
               <button onClick={handleAcceptInvite} disabled={actionLoading}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Accept Invite
               </button>
             )}
             {isPending && !isInvited && <span className="px-3 py-1.5 rounded-xl bg-black/50 backdrop-blur-sm text-sm text-zinc-300">Pending Approval</span>}
             {!space.my_status && (
               <button onClick={handleJoin} disabled={actionLoading}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center gap-2">
                 {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 {space.visibility === 'private' ? 'Request to Join' : 'Join Space'}
               </button>
@@ -1131,7 +1118,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         <div className="flex border-b cn-border px-6 flex-shrink-0 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-purple-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
+              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-blue-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
               {t}
             </button>
           ))}
@@ -1212,7 +1199,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                         </a>
                       ) : (
                         <>
-                          <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>{getInitials(post.author_username)}</div>
+                          <AvatarFallback className="w-7 h-7 rounded-full" name={post.author_username} />
                           <span className="text-sm font-medium cn-text-1">{post.author_username}</span>
                         </>
                       )}
@@ -1252,7 +1239,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
           <div className="p-5 max-w-2xl">
             {isAdmin && (
               <button onClick={() => setShowInvite(true)} title="Invite members" aria-label="Invite members"
-                  className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed cn-border hover:border-purple-600 text-sm cn-text-3 hover:text-purple-600 dark:hover:text-purple-400 transition-colors">
+                  className="w-full flex items-center gap-2 justify-center mb-4 py-2.5 rounded-xl border border-dashed cn-border hover:border-blue-600 text-sm cn-text-3 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   <UserPlus className="w-4 h-4" /> Invite hub members
                 </button>
             )}
@@ -1262,7 +1249,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 <p className="text-xs font-semibold uppercase tracking-widest cn-text-4 mb-2">Pending Approval</p>
                 {members.filter(m => m.status === 'pending').map(m => (
                   <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
-                    <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
+                    <AvatarFallback className="w-9 h-9 rounded-full flex-shrink-0" name={m.username} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
                       <p className="text-xs cn-text-4">@{m.username}</p>
@@ -1279,7 +1266,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                   <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
                     <MemberPopoverRow member={m} hubSlug={hubSlug} myUserId={myUserId}>
                       <button className="flex-1 min-w-0 flex items-center gap-3 text-left">
-                        <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(m.username)} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>{getInitials(m.display_name || m.username)}</div>
+                        <AvatarFallback className="w-9 h-9 rounded-full flex-shrink-0" name={m.username} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
                           <p className="text-xs cn-text-4 capitalize">{m.role}</p>
@@ -1307,19 +1294,19 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             <div>
               <label className="block text-xs font-medium cn-text-3 mb-1">Space Name</label>
               <input value={settingsName} onChange={e => setSettingsName(e.target.value)} required
-                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-purple-500" />
+                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-blue-500" />
             </div>
             <div>
               <label className="block text-xs font-medium cn-text-3 mb-1">Description</label>
               <textarea value={settingsDesc} onChange={e => setSettingsDesc(e.target.value)} rows={3}
-                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-purple-500 resize-none" />
+                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-blue-500 resize-none" />
             </div>
             <div>
               <label className="block text-xs font-medium cn-text-3 mb-2">Visibility</label>
               <div className="grid grid-cols-3 gap-2">
                 {(['public', 'private', 'invite-only'] as const).map(v => (
                   <button key={v} type="button" onClick={() => setSettingsVis(v)}
-                    className={`py-2 rounded-xl text-xs font-medium border transition-colors ${settingsVis === v ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                    className={`py-2 rounded-xl text-xs font-medium border transition-colors ${settingsVis === v ? 'bg-blue-600 border-blue-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                     {visibilityLabel(v)}
                   </button>
                 ))}
@@ -1329,14 +1316,14 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               <label className="block text-xs font-medium cn-text-3 mb-2">Category <span className="cn-text-4">(helps neighbors find it in Discover)</span></label>
               <div className="flex flex-wrap gap-1.5">
                 <button type="button" onClick={() => setSettingsCategory('')}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === '' ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === '' ? 'bg-blue-600 border-blue-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                   None
                 </button>
                 {(Object.keys(SPACE_CATEGORY) as HubSpaceCategory[]).map(c => {
                   const { label, Icon } = SPACE_CATEGORY[c];
                   return (
                     <button key={c} type="button" onClick={() => setSettingsCategory(c)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === c ? 'bg-purple-600 border-purple-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${settingsCategory === c ? 'bg-blue-600 border-blue-500 text-white' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                       <Icon className="w-3.5 h-3.5" /> {label}
                     </button>
                   );
@@ -1376,7 +1363,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             </div>
             {settingsError && <p className="text-xs text-red-500 dark:text-red-400">{settingsError}</p>}
             <button type="submit" disabled={settingsSaving}
-              className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2">
               {settingsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsSaved ? <><Check className="w-4 h-4" /> Saved</> : <><Settings className="w-4 h-4" /> Save Settings</>}
             </button>
             {space.my_role === 'owner' && (
@@ -1586,13 +1573,13 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
         <div className="flex items-center gap-3 px-4 py-4 border-b cn-border flex-shrink-0">
           <button onClick={onBack} className="md:hidden w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center flex-shrink-0"><ArrowLeft className="w-4 h-4 cn-text-3" /></button>
           <h1 className="text-base font-semibold cn-text-1 flex-1">Spaces</h1>
-          <button onClick={() => setShowCreate(true)} title="Create space" aria-label="Create space" className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
+          <button onClick={() => setShowCreate(true)} title="Create space" aria-label="Create space" className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-500 flex items-center justify-center"><Plus className="w-4 h-4 text-white" /></button>
         </div>
         <div className="px-4 py-3 border-b cn-border flex-shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search spaces…"
-              className="w-full cn-surface-2 border cn-border rounded-xl pl-9 pr-3 py-2 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-purple-500" />
+              className="w-full cn-surface-2 border cn-border rounded-xl pl-9 pr-3 py-2 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500" />
           </div>
           <div className="flex gap-1 mt-2">
             <button onClick={() => setShowAll(true)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${showAll ? 'cn-surface-3 cn-text-1' : 'cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>Discover</button>
@@ -1628,7 +1615,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
               <div ref={chipContentRef} className="flex items-center gap-1.5">
                 {CATEGORY_FILTERS.map(f => (
                   <button key={f.value} onClick={() => setCategoryFilter(prev => prev === f.value ? null : f.value)}
-                    className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors border ${categoryFilter === f.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-500/30' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
+                    className={`flex-none px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors border ${categoryFilter === f.value ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30' : 'cn-surface-2 cn-border cn-text-3 hover:border-slate-300 dark:hover:border-zinc-600'}`}>
                     {f.label}
                   </button>
                 ))}
@@ -1637,11 +1624,11 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
           </div>
         </div>
         {pendingInvites.length > 0 && !showAll && (
-          <div className="px-4 py-2 bg-purple-100 dark:bg-purple-900/20 border-b border-purple-300 dark:border-purple-900/40 flex-shrink-0">
-            <p className="text-xs text-purple-700 dark:text-purple-400 font-medium mb-1">You have {pendingInvites.length} invite{pendingInvites.length > 1 ? 's' : ''}</p>
+          <div className="px-4 py-2 bg-blue-100 dark:bg-blue-900/20 border-b border-blue-300 dark:border-blue-900/40 flex-shrink-0">
+            <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">You have {pendingInvites.length} invite{pendingInvites.length > 1 ? 's' : ''}</p>
             {pendingInvites.map(s => (
-              <button key={s.id} onClick={() => selectSpace(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm cn-text-1 hover:text-purple-600 dark:hover:text-purple-300">
-                <ChevronRight className="w-3 h-3 text-purple-500 dark:text-purple-400" /> {s.name}
+              <button key={s.id} onClick={() => selectSpace(s)} className="w-full text-left flex items-center gap-2 py-1.5 text-sm cn-text-1 hover:text-blue-600 dark:hover:text-blue-300">
+                <ChevronRight className="w-3 h-3 text-blue-500 dark:text-blue-400" /> {s.name}
               </button>
             ))}
           </div>
@@ -1689,7 +1676,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
                   )}
                 </div>
                 {space.my_status === 'pending' && <span className="text-xs text-amber-600 dark:text-amber-400">Pending approval</span>}
-                {space.my_status === 'invited' && <span className="text-xs text-purple-600 dark:text-purple-400">Invited — tap to accept</span>}
+                {space.my_status === 'invited' && <span className="text-xs text-blue-600 dark:text-blue-400">Invited — tap to accept</span>}
               </div>
             </button>
             );
@@ -1710,7 +1697,7 @@ export function SpacesScreen({ onBack }: SpacesScreenProps) {
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-900 to-indigo-900 border border-purple-800 flex items-center justify-center mb-5"><LayoutGrid className="w-9 h-9 text-purple-300" /></div>
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-900 to-indigo-900 border border-blue-800 flex items-center justify-center mb-5"><SpacesGlyph className="w-9 h-9 text-blue-300" /></div>
             <h2 className="text-lg font-semibold cn-text-1 mb-2">Select a Space</h2>
             <p className="text-sm cn-text-4 max-w-xs">Choose a space from the list to view its feed and members, or create a new one.</p>
           </div>

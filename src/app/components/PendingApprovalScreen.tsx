@@ -25,7 +25,7 @@ export function PendingApprovalScreen({ status, hubName, joinApprovalMode, onChe
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
-      <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 ${rejected ? 'bg-gradient-to-br from-red-500 to-rose-600' : 'bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600'}`}>
+      <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-6 ${rejected ? 'bg-gradient-to-br from-red-500 to-rose-600' : 'bg-gradient-to-br from-blue-600 via-blue-600 to-pink-600'}`}>
         {rejected ? <XCircle className="w-10 h-10 text-white" /> : <Clock className="w-10 h-10 text-white" />}
       </div>
 

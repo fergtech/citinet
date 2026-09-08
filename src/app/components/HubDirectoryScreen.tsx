@@ -59,7 +59,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
   const offlineHubs = filtered.filter(h => h.online === false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-600 to-pink-600 relative overflow-hidden flex flex-col">
       {/* Background Pattern */}
       <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -146,7 +146,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
                   onClick={handleRefresh}
-                  className="px-5 py-2.5 bg-purple-600 text-white rounded-xl font-semibold text-sm hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
+                  className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
                   Try Again
@@ -277,7 +277,7 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
         {/* Right: Join button */}
         <button
           onClick={onJoin}
-          className="flex-shrink-0 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all hover:scale-[1.03] active:scale-95 shadow-sm"
+          className="flex-shrink-0 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-700 text-white text-sm font-semibold rounded-xl hover:from-blue-600 hover:to-blue-800 transition-all hover:scale-[1.03] active:scale-95 shadow-sm"
         >
           Join
         </button>

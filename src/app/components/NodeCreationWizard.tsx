@@ -143,7 +143,7 @@ function TextInput({
       maxLength={maxLength}
       className="w-full h-[42px] px-3.5 border border-slate-200 dark:border-white/10 rounded-lg
         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px]
-        focus:border-purple-500 focus:outline-none transition-colors"
+        focus:border-blue-500 focus:outline-none transition-colors"
     />
   );
 }
@@ -184,7 +184,7 @@ function ProgressBar({ currentStep }: { currentStep: WizardStep }) {
   return (
     <div className="mb-7">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+        <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
           Step {idx + 1} of {PROGRESS_STEPS.length} — {labels[idx]}
         </span>
         <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
@@ -193,7 +193,7 @@ function ProgressBar({ currentStep }: { currentStep: WizardStep }) {
       </div>
       <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1">
         <motion.div
-          className="bg-gradient-to-r from-blue-600 to-purple-600 h-1 rounded-full"
+          className="bg-gradient-to-r from-blue-500 to-blue-700 h-1 rounded-full"
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.35 }}
@@ -562,8 +562,8 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
 
           <button
             onClick={handleEnterHub}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white
-              rounded-xl font-bold hover:from-blue-700 hover:to-purple-700 transition-all
+            className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-700 text-white
+              rounded-xl font-bold hover:from-blue-600 hover:to-blue-800 transition-all
               flex items-center justify-center gap-2 shadow-lg hover:shadow-xl hover:scale-[1.02]
               active:scale-95"
           >
@@ -679,7 +679,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         rows={3}
                         className="w-full p-3 border border-slate-200 dark:border-white/10 rounded-lg
                           text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px]
-                          focus:border-purple-500 focus:outline-none transition-colors resize-none"
+                          focus:border-blue-500 focus:outline-none transition-colors resize-none"
                       />
                     </div>
 
@@ -718,14 +718,14 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       onClick={() => set({ visibility: 'local' })}
                       className={`w-full p-4 rounded-xl border text-left transition-all ${
                         data.visibility === 'local'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
                           data.visibility === 'local'
-                            ? 'border-purple-500 bg-purple-500'
+                            ? 'border-blue-500 bg-blue-500'
                             : 'border-slate-300 dark:border-zinc-600'
                         }`}>
                           {data.visibility === 'local' && (
@@ -751,14 +751,14 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       onClick={() => set({ visibility: 'tailscale' })}
                       className={`w-full p-4 rounded-xl border text-left transition-all ${
                         data.visibility === 'tailscale'
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
                           data.visibility === 'tailscale'
-                            ? 'border-purple-500 bg-purple-500'
+                            ? 'border-blue-500 bg-blue-500'
                             : 'border-slate-300 dark:border-zinc-600'
                         }`}>
                           {data.visibility === 'tailscale' && (
@@ -821,7 +821,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               placeholder="tskey-auth-…"
                               className="w-full h-[42px] px-3 border border-slate-200 dark:border-white/10 rounded-lg
                                 text-slate-900 dark:text-white bg-white dark:bg-zinc-900 font-mono text-[13px]
-                                focus:border-purple-500 focus:outline-none transition-colors"
+                                focus:border-blue-500 focus:outline-none transition-colors"
                             />
                             <p className="text-xs text-slate-500 dark:text-slate-400">
                               In Tailscale → Settings → Keys, create a <strong>reusable</strong> auth key.
@@ -871,7 +871,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           placeholder="At least 8 characters"
                           className="w-full h-[42px] px-3.5 pr-11 border border-slate-200 dark:border-white/10
                             rounded-lg text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px]
-                            focus:border-purple-500 focus:outline-none transition-colors"
+                            focus:border-blue-500 focus:outline-none transition-colors"
                         />
                         <button
                           type="button"
@@ -899,7 +899,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                             bg-white dark:bg-zinc-800 text-[13.5px] focus:outline-none transition-colors ${
                             data.adminPasswordConfirm && data.adminPasswordConfirm !== data.adminPassword
                               ? 'border-red-400 dark:border-red-600 focus:border-red-400'
-                              : 'border-slate-200 dark:border-white/10 focus:border-purple-500'
+                              : 'border-slate-200 dark:border-white/10 focus:border-blue-500'
                           }`}
                         />
                       </div>
@@ -973,7 +973,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               text-left transition-colors"
                           >
                             {activeCategory && (
-                              <activeCategory.Icon className="w-4 h-4 flex-shrink-0 text-purple-600 dark:text-purple-400" />
+                              <activeCategory.Icon className="w-4 h-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
                             )}
                             <span className="text-[13.5px] font-semibold text-slate-800 dark:text-white">
                               {activeCategory?.label ?? 'Custom selection'}
@@ -994,7 +994,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               <cat.Icon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                               <span className="text-[13px] font-medium">{cat.label}</span>
                               {activeCategory?.id === cat.id && (
-                                <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 ml-auto" />
+                                <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ml-auto" />
                               )}
                             </DropdownMenuItem>
                           ))}
@@ -1016,20 +1016,20 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               onClick={() => toggle(app.id)}
                               className={`p-3 rounded-lg border text-left transition-all ${
                                 on
-                                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                                   : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                               }`}
                             >
                               <div className="flex items-center gap-2 mb-1">
                                 <MaskIcon
                                   src={app.icon}
-                                  className={`w-5 h-5 flex-shrink-0 ${on ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}
+                                  className={`w-5 h-5 flex-shrink-0 ${on ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}
                                 />
-                                <span className={`text-sm font-semibold ${on ? 'text-purple-700 dark:text-purple-300' : 'text-slate-800 dark:text-white'}`}>
+                                <span className={`text-sm font-semibold ${on ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-white'}`}>
                                   {app.label}
                                 </span>
                                 {on && (
-                                  <Check className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 ml-auto flex-shrink-0" />
+                                  <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ml-auto flex-shrink-0" />
                                 )}
                               </div>
                               <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug">
@@ -1064,14 +1064,14 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       onClick={() => set({ enableAi: false })}
                       className={`w-full p-4 rounded-xl border text-left transition-all ${
                         !data.enableAi
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
                           !data.enableAi
-                            ? 'border-purple-500 bg-purple-500'
+                            ? 'border-blue-500 bg-blue-500'
                             : 'border-slate-300 dark:border-zinc-600'
                         }`}>
                           {!data.enableAi && <div className="w-2 h-2 rounded-full bg-white" />}
@@ -1093,14 +1093,14 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       onClick={() => set({ enableAi: true })}
                       className={`w-full p-4 rounded-xl border text-left transition-all ${
                         data.enableAi
-                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                           : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
                           data.enableAi
-                            ? 'border-purple-500 bg-purple-500'
+                            ? 'border-blue-500 bg-blue-500'
                             : 'border-slate-300 dark:border-zinc-600'
                         }`}>
                           {data.enableAi && <div className="w-2 h-2 rounded-full bg-white" />}
@@ -1109,7 +1109,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <div className="flex items-center gap-2 mb-1">
                             <MaskIcon
                               src="/icons/onboard/ai.png"
-                              className={`w-5 h-5 flex-shrink-0 ${data.enableAi ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400 dark:text-slate-500'}`}
+                              className={`w-5 h-5 flex-shrink-0 ${data.enableAi ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}
                             />
                             <h3 className="font-semibold text-slate-900 dark:text-white">
                               Enable local AI assistant
@@ -1153,7 +1153,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                 checked={data.aiGpu}
                                 onChange={e => set({ aiGpu: e.target.checked })}
                                 className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-zinc-600
-                                  text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                  text-blue-600 focus:ring-blue-500 cursor-pointer"
                               />
                               <span className="text-sm text-slate-700 dark:text-slate-300">
                                 This machine has an <strong>NVIDIA GPU</strong> — use it for AI
@@ -1219,7 +1219,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         gap-2 transition-all disabled:opacity-60 disabled:cursor-wait ${
                         scriptDownloaded
                           ? 'bg-green-600 text-white cursor-default'
-                          : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                          : 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
                       }`}
                     >
                       {scriptDownloaded ? (
@@ -1300,7 +1300,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                   className={`flex-1 px-5 py-3 rounded-lg font-semibold text-sm text-white flex items-center
                     justify-center gap-2 transition-all ${
                     canProceed[step]
-                      ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
                       : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                   }`}
                 >

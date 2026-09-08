@@ -353,7 +353,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   value={hubSearchQuery}
                   onChange={(e) => setHubSearchQuery(e.target.value)}
                   placeholder="Search by name, area, or description…"
-                  className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                  className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors text-sm"
                 />
               </div>
 
@@ -413,7 +413,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                           onChange={(e) => setTunnelUrl(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && isValidUrl(tunnelUrl) && handleProbeUrl(tunnelUrl)}
                           placeholder="e.g., https://myhub.tailXXX.ts.net"
-                          className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors font-mono text-xs"
+                          className="w-full pl-10 pr-3 py-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors font-mono text-xs"
                           list="hub-url-history"
                         />
                         <datalist id="hub-url-history">
@@ -423,9 +423,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                       <button
                         onClick={() => handleProbeUrl(tunnelUrl)}
                         disabled={!isValidUrl(tunnelUrl)}
-                        className={`w-full py-2.5 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
+                        className={`w-full py-2.5 cn-action font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
                           isValidUrl(tunnelUrl)
-                            ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow hover:shadow-md active:scale-95'
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow hover:shadow-md active:scale-95'
                             : 'bg-slate-200 dark:bg-zinc-700 cursor-not-allowed opacity-50'
                         }`}
                       >
@@ -451,7 +451,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               >
                 <ChevronLeft className="w-3.5 h-3.5" />Cancel
               </button>
-              <Loader2 className="w-12 h-12 animate-spin text-purple-600 mx-auto mb-4 mt-2" />
+              <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4 mt-2" />
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
                 Connecting to Hub
               </h3>
@@ -543,7 +543,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                       value={username}
                       onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
                       placeholder={authMode === 'login' ? 'Your username' : 'Choose a username'}
-                      className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                      className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors text-sm"
                       maxLength={30}
                       autoFocus
                     />
@@ -564,7 +564,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="you@example.com"
-                        className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                        className="w-full pl-10 pr-3 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors text-sm"
                       />
                     </div>
                     {email.length > 0 && !isValidEmail(email) && (
@@ -583,7 +583,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={authMode === 'login' ? 'Your password' : 'Choose a password'}
-                      className="w-full pl-10 pr-10 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm"
+                      className="w-full pl-10 pr-10 py-3 border-2 border-slate-200 dark:border-zinc-700 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors text-sm"
                       onKeyDown={(e) => e.key === 'Enter' && authMode === 'login' && canSubmit && handleAuth()}
                     />
                     <button
@@ -618,7 +618,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && canSubmit && handleAuth()}
                         placeholder="Confirm your password"
-                        className={`w-full pl-10 pr-3 py-3 border-2 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-purple-500 focus:outline-none transition-colors text-sm ${
+                        className={`w-full pl-10 pr-3 py-3 border-2 rounded-xl text-slate-900 dark:text-white bg-white dark:bg-zinc-800 focus:border-blue-500 focus:outline-none transition-colors text-sm ${
                           confirmPassword && confirmPassword !== password
                             ? 'border-red-300 dark:border-red-700'
                             : 'border-slate-200 dark:border-zinc-700'
@@ -642,9 +642,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <button
                 onClick={handleAuth}
                 disabled={!canSubmit || joining}
-                className={`w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all mt-5 ${
+                className={`w-full py-3.5 cn-action font-bold text-white flex items-center justify-center gap-2 transition-all mt-5 ${
                   canSubmit && !joining
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                    ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
                     : 'bg-slate-300 dark:bg-zinc-700 cursor-not-allowed opacity-50'
                 }`}
               >
@@ -716,7 +716,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <div className="flex flex-col gap-3">
                 <button
                   onClick={handleConnectAnyway}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-purple-700 transition-colors"
+                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white cn-action font-semibold hover:from-blue-600 hover:to-blue-800 transition-colors"
                 >
                   Connect Anyway
                 </button>
@@ -793,7 +793,7 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
               onClick={(e) => { e.stopPropagation(); setShowFullDescription(true); }}
               title="Read full description"
               aria-label="Read full description"
-              className="shrink-0 text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors mt-0.5"
+              className="shrink-0 text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors mt-0.5"
             >
               <Info className="w-3.5 h-3.5" />
             </button>
@@ -847,7 +847,7 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
       <button
         onClick={alreadyJoined ? onQuickEnter : onJoin}
         disabled={entering}
-        className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-xs font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all active:scale-95 disabled:opacity-60"
+        className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-blue-500 to-blue-700 text-white text-xs font-semibold cn-action hover:from-blue-600 hover:to-blue-800 transition-all active:scale-95 disabled:opacity-60"
       >
         {entering && <Loader2 className="w-3 h-3 animate-spin" />}
         Enter

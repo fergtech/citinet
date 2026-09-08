@@ -88,6 +88,14 @@ add DNS entries — it doesn't touch the router at all. Devices resolve
 mechanism behind Bonjour/AirPlay/Chromecast discovery), so it works identically
 behind a locked-down ISP gateway, a mesh system, or anything else.
 
+> **Note:** this is a separate mechanism from the `citinet-mdns` sidecar
+> container that already ships in `docker-compose.yml` (`api/mdnsAdvertise.js`).
+> That container advertises the hub as a `_citinet._tcp` Bonjour/DNS-SD
+> *service* so the mobile app can auto-discover a nearby hub with zero typing —
+> it does not make `citinet.local` resolve in a browser and requires no OS
+> renaming. The steps below are for giving a person a typeable `.local`
+> hostname; running both at once on the same LAN is fine, they don't conflict.
+
 ### Setup
 
 1. **Give the hub machine the hostname `citinet`.** This makes it

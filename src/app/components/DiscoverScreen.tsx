@@ -5,6 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { AvatarFallback, SearchGlyph } from './icons';
 import { spacesService } from '../services/spacesService';
 import { registryService, type RegistryHub } from '../services/registryService';
 import { toolkitService } from '../services/toolkitService';
@@ -39,17 +40,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
 };
 
-const AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500', 'from-violet-500 to-purple-500',
-  'from-sky-500 to-blue-500', 'from-lime-500 to-green-500',
-];
-function avatarColor(username: string): string {
-  let h = 0;
-  for (let i = 0; i < username.length; i++) h = username.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
 function formatJoinDate(dateStr?: string): string {
   if (!dateStr) return '';
   try {
@@ -97,7 +87,7 @@ function SectionHeading({ title, sub, onSeeAll }: { title: string; sub?: string;
         {sub && <p className="text-xs cn-text-3 mt-0.5">{sub}</p>}
       </div>
       {onSeeAll && (
-        <button onClick={onSeeAll} className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline shrink-0">
+        <button onClick={onSeeAll} className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0">
           See all
         </button>
       )}
@@ -176,7 +166,7 @@ function EventCard({ post, onClick }: { post: HubPost; onClick: () => void }) {
   return (
     <button onClick={onClick} className={`${RAIL_CARD} p-3 flex items-center gap-3`}>
       <div className="w-11 text-center shrink-0 rounded-lg cn-surface-2 border cn-border py-1.5">
-        <div className="text-[9px] font-bold tracking-wider text-purple-500 dark:text-purple-400">{day}</div>
+        <div className="text-[9px] font-bold tracking-wider text-blue-500 dark:text-blue-400">{day}</div>
         <div className="text-[17px] font-bold cn-text-1 font-mono">{date}</div>
       </div>
       <div className="min-w-0">
@@ -199,8 +189,8 @@ function PersonCard({ member, slug, isYou, onClick, onMessage }: { member: HubMe
       className={`${RAIL_CARD} p-4 flex flex-col gap-2.5 cursor-pointer`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-semibold text-sm shrink-0 relative overflow-hidden`}>
-          {member.username.slice(0, 2).toUpperCase()}
+        <div className="w-10 h-10 rounded-full shrink-0 relative overflow-hidden">
+          <AvatarFallback className="absolute inset-0" name={member.username} />
           {avatarUrl && (
             <img src={avatarUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           )}
@@ -208,10 +198,10 @@ function PersonCard({ member, slug, isYou, onClick, onMessage }: { member: HubMe
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-[13.5px] font-semibold cn-text-1 truncate">{member.display_name || member.username}</span>
-            {member.role === 'admin' && <Crown className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
-            {member.role === 'moderator' && <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />}
+            {member.role === 'admin' && <Crown className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+            {member.role === 'moderator' && <Shield className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
             {isYou && (
-              <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-medium rounded-full shrink-0">
+              <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-medium rounded-full shrink-0">
                 You
               </span>
             )}
@@ -263,7 +253,7 @@ function OtherHubCard({ hub }: { hub: RegistryHub }) {
       </div>
       <button
         onClick={() => window.open(`${window.location.origin}/join?url=${encodeURIComponent(hub.tunnel_url)}`, '_blank', 'noopener')}
-        className="self-start text-xs font-semibold px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-colors"
+        className="self-start text-xs font-semibold px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:from-blue-600 hover:to-blue-800 transition-colors"
       >
         Join this hub
       </button>
@@ -529,15 +519,15 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
       {/* Header */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 pb-0">
         <button onClick={onBack} className="md:hidden flex items-center gap-0.5 mb-2 group">
-          <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
-          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">
+          <ChevronLeft className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+          <span className="text-sm font-medium text-blue-400 group-hover:text-blue-300 transition-colors">
             Back
           </span>
         </button>
 
         <div className="flex items-center gap-4 mb-4">
-          <div className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-discover)' }}>
-            <Compass className="w-6 h-6 text-white" />
+          <div className="w-12 h-12 cn-action shrink-0 flex items-center justify-center" style={{ background: 'var(--cn-grad-discover)' }}>
+            <SearchGlyph className="w-6 h-6 text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold cn-text-1 tracking-tight leading-none">Discover</h1>
@@ -553,7 +543,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search spaces, initiatives, resources, people, hubs…"
-            className="w-full h-[46px] pl-10 pr-4 rounded-xl border cn-border cn-surface-2 cn-text-1 text-sm placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+            className="w-full h-[46px] pl-10 pr-4 rounded-xl border cn-border cn-surface-2 cn-text-1 text-sm placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           />
         </div>
 
@@ -568,8 +558,8 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
                 onClick={() => setFilter(s.value)}
                 className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                   active
-                    ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300 border-transparent'
-                    : 'cn-surface-2 cn-text-2 cn-border hover:border-purple-300 dark:hover:border-purple-700'
+                    ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-transparent'
+                    : 'cn-surface-2 cn-text-2 cn-border hover:border-blue-300 dark:hover:border-blue-700'
                 }`}
               >
                 <Icon className="w-3 h-3" />{s.label}

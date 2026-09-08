@@ -103,7 +103,7 @@ export function EmergencySignalModal({ isOpen, onClose }: EmergencySignalModalPr
             </p>
             <button
               onClick={handleClose}
-              className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
             >
               Close
             </button>

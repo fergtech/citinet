@@ -115,7 +115,7 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
               <button
                 onClick={measure}
                 disabled={measuring || !isReachable}
-                className="text-xs text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
               >
                 {measuring ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                 {measuring ? 'Measuring…' : 'Re-test'}

@@ -14,7 +14,7 @@ const CAT_CONFIG: Record<string, CatConfig> = {
   ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     iconColor: 'text-rose-400' },
   PROJECT:      { label: 'Project',      Icon: Target,        iconColor: 'text-emerald-400' },
   REQUEST:      { label: 'Request',      Icon: HelpCircle,    iconColor: 'text-orange-400' },
-  EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-purple-400' },
+  EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-blue-400' },
 };
 
 export interface PostCardProps {
@@ -125,7 +125,7 @@ export function PostCard({
         {/* Event metadata */}
         {category === 'EVENT' && eventDate && (
           <div className="flex flex-wrap gap-1.5 mb-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-500/15 border border-purple-300 dark:border-purple-500/30 text-[11px] font-medium text-purple-700 dark:text-purple-300">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-500/15 border border-blue-300 dark:border-blue-500/30 text-[11px] font-medium text-blue-700 dark:text-blue-300">
               <Calendar className="w-3 h-3 shrink-0" />
               {new Date(eventDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
               {' · '}
@@ -203,7 +203,7 @@ export function PostCard({
             <button
               onClick={e => { if (authorId && onNavigateToProfile) { e.stopPropagation(); onNavigateToProfile(); } }}
               disabled={!authorId || !onNavigateToProfile}
-              className="text-xs font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+              className="text-xs font-semibold cn-text-1 hover:text-blue-600 dark:hover:text-blue-400 disabled:hover:text-inherit transition-colors"
             >
               {author}
             </button>
@@ -254,10 +254,10 @@ export function PostCard({
           aria-label={saved ? 'Remove from saved' : 'Save post'}
           onClick={() => onToggleSave?.()}
           className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-            saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-500 dark:hover:text-purple-400'
+            saved ? 'text-blue-500 hover:text-blue-600' : 'cn-text-4 hover:text-blue-500 dark:hover:text-blue-400'
           } hover:bg-black/5 dark:hover:bg-white/5`}
         >
-          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-purple-500' : ''}`} />
+          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-blue-500' : ''}`} />
         </button>
       </div>
     </div>

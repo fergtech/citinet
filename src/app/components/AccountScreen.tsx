@@ -37,6 +37,7 @@ import { preferencesService } from '../services/preferencesService';
 import { checkPasswordStrength } from '../utils/passwordStrength';
 import { clearSubdomainCache } from '../utils/subdomain';
 import { LocationPicker, type LocationResult } from './LocationPicker';
+import { AvatarFallback } from './icons';
 import { Switch } from './ui/switch';
 import type { HubMember } from '../types/hub';
 
@@ -497,15 +498,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
         <div className="flex items-center gap-4 mb-6">
           <button onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}
-            className="relative w-16 h-16 rounded-full shrink-0 group focus:outline-none focus:ring-2 focus:ring-purple-500" aria-label="Change profile picture">
+            className="relative w-16 h-16 rounded-full shrink-0 group focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Change profile picture">
             {resolvedAvatarSrc ? (
               <img src={resolvedAvatarSrc} alt="Profile"
                 className="w-16 h-16 rounded-full object-cover"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             ) : (
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-2xl">
-                {(currentUser?.displayName || currentUser?.username || 'N').charAt(0).toUpperCase()}
-              </div>
+              <AvatarFallback className="w-16 h-16 rounded-full" name={currentUser?.displayName || currentUser?.username} />
             )}
             <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               {avatarUploading ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-5 h-5 text-white" />}
@@ -529,32 +528,32 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Display Name</label>
             <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setIsDirty(true); }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="Your display name" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="your@email.com" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Headline</label>
             <input type="text" value={profileHeadline} onChange={e => { setProfileHeadline(e.target.value); setIsDirty(true); }} maxLength={100}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="e.g. Local food advocate & urban gardener" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Bio</label>
             <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={2600} rows={2}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
               placeholder="A short intro about you (2600 chars)" />
             <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/2600</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Website</label>
             <input type="url" value={website} onChange={e => { setWebsite(e.target.value); setIsDirty(true); }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="https://yoursite.com" />
           </div>
           <div>
@@ -562,7 +561,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
               Interests <span className="font-normal text-slate-400 dark:text-slate-500">({tags.length}/10)</span>
             </label>
             <div onClick={() => tagInputRef.current?.focus()}
-              className="min-h-[42px] flex flex-wrap gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 cursor-text focus-within:ring-2 focus-within:ring-purple-500 focus-within:border-transparent transition-shadow">
+              className="min-h-[42px] flex flex-wrap gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 cursor-text focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-shadow">
               {tags.map(tag => (
                 <span key={tag} className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full cn-surface-3 cn-text-2">
                   {tag}
@@ -585,7 +584,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Location</label>
             <LocationPicker defaultValue={currentUser?.location || ''} onSelect={r => { setLocationResult(r); setIsDirty(true); }}
               placeholder="Your neighborhood or city…"
-              inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow" />
+              inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow" />
           </div>
           <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-700">
             <div className="min-w-0 pr-2">
@@ -612,12 +611,12 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                   onClick={() => { setProfileVisibility(opt.value); setIsDirty(true); }}
                   className={`flex flex-col items-center gap-1 p-3 rounded-xl border text-center transition-all ${
                     profileVisibility === opt.value
-                      ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                       : 'border-slate-200 dark:border-zinc-700 hover:border-slate-300 dark:hover:border-zinc-600'
                   }`}
                 >
                   <span className="text-lg">{opt.icon}</span>
-                  <span className={`text-xs font-medium ${profileVisibility === opt.value ? 'text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-300'}`}>{opt.label}</span>
+                  <span className={`text-xs font-medium ${profileVisibility === opt.value ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>{opt.label}</span>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{opt.desc}</span>
                 </button>
               ))}
@@ -661,7 +660,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             saved
               ? 'bg-emerald-500 scale-[1.02] shadow-lg shadow-emerald-500/30'
               : isDirty
-              ? 'bg-purple-600 hover:bg-purple-500 shadow-md shadow-purple-500/20'
+              ? 'bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-500/20'
               : 'bg-slate-400 dark:bg-zinc-600 hover:bg-slate-500 dark:hover:bg-zinc-500'
           }`}>
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
@@ -691,7 +690,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <button key={color} onClick={() => handleSetColor(color)} title={label}
               className={`w-8 h-8 rounded-xl border-2 transition-all hover:scale-110 active:scale-95 ${
                 userPreferences.background_type === 'color' && userPreferences.background_value === color
-                  ? 'border-purple-500 ring-2 ring-purple-300 dark:ring-purple-700' : 'border-slate-200 dark:border-zinc-700'
+                  ? 'border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700' : 'border-slate-200 dark:border-zinc-700'
               }`}
               style={{ backgroundColor: color }} aria-label={label} />
           ))}
@@ -702,10 +701,10 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <input type="text" value={colorInput} onChange={e => setColorInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && /^#[0-9a-fA-F]{6}$/.test(colorInput)) handleSetColor(colorInput); }}
           placeholder="#1e293b  (press Enter)"
-          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none font-mono" />
+          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none font-mono" />
         <button onClick={() => { if (/^#[0-9a-fA-F]{6}$/.test(colorInput)) handleSetColor(colorInput); }}
           disabled={!/^#[0-9a-fA-F]{6}$/.test(colorInput)}
-          className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white text-xs font-medium transition-colors shrink-0">Apply</button>
+          className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium transition-colors shrink-0">Apply</button>
       </div>
       <div className="mb-4">
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Classic</p>
@@ -713,7 +712,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           onClick={handleSetClassic}
           className={`relative w-full rounded-xl overflow-hidden aspect-[3/1] border-2 transition-all hover:scale-[1.01] active:scale-95 focus:outline-none ${
             userPreferences.background_type === 'solid'
-              ? 'border-purple-500 ring-2 ring-purple-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600'
+              ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600'
           }`}
           style={{ background: 'var(--cn-surface-2)' }}
         >
@@ -721,7 +720,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <span className="text-[11px] font-medium text-white/90">Plain surface — the original look</span>
           </div>
           {userPreferences.background_type === 'solid' && (
-            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center">
+            <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
               <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
@@ -745,14 +744,14 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             return (
               <button key={file} onClick={() => updateUserPreferences({ background_type: 'preset', background_value: file })} title={label}
                 className={`relative rounded-xl overflow-hidden aspect-video border-2 transition-all hover:scale-[1.03] active:scale-95 focus:outline-none ${
-                  isActive ? 'border-purple-500 ring-2 ring-purple-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600'
+                  isActive ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600'
                 }`}>
                 <img src={`/default_backgrounds/${encodeURIComponent(file)}`} alt={label} className="w-full h-full object-cover" draggable={false} />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 py-1">
                   <span className="text-[10px] font-medium text-white/90">{label}</span>
                 </div>
                 {isActive && (
-                  <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center">
+                  <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
                     <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
@@ -767,7 +766,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Custom Image</p>
         <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
         <button onClick={() => bgFileRef.current?.click()} disabled={bgUploading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 hover:border-purple-400 dark:hover:border-purple-600 text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 text-sm transition-colors disabled:opacity-50">
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-colors disabled:opacity-50">
           {bgUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
           {bgUploading ? 'Uploading…' : userPreferences.background_type === 'image' ? 'Replace image' : 'Upload image'}
         </button>
@@ -781,11 +780,11 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{Math.round(bgBrightness * 100)}%</span>
         </div>
         <input type="range" min="35" max="100" step="1" value={Math.round(bgBrightness * 100)}
-          onChange={e => setBgBrightness(Number(e.target.value) / 100)} className="w-full accent-purple-600" />
+          onChange={e => setBgBrightness(Number(e.target.value) / 100)} className="w-full accent-blue-600" />
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-[11px] text-slate-400 dark:text-slate-500">Lower is dimmer and improves readability.</p>
           <button onClick={handleSaveBgBrightness} disabled={bgBrightnessSaving}
-            className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-medium transition-colors shrink-0">
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium transition-colors shrink-0">
             {bgBrightnessSaving ? 'Saving…' : 'Save Brightness'}
           </button>
         </div>
@@ -820,7 +819,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <p className="text-sm font-medium text-slate-900 dark:text-white">Email notifications</p>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Get an email for new messages, replies to your posts, and Space invites — the same things you get notified about in-app.</p>
         </div>
-        <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${emailNotificationsEnabled ? 'bg-purple-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+        <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${emailNotificationsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${emailNotificationsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
         </span>
       </button>
@@ -838,19 +837,19 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <div>
           <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Current Password</label>
           <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
             placeholder="Your current password" />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">New Password</label>
           <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow"
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
             placeholder="At least 4 characters" />
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Confirm New Password</label>
           <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-            className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow ${
+            className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow ${
               confirmPassword && confirmPassword !== newPassword ? 'border-red-400 dark:border-red-600' : 'border-slate-200 dark:border-zinc-700'
             }`}
             placeholder="Repeat new password" />
@@ -858,7 +857,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </div>
       {pwError && <p className="text-xs text-red-500 dark:text-red-400 mt-3">{pwError}</p>}
       <button onClick={handleChangePassword} disabled={pwSaving || !currentPassword || !newPassword || !confirmPassword}
-        className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+        className="mt-5 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
         {pwSaved ? <Check className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
         {pwSaving ? 'Saving…' : pwSaved ? 'Password updated!' : 'Update Password'}
       </button>
@@ -896,7 +895,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             </p>
           </div>
           <button onClick={() => setNewPhraseToShow('')}
-            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors">
+            className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors">
             I've saved it
           </button>
         </>
@@ -904,7 +903,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         <>
           {phraseError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{phraseError}</p>}
           <button onClick={handleRegeneratePhrase} disabled={regeneratingPhrase}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
             {regeneratingPhrase ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
             {regeneratingPhrase ? 'Generating…' : hasBackup ? 'Regenerate recovery phrase' : 'Set up recovery phrase'}
           </button>
@@ -928,7 +927,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           onChange={e => { setRestoreSecret(e.target.value); setRestoreResult('idle'); }}
           onKeyDown={e => e.key === 'Enter' && handleRestoreFromBackup()}
           placeholder="Recovery phrase or old password"
-          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:outline-none transition-shadow font-mono"
+          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow font-mono"
         />
         {restoreResult === 'fail' && (
           <p className="text-xs text-red-500 dark:text-red-400 mt-3">Didn't match — check the spelling, or try the password from when the backup was last created.</p>
@@ -937,7 +936,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <p className="text-xs text-green-600 dark:text-green-400 mt-3">Restored. Refresh the page to see your content decrypt.</p>
         )}
         <button onClick={handleRestoreFromBackup} disabled={restoring || !restoreSecret.trim()}
-          className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
+          className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors">
           {restoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
           {restoring ? 'Trying…' : 'Restore this device'}
         </button>
@@ -982,7 +981,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </div>
 
       {showLocalSwitch && (
-        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 p-5">
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 rounded-2xl border border-indigo-200 dark:border-indigo-800/50 p-5">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
               <ExternalLink className="w-4 h-4 text-white" />
@@ -1074,7 +1073,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <button key={id} onClick={() => setActiveSection(id)}
               className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left border-b border-slate-100 dark:border-zinc-800 last:border-0 ${
                 activeSection === id
-                  ? danger ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                  ? danger ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
                   : danger ? 'text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
               }`}>
               <Icon className="w-4 h-4 shrink-0" />
@@ -1095,7 +1094,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <button key={id} onClick={() => setActiveSection(id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                 activeSection === id
-                  ? danger ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                  ? danger ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
                   : danger ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}>
               <Icon className="w-3.5 h-3.5 shrink-0" />{label}

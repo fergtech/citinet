@@ -19,27 +19,30 @@ The data lives on hardware your community controls. The rules are set by your co
 The foundation is built and functional. A community can stand up a hub today.
 
 **What works right now:**
-- Hub creation wizard (self-hosted via Tailscale, runs on hardware as modest as a Raspberry Pi)
+- Hub creation wizard (self-hosted, runs on hardware as modest as a Raspberry Pi; every hub gets an automatic, browser-trusted HTTPS certificate with no manual configuration)
 - Join and discovery — find and connect to nearby hubs
-- Feed and discussions — fully API-backed community forum
-- Atlas — community map with member and place pins
+- Feed and discussions — fully API-backed community forum, with reply-to-reply threading, @mentions, and an offline write queue so posts/replies/votes made without connectivity sync once it returns
+- Atlas — community map with member and place pins (MapLibre GL + OpenFreeMap vector tiles)
 - Toolkit / Discover — local resource directory with dynamic categories
 - Network map — live member presence via OpenStreetMap + Leaflet
 - Hub Management — admin tools for identity, members, and featured content
 - Featured carousel — pinned posts and media on the hub dashboard
-- Marketplace / Exchange — vendor profiles and listings
+- Marketplace / Exchange — vendor profiles, listings, account-synced saved vendors
 - Files — personal and shared file storage
-- Messages — direct messaging between hub members
+- Notes — rich-text personal notes with autosave, pinning, search, and a per-item publish flow (private / hub-shared / public web / blog)
+- Messages — direct messaging and group conversations, full-history search, plus 1:1 calls and broadcasts (LiveKit)
+- Governance — roles (admin/moderator/member), moderation log, community polls
+- End-to-end encryption — notes, messages, and files are encrypted client-side (ECDH P-256 + AES-GCM); the server only ever stores ciphertext
+- Spaces — sub-communities within a hub (basic structure shipped; deeper identity/categorization still in progress, see Mission 2 below)
 - Notification badges — real-time unread counts on the dashboard
-- Reply-to-reply — threaded community conversation with @mention and scroll-to-reference
 - Online presence — live "who's here now" count based on recent activity
 - Hub registry — automatic self-registration when a hub goes public
-- Profile customization — banner, avatar, headline, bio, links
+- Profile customization — banner, avatar, headline, bio, links; per-account navigation customization (drag-to-reorder, pin)
 
 **The current stack:**
 - Frontend: React + Vite + TypeScript + Tailwind (deployed on Vercel, or self-hostable)
 - Hub API: Node.js + Express + PostgreSQL + MinIO (runs in Docker)
-- Access: Tailscale funnel for secure public HTTPS without port forwarding
+- Access: automatic Let's Encrypt HTTPS per hub (`<slug>.hub.citinet.cloud`, DNS-01 issued by a central cert broker) is the default for LAN and public access; Tailscale is used for off-LAN/remote access to a specific hub (including calls) rather than as the primary HTTPS path
 - Registry: GitHub-backed JSON updated via Vercel serverless function
 
 ---
@@ -48,7 +51,7 @@ The foundation is built and functional. A community can stand up a hub today.
 
 The focus shifts from foundation to depth and federation.
 
-**Spaces** — sub-communities within a hub, similar to channels or rooms. A hub for Baltimore could have a Space for Sandtown, a Space for Charles Village, a Space for local gardeners. Each Space has its own feed, its own members, its own identity — all within the same hub.
+**Spaces** — sub-communities within a hub, similar to channels or rooms. A hub for Baltimore could have a Space for Sandtown, a Space for Charles Village, a Space for local gardeners. Each Space has its own feed, its own members, its own identity — all within the same hub. Basic structure (create/join/leave, per-Space feed and files) has already shipped; categorization and richer identity are still in progress.
 
 **Profile pages as personal landing pages** — transforming user profiles from a simple post feed into a genuine personal homepage. Your profile on Citinet should feel like *your corner of the web* — customizable, expressive, and representative of who you are and what you contribute to the community. Not an algorithm-ranked feed. A page you own.
 
@@ -101,8 +104,8 @@ Citinet hubs will support multiple transport modes so communities are not depend
 
 | Mode | Description | Use case |
 |---|---|---|
-| `public-tunnel` | Tailscale funnel (current default) | Easy setup, works over any internet |
-| `public-https` | Direct domain + reverse proxy | Self-managed public access |
+| `public-https` | Automatic HTTPS via the central cert broker (current default) | Zero-config, real browser-trusted TLS for any hub |
+| `public-tunnel` | Tailscale (mesh access to a specific hub, including calls) | Off-LAN access without opening ports |
 | `community-gateway` | Co-op relay / community wireless | Neighborhood-owned backhaul |
 | `local-island` | LAN only, no internet required | Offline / blackout operation |
 | `mesh-bridge` | LoRa / Meshtastic side channel | Emergency signals, presence beacons |

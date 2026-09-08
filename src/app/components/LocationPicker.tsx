@@ -169,7 +169,7 @@ export function LocationPicker({
     focus:outline-none transition-colors ${
     selected
       ? 'border-green-500 dark:border-green-600'
-      : 'border-slate-200 dark:border-white/10 focus:border-purple-500'
+      : 'border-slate-200 dark:border-white/10 focus:border-blue-500'
   }`;
 
   return (
@@ -207,7 +207,7 @@ export function LocationPicker({
               className={`w-full text-left px-4 py-3 flex items-start gap-2.5 text-sm
                 border-b border-slate-100 dark:border-zinc-700 last:border-0 transition-colors ${
                 idx === activeIdx
-                  ? 'bg-purple-50 dark:bg-purple-900/20'
+                  ? 'bg-blue-50 dark:bg-blue-900/20'
                   : 'hover:bg-slate-50 dark:hover:bg-zinc-700'
               }`}
             >

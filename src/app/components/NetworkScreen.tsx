@@ -77,7 +77,7 @@ function QuickActionsCard({ actions }: { actions: QuickAction[] }) {
             onClick={a.onClick}
             className="w-full flex items-center gap-3 py-2 px-1 -mx-1 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left"
           >
-            <span className={`w-9 h-9 rounded-xl cn-surface-2 flex items-center justify-center shrink-0 ${a.danger ? 'text-red-500 dark:text-red-400' : 'text-purple-500 dark:text-purple-300'}`}>
+            <span className={`w-9 h-9 rounded-xl cn-surface-2 flex items-center justify-center shrink-0 ${a.danger ? 'text-red-500 dark:text-red-400' : 'text-blue-500 dark:text-blue-300'}`}>
               <a.icon className="w-4 h-4" />
             </span>
             <span className="flex-1 min-w-0">
@@ -138,7 +138,7 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
         label="Active members"
         value={String(activeMembers)}
         sub={memberListFilter === 'admins' ? undefined : 'View member list →'}
-        grad="from-purple-500 to-indigo-600"
+        grad="from-blue-500 to-indigo-600"
         pulse
         onClick={() => { setMemberListFilter('all'); setMemberListOpen(true); }}
       />
@@ -173,8 +173,8 @@ export function NetworkScreen({ onBack, onNavigate }: NetworkScreenProps) {
       <div className="max-w-6xl mx-auto px-4 sm:px-8 py-7">
         {/* Breadcrumb */}
         <button onClick={onBack} className="md:hidden flex items-center gap-0.5 mb-4 group">
-          <ChevronLeft className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300 transition-colors" />
-          <span className="text-sm font-medium text-purple-400 group-hover:text-purple-300 transition-colors">Back</span>
+          <ChevronLeft className="w-3.5 h-3.5 text-blue-400 group-hover:text-blue-300 transition-colors" />
+          <span className="text-sm font-medium text-blue-400 group-hover:text-blue-300 transition-colors">Back</span>
         </button>
 
         {/* Header */}

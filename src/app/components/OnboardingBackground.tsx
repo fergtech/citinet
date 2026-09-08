@@ -21,7 +21,7 @@ export function OnboardingBackground() {
       <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="onboarding-bg-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" fill="currentColor" className="text-purple-400" />
+            <circle cx="1" cy="1" r="1" fill="currentColor" className="text-blue-400" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#onboarding-bg-dots)" opacity="0.12" />

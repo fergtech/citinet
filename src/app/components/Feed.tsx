@@ -100,10 +100,15 @@ function getVariant(mediaFileName?: string | null): 'text' | 'image' | 'video' {
 
 // ── Right Rail ───────────────────────────────────────────────
 
-function RightRail({ hubName, hubSlug, posts, onNavigateToProfile }: {
+function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCount, onFilterChange, onSavedToggle, onNavigateToProfile }: {
   hubName: string;
   hubSlug: string;
   posts: HubPost[];
+  activeFilter: string | null;
+  savedOnly: boolean;
+  savedCount: number;
+  onFilterChange: (filter: string | null) => void;
+  onSavedToggle: () => void;
   onNavigateToProfile?: (userId: string) => void;
 }) {
   const { currentHub } = useHub();
@@ -140,6 +145,41 @@ function RightRail({ hubName, hubSlug, posts, onNavigateToProfile }: {
         <p className="text-xs cn-text-3 leading-relaxed">
           Posts are visible to verified members of this hub only. No exploitative algorithms. Nothing manipulative or hidden.
         </p>
+        <div className="mt-3.5 pt-3 border-t cn-border">
+          <span className="text-[11px] cn-text-3 block mb-2">Browse by type</span>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={onSavedToggle}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                savedOnly
+                  ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
+                  : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+              }`}
+            >
+              <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-current' : ''}`} />
+              Saved
+              {savedCount > 0 && <span className="text-[10px] opacity-70">{savedCount}</span>}
+            </button>
+            {CAT_TABS.map(({ value, label }) => {
+              const count = posts.filter(post => post.category === value).length;
+              const selected = activeFilter === value;
+              return (
+                <button
+                  key={value}
+                  onClick={() => onFilterChange(selected ? null : value)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                    selected
+                      ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
+                      : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                  }`}
+                >
+                  {label}
+                  {count > 0 && <span className="text-[10px] opacity-70">{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Hub pulse — live member/online counts (same /api/status data the
@@ -268,7 +308,7 @@ function EventRsvpRow({ post, hubSlug, onNavigateToProfile }: { post: HubPost; h
       <button
         onClick={toggle}
         disabled={toggling}
-        className={`shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+        className={`shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
       >
         {going ? "You're going" : "I'm going"}
       </button>
@@ -593,7 +633,7 @@ export function PostDetailView({
                     value={editBody}
                     onChange={e => setEditBody(e.target.value)}
                     rows={4}
-                    className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     placeholder="Caption (optional)"
                   />
                 </div>
@@ -621,7 +661,7 @@ export function PostDetailView({
                       );
                     }
                     return (
-                      <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
+                      <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-sm cn-text-4">
                         <Image className="w-4 h-4" /><Film className="w-4 h-4" />
                         <span>Add an image or video</span>
                         <input type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleEditFileChange(e.target.files[0]); }} />
@@ -630,14 +670,14 @@ export function PostDetailView({
                   })()}
                 </div>
                 {post.category === 'EVENT' && (
-                  <div className="space-y-3 p-4 rounded-xl bg-purple-500/8 border border-purple-500/20">
+                  <div className="space-y-3 p-4 rounded-xl bg-blue-500/8 border border-blue-500/20">
                     <div>
-                      <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-400">*</span></label>
-                      <input type="datetime-local" value={editEventDate} onChange={e => setEditEventDate(e.target.value)} className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                      <label className="text-xs font-semibold text-blue-300 mb-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-400">*</span></label>
+                      <input type="datetime-local" value={editEventDate} onChange={e => setEditEventDate(e.target.value)} className="w-full cn-surface-2 border border-blue-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location <span className="cn-text-4">(optional)</span></label>
-                      <input type="text" value={editEventLocation} onChange={e => setEditEventLocation(e.target.value)} placeholder="e.g. Community Center…" className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                      <label className="text-xs font-semibold text-blue-300 mb-1 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Location <span className="cn-text-4">(optional)</span></label>
+                      <input type="text" value={editEventLocation} onChange={e => setEditEventLocation(e.target.value)} placeholder="e.g. Community Center…" className="w-full cn-surface-2 border border-blue-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
                     </div>
                   </div>
                 )}
@@ -654,7 +694,7 @@ export function PostDetailView({
                       <div className="absolute left-0 mt-1 z-10 flex flex-col gap-1 p-1.5 rounded-xl cn-surface-2 border cn-border shadow-xl w-56">
                         {PDV_VIS_OPTIONS.map(opt => (
                           <button key={opt.value} type="button" onClick={() => { setEditVisibility(opt.value); setVisibilityOpen(false); }}
-                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'}`}>
+                            className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${editVisibility === opt.value ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'}`}>
                             <span className="mt-0.5 shrink-0">{opt.icon}</span>
                             <span><span className="block text-xs font-medium">{opt.label}</span><span className="block text-[10px] cn-text-4 mt-0.5">{opt.desc}</span></span>
                           </button>
@@ -665,7 +705,7 @@ export function PostDetailView({
                 </div>
                 <div className="flex items-center gap-2 justify-end">
                   <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors">Cancel</button>
-                  <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg hover:opacity-90 disabled:opacity-40 flex items-center gap-2">
+                  <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg hover:opacity-90 disabled:opacity-40 flex items-center gap-2">
                     {saving ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving…</span></> : <><Check className="w-4 h-4" /><span>Save</span></>}
                   </button>
                 </div>
@@ -699,7 +739,7 @@ export function PostDetailView({
                       <button
                         onClick={() => onNavigateToProfile && post.author_id && onNavigateToProfile(post.author_id)}
                         disabled={!onNavigateToProfile || !post.author_id || externalPost}
-                        className="text-sm font-semibold cn-text-1 truncate hover:text-purple-300 transition-colors disabled:pointer-events-none"
+                        className="text-sm font-semibold cn-text-1 truncate hover:text-blue-300 transition-colors disabled:pointer-events-none"
                       >
                         {externalPost ? sourceBrand.name : post.author_username}
                       </button>
@@ -748,7 +788,7 @@ export function PostDetailView({
                 {/* Event metadata */}
                 {post.category === 'EVENT' && post.event_date && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-100 dark:bg-purple-500/15 border border-purple-300 dark:border-purple-500/20 text-xs font-medium text-purple-700 dark:text-purple-300">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/15 border border-blue-300 dark:border-blue-500/20 text-xs font-medium text-blue-700 dark:text-blue-300">
                       <Calendar className="w-3.5 h-3.5 shrink-0" />
                       <span>
                         {new Date(post.event_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -808,9 +848,9 @@ export function PostDetailView({
                     title={saved ? 'Remove from saved' : 'Save post'}
                     aria-label={saved ? 'Remove from saved' : 'Save post'}
                     onClick={() => onToggleSave?.()}
-                    className={`transition-colors ${saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-400'}`}
+                    className={`transition-colors ${saved ? 'text-blue-500 hover:text-blue-600' : 'cn-text-4 hover:text-blue-400'}`}
                   >
-                    <Bookmark className={`w-4 h-4 ${saved ? 'fill-purple-500' : ''}`} />
+                    <Bookmark className={`w-4 h-4 ${saved ? 'fill-blue-500' : ''}`} />
                   </button>
                 </div>
               </>
@@ -858,10 +898,10 @@ export function PostDetailView({
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                 placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment… (Enter to send)'}
                 rows={2}
-                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
               <button type="submit" disabled={sending || !replyText.trim()}
-                className="w-10 h-10 self-end rounded-xl bg-purple-600 hover:bg-purple-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
+                className="w-10 h-10 self-end rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
                 {sending ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Send className="w-4 h-4 text-white" />}
               </button>
             </form>
@@ -1038,7 +1078,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
               value={body}
               onChange={e => setBody(e.target.value)}
               rows={5}
-              className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+              className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
 
             {mediaPreview ? (
@@ -1051,7 +1091,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                 </button>
               </div>
             ) : (
-              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
+              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-sm cn-text-4">
                 <Image className="w-4 h-4" /><Film className="w-4 h-4" />
                 <span>Attach an image or video (optional)</span>
                 <input type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} />
@@ -1059,16 +1099,16 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
             )}
 
             {category === 'EVENT' && (
-              <div className="space-y-3 p-4 rounded-xl bg-purple-500/8 border border-purple-500/20">
+              <div className="space-y-3 p-4 rounded-xl bg-blue-500/8 border border-blue-500/20">
                 <div>
-                  <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-blue-300 mb-1 flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-400">*</span>
                   </label>
                   <input type="datetime-local" value={eventDate} onChange={e => setEventDate(e.target.value)} min={new Date().toISOString().slice(0, 16)}
-                    className="w-full cn-surface-2 border border-purple-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-purple-500/40" />
+                    className="w-full cn-surface-2 border border-blue-500/30 rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-purple-300 mb-1 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-blue-300 mb-1 flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5" /> Location <span className="cn-text-4">(optional)</span>
                   </label>
                   <LocationSearchInput
@@ -1078,7 +1118,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                     hubCenter={hubCenter}
                     historyKey="citinet-feed-event-location-history"
                     placeholder="e.g. Community Center…"
-                    inputClassName="w-full pl-9 pr-8 py-2 cn-surface-2 border border-purple-500/30 rounded-lg text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    inputClassName="w-full pl-9 pr-8 py-2 cn-surface-2 border border-blue-500/30 rounded-lg text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
                   {eventCoords && (
                     <p className="mt-1 text-[11px] text-emerald-400">Linked to Atlas — this exact spot will be clickable on the post.</p>
@@ -1108,7 +1148,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                     {['DISCUSSION', 'ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'].map(cat => (
                       <button key={cat} type="button" onClick={() => { setCategory(cat); setLabelOpen(false); }}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          category === cat ? 'bg-purple-600 text-white' : 'bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10'
+                          category === cat ? 'bg-blue-600 text-white' : 'bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10'
                         }`}>
                         {cat.charAt(0) + cat.slice(1).toLowerCase()}
                       </button>
@@ -1129,7 +1169,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                     {VISIBILITY_OPTIONS.map(opt => (
                       <button key={opt.value} type="button" onClick={() => { setVisibility(opt.value); setVisibilityOpen(false); }}
                         className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
-                          visibility === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
+                          visibility === opt.value ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' : 'cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
                         }`}>
                         <span className="mt-0.5 shrink-0">{opt.icon}</span>
                         <span>
@@ -1148,7 +1188,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                 Cancel
               </button>
               <button onClick={handleSubmit} disabled={submitting || (!body.trim() && !mediaFile)}
-                className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity">
+                className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {submitting ? 'Posting…' : 'Post'}
               </button>
@@ -1599,13 +1639,13 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
     }
   }
 
-  const fieldCls = 'w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
+  const fieldCls = 'w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-blue-400';
   // LocationSearchInput draws its own search icon at left-3/w-4 and (while
   // there's a value) a clear button at right-3 — fieldCls's plain px-3 sits
   // the caret right underneath the icon instead of after it. pl-9/pr-8 match
   // the clearance ComposeModal's and Atlas's own LocationSearchInput fields
   // already use.
-  const locationFieldCls = 'w-full cn-surface-2 border cn-border rounded-lg pl-9 pr-8 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-purple-400';
+  const locationFieldCls = 'w-full cn-surface-2 border cn-border rounded-lg pl-9 pr-8 py-2 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-blue-400';
 
   const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
   const mediaChipsRow = (
@@ -1676,7 +1716,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs cn-text-3">Closes</span>
-          <input type="datetime-local" value={closesAt} onChange={e => setClosesAt(e.target.value)} className="cn-surface-2 border cn-border rounded-lg px-2.5 py-1.5 text-xs cn-text-1 focus:outline-none focus:border-purple-400" />
+          <input type="datetime-local" value={closesAt} onChange={e => setClosesAt(e.target.value)} className="cn-surface-2 border cn-border rounded-lg px-2.5 py-1.5 text-xs cn-text-1 focus:outline-none focus:border-blue-400" />
           <span className="text-xs cn-text-4">(optional)</span>
         </div>
 
@@ -1725,7 +1765,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           <button
             onClick={submitPoll}
             disabled={!body.trim() || validCount < 2 || posting}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
           >
             {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Vote className="w-3.5 h-3.5" />} Post poll
           </button>
@@ -1782,7 +1822,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           <button
             onClick={submitEvent}
             disabled={!body.trim() || !eventDate || posting}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
           >
             {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />} Post event
           </button>
@@ -1897,7 +1937,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
               <DropdownMenuItem
                 key={opt.value}
                 onClick={() => setCategory(opt.value)}
-                className={category === opt.value ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-300' : ''}
+                className={category === opt.value ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300' : ''}
               >
                 {opt.label}
               </DropdownMenuItem>
@@ -1935,7 +1975,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
               setMode('event');
             }}
             className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              activeFilter === 'EVENT' ? 'ring-1 ring-inset ring-purple-400/50 dark:ring-purple-500/40 text-purple-600 dark:text-purple-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
+              activeFilter === 'EVENT' ? 'ring-1 ring-inset ring-blue-400/50 dark:ring-blue-500/40 text-blue-600 dark:text-blue-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />Event
@@ -1943,7 +1983,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
           <button
             onClick={() => setMode('poll')}
             className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              activeFilter === 'POLL' ? 'ring-1 ring-inset ring-purple-400/50 dark:ring-purple-500/40 text-purple-600 dark:text-purple-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
+              activeFilter === 'POLL' ? 'ring-1 ring-inset ring-blue-400/50 dark:ring-blue-500/40 text-blue-600 dark:text-blue-300 hover:bg-black/5 dark:hover:bg-white/5' : 'cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5'
             }`}
           >
             <BarChart2 className="w-3.5 h-3.5" />Poll
@@ -1953,7 +1993,7 @@ function InlineComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserN
         <button
           onClick={() => (canQuickPost ? submitQuickPost() : onOpenFullComposer(''))}
           disabled={posting}
-          className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+          className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
         >
           {posting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Post
         </button>
@@ -2421,7 +2461,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   column below, so filters stay reachable while scrolling
                   posts. Chevrons (same pattern as Atlas's pin-filter chips)
                   appear only on the side(s) there's more to scroll toward. */}
-              <div className="sticky top-7 z-10 relative">
+              <div className="lg:hidden sticky top-7 z-10 relative">
                 {chipScroll.canLeft && (
                   <button
                     onClick={() => scrollChips('left')}
@@ -2455,11 +2495,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       onClick={() => setSavedOnly(s => !s)}
                       className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
                         savedOnly
-                          ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
                           : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                       }`}
                     >
-                      <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-purple-300' : ''}`} />
+                      <Bookmark className={`w-3.5 h-3.5 ${savedOnly ? 'fill-blue-300' : ''}`} />
                       Saved{savedPostIds.length > 0 ? ` (${savedPostIds.length})` : ''}
                     </button>
                     {CAT_TABS.map(({ value, label }) => {
@@ -2470,14 +2510,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                           onClick={() => setActiveFilter(prev => prev === value ? null : value)}
                           className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${
                             activeFilter === value
-                              ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200 border-purple-300 dark:border-purple-700'
+                              ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
                               : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
                           }`}
                         >
                           {label}
                           {count > 0 && (
                             <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full text-[10px] font-bold px-1 ${
-                              activeFilter === value ? 'bg-purple-200 dark:bg-purple-500/25 text-purple-800 dark:text-purple-200' : 'cn-surface-2 cn-text-3'
+                              activeFilter === value ? 'bg-blue-200 dark:bg-blue-500/25 text-blue-800 dark:text-blue-200' : 'cn-surface-2 cn-text-3'
                             }`}>
                               {count}
                             </span>
@@ -2517,7 +2557,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {/* Loading */}
               {loading && (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
                 </div>
               )}
 
@@ -2644,6 +2684,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 hubName={currentHub?.name ?? 'Hub'}
                 hubSlug={hubSlug}
                 posts={posts}
+                activeFilter={activeFilter}
+                savedOnly={savedOnly}
+                savedCount={savedPostIds.length}
+                onFilterChange={setActiveFilter}
+                onSavedToggle={() => setSavedOnly(s => !s)}
                 onNavigateToProfile={onNavigate ? (userId) => onNavigate(`profile/${userId}`) : undefined}
               />
             </div>

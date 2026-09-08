@@ -89,7 +89,7 @@ export function HubIcon({ hub, baseUrl, size, variant, className = '' }: HubIcon
   const solidFillProps = symbolId === 'hexagon' ? { fill: 'currentColor', strokeWidth: 0 } : {};
 
   if (variant === 'inline') {
-    return <Symbol className={`text-purple-500 dark:text-purple-400 shrink-0 ${className}`} style={{ width: size, height: size }} {...solidFillProps} />;
+    return <Symbol className={`text-blue-500 dark:text-blue-400 shrink-0 ${className}`} style={{ width: size, height: size }} {...solidFillProps} />;
   }
 
   const bgMode = hub?.hub_icon_bg_mode ?? 'gradient';

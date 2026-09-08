@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
 import { PostDetailView } from './Feed';
+import { AvatarFallback } from './icons';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { featuredService } from '../services/featuredService';
 import { FeatureRequestModal } from './FeatureRequestModal';
@@ -41,18 +42,6 @@ interface DashboardProps {
   onNavigate: (screen: string) => void;
 }
 
-function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
-const ATTENDEE_AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',
-];
-function attendeeAvatarColor(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return ATTENDEE_AVATAR_COLORS[Math.abs(h) % ATTENDEE_AVATAR_COLORS.length];
-}
-
 function AttendeeAvatar({ userId, username, hubSlug, onClick }: { userId: string; username: string; hubSlug: string; onClick: () => void }) {
   const [failed, setFailed] = useState(false);
   const url = hubService.getAvatarUrl(hubSlug, userId);
@@ -64,7 +53,7 @@ function AttendeeAvatar({ userId, username, hubSlug, onClick }: { userId: string
     >
       {url && !failed
         ? <img src={url} alt={username} className="w-full h-full object-cover" onError={() => setFailed(true)} />
-        : <div className={`w-full h-full bg-gradient-to-br ${attendeeAvatarColor(username)} flex items-center justify-center text-white text-[9px] font-semibold`}>{getInitials(username)}</div>
+        : <AvatarFallback className="w-full h-full" name={username} />
       }
     </button>
   );
@@ -227,7 +216,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
               <button
                 onClick={toggleGoing}
                 disabled={toggling}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                className={`flex-1 py-2.5 cn-action text-sm font-semibold transition-colors disabled:opacity-60 ${going ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
               >
                 {going ? "You're going" : "I'm going"}
               </button>
@@ -421,12 +410,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
 
   // enabledApps: null = all enabled (existing hubs), array = restrict to those IDs
   const enabledSet = currentHub?.enabledApps ?? null;
-  const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600' };
+  const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-blue-600' };
   const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
   const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
 
   const mobileLauncherTiles: typeof APP_TILES = myVendor
-    ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-600 to-purple-600' }]
+    ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-500 to-blue-700' }]
     : visibleTiles;
 
   // Excludes DOCK_PRIORITY_SCREENS — those already live in the fixed bottom
@@ -499,14 +488,14 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               onClick={() => { sessionStorage.setItem('citinet-deeplink-compose', '1'); onNavigate('feed'); }}
               className="w-full flex items-center gap-3 mb-4 rounded-2xl p-3 cn-glass hover:shadow-md hover:-translate-y-0.5 transition-all text-left group"
             >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+              <div className="w-9 h-9 rounded-full overflow-hidden shrink-0">
                 {resolvedCurrentUserAvatarUrl
                   ? <img src={resolvedCurrentUserAvatarUrl} alt={displayName} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  : displayName.charAt(0).toUpperCase()
+                  : <AvatarFallback className="w-full h-full" name={displayName} />
                 }
               </div>
               <span className="text-sm cn-text-3 flex-1">Share something with your neighbors…</span>
-              <span className="w-8 h-8 rounded-xl flex items-center justify-center cn-text-4 group-hover:bg-purple-500/15 group-hover:text-purple-200 transition-colors shrink-0">
+              <span className="w-8 h-8 rounded-xl flex items-center justify-center cn-text-4 group-hover:bg-blue-500/15 group-hover:text-blue-200 transition-colors shrink-0">
                 <Plus className="w-4 h-4" />
               </span>
             </button>
@@ -544,7 +533,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               return (
                 <div className="flex items-center gap-4 mb-5 overflow-x-auto pb-1 no-scrollbar">
                   {activeActors.map(item => {
-                    const ini = item.actor.charAt(0).toUpperCase();
                     // Current user is always green — they're online right now.
                     // Everyone else: real presence (last_seen_at), same threshold as the
                     // hub's "N online" count and the Messages screen — not "posted recently".
@@ -561,11 +549,9 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                         className="flex flex-col items-center gap-1.5 shrink-0 group"
                       >
                         <div className="relative">
-                          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-sm font-bold ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all">
-                            {ini}
-                          </div>
+                          <AvatarFallback className="w-11 h-11 rounded-full ring-2 ring-white dark:ring-zinc-900 group-hover:ring-blue-400 transition-all" name={item.actor} />
                           {item.actorAvatarUrl && (
-                            <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-11 h-11 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 group-hover:ring-purple-400 transition-all" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                            <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-11 h-11 rounded-full object-cover ring-2 ring-white dark:ring-zinc-900 group-hover:ring-blue-400 transition-all" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
                           )}
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-950 ${fresh ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-zinc-600'}`} />
                         </div>
@@ -625,7 +611,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                   {!activityExpanded && hiddenCount > 0 && (
                     <button
                       onClick={() => setActivityExpanded(true)}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-purple-400 dark:hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-900/10 transition-all font-medium"
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all font-medium"
                     >
                       Show {hiddenCount} more
                     </button>
@@ -698,7 +684,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                           {event.event_location && <span className="truncate">{event.event_location}</span>}
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-purple-400 transition-colors shrink-0" />
+                      <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-blue-400 transition-colors shrink-0" />
                     </button>
                   );
                 })}
@@ -794,7 +780,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                       aria-label={`Go to launchpad page ${idx + 1}`}
                       className={`h-1.5 w-1.5 rounded-full transition-all ${
                         active
-                          ? 'bg-purple-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-110'
+                          ? 'bg-blue-400 shadow-[0_0_8px_rgba(196,181,253,0.95)] scale-110'
                           : 'bg-slate-500/70 dark:bg-zinc-500/70 hover:bg-slate-400 dark:hover:bg-zinc-400'
                       }`}
                     />
@@ -898,7 +884,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
   file_shared:     { Icon: FolderOpen,    iconBg: 'bg-amber-500',   label: 'File Shared',  barColor: 'bg-amber-500',  verbColor: 'text-amber-600 dark:text-amber-400' },
   neighbor_joined: { Icon: Users,         iconBg: 'bg-violet-500',  label: 'New Neighbor', barColor: 'bg-violet-500', verbColor: 'text-violet-600 dark:text-violet-400' },
   pin_added:       { Icon: MapPin,        iconBg: 'bg-indigo-500',  label: 'Atlas Pin',    barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
-  space_created:   { Icon: Layers,        iconBg: 'bg-purple-500',  label: 'New Space',    barColor: 'bg-purple-500', verbColor: 'text-purple-600 dark:text-purple-400' },
+  space_created:   { Icon: Layers,        iconBg: 'bg-blue-500',  label: 'New Space',    barColor: 'bg-blue-500', verbColor: 'text-blue-600 dark:text-blue-400' },
 };
 
 const ACTIVITY_LOCATION: Record<string, string> = {
@@ -912,7 +898,7 @@ const ACTIVITY_LOCATION: Record<string, string> = {
 // Header banner types get a full-width cover (real image, or this gradient
 // when there's none/it fails to load) instead of the small corner icon.
 const BANNER_FALLBACK_GRAD: Partial<Record<ActivityType, string>> = {
-  event: 'from-indigo-500 to-purple-600',
+  event: 'from-indigo-500 to-blue-600',
   announcement: 'from-amber-500 to-orange-600',
 };
 
@@ -921,10 +907,10 @@ const DOC_KIND_CFG: Record<DocKind, { Icon: React.ElementType; grad: string; lab
   pdf:    { Icon: FileText,    grad: 'from-rose-500 to-pink-600',      label: 'PDF' },
   doc:    { Icon: FileText,    grad: 'from-blue-500 to-blue-600',      label: 'Doc' },
   sheet:  { Icon: Table2,      grad: 'from-emerald-500 to-teal-600',   label: 'Sheet' },
-  slides: { Icon: MonitorPlay, grad: 'from-purple-500 to-violet-600',  label: 'Slides' },
+  slides: { Icon: MonitorPlay, grad: 'from-blue-500 to-violet-600',  label: 'Slides' },
   zip:    { Icon: FileArchive, grad: 'from-fuchsia-500 to-violet-600', label: 'Archive' },
   audio:  { Icon: FileAudio,   grad: 'from-cyan-500 to-sky-600',       label: 'Audio' },
-  video:  { Icon: FileVideo,   grad: 'from-purple-500 to-violet-600',  label: 'Video' },
+  video:  { Icon: FileVideo,   grad: 'from-blue-500 to-violet-600',  label: 'Video' },
   other:  { Icon: File,        grad: 'from-slate-500 to-slate-600',    label: 'File' },
 };
 function docKindForExt(ext?: string): DocKind {
@@ -953,7 +939,6 @@ function eventDateBadge(dateStr?: string | null): { month: string; day: string }
 
 function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => void }) {
   const cfg = ACTIVITY_CONFIG[item.type];
-  const initial = item.actor.charAt(0).toUpperCase();
   const location = ACTIVITY_LOCATION[item.navigateTo] ?? '';
   const isLive = Date.now() - item.timestamp.getTime() < 3_600_000;
   // Per-card: a media URL that 404s/fails falls back to the plain icon
@@ -1015,7 +1000,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
           {/* Attribution row: mini-avatar · name · verb · location · time */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <div className="relative w-4 h-4 shrink-0">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-[8px] font-bold">{initial}</div>
+              <AvatarFallback className="absolute inset-0 rounded-full" name={item.actor} />
               {item.actorAvatarUrl && (
                 <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-full h-full rounded-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
               )}
@@ -1090,7 +1075,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
         )}
 
         {/* Chevron */}
-        <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-purple-400 transition-colors shrink-0 mt-0.5" />
+        <ChevronRight className="w-4 h-4 cn-text-4 group-hover:text-blue-400 transition-colors shrink-0 mt-0.5" />
       </div>
     </button>
   );

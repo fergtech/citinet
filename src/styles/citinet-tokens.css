@@ -1,11 +1,18 @@
 /* ============================================================
    Citinet Design System — CSS tokens
    Ported from the claude.ai/design project.
-   Brand accent: purple/violet (fixed across themes). Structural
+   Brand accent: blue (#2164f3, matching citinet-mobile's primary —
+   see constants/theme.ts there), fixed across themes. Structural
    chrome (surfaces/text/borders/glass) is theme-aware below.
+   Per-app-tile gradients below are each their own fixed identity
+   color for grid variety, not the brand accent — several intentionally
+   still use purple/violet (Spaces, Messages) since changing them would
+   just collide with Feed's already-blue tile.
    ============================================================ */
 
 :root {
+  --cn-radius-action: 1.625rem;
+
   /* App-tile gradients (fixed across themes) */
   --cn-grad-feed:        linear-gradient(135deg, #3b82f6, #2563eb);
   --cn-grad-spaces:      linear-gradient(135deg, #a855f7, #7c3aed);
@@ -15,11 +22,11 @@
   --cn-grad-messages:    linear-gradient(135deg, #d946ef, #7c3aed);
   --cn-grad-initiatives: linear-gradient(135deg, #f43f5e, #db2777);
   --cn-grad-files:       linear-gradient(135deg, #f59e0b, #ea580c);
-  --cn-grad-identity:    linear-gradient(135deg, #2563eb, #9333ea);
+  --cn-grad-identity:    linear-gradient(135deg, #3b82f6, #1d4ed8);
 
   /* Wallpaper — light */
   --cn-wallpaper:
-    radial-gradient(1200px 800px at 12% -10%, color-mix(in srgb, #e9d5ff 55%, transparent), transparent 60%),
+    radial-gradient(1200px 800px at 12% -10%, color-mix(in srgb, #bfdbfe 55%, transparent), transparent 60%),
     radial-gradient(1000px 700px at 100% 10%, color-mix(in srgb, #3b82f6 18%, transparent), transparent 55%),
     linear-gradient(180deg, #f1f5f9, #e2e8f0);
 
@@ -45,7 +52,7 @@
 /* Dark chrome — the signature Citinet "night OS" look */
 .dark {
   --cn-wallpaper:
-    radial-gradient(1100px 760px at 10% -12%, color-mix(in srgb, #7c3aed 32%, transparent), transparent 58%),
+    radial-gradient(1100px 760px at 10% -12%, color-mix(in srgb, #2164f3 32%, transparent), transparent 58%),
     radial-gradient(1000px 720px at 105% 8%,  color-mix(in srgb, #1d4ed8 26%, transparent), transparent 55%),
     linear-gradient(180deg, #0b0b12, #09090b);
 
@@ -74,6 +81,7 @@
 .cn-text-3     { color: var(--cn-text-3); }
 .cn-text-4     { color: var(--cn-text-4); }
 .cn-border     { border-color: var(--cn-border); }
+.cn-action     { border-radius: var(--cn-radius-action); }
 
 @keyframes cn-pulse {
   0%, 100% { opacity: 1; }

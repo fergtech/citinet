@@ -13,7 +13,7 @@ const ACTION_CONFIG: Record<string, { label: string; color: string; dot: string 
   remove_featured:   { label: 'Featured Removed',    color: 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',        dot: 'bg-slate-400' },
   promote_moderator: { label: 'Promoted to Mod',     color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',       dot: 'bg-blue-400' },
   demote_moderator:  { label: 'Removed as Mod',      color: 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',        dot: 'bg-slate-400' },
-  promote_admin:     { label: 'Promoted to Admin',   color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', dot: 'bg-purple-400' },
+  promote_admin:     { label: 'Promoted to Admin',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300', dot: 'bg-blue-400' },
   demote_admin:      { label: 'Removed as Admin',    color: 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300',        dot: 'bg-slate-400' },
   remove_member:     { label: 'Member Removed',      color: 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400',           dot: 'bg-red-400' },
   ban_user:          { label: 'User Banned',         color: 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400',           dot: 'bg-red-500' },
@@ -138,7 +138,7 @@ export function ModLogScreen({ onBack }: ModLogScreenProps) {
                       <div className="flex items-start justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Actor avatar */}
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
                             {entry.actor_username?.charAt(0).toUpperCase() ?? '?'}
                           </div>
                           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">

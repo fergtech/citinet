@@ -27,7 +27,7 @@ const KIND_CONFIG: {
 }[] = [
   {
     kind: 'help',
-    icon: <CircleHelp className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />,
+    icon: <CircleHelp className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />,
     label: 'Get Help',
     desc: 'Troubleshooting and support',
     placeholder: 'Describe what you need help with…',

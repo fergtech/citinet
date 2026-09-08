@@ -60,14 +60,14 @@ function MiniProgress({ step }: { step: 1 | 2 }) {
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wide">
+        <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
           Step {step} of 2 : {label}
         </span>
         <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">{pct}%</span>
       </div>
       <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1">
         <motion.div
-          className="bg-gradient-to-r from-blue-600 to-purple-600 h-1 rounded-full"
+          className="bg-gradient-to-r from-blue-500 to-blue-700 h-1 rounded-full"
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.35 }}
@@ -271,7 +271,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
     passwordStrength.acceptable;
 
   const labelClass = 'block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1';
-  const inputClass = 'w-full h-[42px] px-3.5 border border-slate-200 dark:border-white/10 rounded-lg text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px] focus:border-purple-500 focus:outline-none transition-colors';
+  const inputClass = 'w-full h-[42px] px-3.5 border border-slate-200 dark:border-white/10 rounded-lg text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px] focus:border-blue-500 focus:outline-none transition-colors';
   const cardClass = 'p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-800/60';
 
   // Recovery-phrase interstitials take over the whole screen, gating entry
@@ -291,8 +291,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             className="cn-glass rounded-3xl shadow-2xl p-7 relative z-10 max-w-[460px] w-full mx-auto"
           >
             <div className="flex flex-col items-center text-center gap-1 mb-5">
-              <div className="w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center mb-2">
-                <KeyRound className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <div className="w-11 h-11 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mb-2">
+                <KeyRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Save your recovery phrase</h2>
               <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
@@ -325,7 +325,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 type="checkbox"
                 checked={phraseSavedConfirmed}
                 onChange={e => setPhraseSavedConfirmed(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 dark:border-purple-600 text-purple-600 focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                className="w-4 h-4 rounded border-slate-300 dark:border-blue-600 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
               />
               <span className="text-xs text-slate-600 dark:text-slate-300">I've saved this phrase somewhere safe</span>
             </label>
@@ -333,9 +333,9 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             <button
               onClick={handleContinueAfterPhrase}
               disabled={!phraseSavedConfirmed}
-              className={`w-full mt-5 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all ${
+              className={`w-full mt-5 py-3.5 cn-action font-bold text-white flex items-center justify-center gap-2 transition-all ${
                 phraseSavedConfirmed
-                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl'
+                  ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl'
                   : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
               }`}
             >
@@ -361,8 +361,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             className="cn-glass rounded-3xl shadow-2xl p-7 relative z-10 max-w-[460px] w-full mx-auto"
           >
             <div className="flex flex-col items-center text-center gap-1 mb-5">
-              <div className="w-11 h-11 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center mb-2">
-                <KeyRound className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <div className="w-11 h-11 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mb-2">
+                <KeyRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">New device detected</h2>
               <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
@@ -384,7 +384,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             <button
               onClick={handleRestoreWithPhrase}
               disabled={recoveryBusy || !enteredPhrase.trim()}
-              className="w-full mt-4 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
+              className="w-full mt-4 py-3.5 cn-action font-bold text-white bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
             >
               {recoveryBusy ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Unlock'}
             </button>
@@ -501,7 +501,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
               <button
                 onClick={handleLogin}
                 disabled={loading || !loginUsername.trim() || !loginPassword}
-                className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mt-1"
+                className="w-full py-3.5 cn-action font-bold text-white bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 mt-1"
               >
                 {loading
                   ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -637,8 +637,8 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                               onClick={() => handleTagToggle(tag)}
                               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                                 selectedTags.includes(tag)
-                                  ? 'bg-purple-600 text-white'
-                                  : 'bg-white dark:bg-zinc-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:border-purple-300 dark:hover:border-purple-600'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white dark:bg-zinc-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-600'
                               }`}
                             >
                               {tag}
@@ -683,13 +683,13 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                         ))}
                       </div>
 
-                      <div className="rounded-xl p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                      <div className="rounded-xl p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
                         <label className="flex items-start gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={agreedToManifesto}
                             onChange={e => setAgreedToManifesto(e.target.checked)}
-                            className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-purple-600 text-purple-600 focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                            className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-blue-600 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                           />
                           <div>
                             <p className="text-sm font-semibold text-slate-800 dark:text-white">
@@ -718,9 +718,9 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                   <button
                     onClick={() => setStep(2)}
                     disabled={!canProceedStep1}
-                    className={`w-full px-5 py-3 rounded-lg font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
+                    className={`w-full px-5 py-3 cn-action font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
                       canProceedStep1
-                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                        ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
                         : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                     }`}
                   >
@@ -738,9 +738,9 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                     <button
                       onClick={handleSignup}
                       disabled={!agreedToManifesto || loading}
-                      className={`flex-1 px-5 py-3 rounded-lg font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
+                      className={`flex-1 px-5 py-3 cn-action font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
                         agreedToManifesto && !loading
-                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
                           : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                       }`}
                     >
@@ -768,7 +768,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-safe"
           >
             <div className="max-w-md mx-auto bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shrink-0 mt-0.5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-pink-600 flex items-center justify-center shrink-0 mt-0.5">
                 {isIOS ? <Share className="w-5 h-5 text-white" /> : <Download className="w-5 h-5 text-white" />}
               </div>
               <div className="flex-1 min-w-0">
@@ -788,7 +788,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 {isAndroidInstallable && (
                   <button
                     onClick={install}
-                    className="mt-2 px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition-colors"
+                    className="mt-2 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
                   >
                     Install
                   </button>

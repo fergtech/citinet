@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Loader2, AlertCircle, Users, Globe, MessageCircle, LayoutGrid } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { AvatarFallback } from './icons';
 import type { HubPost } from '../types/hub';
 
 interface PublicSpace {
@@ -33,16 +34,6 @@ function timeAgo(iso: string) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function getInitials(name: string) { return name.slice(0, 2).toUpperCase(); }
-function getAvatarColor(name: string) {
-  const colors = ['from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-    'from-pink-500 to-rose-500', 'from-violet-500 to-purple-500'];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return colors[Math.abs(h) % colors.length];
 }
 
 function truncateText(text: string, maxLength: number = 150): { truncated: string; isTruncated: boolean } {
@@ -125,7 +116,7 @@ export function ShareSpacePage() {
         </a>
         {data && (
           <a href={`${resolvedSrc || srcParam}?auth=true`} target="_blank" rel="noopener noreferrer"
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-sm font-semibold text-white transition-colors">
+            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-sm font-semibold text-white transition-colors">
             Sign in to Join
           </a>
         )}
@@ -167,7 +158,7 @@ export function ShareSpacePage() {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`py-3 px-1 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${activeTab === tab ? 'border-purple-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
+                  className={`py-3 px-1 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${activeTab === tab ? 'border-blue-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
                   {tab}
                 </button>
               ))}
@@ -220,9 +211,7 @@ export function ShareSpacePage() {
                           </div>
                         ) : (
                           <>
-                            <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${getAvatarColor(post.author_username)} flex items-center justify-center text-white text-xs font-semibold`}>
-                              {getInitials(post.author_username)}
-                            </div>
+                            <AvatarFallback className="w-7 h-7 rounded-full" name={post.author_username} />
                             <span className="text-sm font-medium text-white">{post.author_username}</span>
                           </>
                         )}

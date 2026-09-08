@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { DotGrid } from './DotGrid';
+import { AvatarFallback } from './icons';
 import {
   Search, Send, Users, Loader2, AlertCircle,
   RefreshCw, Plus, MessageCircle, X, Check,
@@ -38,32 +39,12 @@ interface StagedFile {
 
 // ── helpers ──────────────────────────────────────────────
 
-function getInitials(name: string): string {
-  return name.slice(0, 2).toUpperCase();
-}
-
-function getAvatarColor(name: string): string {
-  const colors = [
-    'from-purple-500 to-indigo-500',
-    'from-blue-500 to-cyan-500',
-    'from-emerald-500 to-teal-500',
-    'from-orange-500 to-amber-500',
-    'from-pink-500 to-rose-500',
-    'from-violet-500 to-purple-500',
-    'from-sky-500 to-blue-500',
-    'from-lime-500 to-green-500',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
-/** Same hash as getAvatarColor so the name label always matches the avatar tint. */
+/** Stable per-sender name-hash color, so each participant's name reads
+ * consistently across a group chat (independent of their avatar now that
+ * the avatar fallback is a fixed brand glyph, not name-hash-colored). */
 function getSenderNameColor(name: string): string {
   const colors = [
-    'text-purple-500 dark:text-purple-400',
+    'text-blue-500 dark:text-blue-400',
     'text-blue-500 dark:text-blue-400',
     'text-emerald-500 dark:text-emerald-400',
     'text-orange-500 dark:text-orange-400',
@@ -139,7 +120,6 @@ function AvatarBadge({
   userId,
   name,
   sizeClass,
-  textClass,
   radiusClass,
 }: {
   slug: string;
@@ -167,11 +147,7 @@ function AvatarBadge({
     );
   }
 
-  return (
-    <div className={`${sizeClass} ${radiusClass} bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center text-white font-semibold ${textClass}`}>
-      {getInitials(name)}
-    </div>
-  );
+  return <AvatarFallback className={`${sizeClass} ${radiusClass}`} name={name} />;
 }
 
 /** One row in the composer's attachment tray */
@@ -207,10 +183,10 @@ function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; onClick
     <button
       onClick={onClick}
       disabled={!onClick}
-      className="relative shrink-0 w-[130px] h-[168px] rounded-2xl overflow-hidden bg-gradient-to-br from-purple-600 to-blue-600 text-left disabled:cursor-default"
+      className="relative shrink-0 w-[130px] h-[168px] rounded-2xl overflow-hidden bg-gradient-to-br from-blue-700 to-blue-500 text-left disabled:cursor-default"
     >
       {showPreview && <LiveThumbnail roomName={item.room_name} hostId={item.host_id} />}
-      <span className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[9px] font-extrabold text-white ${isBroadcast ? 'bg-red-600' : 'bg-purple-600'}`}>
+      <span className={`absolute top-2 left-2 rounded-full px-2 py-0.5 text-[9px] font-extrabold text-white ${isBroadcast ? 'bg-red-600' : 'bg-blue-600'}`}>
         {isBroadcast ? 'LIVE' : 'OPEN'}
       </span>
       <span className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-black/45 px-1.5 py-0.5">
@@ -1230,7 +1206,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   if (error) {
     const isOffline = error.includes('Failed to fetch') || error.includes('tunnel') || error.includes('timed out');
     return (
-      <div className="h-full bg-gradient-to-b from-slate-50 via-blue-50/30 to-purple-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
+      <div className="h-full bg-gradient-to-b from-slate-50 via-blue-50/30 to-blue-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-900 flex items-center justify-center px-6">
         <div className="text-center max-w-sm">
           <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
           {isOffline ? (
@@ -1243,7 +1219,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               <p className="text-sm text-red-500 mb-4">{error}</p>
               <button
                 onClick={() => loadConversations()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 cn-action bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" /> Retry
               </button>
@@ -1326,10 +1302,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     {selectedMembers.map(m => (
                       <span
                         key={m.user_id}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-medium"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-medium"
                       >
                         {m.username}
-                        <button onClick={() => toggleMember(m)} className="ml-0.5 hover:text-purple-900 dark:hover:text-purple-100" title="Toggle member">
+                        <button onClick={() => toggleMember(m)} className="ml-0.5 hover:text-blue-900 dark:hover:text-blue-100" title="Toggle member">
                           <X className="w-3 h-3" />
                         </button>
                       </span>
@@ -1344,7 +1320,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     value={groupName}
                     onChange={e => setGroupName(e.target.value)}
                     placeholder="Group name (optional)"
-                    className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                    className="w-full px-3 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   />
                 )}
 
@@ -1356,7 +1332,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     value={memberSearch}
                     onChange={e => setMemberSearch(e.target.value)}
                     placeholder="Search neighbors..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   />
                 </div>
 
@@ -1374,7 +1350,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           key={member.user_id}
                           onClick={() => toggleMember(member)}
                           className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors ${
-                            selected ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
+                            selected ? 'bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
                           }`}
                         >
                           <AvatarBadge
@@ -1386,7 +1362,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             textClass="text-xs"
                           />
                           <span className="flex-1 text-left text-sm font-medium text-slate-900 dark:text-white">{member.username}</span>
-                          {selected && <Check className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+                          {selected && <Check className="w-4 h-4 text-blue-600 dark:text-blue-400" />}
                         </button>
                       );
                     })
@@ -1398,7 +1374,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 <button
                   onClick={handleCreateConversation}
                   disabled={selectedMembers.length === 0}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-2.5 cn-action bg-gradient-to-r from-blue-500 to-blue-700 text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:from-blue-600 hover:to-blue-800 transition-all flex items-center justify-center gap-2"
                 >
                   <MessageCircle className="w-4 h-4" />
                   {selectedMembers.length > 1 ? 'Create Group' : 'Start DM'}
@@ -1560,7 +1536,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                 <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
                                 <span className="text-xs text-slate-700 dark:text-slate-200 truncate flex-1">{m.file_name}</span>
                                 <button
-                                  className="text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors shrink-0"
+                                  className="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shrink-0"
                                   onClick={() => hubService.downloadFile(slug, m.file_name)}
                                   title={`Download ${m.file_name}`}
                                 >
@@ -1595,7 +1571,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight flex-1">Communications</h1>
             <button
               onClick={openNewConvo}
-              className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex items-center justify-center transition-all shadow-lg shrink-0"
+              className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 flex items-center justify-center transition-all shadow-lg shrink-0"
               title="New conversation"
             >
               <Plus className="w-5 h-5 text-white" />
@@ -1610,7 +1586,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all"
             />
           </div>
           {indexingHistory && (
@@ -1671,7 +1647,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               {!searchQuery && (
                 <button
                   onClick={openNewConvo}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="w-4 h-4" /> Start a conversation
                 </button>
@@ -1698,10 +1674,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     onClick={() => (showHistoricalHit ? jumpToSearchResult(convo.id, historicalHit!.messageId) : handleSelectConversation(convo.id))}
-                    className={`w-full p-3.5 pl-3 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 border-l-[3px] ${
+                    className={`w-full p-3.5 pl-3 flex items-start gap-3.5 transition-all rounded-2xl mb-1.5 ${
                       selectedId === convo.id
-                        ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-500'
-                        : 'border-transparent hover:bg-slate-50 dark:hover:bg-zinc-800/30 active:bg-slate-100 dark:active:bg-zinc-800/50'
+                        ? 'bg-blue-50 dark:bg-blue-900/20'
+                        : 'hover:bg-slate-50 dark:hover:bg-zinc-800/30 active:bg-slate-100 dark:active:bg-zinc-800/50'
                     }`}
                   >
                     {/* Avatar */}
@@ -1715,14 +1691,14 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         textClass=""
                       />
                       {isUnread && (
-                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-purple-500 ring-2 ring-white dark:ring-zinc-900" />
+                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-500 ring-2 ring-white dark:ring-zinc-900" />
                       )}
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0 text-left">
                       <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                        <h3 className={`font-semibold text-[15px] truncate ${isUnread ? 'text-purple-700 dark:text-purple-300' : 'text-slate-900 dark:text-white'}`}>
+                        <h3 className={`font-semibold text-[15px] truncate ${isUnread ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>
                           {displayName}
                         </h3>
                         <span className="text-[11px] text-slate-400 dark:text-slate-500 flex-shrink-0 font-medium">
@@ -1950,7 +1926,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                       {/* Avatar for all non-me messages — clickable → profile */}
                       {!isMe && (
                         <button
-                          className="flex-shrink-0 self-end rounded-lg hover:opacity-80 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-purple-400"
+                          className="flex-shrink-0 self-end rounded-lg hover:opacity-80 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-blue-400"
                           onClick={() => {
                             if (!msg.sender_id || !onNavigate) return;
                             // Persist the open conversation so returning from profile restores it
@@ -1970,7 +1946,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           />
                         </button>
                       )}
-                      <div className={`max-w-[72%] md:max-w-[58%] relative rounded-2xl transition-colors duration-500 ${highlightMessageId === msg.id ? 'ring-2 ring-purple-400 bg-purple-100/60 dark:bg-purple-900/30' : ''}`}>
+                      <div className={`max-w-[72%] md:max-w-[58%] relative rounded-2xl transition-colors duration-500 ${highlightMessageId === msg.id ? 'ring-2 ring-blue-400 bg-blue-100/60 dark:bg-blue-900/30' : ''}`}>
                         {/* Reaction trigger — desktop: visible on hover/focus next to the bubble.
                             Touch has no hover, so mobile instead long-presses the bubble itself
                             (see onTouchStart/Move/End below); both paths open the same picker. */}
@@ -1978,7 +1954,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           <button
                             type="button"
                             onClick={() => setReactionPickerFor(prev => prev === msg.id ? null : msg.id)}
-                            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-7 h-7 rounded-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-sm flex items-center justify-center text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-all"
+                            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-7 h-7 rounded-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-sm flex items-center justify-center text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
                             title="React"
                           >
                             <SmilePlus className="w-3.5 h-3.5" />
@@ -2063,7 +2039,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                   style={{ WebkitTouchCallout: 'none' }}
                                   className={`rounded-2xl px-4 py-2.5 transition-transform active:scale-[0.97] md:active:scale-100 ${
                                     isMe
-                                      ? 'bg-purple-600 dark:bg-purple-500 text-white rounded-br-sm'
+                                      ? 'bg-blue-600 dark:bg-blue-500 text-white rounded-br-sm'
                                       : 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700 rounded-bl-sm'
                                   }`}
                                 >
@@ -2121,7 +2097,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                 onClick={() => handleToggleReaction(msg.id, r.emoji)}
                                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
                                   r.reacted_by_me
-                                    ? 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300'
+                                    ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
                                     : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                 }`}
                                 title={r.reacted_by_me ? 'Remove your reaction' : 'React'}
@@ -2136,7 +2112,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           {formatMessageTime(msg.created_at)}
                         </p>
                         {isRead && (
-                          <p className="text-[11px] text-purple-500 dark:text-purple-400 mt-0.5 text-right flex items-center justify-end gap-1">
+                          <p className="text-[11px] text-blue-500 dark:text-blue-400 mt-0.5 text-right flex items-center justify-end gap-1">
                             <Check className="w-3 h-3" /> Read {formatMessageTime(peerLastReadAt!)}
                           </p>
                         )}
@@ -2183,7 +2159,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             }}
           >
             <div
-              className={`flex items-center gap-1.5 ${isDragging ? 'ring-2 ring-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : ''}`}
+              className={`flex items-center gap-1.5 ${isDragging ? 'ring-2 ring-blue-400 bg-blue-50/40 dark:bg-blue-900/10' : ''}`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -2193,7 +2169,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 <button
                   type="button"
                   onClick={() => setShowAttachTray(v => !v)}
-                  className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 flex items-center justify-center transition-all shadow-sm shrink-0"
+                  className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 flex items-center justify-center transition-all shadow-sm shrink-0"
                   title="Add attachment"
                   disabled={sending || stagedFiles.length >= MAX_ATTACHMENTS}
                 >
@@ -2234,16 +2210,16 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                           <img
                             src={sf.previewUrl}
                             alt={sf.file.name}
-                            className="max-w-[140px] max-h-[100px] rounded-lg border border-purple-300 shadow-sm"
+                            className="max-w-[140px] max-h-[100px] rounded-lg border border-blue-300 shadow-sm"
                           />
                         ) : sf.type === 'video' ? (
                           <video
                             src={sf.previewUrl}
-                            className="max-w-[140px] max-h-[100px] rounded-lg border border-purple-300 shadow-sm"
+                            className="max-w-[140px] max-h-[100px] rounded-lg border border-blue-300 shadow-sm"
                             controls
                           />
                         ) : (
-                          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 border border-purple-300">
+                          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-zinc-800 rounded-lg px-2.5 py-1.5 border border-blue-300">
                             <FileIcon className="w-4 h-4 text-slate-400" />
                             <span className="text-xs truncate max-w-[120px]">{sf.file.name}</span>
                           </div>
@@ -2282,7 +2258,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     placeholder="Type a message…"
                     title="Message input"
                     rows={1}
-                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
+                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
                   />
                   {/* Inline icon cluster, paired together on a shared 24x24 grid — emoji
                       is functional, mic is visible-but-disabled. GIF lives in the "+"
@@ -2338,7 +2314,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 onClick={handleSend}
                 disabled={sending || (!messageText.trim() && stagedFiles.length === 0)}
                 aria-label="Send message"
-                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-slate-300 disabled:to-slate-400 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600 flex items-center justify-center transition-all disabled:cursor-not-allowed shadow-sm disabled:shadow-none shrink-0"
+                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 disabled:from-slate-300 disabled:to-slate-400 dark:disabled:from-zinc-700 dark:disabled:to-zinc-600 flex items-center justify-center transition-all disabled:cursor-not-allowed shadow-sm disabled:shadow-none shrink-0"
               >
                 {sending ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Send className="w-4 h-4 text-white" />}
               </button>
@@ -2371,7 +2347,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             </p>
             <button
               onClick={openNewConvo}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-700 text-white text-sm font-medium hover:from-blue-600 hover:to-blue-800 transition-all shadow-lg"
             >
               <Plus className="w-4 h-4" /> New Conversation
             </button>

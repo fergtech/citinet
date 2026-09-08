@@ -61,10 +61,10 @@ const KIND_CFG: Record<FileKind, {
   doc:    { Icon: FileText,    grad: 'from-blue-500 to-blue-600',      label: 'Doc' },
   sheet:  { Icon: Table2,      grad: 'from-emerald-500 to-teal-600',   label: 'Sheet' },
   image:  { Icon: FileImage,   grad: 'from-indigo-500 to-indigo-600',  label: 'Image' },
-  slides: { Icon: MonitorPlay, grad: 'from-purple-500 to-violet-600',  label: 'Slides' },
+  slides: { Icon: MonitorPlay, grad: 'from-blue-500 to-violet-600',  label: 'Slides' },
   zip:    { Icon: FileArchive, grad: 'from-fuchsia-500 to-violet-600', label: 'Archive' },
   audio:  { Icon: FileAudio,   grad: 'from-cyan-500 to-sky-600',       label: 'Audio' },
-  video:  { Icon: FileVideo,   grad: 'from-purple-500 to-violet-600',  label: 'Video' },
+  video:  { Icon: FileVideo,   grad: 'from-blue-500 to-violet-600',  label: 'Video' },
   other:  { Icon: File,        grad: 'from-slate-500 to-slate-600',    label: 'File' },
 };
 
@@ -88,7 +88,7 @@ const FOLDER_COLORS: Record<string, string> = {
   amber:   'from-amber-500 to-orange-600',
   blue:    'from-blue-500 to-blue-600',
   emerald: 'from-emerald-500 to-teal-600',
-  purple:  'from-purple-500 to-violet-600',
+  purple:  'from-blue-500 to-violet-600',
   rose:    'from-rose-500 to-pink-600',
   cyan:    'from-cyan-500 to-sky-600',
   slate:   'from-slate-500 to-slate-600',
@@ -327,7 +327,7 @@ function StorageCard({ files }: { files: HubFile[] }) {
   return (
     <div className="rounded-2xl cn-glass p-4">
       <div className="flex items-center gap-2 mb-3">
-        <HardDrive className="w-3.5 h-3.5 text-purple-400" />
+        <HardDrive className="w-3.5 h-3.5 text-blue-400" />
         <span className="text-[10px] font-semibold uppercase tracking-widest cn-text-3">Hub storage</span>
       </div>
       <div className="font-mono text-2xl font-bold cn-text-1 leading-none">
@@ -387,7 +387,7 @@ function TypeBreakdownCard({
     { key: 'doc',     label: 'Documents',  Icon: FileText,    grad: 'from-blue-500 to-blue-600' },
     { key: 'sheet',   label: 'Sheets',     Icon: Table2,      grad: 'from-emerald-500 to-teal-600' },
     { key: 'pdf',     label: 'PDFs',       Icon: FileText,    grad: 'from-rose-500 to-pink-600' },
-    { key: 'video',   label: 'Videos',     Icon: FileVideo,   grad: 'from-purple-500 to-violet-600' },
+    { key: 'video',   label: 'Videos',     Icon: FileVideo,   grad: 'from-blue-500 to-violet-600' },
     { key: 'audio',   label: 'Audio',      Icon: FileAudio,   grad: 'from-cyan-500 to-sky-600' },
     { key: 'zip',     label: 'Archives',   Icon: FileArchive, grad: 'from-fuchsia-500 to-violet-600' },
   ].filter(r => (counts[r.key] || 0) > 0);
@@ -412,14 +412,14 @@ function TypeBreakdownCard({
               onClick={() => onSelectKind(key as FileKind)}
               title={active ? `Clear ${label.toLowerCase()} filter` : `Show only ${label.toLowerCase()}`}
               className={`flex items-center gap-3 py-1 px-1.5 -mx-1.5 rounded-lg text-left transition-colors ${
-                active ? 'bg-purple-500/10 dark:bg-purple-500/15' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                active ? 'bg-blue-500/10 dark:bg-blue-500/15' : 'hover:bg-black/5 dark:hover:bg-white/5'
               }`}
             >
-              <span className={`w-7 h-7 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 ${active ? 'ring-2 ring-purple-400/60' : ''}`}>
+              <span className={`w-7 h-7 rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center shrink-0 ${active ? 'ring-2 ring-blue-400/60' : ''}`}>
                 <Icon className="w-3.5 h-3.5 text-white" />
               </span>
-              <span className={`text-sm flex-1 ${active ? 'font-semibold text-purple-600 dark:text-purple-300' : 'cn-text-2'}`}>{label}</span>
-              <span className={`font-mono text-xs ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-4'}`}>{counts[key]}</span>
+              <span className={`text-sm flex-1 ${active ? 'font-semibold text-blue-600 dark:text-blue-300' : 'cn-text-2'}`}>{label}</span>
+              <span className={`font-mono text-xs ${active ? 'text-blue-600 dark:text-blue-300' : 'cn-text-4'}`}>{counts[key]}</span>
             </button>
           );
         })}
@@ -829,7 +829,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
             {/* Title + Upload/Refresh — same row */}
             <div className="flex items-center justify-between gap-4 flex-wrap mb-5">
               <div className="flex items-center gap-3 min-w-0">
-                <span className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shrink-0">
+                <span className="w-11 h-11 cn-action bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md shrink-0">
                   <FilesGlyph className="w-6 h-6 text-white" />
                 </span>
                 <div>
@@ -841,7 +841,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
               <div className="flex items-center gap-2 shrink-0">
                 {uploading && (
                   <div className="flex items-center gap-2 cn-surface-2 rounded-lg px-3 py-1.5">
-                    <Loader2 className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
                     <div className="w-16 h-1.5 cn-surface-3 rounded-full overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
                     </div>
@@ -859,7 +859,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                   <button
                     onClick={() => setShowUploadMenu(!showUploadMenu)}
                     disabled={uploading}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-3 py-2 cn-action bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
                   >
                     {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     <span className="hidden sm:inline">Upload</span>
@@ -1094,7 +1094,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                 {(tab === 'all' || tab === 'mine' || tab === 'shared') && (
                   <button
                     onClick={() => triggerUpload(tab === 'shared')}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white text-sm font-semibold shadow-sm hover:from-amber-600 hover:to-orange-700 transition-all"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 cn-action bg-gradient-to-br from-amber-500 to-orange-600 text-white text-sm font-semibold shadow-sm hover:from-amber-600 hover:to-orange-700 transition-all"
                   >
                     <Upload className="w-4 h-4" />
                     {tab === 'shared' ? 'Share a file' : 'Upload a file'}
@@ -1111,7 +1111,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                   {search.trim() ? `No files match "${search}"` : `No ${kindFilter ? KIND_CFG[kindFilter].label.toLowerCase() : 'files'} match this filter`}
                 </p>
                 {kindFilter && (
-                  <button onClick={() => setKindFilter(null)} className="mt-3 text-xs font-semibold text-purple-600 dark:text-purple-300 hover:underline">
+                  <button onClick={() => setKindFilter(null)} className="mt-3 text-xs font-semibold text-blue-600 dark:text-blue-300 hover:underline">
                     Clear type filter
                   </button>
                 )}

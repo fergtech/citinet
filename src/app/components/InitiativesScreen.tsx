@@ -18,10 +18,11 @@ import {
 import type { HubSpace, HubMember, HubFile } from '../types/hub';
 import {
   InitiativeCard, COLOR, STATUS_BADGE, STATUS_LABEL, CATEGORY_OPTIONS, categoryMeta,
-  AvatarStack, ProgressBar, SpaceChip, avatarColor, initials,
+  AvatarStack, ProgressBar, SpaceChip,
   TASK_STATUS_META, effectiveTaskStatus, type TaskDisplayStatus,
 } from './InitiativeCard';
 import { InitiativeBannerUpload } from './InitiativeBannerUpload';
+import { AvatarFallback } from './icons';
 
 // ── Helpers ────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ function Overlay({ title, onClose, children }: { title: string; onClose: () => v
 }
 
 const fieldLabelClass = 'text-[11.5px] font-semibold cn-text-3 block mb-1.5';
-const fieldClass = 'w-full px-3 py-2.5 rounded-lg border cn-border cn-surface-2 text-[13.5px] cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-purple-500/40';
+const fieldClass = 'w-full px-3 py-2.5 rounded-lg border cn-border cn-surface-2 text-[13.5px] cn-text-1 placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
 
 // ── Modals ─────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ function NewInitiativeModal({ onClose, onSubmit, mySpaces, initialSpaceId }: {
             </button>
           </div>
         ) : (
-          <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-sm cn-text-4">
+          <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5 transition-all text-sm cn-text-4">
             <ImageIcon className="w-4 h-4" /><Upload className="w-4 h-4" />
             <span>Add a cover image</span>
             <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) pickBanner(e.target.files[0]); }} />
@@ -154,7 +155,7 @@ function NewInitiativeModal({ onClose, onSubmit, mySpaces, initialSpaceId }: {
               type="button"
               onClick={() => setColor(c)}
               aria-label={c}
-              className={`w-8 h-8 rounded-full bg-gradient-to-br ${COLOR[c].gradient} transition-transform ${color === c ? 'ring-2 ring-offset-2 ring-purple-500 dark:ring-offset-zinc-900 scale-105' : 'opacity-70 hover:opacity-100'}`}
+              className={`w-8 h-8 rounded-full bg-gradient-to-br ${COLOR[c].gradient} transition-transform ${color === c ? 'ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-zinc-900 scale-105' : 'opacity-70 hover:opacity-100'}`}
             />
           ))}
         </div>
@@ -162,7 +163,7 @@ function NewInitiativeModal({ onClose, onSubmit, mySpaces, initialSpaceId }: {
       <button
         onClick={() => { if (title.trim()) { onSubmit({ title: title.trim(), goal: goal.trim(), category, color, space_id: spaceId || null, bannerFile }); onClose(); } }}
         disabled={!title.trim()}
-        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full py-2.5 cn-action bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Create project
       </button>
@@ -197,7 +198,7 @@ function ShareModal({ item, hubSlug, onClose }: { item: Initiative; hubSlug: str
           <input readOnly value={link} className={`${fieldClass} cn-text-3 truncate`} />
           <button
             onClick={handleCopy}
-            className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+            className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
           >
             {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
           </button>
@@ -218,7 +219,7 @@ function AddTaskModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (t
       <button
         onClick={() => { if (title.trim()) { onSubmit(title.trim()); onClose(); } }}
         disabled={!title.trim()}
-        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+        className="w-full py-2.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
       >
         Add task
       </button>
@@ -260,7 +261,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-purple-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
+            className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === id ? 'bg-blue-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
           >
             {label}
           </button>
@@ -280,7 +281,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
           <button
             onClick={() => { if (item.trim()) { onSubmitMaterial(item.trim(), qty.trim()); onClose(); } }}
             disabled={!item.trim()}
-            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+            className="w-full py-2.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
           >
             Add resource
           </button>
@@ -301,7 +302,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
           <button
             onClick={() => { if (url.trim()) { onSubmitLink(linkTitle.trim(), url.trim()); onClose(); } }}
             disabled={!url.trim()}
-            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+            className="w-full py-2.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
           >
             Add link
           </button>
@@ -315,7 +316,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
               <button
                 key={id}
                 onClick={() => setFileMode(id)}
-                className={`flex-1 py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors ${fileMode === id ? 'bg-purple-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
+                className={`flex-1 py-1.5 rounded-lg text-[11.5px] font-semibold transition-colors ${fileMode === id ? 'bg-blue-600 text-white' : 'cn-text-3 hover:cn-text-1'}`}
               >
                 {label}
               </button>
@@ -329,14 +330,14 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
                 <input
                   type="file"
                   onChange={e => setFile(e.target.files?.[0] ?? null)}
-                  className="block w-full text-[13px] cn-text-2 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-purple-600 file:text-white file:text-xs file:font-semibold file:cursor-pointer hover:file:bg-purple-700 cn-surface-2 rounded-lg cursor-pointer"
+                  className="block w-full text-[13px] cn-text-2 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:text-xs file:font-semibold file:cursor-pointer hover:file:bg-blue-700 cn-surface-2 rounded-lg cursor-pointer"
                 />
               </div>
               <p className="text-[11.5px] cn-text-4">Shared with the whole hub, same as the Files screen — not private.</p>
               <button
                 onClick={() => { if (file) { onSubmitFile(file); onClose(); } }}
                 disabled={!file}
-                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+                className="w-full py-2.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
               >
                 Upload file
               </button>
@@ -360,7 +361,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
                     <button
                       key={f.id}
                       onClick={() => setSelectedFileId(f.id)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${selectedFileId === f.id ? 'bg-purple-100 dark:bg-purple-900/30' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${selectedFileId === f.id ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
                     >
                       <FileText className="w-3.5 h-3.5 shrink-0 cn-text-4" />
                       <span className="flex-1 min-w-0 text-[13px] cn-text-1 truncate">{f.name}</span>
@@ -372,7 +373,7 @@ function AddResourceModal({ hubSlug, onClose, onSubmitMaterial, onSubmitLink, on
               <button
                 onClick={() => { if (selectedFileId) { onSubmitExistingFile(selectedFileId); onClose(); } }}
                 disabled={!selectedFileId}
-                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
               >
                 Attach file
               </button>
@@ -400,7 +401,7 @@ function AddRoleModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (r
       <button
         onClick={() => { if (role.trim()) { onSubmit(role.trim(), skill.trim()); onClose(); } }}
         disabled={!role.trim()}
-        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
+        className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors disabled:opacity-40"
       >
         Add role
       </button>
@@ -430,14 +431,12 @@ function InviteModal({ hubSlug, initiativeId, shareLink, onClose }: { hubSlug: s
       <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
         {members.map(m => (
           <div key={m.user_id} className="flex items-center gap-2.5">
-            <span className={`w-7 h-7 rounded-full bg-gradient-to-br ${avatarColor(m.username)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-              {initials(m.display_name || m.username)}
-            </span>
+            <AvatarFallback className="w-7 h-7 rounded-full shrink-0" name={m.display_name || m.username} />
             <span className="flex-1 min-w-0 text-[13px] cn-text-1 truncate">{m.display_name || m.username}</span>
             <button
               onClick={() => invite(m.user_id)}
               disabled={invited.has(m.user_id)}
-              className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${invited.has(m.user_id) ? 'cn-surface-2 cn-text-4' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+              className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${invited.has(m.user_id) ? 'cn-surface-2 cn-text-4' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
             >
               {invited.has(m.user_id) ? 'Invited' : 'Invite'}
             </button>
@@ -448,7 +447,7 @@ function InviteModal({ hubSlug, initiativeId, shareLink, onClose }: { hubSlug: s
         <label className={fieldLabelClass}>Or share an invite link</label>
         <div className="flex gap-2">
           <input readOnly value={shareLink} className={`${fieldClass} cn-text-3 truncate`} />
-          <button onClick={copyLink} className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}>
+          <button onClick={copyLink} className={`shrink-0 px-3 rounded-lg text-sm font-semibold transition-colors ${copied ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}>
             {copied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
           </button>
         </div>
@@ -510,7 +509,7 @@ function OverviewPane({ initiative, hubSlug, onSeeUpdates }: { initiative: Initi
       </div>
       {initiative.updates[0] && (
         <div
-          className="cn-glass rounded-2xl p-4 cursor-pointer hover:border-purple-300/60 dark:hover:border-purple-500/30 transition-colors"
+          className="cn-glass rounded-2xl p-4 cursor-pointer hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
           onClick={onSeeUpdates}
         >
           <div className="flex items-center justify-between mb-2">
@@ -518,9 +517,7 @@ function OverviewPane({ initiative, hubSlug, onSeeUpdates }: { initiative: Initi
             <span className="text-xs cn-text-3 font-medium">See all →</span>
           </div>
           <div className="flex items-start gap-3">
-            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarColor(initiative.updates[0].author_name)} flex items-center justify-center text-white text-[10px] font-bold shrink-0`}>
-              {initials(initiative.updates[0].author_name)}
-            </div>
+            <AvatarFallback className="w-7 h-7 rounded-lg shrink-0" name={initiative.updates[0].author_name} />
             <div>
               <p className="text-xs font-semibold cn-text-2">{initiative.updates[0].author_name} · <span className="font-normal cn-text-4">{timeAgo(initiative.updates[0].created_at)}</span></p>
               <p className="text-sm cn-text-3 mt-0.5 line-clamp-2">{initiative.updates[0].content}</p>
@@ -668,8 +665,8 @@ function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiati
                     </div>
                     {meta?.assignee_name ? (
                       <div className="shrink-0 flex items-center gap-1">
-                        <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(meta.assignee_name)} flex items-center justify-center text-white text-[9.5px] font-bold`} title={meta.assignee_name}>
-                          {initials(meta.assignee_name)}
+                        <span title={meta.assignee_name}>
+                          <AvatarFallback className="w-6 h-6 rounded-full" name={meta.assignee_name} />
                         </span>
                         {isSelfAssigned && (
                           <button
@@ -687,7 +684,7 @@ function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiati
                       <button
                         onClick={() => assignToMe(task)}
                         disabled={busyId === task.id}
-                        className="shrink-0 px-2.5 py-1 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+                        className="shrink-0 px-2.5 py-1 rounded-lg cn-surface-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
                       >
                         {busyId === task.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Assign to me'}
                       </button>
@@ -696,7 +693,7 @@ function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiati
                       onClick={() => setTrackingTaskId(task.id)}
                       title="Track progress"
                       aria-label="Track progress"
-                      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                     >
                       <Activity className="w-3.5 h-3.5" />
                     </button>
@@ -721,7 +718,7 @@ function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiati
       {initiative.viewerIsCreator && (
         <button
           onClick={() => setShowAdd(true)}
-          className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+          className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         >
           <Plus className="w-4 h-4" /> Add task
         </button>
@@ -925,7 +922,7 @@ function TaskTrackerView({
             <button
               onClick={addItem}
               disabled={addingItem || !newItem.trim()}
-              className="shrink-0 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+              className="shrink-0 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
             >
               {addingItem ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Add'}
             </button>
@@ -945,7 +942,7 @@ function TaskTrackerView({
         <button
           onClick={postNote}
           disabled={posting || !draft.trim()}
-          className="mt-2 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+          className="mt-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
         >
           {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Post note'}
         </button>
@@ -1076,14 +1073,14 @@ function ResourcesPane({ initiative, hubSlug, onChanged, currentUserId }: { init
 
           {r.kind === 'link' ? (
             <a href={r.url ?? '#'} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 group">
-              <p className="text-sm cn-text-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 truncate inline-flex items-center gap-1">
+              <p className="text-sm cn-text-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate inline-flex items-center gap-1">
                 {r.item} <ExternalLink className="w-3 h-3 shrink-0" />
               </p>
               <p className="text-xs cn-text-4 truncate">{r.url}</p>
             </a>
           ) : r.kind === 'file' ? (
             <button onClick={() => hubService.downloadFile(hubSlug, r.file_display_name || r.item)} className="flex-1 min-w-0 text-left group">
-              <p className="text-sm cn-text-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 truncate">{r.file_display_name || r.item}</p>
+              <p className="text-sm cn-text-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">{r.file_display_name || r.item}</p>
               <p className="text-xs cn-text-4">{formatBytes(r.file_size_bytes)}</p>
             </button>
           ) : (
@@ -1098,7 +1095,7 @@ function ResourcesPane({ initiative, hubSlug, onChanged, currentUserId }: { init
               onClick={() => hubService.downloadFile(hubSlug, r.file_display_name || r.item)}
               title="Download"
               aria-label="Download"
-              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
             </button>
@@ -1122,7 +1119,7 @@ function ResourcesPane({ initiative, hubSlug, onChanged, currentUserId }: { init
               <button
                 onClick={() => provide(r.id)}
                 disabled={busyId === r.id}
-                className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+                className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
               >
                 {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'I can provide this'}
               </button>
@@ -1145,7 +1142,7 @@ function ResourcesPane({ initiative, hubSlug, onChanged, currentUserId }: { init
       <button
         onClick={() => setShowAdd(true)}
         disabled={uploading}
-        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors disabled:opacity-50"
+        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-600 dark:hover:text-blue-400 transition-colors disabled:opacity-50"
       >
         {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
         {uploading ? 'Uploading…' : 'Add a resource'}
@@ -1207,7 +1204,7 @@ function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiativ
         <div className="space-y-2">
           {initiative.members.map((m, i) => (
             <div key={m.id ?? i} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
-              <span className={`w-8 h-8 rounded-full bg-gradient-to-br ${avatarColor(m.name)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials(m.name)}</span>
+              <AvatarFallback className="w-8 h-8 rounded-full shrink-0" name={m.name} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold cn-text-1">{m.name}</p>
                 {m.role && <p className="text-xs cn-text-4">{m.role}</p>}
@@ -1233,7 +1230,7 @@ function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiativ
                 <button
                   onClick={() => claim(r.id)}
                   disabled={busyId === r.id}
-                  className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
+                  className="shrink-0 px-3 py-1.5 rounded-lg cn-surface-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 text-xs font-semibold cn-text-3 transition-colors disabled:opacity-50"
                 >
                   {busyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'I can help'}
                 </button>
@@ -1255,7 +1252,7 @@ function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiativ
         {initiative.viewerIsCreator && (
           <button
             onClick={() => setShowAddRole(true)}
-            className="w-full mt-2 flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-purple-300 dark:hover:border-purple-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+            className="w-full mt-2 flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed cn-border text-sm cn-text-3 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             <Plus className="w-4 h-4" /> Add role
           </button>
@@ -1268,7 +1265,7 @@ function TeamPane({ initiative, hubSlug, onChanged, currentUserId }: { initiativ
           <div className="space-y-2">
             {filledRoles.map(r => (
               <div key={r.id} className="cn-glass rounded-xl px-4 py-3 flex items-center gap-3">
-                <span className={`w-8 h-8 rounded-full bg-gradient-to-br ${avatarColor(r.filled_by_name || '?')} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{initials(r.filled_by_name || '?')}</span>
+                <AvatarFallback className="w-8 h-8 rounded-full shrink-0" name={r.filled_by_name || '?'} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm cn-text-1">{r.role}</p>
                   <p className="text-xs cn-text-4">{r.filled_by_name}</p>
@@ -1377,9 +1374,7 @@ function UpdatesPane({ initiative, hubSlug, canPost, currentUserId }: { initiati
           {updates.map((update, idx) => (
             <motion.div key={update.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }} className="cn-glass rounded-2xl p-4">
               <div className="flex items-start gap-3">
-                <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${avatarColor(update.author_name)} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
-                  {initials(update.author_name)}
-                </div>
+                <AvatarFallback className="w-9 h-9 rounded-xl shrink-0" name={update.author_name} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-semibold cn-text-1">{update.author_name}</span>
@@ -1403,7 +1398,7 @@ function UpdatesPane({ initiative, hubSlug, canPost, currentUserId }: { initiati
                 <div className="flex flex-col gap-2 mt-3 pl-11">
                   {update.comments.map(c => (
                     <div key={c.id} className="flex items-start gap-2">
-                      <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(c.author_name)} flex items-center justify-center text-white text-[9px] font-bold shrink-0`}>{initials(c.author_name)}</span>
+                      <AvatarFallback className="w-6 h-6 rounded-full shrink-0" name={c.author_name} />
                       <div className="min-w-0 flex-1">
                         <span className="text-xs font-semibold cn-text-1">{c.author_name}</span>
                         <span className="text-[10px] cn-text-4 ml-1.5">{timeAgo(c.created_at)}</span>
@@ -1576,9 +1571,9 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
         ] as { value: StatusFilter; label: string }[]).map(t => {
           const active = statusFilter === t.value;
           return (
-            <button key={t.value} onClick={() => setStatusFilter(t.value)} className={`shrink-0 relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'}`}>
+            <button key={t.value} onClick={() => setStatusFilter(t.value)} className={`shrink-0 relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-blue-600 dark:text-blue-300' : 'cn-text-3 hover:cn-text-1'}`}>
               {t.label}
-              {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
+              {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full" />}
             </button>
           );
         })}
@@ -1590,7 +1585,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
             key={c.value}
             onClick={() => setCategoryFilter(c.value)}
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-              categoryFilter === c.value ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border-transparent' : 'cn-surface-2 cn-text-2 cn-border'
+              categoryFilter === c.value ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 border-transparent' : 'cn-surface-2 cn-text-2 cn-border'
             }`}
           >
             {c.label}
@@ -1665,7 +1660,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
           <h1 className="text-xl md:text-[22px] font-bold cn-text-1 leading-tight tracking-tight">{current.title}</h1>
           <div className="flex items-center gap-2.5 mt-2 flex-wrap">
             <span className="flex items-center gap-1.5">
-              <span className={`w-6 h-6 rounded-full bg-gradient-to-br ${avatarColor(current.createdBy)} flex items-center justify-center text-white text-[9.5px] font-bold shrink-0`}>{initials(current.createdBy)}</span>
+              <AvatarFallback className="w-6 h-6 rounded-full shrink-0" name={current.createdBy} />
               <span className="text-[12.5px] cn-text-3">Led by <b className="cn-text-1 font-semibold">{current.createdBy}</b></span>
             </span>
             <AvatarStack names={current.members.map(m => m.name)} />
@@ -1698,9 +1693,9 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
             const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`shrink-0 relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-purple-600 dark:text-purple-300' : 'cn-text-3 hover:cn-text-1'}`}>
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`shrink-0 relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${active ? 'text-blue-600 dark:text-blue-300' : 'cn-text-3 hover:cn-text-1'}`}>
                 <Icon className="w-3.5 h-3.5" />{tab.label}
-                {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-purple-600 dark:bg-purple-400 rounded-full" />}
+                {active && <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full" />}
               </button>
             );
           })}

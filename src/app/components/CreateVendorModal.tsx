@@ -68,7 +68,7 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
     }
   };
 
-  const inputCls = 'w-full px-3 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500';
+  const inputCls = 'w-full px-3 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500';
 
   return (
     <AnimatePresence>
@@ -90,7 +90,7 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-zinc-800 shrink-0">
               <div className="flex items-center gap-2">
-                <Store className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <Store className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">{isEdit ? 'Edit Vendor Page' : 'Create Vendor Page'}</h2>
               </div>
               <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
@@ -176,7 +176,7 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
                   <button
                     type="submit"
                     disabled={saving || !name.trim()}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 transition-all"
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-700 text-white text-sm font-semibold hover:from-blue-600 hover:to-blue-800 disabled:opacity-50 transition-all"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Store className="w-4 h-4" />}
                     {saving ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save Changes' : 'Create Page')}

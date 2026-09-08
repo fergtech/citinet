@@ -262,7 +262,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
             <button
               onClick={e => { e.stopPropagation(); onNavigateToProfile?.(); }}
               disabled={!onNavigateToProfile}
-              className="text-xs font-semibold cn-text-1 hover:text-purple-600 dark:hover:text-purple-400 disabled:hover:text-inherit transition-colors"
+              className="text-xs font-semibold cn-text-1 hover:text-blue-600 dark:hover:text-blue-400 disabled:hover:text-inherit transition-colors"
             >
               {authorName}
             </button>
@@ -330,10 +330,10 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
           aria-label={saved ? 'Remove from saved' : 'Save post'}
           onClick={() => onToggleSave?.()}
           className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-            saved ? 'text-purple-500 hover:text-purple-600' : 'cn-text-4 hover:text-purple-500 dark:hover:text-purple-400'
+            saved ? 'text-blue-500 hover:text-blue-600' : 'cn-text-4 hover:text-blue-500 dark:hover:text-blue-400'
           } hover:bg-black/5 dark:hover:bg-white/5`}
         >
-          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-purple-500' : ''}`} />
+          <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-blue-500' : ''}`} />
         </button>
       </div>
     </div>

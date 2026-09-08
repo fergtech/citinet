@@ -2,6 +2,7 @@ import { X, Search, Users, Shield } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import type { HubMember } from '../types/hub';
 import { hubService } from '../services/hubService';
+import { AvatarFallback } from './icons';
 import { useHub } from '../context/HubContext';
 
 interface MemberListModalProps {
@@ -9,12 +10,6 @@ interface MemberListModalProps {
   onClose: () => void;
   members: HubMember[];
   filter?: 'all' | 'admins';
-}
-
-function getInitials(username: string): string {
-  const parts = username.replace(/[_.-]/g, ' ').trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return username.slice(0, 2).toUpperCase();
 }
 
 function formatJoinDate(isoDate: string): string {
@@ -60,7 +55,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
         {/* Header */}
         <div className="p-6 pb-4 border-b cn-border">
           <div className="flex items-center gap-3 mb-4">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
+            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shrink-0">
               <Users className="w-5 h-5 text-white" />
             </span>
             <div className="flex-1 min-w-0">
@@ -86,7 +81,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
               placeholder="Search members…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 cn-surface-2 border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+              className="w-full pl-10 pr-4 py-2.5 cn-surface-2 border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </div>
 
@@ -96,7 +91,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
               onClick={() => setSelectedFilter('all')}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 selectedFilter === 'all'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                   : 'cn-surface-2 cn-text-3 hover:bg-black/5 dark:hover:bg-white/5'
               }`}
             >
@@ -107,7 +102,7 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
               onClick={() => setSelectedFilter('admins')}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 selectedFilter === 'admins'
-                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                   : 'cn-surface-2 cn-text-3 hover:bg-black/5 dark:hover:bg-white/5'
               }`}
             >
@@ -137,8 +132,8 @@ export function MemberListModal({ isOpen, onClose, members, filter = 'all' }: Me
                   className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 >
                   {/* Avatar */}
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0 bg-gradient-to-br from-blue-600 to-purple-600 relative overflow-hidden">
-                    {getInitials(member.username)}
+                  <div className="w-10 h-10 rounded-full shrink-0 relative overflow-hidden">
+                    <AvatarFallback className="absolute inset-0" name={member.username} />
                     {slug && (
                       <img
                         src={hubService.getAvatarUrl(slug, member.user_id) ?? undefined}

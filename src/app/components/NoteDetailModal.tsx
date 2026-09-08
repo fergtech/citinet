@@ -207,7 +207,7 @@ export function NoteDetailModal({
             {isOwnNote && onEdit && (
               <button
                 onClick={onEdit}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
               >
                 Edit
               </button>

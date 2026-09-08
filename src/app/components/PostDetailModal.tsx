@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { hubService } from '../services/hubService';
 import { createReplyOrQueue } from '../services/writeQueueService';
+import { AvatarFallback } from './icons';
 import type { HubPost, HubPostReply } from '../types/hub';
 import {
   DropdownMenu,
@@ -46,10 +47,6 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-function getInitials(name: string) {
-  return name.slice(0, 2).toUpperCase();
-}
-
 function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId, currentUserAvatarUrl, size = 'md' }: {
   authorId: string;
   authorUsername: string;
@@ -59,7 +56,7 @@ function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId
   size?: 'sm' | 'md';
 }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const dim = size === 'sm' ? 'w-7 h-7 text-[10px]' : 'w-8 h-8 text-xs';
+  const dim = size === 'sm' ? 'w-7 h-7' : 'w-8 h-8';
   const preferredAvatarUrl = authorId === currentUserId
     ? (currentUserAvatarUrl || authorAvatarUrl)
     : authorAvatarUrl;
@@ -78,22 +75,7 @@ function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId
       />
     );
   }
-  return (
-    <div className={`${dim} rounded-full bg-gradient-to-br ${avatarColor(authorUsername)} flex items-center justify-center text-white font-semibold flex-shrink-0`}>
-      {getInitials(authorUsername)}
-    </div>
-  );
-}
-
-const AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',
-];
-function avatarColor(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+  return <AvatarFallback className={`${dim} rounded-full flex-shrink-0`} name={authorUsername} />;
 }
 
 function isExternalSourcePost(post: HubPost): boolean {
@@ -485,20 +467,20 @@ export function PostDetailModal({
 
                       {/* Event fields */}
                       {post.category === 'EVENT' && (
-                        <div className="space-y-3 p-4 rounded-xl bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800/50">
+                        <div className="space-y-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50">
                           <div>
-                            <label className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center gap-1.5">
+                            <label className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1 flex items-center gap-1.5">
                               <Calendar className="w-3.5 h-3.5" /> Date & Time <span className="text-rose-500">*</span>
                             </label>
                             <input
                               type="datetime-local"
                               value={editEventDate}
                               onChange={e => setEditEventDate(e.target.value)}
-                              className="w-full bg-white dark:bg-zinc-800 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                              className="w-full bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                             />
                           </div>
                           <div>
-                            <label className="text-xs font-semibold text-purple-700 dark:text-purple-300 mb-1 flex items-center gap-1.5">
+                            <label className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1 flex items-center gap-1.5">
                               <MapPin className="w-3.5 h-3.5" /> Location <span className="text-slate-400">(optional)</span>
                             </label>
                             <input
@@ -506,7 +488,7 @@ export function PostDetailModal({
                               value={editEventLocation}
                               onChange={e => setEditEventLocation(e.target.value)}
                               placeholder="e.g. Community Center…"
-                              className="w-full bg-white dark:bg-zinc-800 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                              className="w-full bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                             />
                           </div>
                         </div>
@@ -558,7 +540,7 @@ export function PostDetailModal({
                         <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                           Cancel
                         </button>
-                        <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex items-center gap-2">
+                        <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex items-center gap-2">
                           {saving ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving…</span></> : <><Check className="w-4 h-4" /><span>Save</span></>}
                         </button>
                       </div>
@@ -610,7 +592,7 @@ export function PostDetailModal({
                       {/* Event metadata strip */}
                       {post.category === 'EVENT' && post.event_date && (
                         <div className="flex flex-wrap gap-2 mt-3 mb-1">
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 text-xs font-medium text-purple-700 dark:text-purple-300">
+                          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 text-xs font-medium text-blue-700 dark:text-blue-300">
                             <Calendar className="w-3.5 h-3.5 shrink-0" />
                             <span>
                               {new Date(post.event_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -619,7 +601,7 @@ export function PostDetailModal({
                             </span>
                           </div>
                           {post.event_location && (
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 text-xs font-medium text-purple-700 dark:text-purple-300">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 text-xs font-medium text-blue-700 dark:text-blue-300">
                               <MapPin className="w-3.5 h-3.5 shrink-0" />
                               <span>{post.event_location}</span>
                             </div>
@@ -786,7 +768,7 @@ export function PostDetailModal({
                   <button
                     type="submit"
                     disabled={sending || !replyText.trim()}
-                    className="w-11 h-11 self-end rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex-shrink-0"
+                    className="w-11 h-11 self-end rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex-shrink-0"
                   >
                     {sending
                       ? <Loader2 className="w-4 h-4 text-white animate-spin" />

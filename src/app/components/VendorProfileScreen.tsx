@@ -7,6 +7,7 @@ import {
 import type { HubVendor, HubListing } from '../types/hub';
 import { marketplaceService } from '../services/marketplaceService';
 import { hubService } from '../services/hubService';
+import { VendorAvatarFallback } from './icons';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { AddListingModal } from './AddListingModal';
 import { CreateVendorModal } from './CreateVendorModal';
@@ -259,7 +260,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               </button>
               <button
                 onClick={() => setShowAddListing(true)}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-full px-3.5 py-1.5 transition-colors"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-full px-3.5 py-1.5 transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" /> Add listing
               </button>
@@ -271,7 +272,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               title={isSaved ? 'Remove from saved' : 'Save vendor'}
               className="w-9 h-9 rounded-full flex items-center justify-center cn-text-2 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
-              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-purple-500 text-purple-500 dark:fill-purple-300 dark:text-purple-300' : ''}`} />
+              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-blue-500 text-blue-500 dark:fill-blue-300 dark:text-blue-300' : ''}`} />
             </button>
           )}
           <button
@@ -331,7 +332,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                 >
                   {(logoPreview || vendor.logo_file_name)
                     ? <img src={logoPreview ?? (fileUrl(vendor.logo_file_name) ?? undefined)} alt={vendor.name} className="w-full h-full object-cover" />
-                    : <div className="w-full h-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white text-3xl font-bold">{vendor.name.charAt(0).toUpperCase()}</div>
+                    : <VendorAvatarFallback className="w-full h-full" name={vendor.name} />
                   }
                   {isOwner && (
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -351,7 +352,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
                 {canMessage && (
                   <button
                     onClick={handleMessageVendor}
-                    className="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
+                    className="hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
                   >
                     <MessageCircle className="w-3.5 h-3.5" /> Message
                   </button>
@@ -362,7 +363,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
               {canMessage && (
                 <button
                   onClick={handleMessageVendor}
-                  className="sm:hidden w-full mt-3 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+                  className="sm:hidden w-full mt-3 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" /> Message
                 </button>
@@ -567,7 +568,7 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
 
             <button
               onClick={() => setShowBannerEditor(false)}
-              className="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors"
+              className="w-full py-2 px-4 cn-action bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
             >
               Done
             </button>

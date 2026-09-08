@@ -1,6 +1,8 @@
 # Public Web Surface & Portal Routing Plan
 
-> Status: **Deferred** — parked for future planning. Not blocking any current mission work.
+> Status: Part A (portal routing) is still **deferred** as planned below. Part B (public web
+> surface) has **already shipped in a different shape** than this plan describes — see the
+> status note at the top of that section before reading it as a future-tense plan.
 
 ---
 
@@ -48,7 +50,31 @@ These are **two separate problems** and should be tackled separately.
 
 ## Part B — Public Web Surface (citinet.io)
 
-**Goal:** Allow hub members to publish selected content to a public profile page at `citinet.io/u/:username`.
+> **This section is now historical — read as "what was planned," not "what to build."**
+> A public web surface shipped, but not via a new `citinet.io` Vercel project reading
+> `citinet.cloud/u/:username`. Instead:
+> - `hub_notes.is_public` already exists as a real column (`api/server.js`), and Notes has a
+>   full private/hub/web/blog visibility flow (`NotesScreen.tsx`, `handleSetNoteVisibility`),
+>   further along than the simple `is_public` toggle sketched below.
+> - A wide set of unauthenticated `GET /api/public/*` endpoints already exist in `server.js`:
+>   `og`, `files/:filename`, `vendors/:slug`, `notes`, `notes/:id`, `profile/:username`,
+>   `profile/:username/posts`, `profile/:username/notes`, `profile/:username/pins`,
+>   `posts/:id`, `spaces/:slug`, `spaces/:slug/files/:filename` — well beyond the two
+>   endpoints this plan called for as a minimum.
+> - The actual publish path that shipped is a **push architecture**, not a separate site
+>   pulling from these read endpoints: `api/blog-sync.js` and `api/blogSyncHeartbeat.js`
+>   push published notes to `info.citinet.cloud/blog` (referenced from `HubLayout.tsx` and
+>   `WelcomeScreen.tsx`). There is currently a known open bug where a blog-published note
+>   sometimes shows the wrong icon and doesn't reliably reach `info.citinet.cloud/blog`.
+> - Whether the `/api/public/profile/:username` family has a dedicated frontend page (the
+>   `citinet.io/u/:username` idea below) is unconfirmed — the endpoints exist, a page
+>   consuming them may not.
+>
+> The design principles below (deliberate per-item publish, no hub session on the public
+> side) held up as the direction taken. The specific mechanism (separate Vercel project +
+> pull-based public endpoints) is not what was built.
+
+**Original goal:** Allow hub members to publish selected content to a public profile page at `citinet.io/u/:username`.
 
 ### Design principles
 - Publishing is a **deliberate per-item action**, not a "make the hub public" switch.

@@ -12,7 +12,7 @@ interface FeaturedCarouselProps {
 }
 
 const GRADIENT_MAP: Record<string, string> = {
-  ANNOUNCEMENT: 'from-purple-600 via-purple-500 to-indigo-600',
+  ANNOUNCEMENT: 'from-blue-600 via-blue-500 to-indigo-600',
   DISCUSSION:   'from-blue-600 via-blue-500 to-cyan-600',
   PROJECT:      'from-emerald-600 via-emerald-500 to-teal-600',
   REQUEST:      'from-orange-500 via-amber-500 to-yellow-500',
@@ -21,7 +21,7 @@ const GRADIENT_MAP: Record<string, string> = {
 };
 
 const LABEL_BG: Record<string, string> = {
-  ANNOUNCEMENT: 'bg-purple-500/90',
+  ANNOUNCEMENT: 'bg-blue-500/90',
   DISCUSSION:   'bg-blue-500/90',
   PROJECT:      'bg-emerald-500/90',
   REQUEST:      'bg-orange-500/90',

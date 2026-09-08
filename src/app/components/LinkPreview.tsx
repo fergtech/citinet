@@ -244,5 +244,5 @@ export function LinkPreviewCard({ url, slug }: { url: string; slug: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, slug]);
 
-  return <CardShell url={url} content={content} loading={loading} iconGrad="from-purple-600 to-blue-600" />;
+  return <CardShell url={url} content={content} loading={loading} iconGrad="from-blue-700 to-blue-500" />;
 }

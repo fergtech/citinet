@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { hubService } from '../services/hubService';
+import { AvatarFallback } from './icons';
 import {
   Loader2, AlertCircle, MapPin, Globe, Link as LinkIcon,
   Calendar, MessageCircle, Tag, NotebookPen, Pin, FileText,
@@ -68,24 +69,13 @@ function getMediaVariant(name?: string | null): 'image' | 'video' | null {
   return null;
 }
 
-const AVATAR_COLORS = [
-  'from-purple-500 to-indigo-500', 'from-blue-500 to-cyan-500',
-  'from-emerald-500 to-teal-500', 'from-orange-500 to-amber-500',
-  'from-pink-500 to-rose-500',    'from-violet-500 to-purple-500',
-];
-function avatarColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
-
 const PIN_CATEGORY_COLORS: Record<string, string> = {
   food:         'bg-orange-500/15 text-orange-400',
   service:      'bg-blue-500/15 text-blue-400',
   community:    'bg-emerald-500/15 text-emerald-400',
   safety:       'bg-red-500/15 text-red-400',
   nature:       'bg-slate-500/15 text-slate-400',
-  event:        'bg-purple-500/15 text-purple-400',
+  event:        'bg-blue-500/15 text-blue-400',
   other:        'bg-zinc-500/15 text-zinc-400',
 };
 
@@ -379,9 +369,7 @@ export function PublicProfilePage() {
                     alt={profile.username}
                   />
                 ) : (
-                  <div className={`w-20 h-20 rounded-full border-4 border-zinc-950 bg-gradient-to-br ${avatarColor(profile.username)} flex items-center justify-center`}>
-                    <span className="text-xl font-bold text-white">{profile.username.slice(0, 2).toUpperCase()}</span>
-                  </div>
+                  <AvatarFallback className="w-20 h-20 rounded-full border-4 border-zinc-950" name={profile.username} />
                 )}
               </div>
             </div>

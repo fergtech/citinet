@@ -13,6 +13,7 @@ import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { useHub } from '../context/HubContext';
 import { AutoplayVideo } from './AutoplayVideo';
+import { AvatarFallback } from './icons';
 import { PostDetailModal } from './PostDetailModal';
 import { ListingCard } from './MarketplaceScreen';
 import type { HubMember, HubPost, HubVendor, HubListing } from '../types/hub';
@@ -464,9 +465,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                         className="w-[88px] h-[88px] rounded-full object-cover ring-4 ring-white/20 backdrop-blur-sm shadow-md"
                         onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
-                    : <div className={`w-[88px] h-[88px] rounded-full bg-gradient-to-br ${avatarColor(member.username)} flex items-center justify-center text-white font-bold text-3xl ring-4 ring-white/20 backdrop-blur-sm shadow-md`}>
-                        {(displayName || member.username).charAt(0).toUpperCase()}
-                      </div>
+                    : <AvatarFallback className="w-[88px] h-[88px] rounded-full ring-4 ring-white/20 backdrop-blur-sm shadow-md" name={member.username} />
                   }
                 </div>
 
@@ -482,7 +481,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   ) : (
                     <button
                       onClick={handleMessage}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
                     >
                       <MessageCircle className="w-3.5 h-3.5" /> Message
                     </button>
@@ -511,7 +510,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 ) : (
                   <button
                     onClick={handleMessage}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors"
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
                   >
                     <MessageCircle className="w-4 h-4" /> Message
                   </button>
@@ -689,7 +688,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 ) : isOwnProfile ? (
                   <div className="rounded-xl border border-dashed cn-border p-5 text-center">
                     <p className="text-sm cn-text-4 mb-3">Add a bio to tell your community who you are.</p>
-                    <button onClick={() => onNavigate('account')} className="inline-flex items-center px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold transition-colors">
+                    <button onClick={() => onNavigate('account')} className="inline-flex items-center px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors">
                       Complete your profile
                     </button>
                   </div>
@@ -962,9 +961,7 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                           className="w-20 h-20 rounded-full object-cover ring-4 ring-white dark:ring-zinc-900 shadow-lg"
                           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
-                      : <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${avatarColor(member.username)} ring-4 ring-white dark:ring-zinc-900 flex items-center justify-center text-white font-bold text-2xl shadow-lg`}>
-                          {(displayName || member.username).charAt(0).toUpperCase()}
-                        </div>
+                      : <AvatarFallback className="w-20 h-20 rounded-full ring-4 ring-white dark:ring-zinc-900 shadow-lg" name={member.username} />
                     }
                     <h2 className="mt-3 text-base font-bold cn-text-1 leading-tight">
                       {displayName || member.username}
