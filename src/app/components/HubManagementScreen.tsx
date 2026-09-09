@@ -247,7 +247,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [installedModels, setInstalledModels] = useState<string[]>([]);
   const [aiConfigSaving, setAiConfigSaving] = useState(false);
   const [aiConfigError, setAiConfigError] = useState('');
-  const [pullModel, setPullModel] = useState('llama3.2:1b');
+  const [pullModel, setPullModel] = useState('phi3.5');
   const [pullProgress, setPullProgress] = useState('');
   const [pulling, setPulling] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
@@ -274,6 +274,23 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     loadAiStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHub?.slug]);
+
+  // Keep polling while a model is auto-downloading in the background so
+  // progress shows up without the admin manually hitting refresh.
+  useEffect(() => {
+    if (!aiStatus?.autoPulling) return;
+    const t = setInterval(loadAiStatus, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiStatus?.autoPulling]);
+
+  // Same for a running re-index — posts embed fast, so poll tighter.
+  useEffect(() => {
+    if (!indexStatus?.reindexing) return;
+    const t = setInterval(loadAiStatus, 2000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexStatus?.reindexing]);
 
   // Hubs aren't provisioned with the Ollama container by default — only show
   // the AI tab once we've confirmed it's actually reachable (or was enabled
@@ -310,8 +327,10 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     setReindexMsg('');
     try {
       await aiService.triggerReindex(hubSlug);
-      setReindexMsg('Indexing started — this runs in the background');
-      setTimeout(() => loadAiStatus(), 8000);
+      // Progress from here on is driven by indexStatus.reindexing/reindexDone/
+      // reindexTotal (server-tracked, polled below) rather than a fire-and-forget
+      // message — the admin can watch it actually move.
+      await loadAiStatus();
     } catch (err: unknown) {
       setReindexMsg(err instanceof Error ? err.message : 'Failed to start indexing');
     }
@@ -2212,6 +2231,30 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   </div>
                 </div>
 
+                {/* Automatic model download in progress */}
+                {aiStatus?.autoPulling && (
+                  <div className="cn-glass rounded-2xl p-4 flex items-center gap-3 border border-violet-200 dark:border-violet-800/40">
+                    <Loader2 className="w-4 h-4 text-violet-500 animate-spin shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">Downloading AI model…</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                        {aiStatus.autoPullStatus || 'Starting…'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {aiStatus?.autoPullError && !aiStatus?.autoPulling && (
+                  <div className="cn-glass rounded-2xl p-4 flex items-center gap-3 border border-rose-200 dark:border-rose-800/40">
+                    <WifiOff className="w-4 h-4 text-rose-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-white">Automatic download failed</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {aiStatus.autoPullError} — pull a model manually below
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Enable / disable toggle */}
                 <div className="cn-glass rounded-2xl p-4 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
@@ -2326,15 +2369,28 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     ) : (
                       <button
                         onClick={handleReindex}
-                        disabled={reindexing}
+                        disabled={reindexing || indexStatus?.reindexing}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
                       >
-                        {reindexing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                        Re-index all posts
+                        {reindexing || indexStatus?.reindexing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        {indexStatus?.reindexing ? 'Re-indexing…' : 'Re-index all posts'}
                       </button>
                     )}
                     {reindexMsg && <p className="text-xs text-slate-500 dark:text-slate-400">{reindexMsg}</p>}
                   </div>
+                  {/* Live re-index progress — counts don't move via indexed/total above
+                      since overwriting embeddings doesn't change the row count, so this
+                      is the only place actual re-index progress is visible. */}
+                  {indexStatus?.reindexing && (
+                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                      Re-indexing… {indexStatus.reindexDone ?? 0} / {indexStatus.reindexTotal || '?'} posts
+                    </div>
+                  )}
+                  {!indexStatus?.reindexing && indexStatus?.reindexError && (
+                    <div className="text-xs px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400">
+                      Re-index failed: {indexStatus.reindexError}
+                    </div>
+                  )}
                   {pulling && pullModel === 'nomic-embed-text' && pullProgress && (
                     <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
                       {pullProgress}

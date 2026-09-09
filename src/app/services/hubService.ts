@@ -1438,19 +1438,23 @@ class HubService {
     await fetch(`${tunnelUrl}/api/comms/call/${callId}/end`, { method: 'POST', headers }).catch(() => {});
   }
 
-  /** Mint a token for a broadcast/room — creates it if room_name is omitted. */
+  /** Mint a token for a broadcast/room — creates it if room_name is omitted.
+   * `spaceSlug` (create only — ignored when joining an existing room, which
+   * carries its own scope from creation) scopes a new broadcast/room to that
+   * space: the server re-checks active space membership on every later join. */
   async getCommsToken(
     hubSlug: string,
     kind: 'broadcast' | 'room',
     roomName?: string,
     title?: string,
     preview?: boolean,
+    spaceSlug?: string,
   ): Promise<CallTokenResponse> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const res = await fetch(`${tunnelUrl}/api/comms/token`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, room_name: roomName, title, preview }),
+      body: JSON.stringify({ kind, room_name: roomName, title, preview, space_slug: spaceSlug }),
     });
     if (!res.ok) await this.parseErrorResponse(res, hubSlug);
     return res.json();
@@ -1462,10 +1466,13 @@ class HubService {
     await fetch(`${tunnelUrl}/api/comms/${encodeURIComponent(roomName)}/end`, { method: 'POST', headers }).catch(() => {});
   }
 
-  /** Every currently-active broadcast/room on this hub. */
-  async listLiveComms(hubSlug: string): Promise<LiveCommsItem[]> {
+  /** Every currently-active hub-wide broadcast/room — pass `spaceSlug` to get
+   * that space's own live list instead (membership-checked server-side; a
+   * space-scoped item never appears in the plain hub-wide call). */
+  async listLiveComms(hubSlug: string, spaceSlug?: string): Promise<LiveCommsItem[]> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
-    const res = await fetch(`${tunnelUrl}/api/comms/live`, { headers });
+    const qs = spaceSlug ? `?space_slug=${encodeURIComponent(spaceSlug)}` : '';
+    const res = await fetch(`${tunnelUrl}/api/comms/live${qs}`, { headers });
     if (!res.ok) return [];
     const data = await res.json().catch(() => []);
     return Array.isArray(data) ? data : [];
@@ -2013,7 +2020,10 @@ class HubService {
   }
 
   /** Create a new post. Optionally attach an image file. For category 'POLL',
-   * title is the question (required) and the poll-only fields apply. */
+   * title is the question (required) and the poll-only fields apply. Passing
+   * `spaceSlug` scopes the post to that space instead of the main hub feed
+   * (server-side membership-checked) — used by Spaces' own post composer,
+   * which otherwise works identically to the main Feed composer. */
   async createPost(
     hubSlug: string,
     post: {
@@ -2021,6 +2031,7 @@ class HubService {
       eventDate?: string; eventLocation?: string; eventLat?: number; eventLng?: number;
       visibility?: 'inherit' | 'hub' | 'private';
       options?: string[]; closesAt?: string; requestId?: string; quorumPct?: number; passPct?: number;
+      spaceSlug?: string;
     }
   ): Promise<HubPost> {
     const connection = this.getHubConnection(hubSlug);
@@ -2041,6 +2052,7 @@ class HubService {
     if (post.requestId) formData.append('request_id', post.requestId);
     if (post.quorumPct !== undefined) formData.append('quorum_pct', String(post.quorumPct));
     if (post.passPct !== undefined) formData.append('pass_pct', String(post.passPct));
+    if (post.spaceSlug) formData.append('space_slug', post.spaceSlug);
 
     const headers: Record<string, string> = {};
     if (connection.user?.authToken) headers['Authorization'] = `Bearer ${connection.user.authToken}`;

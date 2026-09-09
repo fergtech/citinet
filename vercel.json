@@ -1,5 +1,12 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/share-note/:hubSlug/:noteId", "destination": "/api/share-og?type=note&hubSlug=:hubSlug&id=:noteId" },
+    { "source": "/share-space/:hubSlug/:spaceSlug", "destination": "/api/share-og?type=space&hubSlug=:hubSlug&id=:spaceSlug" },
+    { "source": "/v/:hubSlug/:vendorSlug", "destination": "/api/share-og?type=vendor&hubSlug=:hubSlug&id=:vendorSlug" },
+    { "source": "/u/:hubSlug/:username", "destination": "/api/share-og?type=profile&hubSlug=:hubSlug&id=:username" },
+    { "source": "/share/:hubSlug/:fileName", "destination": "/api/share-og?type=file&hubSlug=:hubSlug&id=:fileName" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

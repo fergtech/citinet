@@ -177,7 +177,7 @@ function AttachTrayItem({ icon: Icon, label, onClick, disabled }: {
 }
 
 /** One card in the "Live now" strip — a currently-active broadcast/room. */
-function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; onClick?: () => void; showPreview?: boolean }) {
+export function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; onClick?: () => void; showPreview?: boolean }) {
   const isBroadcast = item.kind === 'broadcast';
   return (
     <button

@@ -28,6 +28,7 @@ export interface QueuedPostPayload {
   eventDate?: string; eventLocation?: string; eventLat?: number; eventLng?: number;
   visibility?: 'inherit' | 'hub' | 'private';
   options?: string[]; closesAt?: string; requestId?: string; quorumPct?: number; passPct?: number;
+  spaceSlug?: string;
 }
 
 export interface QueuedReplyPayload {

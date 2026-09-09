@@ -58,9 +58,11 @@ interface PollFeedCardProps {
   /** Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange listings/vendors. */
   saved?: boolean;
   onToggleSave?: () => void;
+  /** Removes the standalone card surface when rendered inside a detail modal. */
+  embedded?: boolean;
 }
 
-export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl, saved, onToggleSave }: PollFeedCardProps) {
+export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl, saved, onToggleSave, embedded }: PollFeedCardProps) {
   // Parent only renders this component when post.category === 'POLL', where the
   // backend always attaches `poll` — safe to assert non-null here.
   const poll = post.poll!;
@@ -110,7 +112,7 @@ export function PollFeedCard({ post, canManage, voting, closing, reopening, onVo
   const authorName = post.author_username ?? 'Hub Team';
 
   return (
-    <div className="cn-glass rounded-2xl overflow-hidden">
+    <div className={embedded ? 'overflow-hidden' : 'cn-glass rounded-2xl overflow-hidden'}>
       <div className="p-4">
         {/* Top row: category + status + three-dots menu */}
         <div className="flex items-center justify-between gap-2 mb-3">

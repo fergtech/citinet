@@ -134,9 +134,19 @@ export interface InitiativeCardProps {
   taskCount: { done: number; total: number };
   onOpen: () => void;
   onOpenSpace?: () => void;
+  /** 'default' is the full InitiativesScreen grid card. 'compact' is the same
+   * cover-image-plus-scrim visual identity at a fraction of the size — used
+   * where a project card is one of several small items on a busier screen
+   * (e.g. a space's own feed) rather than the main subject of the grid.
+   * Compact drops the goal text, "by <author>", the full open-roles wording,
+   * and the space chip (all redundant or too fine-grained at that size) but
+   * keeps everything that makes it recognizably the same card: full-bleed
+   * cover, category corner badge, title, status/category pills, progress
+   * bar, and avatar stack. */
+  size?: 'default' | 'compact';
 }
 
-export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpenSpace }: InitiativeCardProps) {
+export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpenSpace, size = 'default' }: InitiativeCardProps) {
   const c = COLOR[initiative.color];
   const cat = categoryMeta(initiative.category);
   const CatIcon = cat.icon;
@@ -146,11 +156,12 @@ export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpe
     ? `linear-gradient(135deg, ${initiative.banner_gradient_from}, ${initiative.banner_gradient_to})`
     : null;
   const bgImage = bannerUrl || (!customGradient ? presetImage : null);
+  const compact = size === 'compact';
 
   return (
     <button
       onClick={onOpen}
-      className="relative w-full h-[22rem] rounded-2xl overflow-hidden flex flex-col text-left border cn-border hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
+      className={`relative w-full ${compact ? 'h-40' : 'h-[22rem]'} rounded-2xl overflow-hidden flex flex-col text-left border cn-border hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors`}
     >
       {/* Full-bleed cover — uploaded banner, a custom gradient, the category
           preset photo, or (nothing set at all) the initiative's own brand
@@ -164,8 +175,8 @@ export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpe
       {/* Category icon — floats over the bare top of the cover art in its
           own corner, out of the text block's flow, instead of sitting in a
           left column beside the title. */}
-      <span className={`absolute top-3 right-3 z-10 w-9 h-9 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg`}>
-        <CatIcon className="w-4 h-4 text-white" />
+      <span className={`absolute z-10 rounded-lg bg-gradient-to-br ${c.gradient} flex items-center justify-center shrink-0 ring-1 ring-white/20 shadow-lg ${compact ? 'top-1.5 right-1.5 w-6 h-6' : 'top-3 right-3 w-9 h-9'}`}>
+        <CatIcon className={compact ? 'w-3 h-3 text-white' : 'w-4 h-4 text-white'} />
       </span>
 
       {/* Content block — a flex item of the card's flex-col frame, pushed
@@ -179,37 +190,46 @@ export function InitiativeCard({ initiative, bannerUrl, taskCount, onOpen, onOpe
           baseline, so the title text sits on an already-dark canvas
           (contrast) rather than the still-transparent top of the fade. */}
       <div
-        className="relative z-10 mt-auto px-3.5 pt-9 pb-3.5 flex flex-col gap-1.5"
+        className={`relative z-10 mt-auto flex flex-col ${compact ? 'px-2.5 pt-5 pb-2 gap-1' : 'px-3.5 pt-9 pb-3.5 gap-1.5'}`}
         style={{ background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.72) 20%, rgba(0,0,0,0.94) 100%)' }}
       >
         {/* No reserved min-height here — the pills row should sit right
             under the title with no gap, even when the title is one line. */}
-        <div className="text-sm font-bold text-white leading-tight line-clamp-2">{initiative.title}</div>
+        <div className={`font-bold text-white leading-tight ${compact ? 'text-xs line-clamp-3' : 'text-sm line-clamp-2'}`}>{initiative.title}</div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
-          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-black/40 text-white backdrop-blur-md ring-1 ring-white/10">{cat.label}</span>
-          {initiative.viewerIsMember && (
+          <span className={`font-semibold rounded-full ${STATUS_BADGE[initiative.status]} ${compact ? 'text-[9.5px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5'}`}>{STATUS_LABEL[initiative.status]}</span>
+          {!compact && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-black/40 text-white backdrop-blur-md ring-1 ring-white/10">{cat.label}</span>}
+          {initiative.viewerIsMember && !compact && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-black/40 text-white backdrop-blur-md ring-1 ring-white/10">You're in</span>
+          )}
+          {openRoles > 0 && compact && (
+            <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">{openRoles} open</span>
           )}
         </div>
 
-        <p className="text-[12.5px] leading-relaxed text-white/85 line-clamp-2">{initiative.goal}</p>
+        {!compact && <p className="text-[12.5px] leading-relaxed text-white/85 line-clamp-2">{initiative.goal}</p>}
 
         <ProgressBar {...taskCount} pct={taskCount.total > 0 ? Math.round((taskCount.done / taskCount.total) * 100) : 0} tone={initiative.status === 'completed' ? 'ok' : 'brand'} light />
 
-        <div className="flex items-center justify-between gap-2">
-          <AvatarStack names={initiative.members.map(m => m.name)} size="sm" />
-          <div className="flex items-center gap-2 shrink-0">
-            {openRoles > 0 && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
-                {openRoles} role{openRoles > 1 ? 's' : ''} open
-              </span>
-            )}
-            <span className="text-[11px] text-white/75">by {initiative.createdBy}</span>
+        {/* Compact skips the member avatar stack — its only caller (a space's
+            own feed) already lists that space's members elsewhere, and a
+            space-born initiative's members are, in practice, drawn from that
+            same pool, so repeating them here card-by-card added little. */}
+        {!compact && (
+          <div className="flex items-center justify-between gap-2">
+            <AvatarStack names={initiative.members.map(m => m.name)} size="sm" />
+            <div className="flex items-center gap-2 shrink-0">
+              {openRoles > 0 && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+                  {openRoles} role{openRoles > 1 ? 's' : ''} open
+                </span>
+              )}
+              <span className="text-[11px] text-white/75">by {initiative.createdBy}</span>
+            </div>
           </div>
-        </div>
+        )}
 
-        {initiative.space_name && <SpaceChip name={initiative.space_name} onClick={onOpenSpace} light />}
+        {!compact && initiative.space_name && <SpaceChip name={initiative.space_name} onClick={onOpenSpace} light />}
       </div>
     </button>
   );

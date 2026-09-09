@@ -529,14 +529,24 @@ function OverviewPane({ initiative, hubSlug, onSeeUpdates }: { initiative: Initi
   );
 }
 
-function TasksPane({ initiative, hubSlug, onChanged, currentUserId }: { initiative: Initiative; hubSlug: string; onChanged: () => void; currentUserId?: string }) {
+function TasksPane({ initiative, hubSlug, onChanged, currentUserId, initialTaskId, onInitialTaskConsumed }: {
+  initiative: Initiative; hubSlug: string; onChanged: () => void; currentUserId?: string;
+  /** Opens straight into this task's tracker on mount — a space feed's
+   * initiative-activity card deep-links here. Read once via useState's
+   * initializer, not a prop the pane keeps watching, so switching away from
+   * this task and back within the same mount never reopens it. */
+  initialTaskId?: string;
+  onInitialTaskConsumed?: () => void;
+}) {
   const [tasks, setTasks] = useState(initiative.tasks);
   const [taskMeta, setTaskMeta] = useState<Record<string, TaskMeta>>({});
   const [showAdd, setShowAdd] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [trackingTaskId, setTrackingTaskId] = useState<string | null>(null);
+  const [trackingTaskId, setTrackingTaskId] = useState<string | null>(initialTaskId ?? null);
   const { currentUser } = useHub();
+
+  useEffect(() => { onInitialTaskConsumed?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTaskMeta = useCallback(() => {
     initiativesService.getTaskMeta(hubSlug, initiative.id).then(setTaskMeta).catch(() => {});
@@ -1500,10 +1510,31 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (hubSlug) spacesService.listMine(hubSlug).then(setMySpaces).catch(() => {}); }, [hubSlug]);
 
+  // Deep-link: a space feed's initiative-activity card hands off a specific
+  // tab (and, for a task row, that task's id) — same sessionStorage-flag
+  // pattern as the space-id one above. Mirrors citinet-mobile's Home
+  // initiativeActivityHref(), adapted to this screen's tab-state (not routed
+  // sub-URLs): task → the Tasks tab with that task's tracker open, resource →
+  // Resources, team → Team, anything else → the overview, same as mobile's
+  // fallback for an unresolved task match or an unrecognized activity kind.
+  const [deepLinkTaskId, setDeepLinkTaskId] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (!initialId) { setSelectedId(null); return; }
     setSelectedId(initialId);
+    const raw = sessionStorage.getItem('citinet-deeplink-initiative-tab');
+    if (raw) {
+      sessionStorage.removeItem('citinet-deeplink-initiative-tab');
+      try {
+        const parsed = JSON.parse(raw) as { initiativeId: string; tab: TabId; taskId?: string };
+        if (parsed.initiativeId === initialId) {
+          setActiveTab(parsed.tab);
+          setDeepLinkTaskId(parsed.taskId);
+          return;
+        }
+      } catch { /* malformed flag — fall through to the plain-overview default below */ }
+    }
     setActiveTab('overview');
+    setDeepLinkTaskId(undefined);
   }, [initialId]);
 
   const current = initiatives.find(i => i.id === selectedId) ?? null;
@@ -1703,7 +1734,16 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
 
         <div className="pt-1">
           {activeTab === 'overview' && <OverviewPane initiative={current} hubSlug={hubSlug} onSeeUpdates={() => setActiveTab('updates')} />}
-          {activeTab === 'tasks' && <TasksPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
+          {activeTab === 'tasks' && (
+            <TasksPane
+              initiative={current}
+              hubSlug={hubSlug}
+              onChanged={load}
+              currentUserId={currentUserId}
+              initialTaskId={deepLinkTaskId}
+              onInitialTaskConsumed={() => setDeepLinkTaskId(undefined)}
+            />
+          )}
           {activeTab === 'resources' && <ResourcesPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
           {activeTab === 'team' && <TeamPane initiative={current} hubSlug={hubSlug} onChanged={load} currentUserId={currentUserId} />}
           {activeTab === 'updates' && <UpdatesPane initiative={current} hubSlug={hubSlug} canPost={!!current.viewerIsMember} currentUserId={currentUserId} />}

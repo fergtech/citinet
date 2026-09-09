@@ -12,6 +12,8 @@ import { toolkitService } from '../services/toolkitService';
 import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
 import { HubIcon } from './HubIcon';
+import { useSavedIds } from '../hooks/useSavedIds';
+import { hubPath } from '../utils/subdomain';
 import type { HubPost, HubMember, HubSpace, SearchResults } from '../types/hub';
 import type { Tool } from '../types/toolkit';
 
@@ -32,13 +34,6 @@ const SECTIONS: { value: FilterId; label: string; icon: LucideIcon }[] = [
   { value: 'people', label: 'People', icon: Users },
   { value: 'hubs', label: 'Other hubs', icon: Hexagon },
 ];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
-  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
-  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
-  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
-};
 
 function formatJoinDate(dateStr?: string): string {
   if (!dateStr) return '';
@@ -279,6 +274,8 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
   const [otherHubs, setOtherHubs] = useState<RegistryHub[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
+  const { ids: savedPostIds, toggle: toggleSavedPost } = useSavedIds('saved_posts', 'saved_posts');
+  const [shareCopiedPostId, setShareCopiedPostId] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const searchRequestId = useRef(0);
 
@@ -505,6 +502,34 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     return rows.sort((a, b) => b.score - a.score);
   }, [searching, searchResults, currentUserId, onNavigate, onViewProfile]);
 
+  async function handlePostLike(post: HubPost) {
+    const wasLiked = !!post.my_liked;
+    const optimistic = (value: HubPost): HubPost => ({
+      ...value,
+      my_liked: !wasLiked,
+      like_count: Math.max(0, (value.like_count ?? 0) + (wasLiked ? -1 : 1)),
+    });
+    setPosts(current => current.map(value => value.id === post.id ? optimistic(value) : value));
+    setSelectedPost(current => current?.id === post.id ? optimistic(current) : current);
+    try {
+      const result = await hubService.toggleLike(slug, post.id);
+      const reconcile = (value: HubPost): HubPost => ({ ...value, my_liked: result.liked, like_count: result.count });
+      setPosts(current => current.map(value => value.id === post.id ? reconcile(value) : value));
+      setSelectedPost(current => current?.id === post.id ? reconcile(current) : current);
+    } catch {
+      setPosts(current => current.map(value => value.id === post.id ? post : value));
+      setSelectedPost(current => current?.id === post.id ? post : current);
+    }
+  }
+
+  function handleCopyPostLink(postId: string) {
+    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setShareCopiedPostId(postId);
+      setTimeout(() => setShareCopiedPostId(null), 2000);
+    });
+  }
+
   const handleMessage = (member: HubMember) => {
     sessionStorage.setItem('citinet-deeplink-message-peer', JSON.stringify({ userId: member.user_id, username: member.username }));
     onNavigate('messages');
@@ -693,10 +718,15 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
           currentUserId={currentUserId}
           currentUserAvatarUrl={currentUser?.avatarUrl}
           isAdmin={isAdmin}
-          categoryColors={CATEGORY_COLORS}
           publicFileUrl={name => hubService.getPublicFileUrl(slug, name) ?? ''}
           onDeleted={() => setSelectedPost(null)}
           onNavigateToProfile={(userId) => { setSelectedPost(null); onNavigate(`profile/${userId}`); }}
+          onNavigate={onNavigate}
+          onLike={() => handlePostLike(selectedPost)}
+          onShare={() => handleCopyPostLink(selectedPost.id)}
+          shareCopied={shareCopiedPostId === selectedPost.id}
+          saved={savedPostIds.includes(selectedPost.id)}
+          onToggleSave={() => toggleSavedPost(selectedPost.id)}
         />
       )}
     </div>

@@ -11,6 +11,11 @@ Postgres stays local — only uploaded user files move to the remote machine.
 - A Windows or Linux PC on the same LAN with a spare HDD
 - Both machines on the same subnet (e.g. `192.168.1.x`)
 
+> Replace `<hub-slug>` below with this hub's actual slug throughout — the install
+> directory (`~/citinet-hub-<hub-slug>`) and every container name (e.g.
+> `citinet-storage-<hub-slug>`) are unique per hub so a second hub can share the same
+> machine; run `docker ps` if you're unsure of the exact name.
+
 ---
 
 ## Part 1 — Set up the Windows PC
@@ -136,24 +141,24 @@ Add this line at the bottom (one line, replace values):
 ### 1. Stop only the affected containers
 
 ```bash
-cd ~/citinet-hub
+cd ~/citinet-hub-<hub-slug>
 docker compose stop citinet-api citinet-storage
 ```
 
 ### 2. Copy existing MinIO data to the remote share
 
 ```bash
-sudo rsync -aHAX /mnt/citinet-storage/citinet-hub/data/storage/ /mnt/remote-files/
+sudo rsync -aHAX /mnt/citinet-storage/citinet-hub-<hub-slug>/data/storage/ /mnt/remote-files/
 ```
 
 > Adjust the source path if your hub uses a different `DATA_DIR`.
 > Check your current MinIO volume path with:
-> `docker inspect citinet-storage --format '{{range .Mounts}}{{.Source}}{{end}}'`
+> `docker inspect citinet-storage-<hub-slug> --format '{{range .Mounts}}{{.Source}}{{end}}'`
 
 ### 3. Add FILES_DIR to .env
 
 ```bash
-nano ~/citinet-hub/.env
+nano ~/citinet-hub-<hub-slug>/.env
 ```
 
 Add at the bottom:
@@ -187,7 +192,7 @@ docker compose up -d
 curl -s http://localhost:9090/health
 
 # MinIO should be reading from the remote share
-docker inspect citinet-storage --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{end}}'
+docker inspect citinet-storage-<hub-slug> --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{end}}'
 ```
 
 Expected output:
@@ -211,7 +216,7 @@ Expected output:
 
 1. Stop the hub: `docker compose down`
 2. Copy data to new location: `sudo rsync -aHAX /mnt/remote-files/ /mnt/new-location/`
-3. Update `FILES_DIR=` in `~/citinet-hub/.env`
+3. Update `FILES_DIR=` in `~/citinet-hub-<hub-slug>/.env`
 4. Update `/etc/fstab` to mount the new share
 5. Start the hub: `docker compose up -d`
 
@@ -221,7 +226,7 @@ Expected output:
 
 If something goes wrong, point FILES_DIR back to the local path:
 
-1. Edit `~/citinet-hub/.env` — set `FILES_DIR` back to the original local path
+1. Edit `~/citinet-hub-<hub-slug>/.env` — set `FILES_DIR` back to the original local path
 2. `docker compose up -d`
 
 Data in Postgres (users, posts, file metadata) is untouched — only the raw file objects live on the remote share.

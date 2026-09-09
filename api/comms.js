@@ -100,6 +100,31 @@ function requireLivekit(res) {
 // the initial "ring".
 const sockets = new Map();
 
+// Space-scoped broadcasts/rooms — resolves a space slug to id and requires
+// the caller to be an active member, same check pattern already used by
+// /call/ring's conversation-membership check and the space-scoped post
+// endpoints. Returns { spaceId } on success or { error, status } to relay
+// straight to the client.
+async function getSpaceIdIfMember(pool, spaceSlug, userId) {
+  const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [spaceSlug]);
+  if (!spaceRows[0]) return { error: 'Space not found', status: 404 };
+  const spaceId = spaceRows[0].id;
+  const { rows: memRows } = await pool.query(
+    `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
+    [spaceId, userId],
+  );
+  if (!memRows[0] || memRows[0].status !== 'active') return { error: 'Join this space to use its comms', status: 403 };
+  return { spaceId };
+}
+
+async function isActiveSpaceMember(pool, spaceId, userId) {
+  const { rows } = await pool.query(
+    `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
+    [spaceId, userId],
+  );
+  return !!rows[0] && rows[0].status === 'active';
+}
+
 function createCommsRouter({ pool, authenticate, express }) {
   const router = express.Router();
 
@@ -216,9 +241,16 @@ function createCommsRouter({ pool, authenticate, express }) {
   // POST /api/comms/token — generic mint for broadcasts/rooms (not used by
   // 1:1 calls, which mint inline above). `kind` just becomes room metadata
   // for GET /api/comms/live to read back — LiveKit doesn't care what it means.
+  //
+  // `space_slug` (optional, host/create only) scopes the room to that space:
+  // stamped into the room's metadata alongside kind/title/host, and enforced
+  // on every subsequent join below — a token for a space-scoped room is only
+  // ever minted for an active member of that space, closing the gap where
+  // any hub member could join any live broadcast/room by name regardless of
+  // the space's own visibility (public/private/invite-only).
   router.post('/token', authenticate, async (req, res) => {
     if (!requireLivekit(res)) return;
-    const { kind, room_name, title, preview } = req.body || {};
+    const { kind, room_name, title, preview, space_slug } = req.body || {};
     if (!['broadcast', 'room'].includes(kind)) return res.status(400).json({ error: 'kind must be broadcast or room' });
     // A preview token is for the "Live now" card's silent camera-thumbnail
     // connection (see LiveThumbnail) — it only ever joins an existing
@@ -231,11 +263,33 @@ function createCommsRouter({ pool, authenticate, express }) {
       const roomName = room_name || `${kind}-${req.user.id}-${Date.now().toString(36)}`;
       const isHost = !room_name; // creating fresh (no existing room_name given) = you're the host/owner
       if (isHost) {
+        let spaceId = null;
+        if (space_slug) {
+          const spaceCheck = await getSpaceIdIfMember(pool, space_slug, req.user.id);
+          if (spaceCheck.error) return res.status(spaceCheck.status).json({ error: spaceCheck.error });
+          spaceId = spaceCheck.spaceId;
+        }
         await roomService.createRoom({
           name: roomName,
-          metadata: JSON.stringify({ kind, title: title || '', host_id: req.user.id, host_username: req.user.username }),
+          metadata: JSON.stringify({
+            kind, title: title || '', host_id: req.user.id, host_username: req.user.username,
+            space_id: spaceId, space_slug: spaceId ? space_slug : null,
+          }),
           emptyTimeout: 300,
         });
+      } else {
+        // Joining an existing room — if it's space-scoped, re-check the
+        // joiner is still an active member of that space too. A room that's
+        // vanished by now (host already ended it) or carries no space_id is
+        // a plain hub-wide join, same as before this change.
+        const [room] = await roomService.listRooms([roomName]);
+        if (room) {
+          let meta = {};
+          try { meta = JSON.parse(room.metadata || '{}'); } catch { /* non-JSON metadata — treat as hub-wide */ }
+          if (meta.space_id && !(await isActiveSpaceMember(pool, meta.space_id, req.user.id))) {
+            return res.status(403).json({ error: 'Join this space to view its live broadcasts' });
+          }
+        }
       }
       const token = await mintToken({
         roomName,
@@ -279,12 +333,19 @@ function createCommsRouter({ pool, authenticate, express }) {
   });
 
   // GET /api/comms/live — every currently-active broadcast/room on this
-  // hub's own LiveKit instance. No hub-scoping needed beyond "this LiveKit
-  // server" since each hub runs its own, single-tenant (same trust boundary
-  // as the rest of this stack).
+  // hub's own LiveKit instance, hub-wide ones only (same "doesn't leak into
+  // the main feed unless explicitly shared" precedent as space posts) —
+  // pass ?space_slug=X (membership-checked) instead to get that space's own
+  // live list, which a hub-wide caller never sees.
   router.get('/live', authenticate, async (req, res) => {
     if (!livekitConfigured) return res.json([]);
     try {
+      let allowedSpaceId = null;
+      if (req.query.space_slug) {
+        const spaceCheck = await getSpaceIdIfMember(pool, req.query.space_slug, req.user.id);
+        if (spaceCheck.error) return res.status(spaceCheck.status).json({ error: spaceCheck.error });
+        allowedSpaceId = spaceCheck.spaceId;
+      }
       const rooms = await roomService.listRooms();
       const live = rooms
         .map((r) => {
@@ -295,9 +356,24 @@ function createCommsRouter({ pool, authenticate, express }) {
             // non-JSON/empty metadata (e.g. a 1:1 call room) — not a
             // broadcast/room, excluded below.
           }
-          return { ...meta, room_name: r.name, participant_count: r.numParticipants };
+          return {
+            ...meta,
+            room_name: r.name,
+            participant_count: r.numParticipants,
+            publisher_count: r.numPublishers,
+            started_at: r.creationTimeMs ? new Date(Number(r.creationTimeMs)).toISOString() : null,
+          };
         })
-        .filter((r) => r.kind === 'broadcast' || r.kind === 'room');
+        .filter((r) => r.kind === 'broadcast' || r.kind === 'room')
+        .filter((r) => (allowedSpaceId ? r.space_id === allowedSpaceId : !r.space_id))
+        // Ghost-room guard: the LiveKit room object itself can outlive the
+        // broadcaster by up to emptyTimeout (5 min, see /token above) if the
+        // host's app crashes/loses signal instead of hitting "End" — without
+        // this, /live would keep reporting it as live for that whole window.
+        // A broadcast needs an actual publisher (the host); a room only
+        // needs someone present (its "open to join" claim doesn't require
+        // anyone to be actively publishing audio/video).
+        .filter((r) => (r.kind === 'broadcast' ? r.publisher_count > 0 : r.participant_count > 0));
       res.json(live);
     } catch (err) {
       res.status(500).json({ error: err.message });

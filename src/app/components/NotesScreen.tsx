@@ -16,11 +16,12 @@ import {
   ArrowLeft, Plus, Search, Pin, Archive, Trash2, MoreVertical,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered,
   CheckSquare, X, NotebookPen, Check, AlertCircle, Loader2,
-  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2, Newspaper, Copy,
+  Globe, Lock, ArchiveRestore, Link as LinkIcon, Users, Link2, Newspaper, Copy, Share2,
   Heading1, Heading2, Heading3, ImagePlus, Code2, Video as VideoIcon, Youtube as YoutubeIcon, ExternalLink,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { canNativeShare, nativeShare } from '../utils/share';
 import { PENDING_FORK_KEY } from './ShareNotePage';
 import type { HubNote } from '../types/hub';
 
@@ -646,6 +647,13 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
     setVisPopoverOpen(false);
   };
 
+  const handleShareNote = async () => {
+    if (!selected) return;
+    const link = hubService.getPublicNoteLink(hubSlug, selected.id);
+    setVisPopoverOpen(false);
+    await nativeShare({ url: link, title: selected.title || 'A note on citinet' });
+  };
+
   const clearSelected = () => {
     setSelected(null);
     setMobileView('list');
@@ -943,6 +951,15 @@ export function NotesScreen({ onBack, initialNoteId }: NotesScreenProps) {
                                   </span>
                                 </span>
                                 {isBlogPublished && <Check className="w-3.5 h-3.5 text-violet-500 shrink-0" />}
+                              </button>
+                            )}
+                            {canNativeShare() && (
+                              <button
+                                onClick={handleShareNote}
+                                className="w-full flex items-center gap-3 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                              >
+                                <Share2 className="w-4 h-4 text-slate-400" />
+                                <span className="text-sm text-slate-700 dark:text-zinc-300">Share…</span>
                               </button>
                             )}
                             <button

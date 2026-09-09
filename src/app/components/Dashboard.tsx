@@ -2,15 +2,16 @@ import {
   Users, MessageCircle, Radio, Store,
   Calendar, Lightbulb, Activity, MapPin, FolderOpen,
   RefreshCw, Loader2, Plus, Layers, Bot, ChevronRight,
-  X, Clock, Share2, Check,
+  X, Clock, Share2, Check, Video,
   FileText, FileArchive, FileAudio, FileVideo, File, Table2, MonitorPlay,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { FeaturedCarousel } from './FeaturedCarousel';
-import { PostDetailView } from './Feed';
+import { PostDetailModal } from './PostDetailModal';
 import { AvatarFallback } from './icons';
 import { useHub, useHubStatus } from '../context/HubContext';
+import { useBroadcast } from '../context/BroadcastContext';
 import { featuredService } from '../services/featuredService';
 import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubService } from '../services/hubService';
@@ -24,7 +25,6 @@ import { aiService } from '../services/aiService';
 import { openLocationInAtlas } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
 import { readCache, writeCache } from '../utils/dataCache';
-import { voteOrQueue } from '../services/writeQueueService';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
 import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
@@ -245,6 +245,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
 export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps) {
   const { currentHub, currentUser } = useHub();
   const { status: connectionStatus } = useHubStatus();
+  const { broadcast, joinAsViewer, restore: restoreBroadcast } = useBroadcast();
   const hubSlug = currentHub?.slug ?? '';
 
   // Featured — seeded from the last successful fetch so a hub restart (or
@@ -304,14 +305,24 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
     }
   }
 
+  // Joins a live_broadcast activity item directly, same as the "Live now"
+  // strip on Messages — restores your own session if it's your broadcast,
+  // otherwise joins as a viewer. Falls back to navigating to Messages if the
+  // room somehow isn't attached (shouldn't happen — every live_broadcast
+  // item carries one).
+  function handleLiveBroadcastClick(item: ActivityItem) {
+    if (!item.liveBroadcast) {
+      onNavigate(item.navigateTo);
+      return;
+    }
+    const isMine = broadcast.phase === 'live' && broadcast.roomName === item.liveBroadcast.room_name;
+    if (isMine) restoreBroadcast();
+    else joinAsViewer(item.liveBroadcast);
+  }
+
   // ── Featured/activity post detail modal — engagement handlers ──────────
-  // Mirrors Feed's own PostDetailView handlers (handlePostLike/handleCopyPostLink/
-  // handlePollVote) so a post opened from here behaves identically to the one
-  // opened from Feed itself, just scoped to the single `featuredPost` in view
-  // rather than a whole `posts` list.
   const { ids: savedPostIds, toggle: toggleSavedPost } = useSavedIds('saved_posts', 'saved_posts');
   const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
-  const [featuredPollVoting, setFeaturedPollVoting] = useState(false);
 
   async function handleFeaturedPostLike(post: HubPost) {
     const wasLiked = !!post.my_liked;
@@ -335,27 +346,6 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
       setCopyLinkFeedback(postId);
       setTimeout(() => setCopyLinkFeedback(null), 2000);
     });
-  }
-
-  async function handleFeaturedPollVote(post: HubPost, optionIndex: number) {
-    const poll = post.poll;
-    if (!poll || poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
-    setFeaturedPollVoting(true);
-    const newCounts = [...poll.vote_counts];
-    if (poll.my_vote != null) newCounts[poll.my_vote] = Math.max(0, newCounts[poll.my_vote] - 1);
-    newCounts[optionIndex]++;
-    const totalDelta = poll.my_vote != null ? 0 : 1;
-    setFeaturedPost({ ...post, poll: { ...poll, vote_counts: newCounts, my_vote: optionIndex, total_votes: poll.total_votes + totalDelta } });
-    try {
-      // If the hub's unreachable, this queues the vote and leaves the
-      // optimistic update above in place — still accurate, and it'll
-      // actually reach the server once HubContext's reconnect flush runs.
-      await voteOrQueue(hubSlug, post.id, optionIndex);
-    } catch {
-      setFeaturedPost(post);
-    } finally {
-      setFeaturedPollVoting(false);
-    }
   }
 
   // Escape-to-close + scroll lock for the featured/activity post detail modal.
@@ -544,6 +534,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                         onClick={() => {
                           const postTypes = ['discussion', 'announcement', 'event', 'project', 'request'];
                           if (postTypes.includes(item.type) && item.itemId) handleFeaturedPostClick(item.itemId);
+                          else if (item.type === 'live_broadcast') handleLiveBroadcastClick(item);
                           else onNavigate(item.navigateTo);
                         }}
                         className="flex flex-col items-center gap-1.5 shrink-0 group"
@@ -596,6 +587,8 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                   onNavigate('atlas');
                 } else if (item.type === 'space_created') {
                   onNavigate('spaces');
+                } else if (item.type === 'live_broadcast') {
+                  handleLiveBroadcastClick(item);
                 } else if (item.type === 'neighbor_joined') {
                   sessionStorage.setItem('citinet-deeplink-welcome', JSON.stringify({ username: item.actor }));
                   onNavigate('feed');
@@ -806,52 +799,26 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
         />
       )}
 
-      {/* Featured/activity post detail modal — same PostDetailView Feed itself
-          renders when you click a post there, just wrapped in an overlay shell
-          so it can float above the dashboard instead of taking the full page. */}
+      {/* Featured/activity post detail modal */}
       {featuredPost && (
-        <AnimatePresence>
-          <motion.div
-            key="featured-post-backdrop"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setFeaturedPost(null)}
-            className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
-          />
-          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto pointer-events-none">
-            <motion.div
-              key="featured-post-panel"
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              onClick={e => e.stopPropagation()}
-              className="cn-surface border cn-border rounded-2xl shadow-2xl w-full max-w-3xl my-8 pointer-events-auto overflow-hidden"
-            >
-              <PostDetailView
-                post={featuredPost}
-                hubSlug={hubSlug}
-                currentUserId={currentUser?.hubUserId}
-                currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
-                isAdmin={isAdmin}
-                publicFileUrl={(name) => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
-                onBack={() => setFeaturedPost(null)}
-                backLabel="Close"
-                onDeleted={() => setFeaturedPost(null)}
-                onLike={handleFeaturedPostLike}
-                onNavigateToProfile={(userId) => { setFeaturedPost(null); onNavigate(`profile/${userId}`); }}
-                onNavigate={(screen) => { setFeaturedPost(null); onNavigate(screen); }}
-                onCopyLink={handleFeaturedCopyPostLink}
-                copyLinkActive={copyLinkFeedback === featuredPost.id}
-                canManagePoll={false}
-                pollVoting={featuredPollVoting}
-                onPollVote={handleFeaturedPollVote}
-                saved={savedPostIds.includes(featuredPost.id)}
-                onToggleSave={() => toggleSavedPost(featuredPost.id)}
-              />
-            </motion.div>
-          </div>
-        </AnimatePresence>
+        <PostDetailModal
+          isOpen
+          onClose={() => setFeaturedPost(null)}
+          post={featuredPost}
+          hubSlug={hubSlug}
+          currentUserId={currentUser?.hubUserId}
+          currentUserAvatarUrl={resolvedCurrentUserAvatarUrl ?? undefined}
+          isAdmin={isAdmin}
+          publicFileUrl={name => hubService.getPublicFileUrl(hubSlug, name) ?? ''}
+          onDeleted={() => setFeaturedPost(null)}
+          onLike={() => handleFeaturedPostLike(featuredPost)}
+          onShare={() => handleFeaturedCopyPostLink(featuredPost.id)}
+          shareCopied={copyLinkFeedback === featuredPost.id}
+          saved={savedPostIds.includes(featuredPost.id)}
+          onToggleSave={() => toggleSavedPost(featuredPost.id)}
+          onNavigateToProfile={(userId) => { setFeaturedPost(null); onNavigate(`profile/${userId}`); }}
+          onNavigate={onNavigate}
+        />
       )}
 
       {/* ── Event Detail — compact RSVP overlay; "View full post" deep-links into Feed's own post view ── */}
@@ -885,6 +852,7 @@ const ACTIVITY_CONFIG: Record<ActivityType, {
   neighbor_joined: { Icon: Users,         iconBg: 'bg-violet-500',  label: 'New Neighbor', barColor: 'bg-violet-500', verbColor: 'text-violet-600 dark:text-violet-400' },
   pin_added:       { Icon: MapPin,        iconBg: 'bg-indigo-500',  label: 'Atlas Pin',    barColor: 'bg-indigo-500', verbColor: 'text-indigo-600 dark:text-indigo-400' },
   space_created:   { Icon: Layers,        iconBg: 'bg-blue-500',  label: 'New Space',    barColor: 'bg-blue-500', verbColor: 'text-blue-600 dark:text-blue-400' },
+  live_broadcast:  { Icon: Video,         iconBg: 'bg-red-600',   label: 'Live',         barColor: 'bg-red-600', verbColor: 'text-red-600 dark:text-red-400' },
 };
 
 const ACTIVITY_LOCATION: Record<string, string> = {
@@ -893,6 +861,7 @@ const ACTIVITY_LOCATION: Record<string, string> = {
   atlas:       'in Atlas',
   discover:    'in Discover',
   marketplace: 'in Exchange',
+  messages:    'hub-wide',
 };
 
 // Header banner types get a full-width cover (real image, or this gradient

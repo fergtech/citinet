@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronLeft, Search, Plus, ExternalLink, Filter, X, Shield, Check, Package, FileText } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, Search, Plus, ExternalLink, Filter, X, Shield, Check, Package, FileText } from 'lucide-react';
 import { toolkitService } from '../services/toolkitService';
 import { Tool, ToolTag } from '../types/toolkit';
 import { AddToolModal } from './AddToolModal';
@@ -55,7 +55,7 @@ function ToolCard({ tool }: { tool: Tool }) {
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 px-2.5 py-1.5 cn-action bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold shrink-0 transition-colors"
         >
-          <ExternalLink className="w-3 h-3" /> Get
+          <ExternalLink className="w-3 h-3" /> Learn More
         </a>
       </div>
     </div>
@@ -67,7 +67,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
   const [selectedTags, setSelectedTags] = useState<ToolTag[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showAddToolModal, setShowAddToolModal] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>(() => toolkitService.getCategories());
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -110,7 +110,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
   }, [filteredTools, categories]);
 
   // Flat, category-filtered result set for the grid
-  const visibleTools = selectedCategory === 'all'
+  const visibleTools = selectedCategory === null
     ? filteredTools
     : filteredTools.filter((t) => t.categories.includes(selectedCategory));
 
@@ -120,6 +120,56 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
     setSelectedTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
 
   const clearFilters = () => { setSearchQuery(''); setSelectedTags([]); };
+
+  // Category-chip row horizontal scroll — same pattern as Feed's category tabs
+  // and Atlas's pin-filter chips: chevrons appear only on the side(s) there's
+  // still more to scroll toward, recomputed on scroll and on resize via a ref
+  // callback (so it re-attaches correctly if this row ever unmounts/remounts).
+  const chipRowElRef = useRef<HTMLDivElement | null>(null);
+  const chipContentRef = useRef<HTMLDivElement | null>(null);
+  const chipRowCleanupRef = useRef<() => void>(() => {});
+  const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
+
+  const updateChipScroll = useCallback(() => {
+    const el = chipRowElRef.current;
+    if (!el) return;
+    const scrollLeft = Math.round(el.scrollLeft);
+    setChipScroll({
+      canLeft: scrollLeft > 1,
+      canRight: scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    });
+  }, []);
+
+  const chipRowRef = useCallback((el: HTMLDivElement | null) => {
+    chipRowCleanupRef.current();
+    chipRowCleanupRef.current = () => {};
+    chipRowElRef.current = el;
+    if (!el) return;
+    const raf = requestAnimationFrame(updateChipScroll);
+    el.addEventListener('scroll', updateChipScroll, { passive: true });
+    const ro = new ResizeObserver(updateChipScroll);
+    ro.observe(el);
+    if (chipContentRef.current) ro.observe(chipContentRef.current);
+    chipRowCleanupRef.current = () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', updateChipScroll);
+      ro.disconnect();
+    };
+  }, [updateChipScroll]);
+
+  const scrollChips = (dir: 'left' | 'right') => {
+    chipRowElRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  };
+
+  // Feathers whichever edge(s) still have more chips to scroll toward — a soft
+  // fade via CSS mask that dynamically tracks canLeft/canRight, rather than a
+  // static gradient overlay that can't react to scroll position.
+  const chipFadeMask = !chipScroll.canLeft && !chipScroll.canRight ? undefined :
+    chipScroll.canLeft && chipScroll.canRight
+      ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+      : chipScroll.canLeft
+        ? 'linear-gradient(to right, transparent, black 24px)'
+        : 'linear-gradient(to right, black calc(100% - 24px), transparent)';
 
   return (
     <div className="min-h-screen">
@@ -192,44 +242,65 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
               />
             </div>
 
-            {/* Category chips */}
-            <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 -mx-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <button
-                onClick={() => setSelectedCategory('all')}
-                className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                  selectedCategory === 'all'
-                    ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'
-                    : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
-                }`}
-              >
-                All <span className="cn-mono">{filteredTools.length}</span>
-              </button>
-              {categories.map((cat) => (
+            {/* Category chips — chevrons (same pattern as Feed's category tabs)
+                appear only on the side(s) there's more to scroll toward. */}
+            <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 sm:px-8 -mx-4 sm:-mx-8 py-2">
+              {chipScroll.canLeft && (
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                    selectedCategory === cat
-                      ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'
-                      : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
-                  }`}
+                  onClick={() => scrollChips('left')}
+                  aria-label="Scroll categories left"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
                 >
-                  {cat}
-                  {categoryCounts[cat] > 0 && <span className="cn-mono"> {categoryCounts[cat]}</span>}
-                </button>
-              ))}
-              {isAdmin && !addingCategory && (
-                <button
-                  onClick={() => setAddingCategory(true)}
-                  className="flex-none inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold cn-text-4 hover:text-blue-500 dark:hover:text-blue-400 border border-dashed cn-border transition-colors"
-                >
-                  <Plus className="w-3 h-3" /> New Category
+                  <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
                 </button>
               )}
+              {chipScroll.canRight && (
+                <button
+                  onClick={() => scrollChips('right')}
+                  aria-label="Scroll categories right"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
+                >
+                  <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
+                </button>
+              )}
+              <div
+                ref={chipRowRef}
+                className={`overflow-x-auto no-scrollbar scroll-smooth flex items-center gap-2 ${chipScroll.canLeft ? 'pl-7' : 'pl-2'} ${chipScroll.canRight ? 'pr-7' : 'pr-2'}`}
+                style={chipFadeMask ? { WebkitMaskImage: chipFadeMask, maskImage: chipFadeMask } : undefined}
+              >
+                {/* Separate from the scroll container above so a ResizeObserver can
+                    watch this row's own natural (unclipped) width — e.g. category
+                    count badges changing as filters load without changing the
+                    scroll container's own box size. */}
+                <div ref={chipContentRef} className="flex items-center gap-2">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory((prev) => prev === cat ? null : cat)}
+                      className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                        selectedCategory === cat
+                          ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'
+                          : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
+                      }`}
+                    >
+                      {cat}
+                      {categoryCounts[cat] > 0 && <span className="cn-mono"> {categoryCounts[cat]}</span>}
+                    </button>
+                  ))}
+                  {isAdmin && !addingCategory && (
+                    <button
+                      onClick={() => setAddingCategory(true)}
+                      className="flex-none inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold cn-text-4 hover:text-blue-500 dark:hover:text-blue-400 border border-dashed cn-border transition-colors"
+                    >
+                      <Plus className="w-3 h-3" /> New Category
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {addingCategory && (
-              <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 -mx-4 py-2 flex gap-1.5">
+              <div className="sticky top-0 z-10 lg:hidden bg-gradient-to-b from-black/60 to-black/40 dark:from-zinc-950/80 dark:to-zinc-950/50 backdrop-blur-sm px-4 sm:px-8 -mx-4 sm:-mx-8 py-2 flex gap-1.5">
                 <input
                   ref={newCatInputRef}
                   type="text"
@@ -304,7 +375,7 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
                   <Package className="w-8 h-8 cn-text-4" />
                 </div>
                 <p className="text-sm cn-text-2 mb-3">
-                  {hasActiveFilters || selectedCategory !== 'all' ? 'No tools match your filters' : 'No tools in this category yet'}
+                  {hasActiveFilters || selectedCategory !== null ? 'No tools match your filters' : 'No tools in this category yet'}
                 </p>
                 {hasActiveFilters ? (
                   <button onClick={clearFilters} className="text-sm font-semibold cn-text-3 hover:cn-text-1 hover:underline">
@@ -356,20 +427,10 @@ export function ToolkitScreen({ onBack, onNavigate }: ToolkitScreenProps) {
               </div>
 
               <div className="flex flex-wrap gap-2 mt-3">
-                <button
-                  onClick={() => setSelectedCategory('all')}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                    selectedCategory === 'all'
-                      ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'
-                      : 'bg-black/5 dark:bg-white/5 cn-text-3 border-transparent hover:border-black/10 dark:hover:border-white/10'
-                  }`}
-                >
-                  All <span className="cn-mono">{filteredTools.length}</span>
-                </button>
                 {categories.map((cat) => (
                   <button
                     key={cat}
-                    onClick={() => setSelectedCategory(cat)}
+                    onClick={() => setSelectedCategory((prev) => prev === cat ? null : cat)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
                       selectedCategory === cat
                         ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30'

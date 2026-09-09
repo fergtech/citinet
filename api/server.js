@@ -4338,7 +4338,7 @@ app.post(
   authenticate,
   upload.single('media'),
   async (req, res) => {
-    const { category, title, body, event_date, event_location, visibility, options, closes_at, request_id, quorum_pct, pass_pct } =
+    const { category, title, body, event_date, event_location, visibility, options, closes_at, request_id, quorum_pct, pass_pct, space_slug } =
       req.body || {};
     const cat = (category || '').toUpperCase();
     const VALID_VIS = ['inherit', 'hub', 'private'];
@@ -4361,6 +4361,31 @@ app.post(
       return res
         .status(400)
         .json({ error: 'event_date is required for EVENT posts' });
+    }
+
+    // Optional space scope — lets the space composer reuse this same
+    // full-featured endpoint (poll/event/media all included) instead of the
+    // separate, plainer /api/spaces/:slug/posts route. Only for genuinely
+    // local spaces: a Society+-proxied space's slug is never sent here (the
+    // client keeps using spacesService.createPost, which already knows how
+    // to proxyToApp for those) — isSPSlug is still checked defensively.
+    let spaceId = null;
+    if (space_slug) {
+      if (isSPSlug(space_slug))
+        return res.status(400).json({ error: 'This space only supports posting through its own composer' });
+      try {
+        const { rows: spaceRows } = await pool.query(`SELECT id FROM hub_spaces WHERE slug = $1`, [space_slug]);
+        if (!spaceRows[0]) return res.status(404).json({ error: 'Space not found' });
+        spaceId = spaceRows[0].id;
+        const { rows: memRows } = await pool.query(
+          `SELECT status FROM hub_space_members WHERE space_id = $1 AND user_id = $2`,
+          [spaceId, req.user.id],
+        );
+        if (!memRows[0] || memRows[0].status !== 'active')
+          return res.status(403).json({ error: 'Join this space to post' });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
     }
 
     let pollOptions = null;
@@ -4401,8 +4426,13 @@ app.post(
           // the unauthenticated file route — shared_to_library stays false so
           // attaching a photo to a post never surfaces it in the hub-wide
           // Files library the way an explicit "share to hub" action would.
-          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, shared_to_library)
-         VALUES ($1, $2, $3, $4, $5, true, false)
+          // space_id mirrors the post's own space_id (null for a plain hub
+          // post) — SpacesScreen's own file lookup (GET /api/spaces/:slug/
+          // files/:filename) filters on hub_files.space_id, so a space post's
+          // media has to carry it too or that lookup 404s even though the
+          // file is otherwise perfectly public.
+          `INSERT INTO hub_files (file_name, file_key, mime_type, size_bytes, owner_id, is_public, shared_to_library, space_id)
+         VALUES ($1, $2, $3, $4, $5, true, false, $6)
          ON CONFLICT (file_key) DO UPDATE SET uploaded_at = NOW(), is_public = true
          RETURNING id`,
           [
@@ -4411,6 +4441,7 @@ app.post(
             req.file.mimetype,
             req.file.size,
             req.user.id,
+            spaceId,
           ],
         );
         mediaFileId = fileResult.rows[0].id;
@@ -4424,9 +4455,9 @@ app.post(
           : null;
 
       const result = await pool.query(
-        `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, visibility)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility`,
+        `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, visibility, space_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility, space_id`,
         [
           cat,
           title?.trim() || null,
@@ -4436,6 +4467,7 @@ app.post(
           eventDateVal,
           eventLocVal,
           vis,
+          spaceId,
         ],
       );
       const post = result.rows[0];
@@ -9886,15 +9918,98 @@ async function getAiConfig() {
           const td = await tr.json();
           model =
             td.models?.find((m) => !m.name.includes('embed'))?.name ||
-            'llama3.2:1b';
+            'phi3.5';
         }
       } catch {
-        model = 'llama3.2:1b';
+        model = 'phi3.5';
       }
     }
     return { enabled: cfg.ai_enabled === 'true', model };
   } catch {
-    return { enabled: false, model: 'llama3.2:1b' };
+    return { enabled: false, model: 'phi3.5' };
+  }
+}
+
+// ── Auto-provisioning ─────────────────────────────────────
+// The ollama/ollama image is bundled by the setup script, but model weights
+// (multi-GB) are not -- they only exist once pulled. Rather than leave that
+// as a manual step an admin has to discover, we pull the active chat model
+// and the RAG embedding model automatically the first time AI gets enabled.
+const modelPullState = { active: false, model: '', status: '', error: '' };
+
+async function pullModelBlocking(model) {
+  const pullRes = await fetch(`${OLLAMA_URL}/api/pull`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: model, stream: true }),
+    signal: AbortSignal.timeout(30 * 60 * 1000), // large models over a slow link can take a while
+  });
+  if (!pullRes.ok || !pullRes.body)
+    throw new Error(`pull request failed for ${model}`);
+  const reader = pullRes.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let chunk;
+      try {
+        chunk = JSON.parse(line);
+      } catch {
+        continue; // malformed progress line
+      }
+      if (chunk.error) throw new Error(chunk.error);
+      if (chunk.status) {
+        modelPullState.model = model;
+        modelPullState.status = chunk.status;
+      }
+    }
+  }
+}
+
+async function ensureDefaultModelsPulled(chatModel) {
+  if (modelPullState.active) return;
+  modelPullState.active = true;
+  modelPullState.error = '';
+  try {
+    // citinet-ollama starts as its own container and can still be warming up
+    // (or pulling its base image) when this fires, so poll for readiness
+    // instead of failing immediately.
+    let ready = false;
+    for (let i = 0; i < 40 && !ready; i++) {
+      ready = await isOllamaReady();
+      if (!ready) await new Promise((r) => setTimeout(r, 15000));
+    }
+    if (!ready) throw new Error('AI runtime did not come up in time');
+
+    const tagsRes = await fetch(`${OLLAMA_URL}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const { models } = await tagsRes.json();
+    const installedNames = (models || []).map((m) => m.name);
+    const have = (name) =>
+      installedNames.some((n) => n === name || n.startsWith(name));
+
+    if (!have(chatModel)) {
+      modelPullState.status = 'downloading chat model';
+      await pullModelBlocking(chatModel);
+    }
+    if (!have(EMBED_MODEL)) {
+      modelPullState.status = 'downloading embedding model';
+      await pullModelBlocking(EMBED_MODEL);
+    }
+    modelPullState.status = 'done';
+    console.log(`[ai] default models ready (${chatModel}, ${EMBED_MODEL})`);
+  } catch (err) {
+    modelPullState.error = err.message || 'model download failed';
+    console.warn('[ai] auto-pull failed:', modelPullState.error);
+  } finally {
+    modelPullState.active = false;
   }
 }
 
@@ -10095,7 +10210,14 @@ app.post(
 app.get('/api/ai/status', authenticate, async (_req, res) => {
   try {
     const [cfg, ready] = await Promise.all([getAiConfig(), isOllamaReady()]);
-    res.json({ enabled: cfg.enabled, model: cfg.model, ollamaReady: ready });
+    res.json({
+      enabled: cfg.enabled,
+      model: cfg.model,
+      ollamaReady: ready,
+      autoPulling: modelPullState.active,
+      autoPullStatus: modelPullState.status,
+      autoPullError: modelPullState.error,
+    });
   } catch {
     res.status(500).json({ error: 'Failed to get AI status' });
   }
@@ -10737,6 +10859,12 @@ app.post('/api/ai/model/pull', authenticate, async (req, res) => {
   }
 });
 
+// A full re-index overwrites embeddings that already exist, so the raw
+// hub_post_embeddings count doesn't move during the run -- it's already at
+// (or near) `total` before the loop starts. Track real progress here so the
+// admin UI can show something truer than "started" with no way to check back.
+const reindexState = { active: false, done: 0, total: 0, error: '' };
+
 // GET /api/ai/index/status — embedding coverage stats (admin)
 app.get('/api/ai/index/status', authenticate, async (req, res) => {
   if (!req.user.is_admin)
@@ -10752,6 +10880,10 @@ app.get('/api/ai/index/status', authenticate, async (req, res) => {
       indexed: parseInt(indexed.rows[0]?.cnt || '0', 10),
       embedModel: EMBED_MODEL,
       embedReady,
+      reindexing: reindexState.active,
+      reindexDone: reindexState.done,
+      reindexTotal: reindexState.total,
+      reindexError: reindexState.error,
     });
   } catch {
     res.status(500).json({ error: 'Failed to get index status' });
@@ -10762,6 +10894,8 @@ app.get('/api/ai/index/status', authenticate, async (req, res) => {
 app.post('/api/ai/index', authenticate, async (req, res) => {
   if (!req.user.is_admin)
     return res.status(403).json({ error: 'Admin access required' });
+  if (reindexState.active)
+    return res.status(409).json({ error: 'A re-index is already running' });
   if (!(await isEmbedModelAvailable())) {
     return res
       .status(503)
@@ -10769,25 +10903,35 @@ app.post('/api/ai/index', authenticate, async (req, res) => {
   }
   res.json({ ok: true, message: 'Indexing started in background' });
   // Re-index everything (overwrite existing embeddings too)
+  reindexState.active = true;
+  reindexState.done = 0;
+  reindexState.total = 0;
+  reindexState.error = '';
   pool
     .query(`SELECT id, title, body, category FROM hub_posts`)
     .then(({ rows }) => {
       (async () => {
-        let count = 0;
+        reindexState.total = rows.length;
         for (const row of rows) {
           try {
             await embedPost(row.id, row.title, row.body, row.category);
-            count++;
           } catch {
             /* skip */
+          } finally {
+            reindexState.done++;
           }
         }
         console.log(
-          `[rag] full re-index complete: ${count}/${rows.length} posts`,
+          `[rag] full re-index complete: ${reindexState.done}/${rows.length} posts`,
         );
-      })();
+      })().finally(() => {
+        reindexState.active = false;
+      });
     })
-    .catch(() => {});
+    .catch((err) => {
+      reindexState.active = false;
+      reindexState.error = err.message || 're-index failed';
+    });
 });
 
 // PATCH /api/ai/config — enable/disable AI, set active model (admin)
@@ -10807,6 +10951,14 @@ app.patch('/api/ai/config', authenticate, async (req, res) => {
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
         [key, value],
       );
+    }
+    if (enabled === true) {
+      // Non-blocking -- pulls the active model (and embedding model) if
+      // they aren't installed yet, so enabling AI doesn't silently leave
+      // the assistant broken until an admin finds the manual pull button.
+      getAiConfig()
+        .then((cfg) => ensureDefaultModelsPulled(cfg.model))
+        .catch(() => {});
     }
     res.json({ ok: true });
   } catch {
@@ -10926,6 +11078,17 @@ async function start() {
 
   // Non-blocking — embed any posts that don't yet have RAG vectors
   setTimeout(() => indexUnembeddedPosts().catch(() => {}), 5000);
+
+  // Non-blocking — if AI was already enabled from a previous run (e.g. after
+  // a restart), make sure its models are still installed rather than only
+  // catching a missing pull when AI is first toggled on.
+  setTimeout(() => {
+    getAiConfig()
+      .then((cfg) => {
+        if (cfg.enabled) return ensureDefaultModelsPulled(cfg.model);
+      })
+      .catch(() => {});
+  }, 5000);
 
   // Purge expired sessions every 6 hours
   setInterval(

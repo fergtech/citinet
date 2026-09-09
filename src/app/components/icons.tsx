@@ -156,3 +156,21 @@ export function InitiativesGlyph({ className }: { className?: string }) {
     </svg>
   );
 }
+
+// "menu-dots" (Android vector drawable, from H:\Apps\custom-icons\
+// menu-dots-android) — citinet-web's sidebar/bottom-nav "More" trigger,
+// replacing the lucide `Grid3x3` waffle icon. The source drawable's
+// pathData draws each dot as a pair of arcs in a 512-unit coordinate space
+// (despite the file's own declared 24dp viewport, which the paths ignore),
+// so this uses viewBox 0 0 512 512 — matching the coordinate space the
+// numbers are actually in — and three <circle>s in place of the arc pairs,
+// same shape, much easier to read.
+export function MoreGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 512 512" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="458.667" cy="256" r="53.333" />
+      <circle cx="256" cy="256" r="53.333" />
+      <circle cx="53.333" cy="256" r="53.333" />
+    </svg>
+  );
+}

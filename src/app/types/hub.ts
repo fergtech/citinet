@@ -337,6 +337,13 @@ export interface LiveCommsItem {
   host_id: string;
   host_username: string;
   participant_count: number;
+  /** Present only for a broadcast/room scoped to one space — absent (hub-wide) items
+   * are the only ones GET /api/comms/live returns without a ?space_slug filter. */
+  space_id?: string | null;
+  space_slug?: string | null;
+  /** LiveKit room creation time (ISO), for ordering hub-wide broadcasts in the
+   *  Dashboard activity feed alongside everything else. */
+  started_at?: string | null;
 }
 
 /** Post-call history row for a DM thread's transcript chip */

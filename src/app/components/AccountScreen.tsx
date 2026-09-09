@@ -30,7 +30,8 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle, Share2 } from 'lucide-react';
+import { canNativeShare, nativeShare } from '../utils/share';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -627,20 +628,34 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                   Your profile and posts are visible to anyone on the internet. Posts default to public; you can hide individual ones.
                 </p>
                 {currentHub?.slug && currentUser?.username && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = hubService.getPublicProfileUrl(currentHub.slug, currentUser.username);
-                      navigator.clipboard.writeText(url).then(() => {
-                        setCopiedProfileLink(true);
-                        setTimeout(() => setCopiedProfileLink(false), 2000);
-                      });
-                    }}
-                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
-                  >
-                    {copiedProfileLink ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    {copiedProfileLink ? 'Copied!' : 'Copy link'}
-                  </button>
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {canNativeShare() && (
+                      <button
+                        type="button"
+                        onClick={() => nativeShare({
+                          url: hubService.getPublicProfileUrl(currentHub.slug, currentUser.username),
+                          title: currentUser.username,
+                        })}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
+                      >
+                        <Share2 className="w-3 h-3" /> Share…
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const url = hubService.getPublicProfileUrl(currentHub.slug, currentUser.username);
+                        navigator.clipboard.writeText(url).then(() => {
+                          setCopiedProfileLink(true);
+                          setTimeout(() => setCopiedProfileLink(false), 2000);
+                        });
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
+                    >
+                      {copiedProfileLink ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      {copiedProfileLink ? 'Copied!' : 'Copy link'}
+                    </button>
+                  </div>
                 )}
               </div>
             )}

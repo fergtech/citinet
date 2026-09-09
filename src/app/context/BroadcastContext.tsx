@@ -30,6 +30,10 @@ export type BroadcastState = {
   title: string;
   hostId: string | null;
   hostName: string | null;
+  /** Set when this broadcast is scoped to one space instead of hub-wide —
+   * null for both a plain hub-wide broadcast and (while phase is 'starting')
+   * before the mint response comes back. */
+  spaceSlug: string | null;
   // Wall-clock timestamp, not a tick counter — same reasoning as
   // CallState.startedAt.
   startedAt: number | null;
@@ -56,6 +60,7 @@ const idleState: BroadcastState = {
   title: '',
   hostId: null,
   hostName: null,
+  spaceSlug: null,
   startedAt: null,
   minimized: false,
   micOn: true,
@@ -69,7 +74,7 @@ const idleState: BroadcastState = {
 
 type BroadcastContextValue = {
   broadcast: BroadcastState;
-  startBroadcast: (args: { title: string }) => void;
+  startBroadcast: (args: { title: string; spaceSlug?: string }) => void;
   joinAsViewer: (item: LiveCommsItem) => void;
   end: () => void;
   reset: () => void;
@@ -101,7 +106,7 @@ export function BroadcastProvider({ children }: { children: ReactNode }) {
   broadcastRef.current = broadcast;
 
   const startBroadcast = useCallback<BroadcastContextValue['startBroadcast']>(
-    ({ title }) => {
+    ({ title, spaceSlug }) => {
       if (!hubSlug) return;
       // Carry forward mic/cam from whatever the setup modal's toggles left
       // them at — spreading idleState wholesale here (its micOn/camOn are
@@ -114,11 +119,12 @@ export function BroadcastProvider({ children }: { children: ReactNode }) {
         role: 'host',
         hostId: userId ?? null,
         hostName: displayName ?? null,
+        spaceSlug: spaceSlug ?? null,
         micOn: prev.micOn,
         camOn: prev.camOn,
       }));
       hubService
-        .getCommsToken(hubSlug, 'broadcast', undefined, title)
+        .getCommsToken(hubSlug, 'broadcast', undefined, title, undefined, spaceSlug)
         .then((res) => {
           setBroadcast((prev) =>
             prev.phase === 'starting'
@@ -143,6 +149,7 @@ export function BroadcastProvider({ children }: { children: ReactNode }) {
         title: item.title || '',
         hostId: item.host_id,
         hostName: item.host_username,
+        spaceSlug: item.space_slug ?? null,
       });
       hubService
         .getCommsToken(hubSlug, 'broadcast', item.room_name, item.title)

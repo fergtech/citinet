@@ -16,6 +16,12 @@ export interface HubSecrets {
   dbPassword: string;
   storageAccessKey: string;
   storageSecretKey: string;
+  /** Always generated (cheap — two random hex strings) even when enableComms
+   *  is off, same as every other secret here; only written to .env/livekit.yaml
+   *  when comms is actually enabled. Format matches livekit.yaml.example's own
+   *  generation recipe (16 bytes for the key, 32 for the secret). */
+  livekitApiKey: string;
+  livekitApiSecret: string;
 }
 
 export interface HubScriptConfig {
@@ -66,6 +72,14 @@ export interface HubScriptConfig {
    *  have one, since requesting a GPU device that doesn't exist stops the
    *  container from starting at all rather than just running slower. */
   aiGpu?: boolean;
+  /**
+   * Calls & broadcasts (self-hosted LiveKit) are never provisioned by default,
+   * same reasoning as enableAi: an extra service, plus newly exposed media
+   * ports (7881/tcp, 50000-50100/udp UDP for RTP) that not every self-hoster
+   * wants opened on their router. An explicit, informed opt-in during
+   * creation, not silently added to every hub.
+   */
+  enableComms?: boolean;
 }
 
 /** Every hub's automatic HTTPS hostname — derived from its slug, never asked of the creator. */
@@ -93,6 +107,8 @@ export function generateSecrets(): HubSecrets {
     dbPassword: generateSecret(24),       // 48-char hex
     storageAccessKey: generateSecret(16), // 32-char hex
     storageSecretKey: generateSecret(32), // 64-char hex
+    livekitApiKey: generateSecret(16),    // 32-char hex
+    livekitApiSecret: generateSecret(32), // 64-char hex
   };
 }
 
@@ -130,6 +146,17 @@ function generateEnvContent(config: HubScriptConfig): string {
     'HUB_DESCRIPTION=' + config.hubDescription,
     'HUB_VISIBILITY=' + config.visibility,
     'API_PORT=9090',
+    // These four are the only host-published ports this stack ever binds
+    // (everything else is either container-internal or already isolated per
+    // hub, see container_name in the generated docker-compose.yml). They only
+    // matter if this machine already runs another hub -- only one process can
+    // hold a given port at a time. Change all four to something unused
+    // (e.g. 8443/8080/9091) before first run to host a second hub alongside
+    // one already here; leave as-is otherwise.
+    '# Only matters when running a second hub on this same machine -- see comment above.',
+    'HTTPS_PORT=443',
+    'HTTP_PORT=80',
+    'STORAGE_CONSOLE_PORT=9001',
     '',
     '# Admin Account (first-run setup)',
     'ADMIN_USERNAME=' + config.adminUsername,
@@ -163,6 +190,35 @@ function generateEnvContent(config: HubScriptConfig): string {
     'HUB_CERT_SECRET=' + config.certSecret,
     'HUB_HTTPS_HOSTNAME=' + hubHttpsHostname(config.hubSlug),
     '',
+    ...(config.enableComms ? [
+      '# Calls & broadcasts (LiveKit) -- self-hosted WebRTC SFU. LIVEKIT_PUBLIC_URL',
+      '# is the wss:// address browsers/mobile clients connect to for call/broadcast',
+      '# signaling (no path -- the client SDK appends /rtc itself; Caddy routes that',
+      '# to citinet-livekit, see the generated Caddyfile). LIVEKIT_API_KEY/SECRET must',
+      '# match livekit.yaml\'s own keys entry exactly -- both files were generated',
+      '# together from the same values, just leave them as written.',
+      ...(config.visibility === 'tailscale' ? [
+        '# Left blank: this hub\'s public address is a Tailscale Funnel forwarding',
+        '# port 9090 only (see the setup script\'s Tailscale section) -- routing',
+        '# LiveKit\'s signaling over that same Funnel needs its own `tailscale serve`',
+        '# path rule, which isn\'t auto-configured yet. Comms will 503 gracefully',
+        '# (LIVEKIT_PUBLIC_URL empty) until this is set manually.',
+        'LIVEKIT_PUBLIC_URL=',
+      ] : [
+        'LIVEKIT_PUBLIC_URL=wss://' + hubHttpsHostname(config.hubSlug),
+      ]),
+      'LIVEKIT_API_KEY=' + config.secrets.livekitApiKey,
+      'LIVEKIT_API_SECRET=' + config.secrets.livekitApiSecret,
+      // Published straight to the host (WebRTC media can't go through a plain
+      // HTTP reverse proxy the way /rtc signaling does), so — like
+      // HTTPS_PORT/HTTP_PORT above — these only need to change if this
+      // machine already runs another hub with comms enabled too.
+      'LIVEKIT_PORT=7880',
+      'LIVEKIT_RTC_TCP_PORT=7881',
+      'LIVEKIT_UDP_PORT_START=50000',
+      'LIVEKIT_UDP_PORT_END=50100',
+      '',
+    ] : []),
     '# Registry -- leave empty for local/private hubs',
     'REGISTRY_URL=',
     '',
@@ -219,6 +275,15 @@ function getComposeYaml(config: HubScriptConfig): string {
   const v = (name: string) => '${' + name + '}';
   const vd = (name: string, def: string) => '${' + name + ':-' + def + '}';
 
+  // Every container_name below is suffixed with ${HUB_SLUG} -- Docker enforces
+  // container name uniqueness daemon-wide (unlike networks/volumes, which are
+  // already isolated per Compose project/directory), so two hubs on the same
+  // machine would otherwise fail to start with a "name already in use" error.
+  // This is orthogonal to the plain service names (citinet-api, citinet-db, …)
+  // used everywhere below for inter-container URLs/reverse_proxy targets --
+  // those resolve via Compose's own per-project DNS regardless of
+  // container_name, so they intentionally stay untouched.
+
   // DATA_DIR controls postgres. FILES_DIR controls MinIO so file storage can
   // live on a separate drive or remote network share independently. Both are
   // set in .env and can be changed at any time without regenerating.
@@ -239,7 +304,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '',
     '  citinet-api:',
     '    image: ghcr.io/fergtech/citinet-api:latest',
-    '    container_name: citinet-api',
+    '    container_name: citinet-api-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    ports:',
     // Loopback-only: Caddy (443/80) is the only intended path in from the LAN --
@@ -275,6 +340,15 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - ADMIN_USERNAME=' + v('ADMIN_USERNAME'),
     '      - ADMIN_PASSWORD=' + v('ADMIN_PASSWORD'),
     ...(config.enableAi ? ['      - OLLAMA_URL=http://citinet-ollama:11434'] : []),
+    ...(config.enableComms ? [
+      // Internal URL is always the same Docker-network service address, so
+      // (unlike PUBLIC_URL/API_KEY/SECRET) it's hardcoded here rather than
+      // stored in .env -- same pattern as STORAGE_URL just above.
+      '      - LIVEKIT_INTERNAL_URL=http://citinet-livekit:7880',
+      '      - LIVEKIT_PUBLIC_URL=' + vd('LIVEKIT_PUBLIC_URL', ''),
+      '      - LIVEKIT_API_KEY=' + v('LIVEKIT_API_KEY'),
+      '      - LIVEKIT_API_SECRET=' + v('LIVEKIT_API_SECRET'),
+    ] : []),
     '    volumes:',
     '      - ' + caddyVol + ':/app/caddy-data',
     '    depends_on:',
@@ -293,7 +367,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '',
     '  citinet-db:',
     '    image: postgres:16-alpine',
-    '    container_name: citinet-db',
+    '    container_name: citinet-db-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    environment:',
     '      - POSTGRES_DB=citinet',
@@ -313,7 +387,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '',
     '  citinet-storage:',
     '    image: minio/minio:latest',
-    '    container_name: citinet-storage',
+    '    container_name: citinet-storage-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    command: server /data --console-address ":9001"',
     '    environment:',
@@ -322,7 +396,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '    volumes:',
     '      - ' + storageVol + ':/data',
     '    ports:',
-    '      - "127.0.0.1:9001:9001"',
+    '      - "127.0.0.1:' + vd('STORAGE_CONSOLE_PORT', '9001') + ':9001"',
     '    healthcheck:',
     '      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]',
     '      interval: 30s',
@@ -334,7 +408,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '',
     '  citinet-backup:',
     '    image: postgres:16-alpine',
-    '    container_name: citinet-backup',
+    '    container_name: citinet-backup-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    environment:',
     '      - PGPASSWORD=' + v('DB_PASSWORD'),
@@ -377,11 +451,11 @@ function getComposeYaml(config: HubScriptConfig): string {
     '',
     '  citinet-caddy:',
     '    image: caddy:2',
-    '    container_name: citinet-caddy',
+    '    container_name: citinet-caddy-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    ports:',
-    '      - "443:443"',
-    '      - "80:80"',
+    '      - "' + vd('HTTPS_PORT', '443') + ':443"',
+    '      - "' + vd('HTTP_PORT', '80') + ':80"',
     '    volumes:',
     '      - ./Caddyfile:/etc/caddy/Caddyfile:ro',
     '      - ' + caddyVol + ':/data/certs',
@@ -394,7 +468,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     ...(config.enableAi ? [
       '  citinet-ollama:',
       '    image: ollama/ollama:latest',
-      '    container_name: citinet-ollama',
+      '    container_name: citinet-ollama-' + v('HUB_SLUG'),
       '    restart: unless-stopped',
       '    volumes:',
       '      - ' + ollamaVol + ':/root/.ollama',
@@ -413,6 +487,36 @@ function getComposeYaml(config: HubScriptConfig): string {
         '              count: all',
         '              capabilities: [gpu]',
       ] : []),
+      '',
+    ] : []),
+    ...(config.enableComms ? [
+      // LiveKit's server config isn't settable purely through env vars the way
+      // citinet-api's is -- livekit.yaml (written alongside this file, see
+      // getLivekitYamlContent) is the one deliberate exception. Its keys entry
+      // must match LIVEKIT_API_KEY/LIVEKIT_API_SECRET above exactly -- both
+      // were generated together from the same values.
+      '  citinet-livekit:',
+      '    image: livekit/livekit-server:latest',
+      '    container_name: citinet-livekit-' + v('HUB_SLUG'),
+      '    restart: unless-stopped',
+      '    command: ["--config", "/etc/livekit.yaml"]',
+      '    volumes:',
+      '      - ./livekit.yaml:/etc/livekit.yaml:ro',
+      '    ports:',
+      '      - "' + vd('LIVEKIT_PORT', '7880') + ':7880"',
+      '      - "' + vd('LIVEKIT_RTC_TCP_PORT', '7881') + ':7881"',
+      // Media (RTP/RTCP) -- kept deliberately small (100 UDP ports) for a
+      // single neighborhood hub's realistic concurrency, not LiveKit's own
+      // much wider default range meant for larger multi-tenant deployments.
+      // Host side only -- the container's own internal range (see
+      // livekit.yaml's rtc.port_range_start/end) never needs to change since
+      // each hub's citinet-livekit is its own isolated container; only the
+      // host-published range needs to move to avoid colliding with another
+      // hub's. If you do move it, keep the same 101-port span (Docker
+      // requires both sides of a range mapping to be equal-sized).
+      '      - "' + vd('LIVEKIT_UDP_PORT_START', '50000') + '-' + vd('LIVEKIT_UDP_PORT_END', '50100') + ':50000-50100/udp"',
+      '    networks:',
+      '      - citinet-network',
       '',
     ] : []),
     'networks:',
@@ -443,8 +547,55 @@ function getCaddyfileContent(config: HubScriptConfig): string {
     '',
     hubHttpsHostname(config.hubSlug) + ' {',
     '    tls /data/certs/cert.pem /data/certs/key.pem',
+    '',
+    ...(config.enableComms ? [
+      '    # LiveKit\'s client SDK appends /rtc itself to whatever server URL it\'s',
+      '    # given (LIVEKIT_PUBLIC_URL, no path) -- matched here before the catch-all',
+      '    # below so it goes to citinet-livekit instead of citinet-api. Caddy',
+      '    # upgrades this to a WebSocket automatically, no special config needed.',
+      '    reverse_proxy /rtc* citinet-livekit:7880',
+      '',
+    ] : []),
     '    reverse_proxy citinet-api:9090',
     '}',
+    '',
+  ].join('\n');
+}
+
+/**
+ * livekit.yaml -- LiveKit server config for this hub's citinet-livekit
+ * container, written alongside docker-compose.yml/Caddyfile only when
+ * enableComms is set. Mirrors livekit.yaml.example's own structure; the
+ * keys entry must stay identical to LIVEKIT_API_KEY/LIVEKIT_API_SECRET in
+ * .env, since citinet-api uses those same two values to mint the tokens
+ * this server verifies.
+ */
+function getLivekitYamlContent(config: HubScriptConfig): string {
+  return [
+    '# LiveKit server config for ' + config.hubName + ' -- generated ' + config.generatedAt,
+    '# Keys below must match LIVEKIT_API_KEY/LIVEKIT_API_SECRET in .env exactly --',
+    '# both were generated together from the same values by the setup wizard.',
+    '',
+    'port: 7880',
+    '',
+    'rtc:',
+    '  tcp_port: 7881',
+    '  port_range_start: 50000',
+    '  port_range_end: 50100',
+    // 'local' visibility gets a real, immediately-working public address
+    // (the HTTPS bridge hostname, see LIVEKIT_PUBLIC_URL in .env), so LiveKit
+    // needs to know its own public address to tell participants how to reach
+    // it. 'tailscale' visibility ships with LIVEKIT_PUBLIC_URL deliberately
+    // blank (comms needs a manual Tailscale Funnel path rule not yet
+    // auto-configured -- see the comment above it in .env), so this stays
+    // off until that's set up, same as livekit.yaml.example's own
+    // local-testing-first default -- turning it on prematurely would have
+    // LiveKit advertise a public address nothing points at yet, breaking
+    // even same-network testing in the meantime.
+    ...(config.visibility === 'tailscale' ? [] : ['  use_external_ip: true']),
+    '',
+    'keys:',
+    '  ' + config.secrets.livekitApiKey + ': ' + config.secrets.livekitApiSecret,
     '',
   ].join('\n');
 }
@@ -518,6 +669,7 @@ function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
   const composeYaml = getComposeYaml(config);
   const caddyfileContent = getCaddyfileContent(config);
+  const livekitYamlContent = getLivekitYamlContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
   const tailscaleLines = isTailscale
@@ -534,7 +686,11 @@ function generateBashScript(config: HubScriptConfig): string {
     '',
     'set -euo pipefail',
     '',
-    'HUB_DIR="$HOME/citinet-hub"',
+    // Slug-suffixed (not a plain "$HOME/citinet-hub") so a second hub set up
+    // on this same machine lands in its own directory instead of colliding
+    // with one already there -- the slug is registry-unique by construction,
+    // so this can never collide between two different hubs either.
+    'HUB_DIR="$HOME/citinet-hub-' + config.hubSlug + '"',
     '',
     'ok()   { echo "  [ok] $1"; }',
     'warn() { echo "  [!!] $1"; }',
@@ -589,6 +745,18 @@ function generateBashScript(config: HubScriptConfig): string {
     envContent,
     'CITINET_ENV_END',
     '  ok ".env written"',
+    ...(config.enableComms ? [
+      // Written in lockstep with .env, not on its own "always update" cycle
+      // like docker-compose.yml/Caddyfile below -- its keys entry must stay
+      // byte-identical to .env's LIVEKIT_API_KEY/SECRET, which only ever get
+      // written this one time too. Re-running this script later must never
+      // regenerate one without the other, or citinet-api's tokens stop
+      // verifying against citinet-livekit until both are manually fixed.
+      "  cat > \"$HUB_DIR/livekit.yaml\" << 'CITINET_LIVEKIT_END'",
+      livekitYamlContent,
+      'CITINET_LIVEKIT_END',
+      '  ok "livekit.yaml written"',
+    ] : []),
     'fi',
     '',
     '# === Write docker-compose.yml (always update -- no secrets, safe to overwrite) ===',
@@ -695,17 +863,23 @@ function generateBashScript(config: HubScriptConfig): string {
     'fi',
     '',
     '# === Configure firewall -- only touches it if one is actually active, so',
-    '# hosts with no firewall (the common case) are left alone ===',
+    '# hosts with no firewall (the common case) are left alone. Reads the real',
+    '# ports from .env (not hardcoded 80/443) since those get changed when',
+    '# hosting a second hub alongside one already running on this machine. ===',
     'step "Configuring firewall"',
+    'HTTP_PORT=$(grep -m1 "^HTTP_PORT=" "$HUB_DIR/.env" 2>/dev/null | cut -d= -f2)',
+    'HTTPS_PORT=$(grep -m1 "^HTTPS_PORT=" "$HUB_DIR/.env" 2>/dev/null | cut -d= -f2)',
+    'HTTP_PORT="${HTTP_PORT:-80}"',
+    'HTTPS_PORT="${HTTPS_PORT:-443}"',
     'if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then',
-    '  sudo ufw allow 80/tcp >/dev/null 2>&1 || true',
-    '  sudo ufw allow 443/tcp >/dev/null 2>&1 || true',
-    '  ok "ufw: allowed inbound 80/tcp and 443/tcp"',
+    '  sudo ufw allow "${HTTP_PORT}/tcp" >/dev/null 2>&1 || true',
+    '  sudo ufw allow "${HTTPS_PORT}/tcp" >/dev/null 2>&1 || true',
+    '  ok "ufw: allowed inbound ${HTTP_PORT}/tcp and ${HTTPS_PORT}/tcp"',
     'elif command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state 2>/dev/null | grep -q "running"; then',
-    '  sudo firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1 || true',
-    '  sudo firewall-cmd --permanent --add-port=443/tcp >/dev/null 2>&1 || true',
+    '  sudo firewall-cmd --permanent --add-port="${HTTP_PORT}/tcp" >/dev/null 2>&1 || true',
+    '  sudo firewall-cmd --permanent --add-port="${HTTPS_PORT}/tcp" >/dev/null 2>&1 || true',
     '  sudo firewall-cmd --reload >/dev/null 2>&1 || true',
-    '  ok "firewalld: allowed inbound 80/tcp and 443/tcp"',
+    '  ok "firewalld: allowed inbound ${HTTP_PORT}/tcp and ${HTTPS_PORT}/tcp"',
     'else',
     '  ok "No active host firewall detected -- nothing to configure"',
     'fi',
@@ -862,6 +1036,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
   const composeYaml = getComposeYaml(config);
   const caddyfileContent = getCaddyfileContent(config);
+  const livekitYamlContent = getLivekitYamlContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
   // Escape single quotes in content for PS array literal ('...' -> '..''...')
@@ -874,6 +1049,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
   // (avoids heredoc issues with single quotes in YAML version string, etc.)
   const composeB64 = btoa(unescape(encodeURIComponent(composeYaml)));
   const caddyfileB64 = btoa(unescape(encodeURIComponent(caddyfileContent)));
+  const livekitYamlB64 = btoa(unescape(encodeURIComponent(livekitYamlContent)));
 
   const tailscaleLines = isTailscale
     ? buildPsTailscaleSection(config)
@@ -890,7 +1066,9 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     'Set-StrictMode -Version Latest',
     '$ErrorActionPreference = "Continue"  # "Stop" throws on native cmd stderr warnings (docker, tailscale)',
     '',
-    '$HubDir = "$env:USERPROFILE\\citinet-hub"',
+    // Slug-suffixed for the same reason as the bash script's HUB_DIR -- a
+    // second hub on this machine gets its own directory automatically.
+    '$HubDir = "$env:USERPROFILE\\citinet-hub-' + config.hubSlug + '"',
     '',
     'function Ok($msg)   { Write-Host "  [ok] $msg" -ForegroundColor Green }',
     'function Warn($msg) { Write-Host "  [!!] $msg" -ForegroundColor Yellow }',
@@ -934,6 +1112,16 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '  $EnvContent = $EnvLines -join "`n"',
     '  [System.IO.File]::WriteAllText("$HubDir\\.env", $EnvContent, [System.Text.Encoding]::UTF8)',
     '  Ok ".env written"',
+    ...(config.enableComms ? [
+      // Written in lockstep with .env, not on its own "always update" cycle
+      // like docker-compose.yml/Caddyfile below -- see the matching bash
+      // comment for why these two must never regenerate independently.
+      '  $LivekitYamlB64 = "' + livekitYamlB64 + '"',
+      '  $LivekitYamlBytes = [System.Convert]::FromBase64String($LivekitYamlB64)',
+      '  $LivekitYamlContent = [System.Text.Encoding]::UTF8.GetString($LivekitYamlBytes)',
+      '  [System.IO.File]::WriteAllText("$HubDir\\livekit.yaml", $LivekitYamlContent, [System.Text.Encoding]::UTF8)',
+      '  Ok "livekit.yaml written"',
+    ] : []),
     '}',
     '',
     '# === Write docker-compose.yml (always update -- no secrets, safe to overwrite) ===',
@@ -1057,17 +1245,26 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '}',
     '',
     '# === Configure firewall (requires Administrator; skipped with guidance otherwise) ===',
+    '# Reads the real ports from .env (not hardcoded 80/443) since those get',
+    '# changed when hosting a second hub alongside one already running on this',
+    '# machine -- and the rule names below are port-specific so re-running this',
+    '# for a second hub does not delete the first hub\'s rule out from under it.',
     'Step "Configuring firewall"',
+    '$EnvFileLines = Get-Content "$HubDir\\.env" -ErrorAction SilentlyContinue',
+    '$HttpPortLine = $EnvFileLines | Where-Object { $_ -match "^HTTP_PORT=" } | Select-Object -First 1',
+    '$HttpsPortLine = $EnvFileLines | Where-Object { $_ -match "^HTTPS_PORT=" } | Select-Object -First 1',
+    '$HttpPort = if ($HttpPortLine) { ($HttpPortLine -split "=", 2)[1] } else { "80" }',
+    '$HttpsPort = if ($HttpsPortLine) { ($HttpsPortLine -split "=", 2)[1] } else { "443" }',
     '$IsElevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
     'if ($IsElevated) {',
-    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTP" -ErrorAction SilentlyContinue',
-    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTPS" -ErrorAction SilentlyContinue',
-    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow | Out-Null',
-    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow | Out-Null',
-    '  Ok "Windows Firewall allows inbound 80/tcp and 443/tcp"',
+    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTP $HttpPort" -ErrorAction SilentlyContinue',
+    '  Remove-NetFirewallRule -DisplayName "Citinet Hub HTTPS $HttpsPort" -ErrorAction SilentlyContinue',
+    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTP $HttpPort" -Direction Inbound -Protocol TCP -LocalPort $HttpPort -Action Allow | Out-Null',
+    '  New-NetFirewallRule -DisplayName "Citinet Hub HTTPS $HttpsPort" -Direction Inbound -Protocol TCP -LocalPort $HttpsPort -Action Allow | Out-Null',
+    '  Ok "Windows Firewall allows inbound $HttpPort/tcp and $HttpsPort/tcp"',
     '} else {',
-    '  Warn "Not running as Administrator -- could not open firewall ports 80/443 automatically."',
-    '  Warn "If guests on your network cannot connect, run this script as Administrator once, or manually allow inbound TCP 80 and 443 in Windows Firewall."',
+    '  Warn "Not running as Administrator -- could not open firewall ports $HttpPort/$HttpsPort automatically."',
+    '  Warn "If guests on your network cannot connect, run this script as Administrator once, or manually allow inbound TCP $HttpPort and $HttpsPort in Windows Firewall."',
     '}',
 
     ...tailscaleLines,

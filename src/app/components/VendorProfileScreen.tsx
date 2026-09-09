@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { HubVendor, HubListing } from '../types/hub';
 import { marketplaceService } from '../services/marketplaceService';
+import { canNativeShare, nativeShare } from '../utils/share';
 import { hubService } from '../services/hubService';
 import { VendorAvatarFallback } from './icons';
 import { useSavedIds } from '../hooks/useSavedIds';
@@ -113,8 +114,13 @@ export function VendorProfileScreen({ vendor: initialVendor, listings: initialLi
     onNavigate?.('messages');
   };
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
+  const handleShare = async () => {
+    const link = vendor.slug ? marketplaceService.getVendorPublicUrl(hubSlug, vendor.slug) : window.location.href;
+    if (canNativeShare()) {
+      const result = await nativeShare({ url: link, title: vendor.name, text: vendor.description || undefined });
+      if (result !== 'unsupported') return;
+    }
+    navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

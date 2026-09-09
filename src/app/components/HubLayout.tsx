@@ -16,7 +16,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, s
 import { CSS } from '@dnd-kit/utilities';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { hubService } from '../services/hubService';
-import { AvatarFallback, VendorAvatarFallback } from './icons';
+import { AvatarFallback, VendorAvatarFallback, MoreGlyph } from './icons';
 import { marketplaceService } from '../services/marketplaceService';
 import { aiService } from '../services/aiService';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
@@ -834,7 +834,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             title="More"
             className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
-            <Grid3x3 className="w-5 h-5" />
+            <MoreGlyph className="w-5 h-5" />
           </button>
           {myVendor && (
             <>
@@ -931,7 +931,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             title="More"
             className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
-            <span className="w-16 h-12 flex items-center justify-center shrink-0"><Grid3x3 className="w-5 h-5" /></span>
+            <span className="w-16 h-12 flex items-center justify-center shrink-0"><MoreGlyph className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
           </button>
           {myVendor && (
@@ -1151,7 +1151,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
             <div className="relative">
-              <Grid3x3 className="w-5 h-5" />
+              <MoreGlyph className="w-5 h-5" />
               {notifCounts.messages > 0 && (
                 <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
                   {notifCounts.messages > 9 ? '9+' : notifCounts.messages}

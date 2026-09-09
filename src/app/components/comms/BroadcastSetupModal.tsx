@@ -4,7 +4,7 @@ import { X, Mic, MicOff, Video, VideoOff, Radio } from 'lucide-react';
 
 import { useBroadcast } from '../../context/BroadcastContext';
 
-export function BroadcastSetupModal({ open, onClose, initialTitle }: { open: boolean; onClose: () => void; initialTitle?: string }) {
+export function BroadcastSetupModal({ open, onClose, initialTitle, spaceSlug }: { open: boolean; onClose: () => void; initialTitle?: string; spaceSlug?: string }) {
   const { broadcast, startBroadcast, toggleMic, toggleCam } = useBroadcast();
   const [title, setTitle] = useState(initialTitle ?? '');
 
@@ -13,7 +13,7 @@ export function BroadcastSetupModal({ open, onClose, initialTitle }: { open: boo
   if (!open) return null;
 
   function handleGoLive() {
-    startBroadcast({ title: title.trim() || 'Live broadcast' });
+    startBroadcast({ title: title.trim() || 'Live broadcast', spaceSlug });
     onClose();
   }
 

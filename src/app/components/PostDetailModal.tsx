@@ -1,9 +1,11 @@
-import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film, Globe, Users, Lock, ChevronDown } from 'lucide-react';
+import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film, Globe, Users, Lock, ChevronDown, Heart, Share2, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
 import { hubService } from '../services/hubService';
-import { createReplyOrQueue } from '../services/writeQueueService';
+import { createReplyOrQueue, voteOrQueue } from '../services/writeQueueService';
+import { openLocationInAtlas } from '../utils/geocoding';
 import { AvatarFallback } from './icons';
+import { PollFeedCard } from './PollFeedCard';
 import type { HubPost, HubPostReply } from '../types/hub';
 import {
   DropdownMenu,
@@ -20,11 +22,16 @@ interface PostDetailModalProps {
   currentUserId?: string;
   currentUserAvatarUrl?: string;
   isAdmin?: boolean;
-  categoryColors: Record<string, string>;
   publicFileUrl: (name: string) => string;
   onDeleted: (postId: string) => void;
   sourceBrandInfo?: { name: string; faviconUrl?: string; websiteUrl?: string };
   onNavigateToProfile?: (userId: string) => void;
+  onNavigate?: (screen: string) => void;
+  onLike?: () => void;
+  onShare?: () => void;
+  shareCopied?: boolean;
+  saved?: boolean;
+  onToggleSave?: () => void;
 }
 
 function toDatetimeLocal(iso: string): string {
@@ -35,16 +42,15 @@ function toDatetimeLocal(iso: string): string {
 
 function formatTimestamp(iso: string): string {
   try {
-    const d = new Date(iso);
-    const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-    return d.toLocaleDateString();
-  } catch {
-    return '';
-  }
+    if (diff < 2629746) return `${Math.floor(diff / 604800)}w ago`;
+    if (diff < 31556952) return `${Math.floor(diff / 2629746)}mo ago`;
+    return `${Math.floor(diff / 31556952)}y ago`;
+  } catch { return ''; }
 }
 
 function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId, currentUserAvatarUrl, size = 'md' }: {
@@ -132,7 +138,8 @@ function getSourceBranding(post: HubPost): { name: string; logoUrl: string | nul
 
 export function PostDetailModal({
   isOpen, onClose, post, hubSlug, currentUserId, currentUserAvatarUrl, isAdmin,
-  publicFileUrl, onDeleted, sourceBrandInfo, onNavigateToProfile,
+  publicFileUrl, onDeleted, sourceBrandInfo, onNavigateToProfile, onNavigate,
+  onLike, onShare, shareCopied, saved, onToggleSave,
 }: PostDetailModalProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const [loadingReplies, setLoadingReplies] = useState(true);
@@ -156,6 +163,8 @@ export function PostDetailModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [replyingTo, setReplyingTo] = useState<{ replyId: string; userId: string; username: string } | null>(null);
   const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
+  const [pollState, setPollState] = useState(post.poll);
+  const [pollVoting, setPollVoting] = useState(false);
 
   const loadReplies = useCallback(async (silent = false) => {
     if (!silent) setLoadingReplies(true);
@@ -187,6 +196,29 @@ export function PostDetailModal({
     setEditEventLocation(post.event_location || '');
     setEditVisibility((post.visibility as PostVisibility) ?? 'inherit');
   }, [isOpen, post.title, post.body, post.event_date, post.event_location, post.visibility]);
+
+  useEffect(() => {
+    setPollState(post.poll);
+  }, [post.poll]);
+
+  async function handlePollVote(optionIndex: number) {
+    const poll = pollState;
+    if (!poll || poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date()) || pollVoting) return;
+    const previousPoll = poll;
+    const voteCounts = [...poll.vote_counts];
+    if (poll.my_vote != null) voteCounts[poll.my_vote] = Math.max(0, voteCounts[poll.my_vote] - 1);
+    voteCounts[optionIndex]++;
+    const totalDelta = poll.my_vote != null ? 0 : 1;
+    setPollState({ ...poll, vote_counts: voteCounts, my_vote: optionIndex, total_votes: poll.total_votes + totalDelta });
+    setPollVoting(true);
+    try {
+      await voteOrQueue(hubSlug, post.id, optionIndex);
+    } catch {
+      setPollState(previousPoll);
+    } finally {
+      setPollVoting(false);
+    }
+  }
 
   useEffect(() => {
     if (!isOpen) return;
@@ -343,50 +375,8 @@ export function PostDetailModal({
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
               onClick={e => e.stopPropagation()}
-              className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden pointer-events-auto flex flex-col"
+              className="cn-glass rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden pointer-events-auto flex flex-col"
             >
-              {/* Header */}
-              <div className="flex items-center justify-end px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  {(canEdit || canDelete) && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          title="Options"
-                          className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                        >
-                          <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        {canEdit && (
-                          <DropdownMenuItem onClick={() => setIsEditing(true)}>
-                            <Edit2 className="w-4 h-4" />
-                            <span>Edit post</span>
-                          </DropdownMenuItem>
-                        )}
-                        {canDelete && (
-                          <DropdownMenuItem variant="destructive" onClick={handleDeletePost} disabled={deleting}>
-                            {deleting ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                            <span>Delete post</span>
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  <button
-                    onClick={onClose}
-                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
-                  >
-                    <X className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-                  </button>
-                </div>
-              </div>
-
               {/* Scrollable body */}
               <div className="flex-1 overflow-y-auto">
 
@@ -408,7 +398,34 @@ export function PostDetailModal({
 
                 {/* Post content */}
                 <div className="p-6 border-b border-slate-100 dark:border-zinc-800">
-                  {isEditing ? (
+                  {post.category === 'POLL' && !isEditing ? (
+                    <PollFeedCard
+                      post={{ ...post, poll: pollState }}
+                      canManage={false}
+                      voting={pollVoting}
+                      closing={false}
+                      reopening={false}
+                      onVote={handlePollVote}
+                      onClose={() => {}}
+                      onReopen={() => {}}
+                      onEdit={() => {}}
+                      onDelete={() => {}}
+                      onCopyLink={() => onShare?.()}
+                      copyLinkActive={shareCopied}
+                      onNavigateToProfile={onNavigateToProfile && post.author_id ? () => onNavigateToProfile(post.author_id) : undefined}
+                      onLike={onLike}
+                      onCommentClick={() => textareaRef.current?.focus()}
+                      likeCount={post.like_count}
+                      myLiked={post.my_liked}
+                      replyCount={post.reply_count}
+                      authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                      currentUserId={currentUserId}
+                      currentUserAvatarUrl={currentUserAvatarUrl}
+                      saved={saved}
+                      onToggleSave={onToggleSave}
+                      embedded
+                    />
+                  ) : isEditing ? (
                     <div className="space-y-4">
                       {/* Caption */}
                       <div>
@@ -547,7 +564,7 @@ export function PostDetailModal({
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-4">
+                      <div className="flex items-center gap-3 mb-4">
                         {externalSourcePost ? (
                           <a
                             href={sourceBrand.websiteUrl}
@@ -564,31 +581,82 @@ export function PostDetailModal({
                             <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
                           </a>
                         ) : (
-                          <>
+                          <button
+                            onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
+                            disabled={!onNavigateToProfile || !post.author_id}
+                            className="shrink-0 disabled:pointer-events-none"
+                          >
+                            <AvatarCircle
+                              authorId={post.author_id}
+                              authorUsername={post.author_username}
+                              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                              currentUserId={currentUserId}
+                              currentUserAvatarUrl={currentUserAvatarUrl}
+                              size="sm"
+                            />
+                          </button>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          {!externalSourcePost && (
                             <button
                               onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
                               disabled={!onNavigateToProfile || !post.author_id}
-                              className="flex items-center gap-1.5 group/author disabled:pointer-events-none"
+                              className="text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-blue-300 transition-colors disabled:pointer-events-none"
                             >
-                              <AvatarCircle
-                                authorId={post.author_id}
-                                authorUsername={post.author_username}
-                                authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
-                                currentUserId={currentUserId}
-                                currentUserAvatarUrl={currentUserAvatarUrl}
-                                size="sm"
-                              />
-                              <span className="group-hover/author:text-slate-900 dark:group-hover/author:text-white transition-colors">
-                                {post.author_username}
-                              </span>
+                              {post.author_username}
                             </button>
-                          </>
-                        )}
-                        <div className="flex items-center gap-1.5 ml-auto">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>{formatTimestamp(post.created_at)}</span>
+                          )}
+                          <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>{formatTimestamp(post.created_at)}</span>
+                            {post.category && (
+                              <>
+                                <span aria-hidden="true">·</span>
+                                <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {(canEdit || canDelete) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  title="Post actions"
+                                  aria-label="Post actions"
+                                  className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
+                                >
+                                  <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                {canEdit && (
+                                  <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                                    <Edit2 className="w-4 h-4" />
+                                    <span>Edit post</span>
+                                  </DropdownMenuItem>
+                                )}
+                                {canDelete && (
+                                  <DropdownMenuItem variant="destructive" onClick={handleDeletePost} disabled={deleting}>
+                                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                    <span>Delete post</span>
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                          <button
+                            onClick={onClose}
+                            title="Close"
+                            aria-label="Close"
+                            className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
+                          >
+                            <X className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                          </button>
                         </div>
                       </div>
+                      {post.title && <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2 leading-snug">{post.title}</h2>}
+
                       {/* Event metadata strip */}
                       {post.category === 'EVENT' && post.event_date && (
                         <div className="flex flex-wrap gap-2 mt-3 mb-1">
@@ -601,10 +669,14 @@ export function PostDetailModal({
                             </span>
                           </div>
                           {post.event_location && (
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 text-xs font-medium text-blue-700 dark:text-blue-300">
+                            <button
+                              type="button"
+                              onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                            >
                               <MapPin className="w-3.5 h-3.5 shrink-0" />
                               <span>{post.event_location}</span>
-                            </div>
+                            </button>
                           )}
                         </div>
                       )}
@@ -666,6 +738,47 @@ export function PostDetailModal({
                     </>
                   )}
                 </div>
+
+                {post.category !== 'POLL' && (
+                <div className="flex items-center gap-4 px-6 py-3 border-b border-slate-100 dark:border-zinc-800">
+                  <button
+                    title="Like"
+                    aria-label={post.my_liked ? 'Unlike post' : 'Like post'}
+                    onClick={onLike}
+                    className={`flex items-center gap-1.5 transition-colors text-sm ${post.my_liked ? 'text-rose-500' : 'text-slate-400 dark:text-zinc-500 hover:text-rose-400'}`}
+                  >
+                    <Heart className={`w-4 h-4 ${post.my_liked ? 'fill-rose-500' : ''}`} />
+                    <span>{post.like_count ?? 0}</span>
+                  </button>
+                  <button
+                    title="Comment"
+                    aria-label={`Comment, ${post.reply_count ?? 0} comments`}
+                    onClick={() => textareaRef.current?.focus()}
+                    className="flex items-center gap-1.5 text-slate-400 dark:text-zinc-500 hover:text-blue-400 transition-colors text-sm"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>{post.reply_count ?? 0}</span>
+                  </button>
+                  <button
+                    title="Share"
+                    aria-label="Share post"
+                    onClick={onShare}
+                    className={`flex items-center gap-1.5 transition-colors text-sm ${shareCopied ? 'text-emerald-500' : 'text-slate-400 dark:text-zinc-500 hover:text-emerald-400'}`}
+                  >
+                    {shareCopied ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+                    <span>{shareCopied ? 'Copied' : 'Share'}</span>
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    title={saved ? 'Remove from saved' : 'Save post'}
+                    aria-label={saved ? 'Remove from saved' : 'Save post'}
+                    onClick={onToggleSave}
+                    className={`transition-colors ${saved ? 'text-blue-500 hover:text-blue-600' : 'text-slate-400 dark:text-zinc-500 hover:text-blue-400'}`}
+                  >
+                    <Bookmark className={`w-4 h-4 ${saved ? 'fill-blue-500' : ''}`} />
+                  </button>
+                </div>
+                )}
 
                 {/* Replies */}
                 <div className="p-6">
@@ -755,20 +868,20 @@ export function PostDetailModal({
                     <Clock className="w-3 h-3" /> Hub's unreachable — this reply will send once it's back.
                   </p>
                 )}
-                <form onSubmit={handleSendReply} className="flex gap-3">
+                <form onSubmit={handleSendReply} className="flex items-center gap-3">
                   <textarea
                     ref={textareaRef}
                     value={replyText}
                     onChange={e => setReplyText(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                     placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Write a reply… (Enter to send)'}
-                    rows={2}
-                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    rows={1}
+                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                   <button
                     type="submit"
                     disabled={sending || !replyText.trim()}
-                    className="w-11 h-11 self-end rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex-shrink-0"
+                    className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex-shrink-0"
                   >
                     {sending
                       ? <Loader2 className="w-4 h-4 text-white animate-spin" />

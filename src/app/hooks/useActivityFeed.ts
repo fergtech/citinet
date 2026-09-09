@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { spacesService } from '../services/spacesService';
 import { readCache, writeCache } from '../utils/dataCache';
+import type { LiveCommsItem } from '../types/hub';
 
 const CACHE_KEY = 'activity-feed';
 
@@ -15,7 +16,8 @@ export type ActivityType =
   | 'file_shared'
   | 'neighbor_joined'
   | 'pin_added'
-  | 'space_created';
+  | 'space_created'
+  | 'live_broadcast';
 
 export interface ActivityItem {
   id: string;
@@ -49,6 +51,10 @@ export interface ActivityItem {
   eventDate?: string | null;
   eventLocation?: string | null;
   rsvpCount?: number;
+  /** LIVE_BROADCAST-only: the raw LiveKit room item, carried through so the
+   *  click handler can join it directly (BroadcastContext.joinAsViewer)
+   *  instead of just navigating to a screen that happens to show it too. */
+  liveBroadcast?: LiveCommsItem;
 }
 
 function mediaKindForName(name: string): 'image' | 'video' {
@@ -105,6 +111,32 @@ function reviveActivityItem(item: ActivityItem): ActivityItem {
   return { ...item, timestamp: new Date(item.timestamp) };
 }
 
+// Shared by the full refresh() and the lightweight live-only poll below, so
+// the two never drift on how a live_broadcast item gets built.
+function buildLiveBroadcastItem(
+  hubSlug: string,
+  item: LiveCommsItem,
+  memberByUserId: Record<string, { username: string; last_seen_at?: string | null }>,
+): ActivityItem {
+  const actor = item.host_username || 'A neighbor';
+  return {
+    id: `live-${item.room_name}`,
+    type: 'live_broadcast',
+    actor,
+    actorAvatarUrl: hubService.getAvatarUrl(hubSlug, item.host_id) ?? undefined,
+    actorLastSeenAt: memberByUserId[item.host_id]?.last_seen_at,
+    summary: 'is live now',
+    title: item.title || 'Live broadcast',
+    // LiveKit's room creation time — falls back to "now" (sorts to the top)
+    // on the off chance an older room predates this field.
+    timestamp: item.started_at ? new Date(item.started_at) : new Date(),
+    navigateTo: 'messages',
+    itemId: item.room_name,
+    cta: 'Watch Live',
+    liveBroadcast: item,
+  };
+}
+
 export function useActivityFeed(hubSlug: string) {
   // `loading` starts false right along with any cache-seeded items — the
   // caller (Dashboard) hides the real list behind a loading skeleton while
@@ -116,6 +148,11 @@ export function useActivityFeed(hubSlug: string) {
   });
   const [loading, setLoading] = useState(() => !readCache<ActivityItem[]>(hubSlug, CACHE_KEY));
 
+  // Populated at the end of each full refresh() — reused by the lightweight
+  // live-only poll below so it doesn't need to re-fetch the member list just
+  // to resolve a broadcast host's avatar/presence.
+  const memberByUserIdRef = useRef<Record<string, { username: string; last_seen_at?: string | null }>>({});
+
   const refresh = useCallback(async (silent = false) => {
     if (!hubSlug) return;
     if (!silent) setLoading(true);
@@ -126,8 +163,11 @@ export function useActivityFeed(hubSlug: string) {
       hubService.listMembers(hubSlug),
       atlasService.getPins(hubSlug),
       spacesService.listAll(hubSlug),
+      // No spaceSlug arg — GET /api/comms/live already excludes space-scoped
+      // broadcasts/rooms in that case, leaving only hub-wide ones.
+      hubService.listLiveComms(hubSlug),
     ]);
-    const [postsResult, filesResult, membersResult, pinsResult, spacesResult] = settled;
+    const [postsResult, filesResult, membersResult, pinsResult, spacesResult, liveResult] = settled;
 
     // Every source failed — almost certainly the hub itself is briefly
     // unreachable (e.g. an admin restarting it), not "there's no activity."
@@ -148,6 +188,7 @@ export function useActivityFeed(hubSlug: string) {
         memberByUsername[m.username] = m;
         memberByUserId[m.user_id] = m;
       }
+      memberByUserIdRef.current = memberByUserId;
     }
 
     // Helper: build avatar URL via the API endpoint (same as sidebar)
@@ -296,6 +337,15 @@ export function useActivityFeed(hubSlug: string) {
       }
     }
 
+    // ── Hub-wide live broadcasts → live_broadcast
+    // Rooms (kind === 'room', open hangouts) are excluded — this is
+    // specifically "someone went live", not any open comms session.
+    if (liveResult.status === 'fulfilled') {
+      for (const item of liveResult.value.filter(i => i.kind === 'broadcast')) {
+        raw.push(buildLiveBroadcastItem(hubSlug, item, memberByUserId));
+      }
+    }
+
     // Sort newest first, cap at 10
     raw.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const sliced = raw.slice(0, 10);
@@ -310,6 +360,38 @@ export function useActivityFeed(hubSlug: string) {
     // visit (no cache yet) still shows the normal loading state.
     refresh(!!readCache<ActivityItem[]>(hubSlug, CACHE_KEY));
   }, [refresh]);
+
+  // Live broadcasts need fresher-than-everything-else treatment: the full
+  // refresh() above only runs on mount and manual refresh, so without this a
+  // card can keep saying "is live now" for as long as this screen sits open
+  // after the broadcast actually ends. Re-checks just the live list (one
+  // cheap call, not the full posts/files/members/pins/spaces fan-out) on the
+  // same 10s cadence Messages already polls its own "Live now" strip at, and
+  // replaces only the live_broadcast entries — everything else is untouched.
+  const refreshLive = useCallback(async () => {
+    if (!hubSlug) return;
+    try {
+      const liveComms = await hubService.listLiveComms(hubSlug);
+      const liveItems = liveComms
+        .filter(i => i.kind === 'broadcast')
+        .map(item => buildLiveBroadcastItem(hubSlug, item, memberByUserIdRef.current));
+      setItems(prev => {
+        const merged = [...prev.filter(i => i.type !== 'live_broadcast'), ...liveItems]
+          .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+          .slice(0, 10);
+        writeCache(hubSlug, CACHE_KEY, merged);
+        return merged;
+      });
+    } catch {
+      // Transient failure — leave whatever's on screen alone, next tick retries.
+    }
+  }, [hubSlug]);
+
+  useEffect(() => {
+    if (!hubSlug) return;
+    const t = setInterval(refreshLive, 10_000);
+    return () => clearInterval(t);
+  }, [hubSlug, refreshLive]);
 
   return { items, loading, refresh };
 }

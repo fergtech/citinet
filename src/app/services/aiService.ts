@@ -4,6 +4,9 @@ export interface AiStatus {
   enabled: boolean;
   model: string;
   ollamaReady: boolean;
+  autoPulling?: boolean;
+  autoPullStatus?: string;
+  autoPullError?: string;
 }
 
 export interface ChatMessage {
@@ -11,11 +14,12 @@ export interface ChatMessage {
   content: string;
 }
 
+// American-built models only (Microsoft, IBM) — no Meta (Llama) and no
+// foreign-developed models (e.g. Qwen/Alibaba, Mistral) in the suggested list.
 export const SUGGESTED_MODELS = [
-  { id: 'llama3.2:1b',  label: 'Llama 3.2 1B',  note: 'Fast · works on any hardware' },
-  { id: 'llama3.2:3b',  label: 'Llama 3.2 3B',  note: 'Balanced · 8 GB+ RAM' },
-  { id: 'llama3.1:8b',  label: 'Llama 3.1 8B',  note: 'Best quality · 16 GB+ RAM' },
-  { id: 'phi3.5',       label: 'Phi 3.5 Mini',   note: 'Efficient · good on low RAM' },
+  { id: 'phi3.5',              label: 'Phi 3.5 Mini',      note: 'Default · efficient, works on any hardware' },
+  { id: 'granite3.1-dense:2b', label: 'Granite 3.1 Dense 2B', note: 'Balanced · 8 GB+ RAM' },
+  { id: 'granite3.1-dense:8b', label: 'Granite 3.1 Dense 8B', note: 'Best quality · 16 GB+ RAM' },
 ];
 
 function conn(hubSlug: string) {
@@ -79,6 +83,10 @@ export interface IndexStatus {
   indexed: number;
   embedModel: string;
   embedReady: boolean;
+  reindexing?: boolean;
+  reindexDone?: number;
+  reindexTotal?: number;
+  reindexError?: string;
 }
 
 export const aiService = {

@@ -7,9 +7,10 @@
  *  3. Admin account   — username + password, set here in the UI (baked into config)
  *  4. Choose apps     — which of the 12 hub apps show up for members
  *  5. Local AI        — opt-in only; provisions Ollama if enabled (see scriptGenerator.ts)
- *  6. Download script — OS-detected, one download, one command to copy
- *  7. Waiting         — polls localhost:9090/health automatically
- *  8. Live!           — hub is up; shows local + public URLs; enter hub button
+ *  6. Comms           — opt-in only; provisions citinet-livekit if enabled (see scriptGenerator.ts)
+ *  7. Download script — OS-detected, one download, one command to copy
+ *  8. Waiting         — polls localhost:9090/health automatically
+ *  9. Live!           — hub is up; shows local + public URLs; enter hub button
  *
  * No file editing. No manual password generation. No terminal skills needed
  * beyond pasting one command.
@@ -19,7 +20,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ArrowRight, Eye, Lock,
   Download, CheckCircle, ExternalLink,
-  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, Cpu, ChevronDown,
+  Loader2, Wifi, Copy, Check, EyeOff, Globe, Server, HardDrive, Cpu, ChevronDown, Radio,
 } from 'lucide-react';
 import { LocationPicker, type LocationResult } from './LocationPicker';
 import { motion, AnimatePresence } from 'motion/react';
@@ -46,7 +47,7 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────
 
-type WizardStep = 'identity' | 'access' | 'admin' | 'apps' | 'ai' | 'download' | 'waiting' | 'live';
+type WizardStep = 'identity' | 'access' | 'admin' | 'apps' | 'ai' | 'comms' | 'download' | 'waiting' | 'live';
 
 interface WizardData {
   // Step 1
@@ -75,6 +76,8 @@ interface WizardData {
   // Step 5 (AI)
   enableAi: boolean;
   aiGpu: boolean;
+  // Step 6 (Comms)
+  enableComms: boolean;
 }
 
 interface HubLiveInfo {
@@ -216,6 +219,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     enabledApps: ['feed', 'messages', 'atlas', 'notes'],
     hubFocus: undefined,
     enableAi: false, aiGpu: false,
+    enableComms: false,
   });
 
   // Generated once when the user reaches the download step
@@ -273,6 +277,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       data.adminPassword === data.adminPasswordConfirm,
     apps: data.enabledApps.length >= 1,
     ai: true,
+    comms: true,
     download: scriptDownloaded,
     waiting: false,
     live: true,
@@ -323,11 +328,12 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
       certSecret,
       enableAi: data.enableAi,
       aiGpu: data.enableAi && data.aiGpu,
+      enableComms: data.enableComms,
     };
   }
 
   // ── Advance step ───────────────────────────────────────
-  const STEP_ORDER: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'ai', 'download', 'waiting', 'live'];
+  const STEP_ORDER: WizardStep[] = ['identity', 'access', 'admin', 'apps', 'ai', 'comms', 'download', 'waiting', 'live'];
 
   const next = () => {
     const idx = STEP_ORDER.indexOf(step);
@@ -1143,8 +1149,8 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                             <div className="flex items-start gap-3">
                               <Cpu className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                               <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Recommended minimum: 8 GB RAM and 10 GB free disk. Ollama downloads its
-                                model on first run — that download happens automatically, no extra step here.
+                                Recommended minimum: 8 GB RAM and 10 GB free disk. The default model
+                                downloads automatically once the hub is running — no extra step here.
                               </p>
                             </div>
                             <label className="flex items-start gap-3 cursor-pointer">
@@ -1171,7 +1177,96 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                   </div>
                 )}
 
-                {/* ── Step 6: Download & run ────────────── */}
+                {/* ── Step 6: Comms (calls & broadcasts) ──── */}
+                {step === 'comms' && (
+                  <div className="space-y-4">
+                    <div className="mb-5">
+                      <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
+                        Enable calls &amp; broadcasts?
+                      </h2>
+                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                        Off by default — you can turn this on later by editing your hub's docker-compose.yml
+                      </p>
+                    </div>
+
+                    {/* Off option */}
+                    <button
+                      onClick={() => set({ enableComms: false })}
+                      className={`w-full p-4 rounded-xl border text-left transition-all ${
+                        !data.enableComms
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                          !data.enableComms
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-slate-300 dark:border-zinc-600'
+                        }`}>
+                          {!data.enableComms && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
+                            No calls or broadcasts
+                          </h3>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Messages, Feed, and everything else work exactly the same. Fewer moving
+                            parts and no extra ports to open on your router.
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* On option */}
+                    <button
+                      onClick={() => set({ enableComms: true })}
+                      className={`w-full p-4 rounded-xl border text-left transition-all ${
+                        data.enableComms
+                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                          : 'border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                          data.enableComms
+                            ? 'border-blue-500 bg-blue-500'
+                            : 'border-slate-300 dark:border-zinc-600'
+                        }`}>
+                          {data.enableComms && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Radio className={`w-5 h-5 flex-shrink-0 ${data.enableComms ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                            <h3 className="font-semibold text-slate-900 dark:text-white">
+                              Enable calls &amp; broadcasts
+                            </h3>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30
+                              text-amber-700 dark:text-amber-400 font-medium">
+                              Heavier
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                            Runs a self-hosted LiveKit server for Messages' 1:1 video/audio calls and
+                            live broadcasts. Opens a few extra ports for the actual call media
+                            (7881/tcp, 50000–50100/udp) — safe on a home network, but something to
+                            know if you're behind a very locked-down router.
+                          </p>
+                          {data.visibility === 'tailscale' && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                              With Tailscale-only visibility, calls/broadcasts will be provisioned but
+                              won't be reachable from outside this machine until you manually route
+                              LiveKit's signaling through Tailscale Funnel — see the generated .env's
+                              comment above LIVEKIT_PUBLIC_URL for details.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Step 7: Download & run ────────────── */}
                 {step === 'download' && (
                   <div className="space-y-4">
                     <div className="mb-5">
@@ -1199,6 +1294,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           data.visibility === 'tailscale'
                             ? 'Install Tailscale, authenticate with your key, enable public Funnel'
                             : 'Configure for local network access',
+                          ...(data.enableComms ? ['Provision a self-hosted LiveKit server for calls & broadcasts'] : []),
                           'Start the hub stack with docker compose',
                           'Wait for your hub to come online, then report back here',
                         ].map((item, i) => (

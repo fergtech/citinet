@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Search, Users, Lock, Eye, Globe,
@@ -6,21 +6,34 @@ import {
   Check, X, ChevronLeft, ChevronRight, MessageCircle, Share2,
   LayoutGrid, Send, Image as ImageIcon, Video, FileText,
   Download, Palette, ImagePlus, Link2, Radio, User as UserIcon,
-  Landmark, Trees, Baby, Dumbbell, type LucideIcon,
+  Landmark, Trees, Baby, Dumbbell, CheckCircle2, Package, MessageSquare,
+  type LucideIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useHub } from '../context/HubContext';
 import { spacesService } from '../services/spacesService';
 import { hubService } from '../services/hubService';
-import { initiativesService, type Initiative } from '../services/initiativesService';
-import { COLOR, STATUS_BADGE, STATUS_LABEL, categoryMeta, categoryPresetImage, AvatarStack } from './InitiativeCard';
+import { canNativeShare, nativeShare } from '../utils/share';
+import { initiativesService, type Initiative, type InitiativeActivityEntry } from '../services/initiativesService';
+import { InitiativeCard } from './InitiativeCard';
 import { AvatarFallback } from './icons';
+import { AvatarCircle } from './AvatarCircle';
 import { BroadcastSetupModal } from './comms/BroadcastSetupModal';
+import { LiveCard } from './MessagesScreen';
+import { useBroadcast } from '../context/BroadcastContext';
+import type { LiveCommsItem } from '../types/hub';
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
 import { hubPath } from '../utils/subdomain';
 import { PostDetailModal } from './PostDetailModal';
 import { SpacesGlyph } from './icons';
-import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile, HubSpaceCategory } from '../types/hub';
+import { PostComposer } from './PostComposer';
+import { PostCard } from './PostCard';
+import { PollFeedCard } from './PollFeedCard';
+import { useHubGeoCenter } from '../hooks/useHubGeoCenter';
+import { useSavedIds } from '../hooks/useSavedIds';
+import { voteOrQueue } from '../services/writeQueueService';
+import { openLocationInAtlas } from '../utils/geocoding';
+import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile, HubSpaceCategory, HubUser } from '../types/hub';
 
 interface SpacesScreenProps {
   onBack: () => void;
@@ -100,6 +113,17 @@ function fileTypeIcon(mime?: string) {
 
 function isImage(mime?: string) { return !!mime?.startsWith('image/'); }
 function isVideo(mime?: string) { return !!mime?.startsWith('video/'); }
+
+/** Same idea as Feed's getVariant, but from a filename/URL (space posts don't
+ * carry a mime_type, just a file_name or, for proxied posts, a raw media_url). */
+function postCardVariant(mediaFileName?: string | null, mediaUrl?: string | null): 'image' | 'video' | 'text' {
+  const name = mediaFileName || mediaUrl || '';
+  if (!name) return 'text';
+  const ext = name.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
+  if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext)) return 'image';
+  return 'text';
+}
 
 function truncateText(text: string, maxLength: number = 150): { truncated: string; isTruncated: boolean } {
   if (!text || text.length <= maxLength) {
@@ -317,7 +341,7 @@ function InviteMemberModal({ hubSlug, spaceSlug, onClose }: { hubSlug: string; s
 // own trigger in <MemberPopoverRow> without duplicating the card markup.
 
 function MemberAvatar({ member, hubSlug, size }: { member: HubSpaceMember; hubSlug: string; size: 'row' | 'popover' }) {
-  const avatarUrl = member.avatar_url ? hubService.getAvatarUrl(hubSlug, member.user_id) : null;
+  const avatarUrl = hubService.getAvatarUrl(hubSlug, member.user_id);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
@@ -549,38 +573,61 @@ function FilesTab({ hubSlug, spaceSlug, tunnelUrl, authToken }: { hubSlug: strin
 
 // ── Space Info Sidebar ────────────────────────────────────
 
-function SpaceInfoSidebar({ space, hubSlug, members, membersLoading, posts, myUserId }: {
+function SpaceInfoSidebar({ space, hubSlug, posts }: {
   space: HubSpace;
   hubSlug: string;
-  members: HubSpaceMember[];
-  membersLoading: boolean;
   posts: HubPost[];
-  myUserId?: string;
 }) {
-  const activeMembers = members.filter(m => m.status === 'active');
-  const memberCount = Number(space.member_count) || 0;
-  const canViewMembers = space.my_status === 'active';
-  const topPosters = [...posts]
-    .reduce((acc, p) => { acc.set(p.author_username, (acc.get(p.author_username) ?? 0) + 1); return acc; }, new Map<string, number>());
+  const topPosters = [...posts].reduce((acc, p) => {
+    if (!p.author_id) return acc;
+    const current = acc.get(p.author_id) ?? { username: p.author_username, count: 0 };
+    current.count++;
+    acc.set(p.author_id, current);
+    return acc;
+  }, new Map<string, { username: string; count: number }>());
   const [showBroadcastSetup, setShowBroadcastSetup] = useState(false);
+  const [liveItems, setLiveItems] = useState<LiveCommsItem[]>([]);
+  const { joinAsViewer } = useBroadcast();
+  const isActiveSpaceMember = space.my_status === 'active';
+
+  // Space-scoped live list — GET /api/comms/live?space_slug=X, membership-
+  // checked server-side, never includes hub-wide broadcasts/rooms. Same
+  // 10s poll cadence as Messages' own hub-wide Live strip.
+  useEffect(() => {
+    if (!isActiveSpaceMember) return;
+    let cancelled = false;
+    const load = () => hubService.listLiveComms(hubSlug, space.slug).then(items => { if (!cancelled) setLiveItems(items); }).catch(() => {});
+    load();
+    const interval = setInterval(load, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [hubSlug, space.slug, isActiveSpaceMember]);
 
   return (
     <div className="p-4 space-y-5">
-      {/* Live — same comms system Messages uses, just launched with this
-          space's name as a starting point so members recognize what it's
-          about. Stays hub-wide visible under the hood — there's no per-
-          audience targeting in the comms backend to restrict one to "just
-          this space's members." (No call button here — 1:1 calls don't fit
-          a space's membership and group-room calling has no UI yet.) */}
+      {/* Live — same comms system Messages uses, now genuinely scoped to
+          this space (2026-09-08): the backend re-checks active space
+          membership on every join of a broadcast/room created with this
+          space's slug, and GET /api/comms/live?space_slug=X only ever
+          returns this space's own live items, never hub-wide ones (and vice
+          versa — this space's broadcasts don't leak into Messages' hub-wide
+          Live strip either). (No call button here — 1:1 calls don't fit a
+          space's membership and group-room calling has no UI yet.) */}
       <div>
         <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Live</p>
+        {liveItems.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-2 -mx-1 px-1">
+            {liveItems.map(item => (
+              <LiveCard key={item.room_name} item={item} onClick={() => joinAsViewer(item)} />
+            ))}
+          </div>
+        )}
         <button onClick={() => setShowBroadcastSetup(true)}
           className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-950/60 text-red-600 dark:text-red-400 text-xs font-semibold transition-colors">
           <Radio className="w-3.5 h-3.5" /> Broadcast to space
         </button>
       </div>
       {showBroadcastSetup && (
-        <BroadcastSetupModal open={showBroadcastSetup} onClose={() => setShowBroadcastSetup(false)} initialTitle={`Live from ${space.name}`} />
+        <BroadcastSetupModal open={showBroadcastSetup} onClose={() => setShowBroadcastSetup(false)} initialTitle={`Live from ${space.name}`} spaceSlug={space.slug} />
       )}
       
       {/* About */}
@@ -593,52 +640,21 @@ function SpaceInfoSidebar({ space, hubSlug, members, membersLoading, posts, myUs
 
       
 
-      {/* Members */}
-      <div>
-        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Members</p>
-        {membersLoading && (
-          <div className="flex justify-center py-3"><Loader2 className="w-4 h-4 animate-spin cn-text-4" /></div>
-        )}
-        {!membersLoading && !canViewMembers && (
-          <p className="text-xs cn-text-4">
-            {memberCount > 0
-              ? `${memberCount} member${memberCount !== 1 ? 's' : ''} have joined. Join to see who they are.`
-              : 'No members yet.'}
-          </p>
-        )}
-        {!membersLoading && canViewMembers && activeMembers.length === 0 && (
-          <p className="text-xs cn-text-4">No members yet.</p>
-        )}
-        {canViewMembers && (
-          <div className="space-y-1">
-            {activeMembers.slice(0, 8).map(m => (
-              <MemberPopoverRow key={m.user_id} member={m} hubSlug={hubSlug} myUserId={myUserId}>
-                <button className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors">
-                  <MemberAvatar member={m} hubSlug={hubSlug} size="row" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium cn-text-2 truncate">{m.display_name || m.username}</p>
-                    <p className="text-[10px] cn-text-4 capitalize">{m.role}</p>
-                  </div>
-                </button>
-              </MemberPopoverRow>
-            ))}
-            {activeMembers.length > 8 && (
-              <p className="text-[11px] cn-text-4 px-2 pt-1">+{activeMembers.length - 8} more members</p>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Top contributors */}
       {topPosters.size > 0 && (
         <div>
           <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Top Contributors</p>
           <div className="space-y-1">
-            {[...topPosters.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([username, count]) => (
-              <div key={username} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
-                <AvatarFallback className="w-6 h-6 rounded-full flex-shrink-0" name={username} />
-                <span className="text-xs cn-text-2 flex-1 truncate">{username}</span>
-                <span className="text-[11px] cn-text-4">{count} post{count !== 1 ? 's' : ''}</span>
+            {[...topPosters.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 4).map(([authorId, contributor]) => (
+              <div key={authorId} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
+                <AvatarCircle
+                  authorId={authorId}
+                  authorUsername={contributor.username}
+                  authorAvatarUrl={hubService.getAvatarUrl(hubSlug, authorId) ?? undefined}
+                  size="sm"
+                />
+                <span className="text-xs cn-text-2 flex-1 truncate">{contributor.username}</span>
+                <span className="text-[11px] cn-text-4">{contributor.count} post{contributor.count !== 1 ? 's' : ''}</span>
               </div>
             ))}
           </div>
@@ -650,66 +666,75 @@ function SpaceInfoSidebar({ space, hubSlug, members, membersLoading, posts, myUs
 
 // ── Space Initiatives ─────────────────────────────────────
 // Projects that named this space as their home (Initiative.space_id) — real
-// initiatives, pre-filtered to this space rather than a new endpoint. The
-// compact row below reuses InitiativeCard's own building blocks (status/
-// category styling, ProgressBar, AvatarStack) so a project looks the same
-// "kind of thing" here as it does on its own screen — just condensed into a
-// row, and without InitiativeCard's SpaceChip (redundant on a page that's
-// already scoped to this one space).
+// initiatives, pre-filtered to this space rather than a new endpoint. Reuses
+// InitiativesScreen's own InitiativeCard component directly (size="compact")
+// rather than a separate lookalike, so a project looks exactly like the same
+// "kind of thing" here as it does on its own screen — just smaller.
 
 function spaceInitiativeTaskCount(tasks: Initiative['tasks']) {
   return { done: tasks.filter(t => t.status === 'done').length, total: tasks.length };
 }
 
-function InitiativeGridCard({ initiative, hubSlug, onOpen }: { initiative: Initiative; hubSlug: string; onOpen: () => void }) {
-  const c = COLOR[initiative.color];
-  const cat = categoryMeta(initiative.category);
-  const CatIcon = cat.icon;
-  const tc = spaceInitiativeTaskCount(initiative.tasks);
-  const pct = tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0;
-  const openRoles = initiative.open_roles_count ?? 0;
-  const bannerUrl = initiative.banner_mode === 'image' && initiative.banner_image_file_name ? initiativesService.getBannerUrl(hubSlug, initiative.id) : null;
-  const presetImage = categoryPresetImage(initiative.category);
-  const customGradient = initiative.banner_mode === 'gradient' && initiative.banner_gradient_from && initiative.banner_gradient_to
-    ? `linear-gradient(135deg, ${initiative.banner_gradient_from}, ${initiative.banner_gradient_to})`
+function spaceInitiativeBannerUrl(hubSlug: string, initiative: Initiative) {
+  return initiative.banner_mode === 'image' && initiative.banner_image_file_name
+    ? initiativesService.getBannerUrl(hubSlug, initiative.id)
     : null;
-  const bgImage = bannerUrl || (!customGradient ? presetImage : null);
+}
 
+// ── Initiative activity in the feed ────────────────────────
+// Surfaces a space's own initiatives' activity log (task/resource/team/update
+// entries) inline in the space's post feed, styled as a feed item — same
+// idea as citinet-mobile's dashboard "Initiatives" strip (app/(tabs)/
+// index.tsx's fetchInitiativeUpdates), merged straight into the chronological
+// post list here instead of a separate carousel, matching how this screen's
+// feed already reads.
+//
+// Deliberately simpler than the mobile version in one way: no re-validation
+// against the initiative's *current* task/resource state to catch a reopened
+// task or un-provided resource. That logic there assumes a 'task' row is
+// only ever about completion — but the server also logs "added a new task",
+// "left a note on…", and "unassigned…" under the same 'task' kind (see
+// api/server.js's hub_initiative_activity inserts), so that assumption
+// doesn't hold here. Entries are shown as the immutable log they are.
+const ACTIVITY_ICON: Record<InitiativeActivityEntry['kind'], LucideIcon> = {
+  task: CheckCircle2, resource: Package, team: Users, update: MessageSquare, member: UserPlus,
+};
+
+interface SpaceInitiativeActivityItem extends InitiativeActivityEntry {
+  initiativeId: string;
+  initiativeTitle: string;
+}
+
+async function fetchSpaceInitiativeActivity(hubSlug: string, spaceId: string): Promise<SpaceInitiativeActivityItem[]> {
+  const initiatives = await initiativesService.listAll(hubSlug)
+    .then(all => all.filter(i => i.space_id === spaceId))
+    .catch(() => [] as Initiative[]);
+  const perInitiative = await Promise.all(
+    initiatives.map(initiative =>
+      initiativesService.getActivity(hubSlug, initiative.id, 5)
+        .then(entries => entries.map(entry => ({ ...entry, initiativeId: initiative.id, initiativeTitle: initiative.title })))
+        .catch(() => [] as SpaceInitiativeActivityItem[])
+    )
+  );
+  return perInitiative.flat();
+}
+
+function InitiativeActivityCard({ item, onOpen }: { item: SpaceInitiativeActivityItem; onOpen: () => void }) {
+  const Icon = ACTIVITY_ICON[item.kind] ?? CheckCircle2;
   return (
-    <button onClick={onOpen}
-      className="flex flex-col gap-2 p-2 rounded-xl border cn-border hover:border-blue-300/60 dark:hover:border-blue-500/30 cn-surface-2 transition-colors text-left min-w-0">
-      {/* Cover swatch — same image/gradient/brand-color fallback chain as the
-          real card, just a compact tile instead of full-bleed. */}
-      <div
-        className={`relative w-full aspect-[16/10] rounded-lg overflow-hidden ${!bgImage && !customGradient ? `bg-gradient-to-br ${c.gradient}` : ''}`}
-        style={bgImage ? { background: `center/cover no-repeat url(${bgImage})` } : customGradient ? { background: customGradient } : undefined}
-      >
-        <span className="absolute inset-0 flex items-center justify-center bg-black/10">
-          <CatIcon className="w-5 h-5 text-white" />
-        </span>
+    <div onClick={onOpen}
+      className="max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-3">
+      <span className="w-9 h-9 rounded-lg cn-surface-3 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 cn-text-3" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm cn-text-2 leading-snug">
+          <b className="cn-text-1 font-semibold">{item.actor_name}</b> {item.text}
+        </p>
+        <p className="text-xs cn-text-4 mt-0.5 truncate">on {item.initiativeTitle}</p>
       </div>
-
-      <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-xs font-semibold cn-text-1 truncate leading-tight">{initiative.title}</span>
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className={`text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_BADGE[initiative.status]}`}>{STATUS_LABEL[initiative.status]}</span>
-          {openRoles > 0 && (
-            <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
-              {openRoles} open
-            </span>
-          )}
-        </div>
-        {tc.total > 0 && (
-          <div className="flex items-center gap-1.5">
-            <div className="flex-1 h-1 rounded-full cn-surface-3 overflow-hidden">
-              <div className={`h-full rounded-full bg-gradient-to-r ${c.bar}`} style={{ width: `${pct}%` }} />
-            </div>
-            <span className="cn-mono text-[9px] cn-text-4 shrink-0">{tc.done}/{tc.total}</span>
-          </div>
-        )}
-        {initiative.members.length > 0 && <AvatarStack names={initiative.members.map(m => m.name)} size="sm" max={3} />}
-      </div>
-    </button>
+      <span className="text-xs cn-text-4 shrink-0">{timeAgo(item.created_at)}</span>
+    </div>
   );
 }
 
@@ -761,7 +786,14 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
       {items.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {pageItems.map(i => (
-            <InitiativeGridCard key={i.id} initiative={i} hubSlug={hubSlug} onOpen={() => navigate(hubPath(`/initiatives/${i.id}`))} />
+            <InitiativeCard
+              key={i.id}
+              initiative={i}
+              bannerUrl={spaceInitiativeBannerUrl(hubSlug, i)}
+              taskCount={spaceInitiativeTaskCount(i.tasks)}
+              onOpen={() => navigate(hubPath(`/initiatives/${i.id}`))}
+              size="compact"
+            />
           ))}
         </div>
       )}
@@ -801,17 +833,19 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
 
 // ── Space Detail ──────────────────────────────────────────
 
-type SpaceTab = 'feed' | 'members' | 'files' | 'settings';
+type SpaceTab = 'feed' | 'initiatives' | 'members' | 'files' | 'settings';
 
 function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUser, onSpaceUpdated, onSpaceDeleted }: {
   hubSlug: string; space: HubSpace; myUserId?: string;
   tunnelUrl: string; authToken?: string;
-  currentUser?: { isAdmin?: boolean; avatarUrl?: string };
+  currentUser?: HubUser;
   onSpaceUpdated: (s: HubSpace) => void;
   onSpaceDeleted: (spaceId: string) => void;
 }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<SpaceTab>('feed');
   const [posts, setPosts] = useState<HubPost[]>([]);
+  const [initiativeActivity, setInitiativeActivity] = useState<SpaceInitiativeActivityItem[]>([]);
   const [members, setMembers] = useState<HubSpaceMember[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
   const [membersLoading, setMembersLoading] = useState(false);
@@ -821,6 +855,18 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const [sharingPost, setSharingPost] = useState<string | null>(null);
   const [sharedPosts, setSharedPosts] = useState<Set<string>>(new Set());
   const [selectedPost, setSelectedPost] = useState<HubPost | null>(null);
+  // Post-card interactions — same hubService/writeQueueService calls Feed
+  // uses. These work unmodified for space posts because a space post is a
+  // real hub_posts row (space_id set) once created through the general
+  // /api/posts endpoint (see PostComposer/hubService.createPost) — the same
+  // like/delete/vote/poll routes Feed calls already handle that row.
+  const [postDeleting, setPostDeleting] = useState<string | null>(null);
+  const [copyLinkFeedback, setCopyLinkFeedback] = useState<string | null>(null);
+  const [pollVoting, setPollVoting] = useState<string | null>(null);
+  const [pollClosing, setPollClosing] = useState<string | null>(null);
+  const [pollReopening, setPollReopening] = useState<string | null>(null);
+  const [pollDeleting, setPollDeleting] = useState<string | null>(null);
+  const { ids: savedPostIds, toggle: toggleSavedPost } = useSavedIds('saved_posts', 'saved_posts');
   // Settings
   const [settingsName, setSettingsName] = useState(space.name);
   const [settingsDesc, setSettingsDesc] = useState(space.description || '');
@@ -855,6 +901,15 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const isInvited = space.my_status === 'invited';
   const isAdmin = canManage(space.my_role);
   const isProxySocietySpace = /^c[a-z0-9]{20,}$/.test(space.slug);
+  // Hub-wide moderator status (same definition Feed/ToolkitScreen use) — not
+  // to be confused with `isAdmin` above, which is this SPACE's own owner/admin
+  // role. Governs the PostComposer's poll-to-governance-request link, which is
+  // a hub-wide governance action regardless of which space the poll posts in.
+  const isLocalHub = tunnelUrl === '' || tunnelUrl === 'https://' || tunnelUrl === 'http://' || tunnelUrl.includes('localhost');
+  const isHubMod = currentUser?.hubRole === 'admin' || currentUser?.hubRole === 'moderator'
+    || currentUser?.isAdmin === true || (!!currentUser?.username && isLocalHub);
+  const hubCenter = useHubGeoCenter() ?? undefined;
+  const { currentHub } = useHub();
 
   useEffect(() => {
     setTab('feed'); setPosts([]); setMembers([]);
@@ -886,6 +941,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
     if (tab === 'feed' && isActive) {
       setPostsLoading(true);
       spacesService.getPosts(hubSlug, space.slug).then(setPosts).catch(() => {}).finally(() => setPostsLoading(false));
+      fetchSpaceInitiativeActivity(hubSlug, space.id).then(setInitiativeActivity).catch(() => {});
       // Also load members for the sidebar
       if (members.length === 0) {
         setMembersLoading(true);
@@ -942,6 +998,135 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
     } catch {}
     finally { setSharingPost(null); }
   }
+
+  async function handlePostLike(post: HubPost) {
+    const wasLiked = !!post.my_liked;
+    const optimistic = (p: HubPost): HubPost => ({
+      ...p,
+      my_liked: !wasLiked,
+      like_count: Math.max(0, (p.like_count ?? 0) + (wasLiked ? -1 : 1)),
+    });
+    setPosts(ps => ps.map(p => (p.id === post.id ? optimistic(p) : p)));
+    setSelectedPost(sp => (sp && sp.id === post.id ? optimistic(sp) : sp));
+    try {
+      const result = await hubService.toggleLike(hubSlug, post.id);
+      const reconcile = (p: HubPost): HubPost => ({ ...p, my_liked: result.liked, like_count: result.count });
+      setPosts(ps => ps.map(p => (p.id === post.id ? reconcile(p) : p)));
+      setSelectedPost(sp => (sp && sp.id === post.id ? reconcile(sp) : sp));
+    } catch {
+      setPosts(ps => ps.map(p => (p.id === post.id ? post : p)));
+      setSelectedPost(sp => (sp && sp.id === post.id ? post : sp));
+    }
+  }
+
+  async function handlePostDelete(postId: string) {
+    if (!confirm('Delete this post? This cannot be undone.')) return;
+    setPostDeleting(postId);
+    try {
+      await hubService.deletePost(hubSlug, postId);
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setSelectedPost(sp => (sp?.id === postId ? null : sp));
+    } catch { /* non-critical */ }
+    setPostDeleting(null);
+  }
+
+  async function handlePollVote(post: HubPost, optionIndex: number) {
+    const poll = post.poll;
+    if (!poll || poll.closed || (poll.closes_at && new Date(poll.closes_at) < new Date())) return;
+    setPollVoting(post.id);
+    const prevPosts = posts;
+    const optimistic = (p: HubPost): HubPost => {
+      if (!p.poll) return p;
+      const newCounts = [...p.poll.vote_counts];
+      if (p.poll.my_vote != null) newCounts[p.poll.my_vote] = Math.max(0, newCounts[p.poll.my_vote] - 1);
+      newCounts[optionIndex]++;
+      const totalDelta = p.poll.my_vote != null ? 0 : 1;
+      return { ...p, poll: { ...p.poll, vote_counts: newCounts, my_vote: optionIndex, total_votes: p.poll.total_votes + totalDelta } };
+    };
+    setPosts(ps => ps.map(p => (p.id === post.id ? optimistic(p) : p)));
+    setSelectedPost(sp => (sp && sp.id === post.id ? optimistic(sp) : sp));
+    try {
+      await voteOrQueue(hubSlug, post.id, optionIndex);
+    } catch {
+      setPosts(prevPosts);
+      setSelectedPost(sp => (sp && sp.id === post.id ? prevPosts.find(p => p.id === post.id) ?? sp : sp));
+    } finally {
+      setPollVoting(null);
+    }
+  }
+
+  async function handlePollClose(postId: string) {
+    setPollClosing(postId);
+    try {
+      const result = await hubService.closePoll(hubSlug, postId);
+      setPosts(ps => ps.map(p => (p.id === postId && p.poll ? { ...p, poll: { ...p.poll, closed: true, passed: result.passed } } : p)));
+    } catch { /* non-critical */ }
+    setPollClosing(null);
+  }
+
+  async function handlePollReopen(postId: string) {
+    setPollReopening(postId);
+    try {
+      await hubService.reopenPoll(hubSlug, postId);
+      const refreshed = await spacesService.getPosts(hubSlug, space.slug).catch(() => null);
+      if (refreshed) setPosts(refreshed);
+    } catch { /* non-critical */ }
+    setPollReopening(null);
+  }
+
+  async function handlePollDelete(postId: string) {
+    if (!confirm('Delete this poll? This cannot be undone.')) return;
+    setPollDeleting(postId);
+    try {
+      await hubService.deletePost(hubSlug, postId);
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setSelectedPost(sp => (sp?.id === postId ? null : sp));
+    } catch { /* non-critical */ }
+    setPollDeleting(null);
+  }
+
+  function handleCopyPostLink(postId: string) {
+    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopyLinkFeedback(postId);
+      setTimeout(() => setCopyLinkFeedback(null), 2000);
+    });
+  }
+
+  // Mirrors citinet-mobile's Home initiativeActivityHref() (app/(tabs)/
+  // index.tsx:187): a task-kind card goes to that specific task's tracker
+  // (best-effort resolved by substring-matching this entry's sentence against
+  // the initiative's current task titles — the activity log carries no
+  // ref_id back to the task itself), resource → the Resources tab, team →
+  // the Team tab, anything else (an unresolved task match, or an
+  // unrecognized activity kind) → the initiative's own overview. Unlike
+  // mobile, an unresolved task match still lands on the Tasks tab rather
+  // than the bare overview — this screen has a real tab to send it to.
+  // InitiativesScreen has no routed sub-URL for a tab or a task (activeTab
+  // is client state, not part of the path), so the destination tab/task
+  // travels the same sessionStorage-flag way every other cross-screen
+  // deep-link in this app already does.
+  async function openInitiativeActivity(item: SpaceInitiativeActivityItem) {
+    const goTo = (tab: 'tasks' | 'resources' | 'team' | 'overview', taskId?: string) => {
+      if (tab !== 'overview') {
+        sessionStorage.setItem('citinet-deeplink-initiative-tab', JSON.stringify({ initiativeId: item.initiativeId, tab, taskId }));
+      }
+      navigate(hubPath(`/initiatives/${item.initiativeId}`));
+    };
+    if (item.kind === 'task') {
+      try {
+        const initiative = await initiativesService.get(hubSlug, item.initiativeId);
+        const matchedTask = initiative.tasks.find(t => item.text.includes(t.title));
+        goTo('tasks', matchedTask?.id);
+      } catch {
+        goTo('tasks');
+      }
+      return;
+    }
+    if (item.kind === 'resource') { goTo('resources'); return; }
+    if (item.kind === 'team') { goTo('team'); return; }
+    goTo('overview');
+  }
   async function handleDelete() {
     setDeleting(true); setSettingsError('');
     try {
@@ -980,7 +1165,15 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   }
 
   const bannerStyle = getBannerStyle(space, tunnelUrl);
-  const tabs: SpaceTab[] = ['feed', 'members', 'files', ...(isAdmin ? ['settings' as SpaceTab] : [])];
+  const tabs: SpaceTab[] = ['feed', 'initiatives', 'members', 'files', ...(isAdmin ? ['settings' as SpaceTab] : [])];
+
+  // Posts and initiative activity merged into one chronological feed list.
+  type FeedItem = { kind: 'post'; createdAt: string; post: HubPost } | { kind: 'activity'; createdAt: string; activity: SpaceInitiativeActivityItem };
+  const feedItems: FeedItem[] = useMemo(() => {
+    const postItems: FeedItem[] = posts.map(post => ({ kind: 'post', createdAt: post.created_at, post }));
+    const activityItems: FeedItem[] = initiativeActivity.map(activity => ({ kind: 'activity', createdAt: activity.created_at, activity }));
+    return [...postItems, ...activityItems].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [posts, initiativeActivity]);
 
   // Collapsing banner: on mobile shrinks from 160px → 56px as user scrolls 80px
   const BANNER_FULL = 160;
@@ -1150,11 +1343,47 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             here, so they show next to every tab, not just Feed. */}
         {isActive && tab === 'feed' && (
             <div className="p-5 space-y-4">
-              <SpaceInitiativesSection hubSlug={hubSlug} spaceId={space.id} />
-              <ComposePost hubSlug={hubSlug} spaceSlug={space.slug} onPosted={p => setPosts(prev => [p, ...prev])} />
+              {/* Same composer Feed uses (Poll/Event/Photo/Video/Place, full parity) — just
+                  scoped to this space via spaceSlug. Proxied Society+ spaces keep the older,
+                  plainer ComposePost below: their posts route through a different backend
+                  (proxyToApp) that doesn't understand poll/event fields, and isSPSlug-shaped
+                  slugs are rejected server-side if sent here regardless. */}
+              {isProxySocietySpace ? (
+                <ComposePost hubSlug={hubSlug} spaceSlug={space.slug} onPosted={p => setPosts(prev => [p, ...prev])} />
+              ) : (
+                // PostComposer has no built-in max-width of its own — in Feed it's
+                // constrained by the parent grid's fixed 600px column instead. Here
+                // there's no such grid, so it needs the same explicit max-w-2xl
+                // mx-auto the old ComposePost and every post card below already use,
+                // or it stretches to the full (much wider) unconstrained panel.
+                <div className="max-w-2xl mx-auto w-full">
+                  <PostComposer
+                    hubSlug={hubSlug}
+                    hubCenter={hubCenter}
+                    isMod={isHubMod}
+                    currentUserId={currentUser?.hubUserId}
+                    currentUserName={currentUser?.displayName || currentUser?.username || '?'}
+                    currentUserAvatarUrl={hubSlug && currentUser?.hubUserId ? hubService.getAvatarUrl(hubSlug, currentUser.hubUserId) ?? undefined : currentUser?.avatarUrl ?? undefined}
+                    onPostCreated={p => setPosts(prev => [p, ...prev])}
+                    onOpenFullComposer={() => {}}
+                    activeFilter={null}
+                    spaceSlug={space.slug}
+                  />
+                </div>
+              )}
               {postsLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin cn-text-4" /></div>}
-              {!postsLoading && posts.length === 0 && <div className="text-center py-12 cn-text-4 text-sm">No posts yet. Be the first to share something.</div>}
-              {posts.map(post => {
+              {!postsLoading && feedItems.length === 0 && <div className="text-center py-12 cn-text-4 text-sm">No posts yet. Be the first to share something.</div>}
+              {feedItems.map(item => {
+                if (item.kind === 'activity') {
+                  return (
+                    <InitiativeActivityCard
+                      key={`activity-${item.activity.id}`}
+                      item={item.activity}
+                      onOpen={() => openInitiativeActivity(item.activity)}
+                    />
+                  );
+                }
+                const post = item.post;
                 // SP proxy posts carry a direct R2 URL in media_url; local posts use the auth-token space-files endpoint
                 const mediaUrl = (post as any).media_url
                   ?? (post.media_file_name ? `${tunnelUrl}/api/spaces/${space.slug}/files/${encodeURIComponent(post.media_file_name)}${authToken ? `?token=${encodeURIComponent(authToken)}` : ''}` : null);
@@ -1178,11 +1407,14 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                   || (post as any).source_logo_url
                   || (post as any).source_favicon_url
                   || null;
-                return (
-                  <div key={post.id} onClick={() => setSelectedPost(post)}
-                    className="max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <div className="flex items-center gap-2 mb-3">
-                      {isExternalProxyAuthor ? (
+                // Proxied Society+ posts keep the older, plainer card — they carry source
+                // branding (Shared from…) PostCard/PollFeedCard have no slot for, and
+                // aren't real hub_posts rows the like/vote/delete routes below understand.
+                if (isExternalProxyAuthor) {
+                  return (
+                    <div key={post.id} onClick={() => setSelectedPost(post)}
+                      className="max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
                         <a
                           href={spaceAppInfo?.websiteUrl}
                           target="_blank"
@@ -1197,41 +1429,132 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                           <span className="text-[10px] font-semibold uppercase tracking-wide cn-text-4">Shared from</span>
                           <span className="text-xs font-semibold cn-text-2 leading-none">{sourceBrandName}</span>
                         </a>
-                      ) : (
-                        <>
-                          <AvatarFallback className="w-7 h-7 rounded-full" name={post.author_username} />
-                          <span className="text-sm font-medium cn-text-1">{post.author_username}</span>
-                        </>
-                      )}
-                      <span className="text-xs cn-text-4 ml-auto">{timeAgo(post.created_at)}</span>
-                    </div>
-                    {post.body && (() => {
-                      const { truncated, isTruncated } = truncateText(post.body);
-                      return <p className="text-sm cn-text-3 leading-relaxed">{truncated}{isTruncated && <span className="cn-text-2 font-medium"> Click to read more</span>}</p>;
-                    })()}
-                    {mediaUrl && (
-                      <div className="mt-3 rounded-xl overflow-hidden">
-                        {isVidMedia
-                          ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
-                          : <img src={mediaUrl} alt={post.title ?? ''} className="w-full max-h-64 object-cover rounded-xl" />}
+                        <span className="text-xs cn-text-4 ml-auto">{timeAgo(post.created_at)}</span>
                       </div>
-                    )}
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t cn-border">
-                      <span className="text-xs cn-text-4 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
-                      {post.author_id === myUserId && !sharedPosts.has(post.id) && !(post as any).shared_to_feed && (
-                        <button onClick={e => { e.stopPropagation(); handleShareToFeed(post.id); }} disabled={sharingPost === post.id}
-                          className="ml-auto flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors">
-                          {sharingPost === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />} Share to hub feed
-                        </button>
+                      {post.body && (() => {
+                        const { truncated, isTruncated } = truncateText(post.body);
+                        return <p className="text-sm cn-text-3 leading-relaxed">{truncated}{isTruncated && <span className="cn-text-2 font-medium"> Click to read more</span>}</p>;
+                      })()}
+                      {mediaUrl && (
+                        <div className="mt-3 rounded-xl overflow-hidden">
+                          {isVidMedia
+                            ? <video src={mediaUrl} controls preload="auto" className="w-full max-h-64 object-contain bg-black rounded-xl" />
+                            : <img src={mediaUrl} alt={post.title ?? ''} className="w-full max-h-64 object-cover rounded-xl" />}
+                        </div>
                       )}
-                      {(sharedPosts.has(post.id) || (post as any).shared_to_feed) && (
-                        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"><Check className="w-3.5 h-3.5" /> Shared to feed</span>
-                      )}
+                      <div className="flex items-center gap-3 mt-3 pt-3 border-t cn-border">
+                        <span className="text-xs cn-text-4 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
+                      </div>
                     </div>
+                  );
+                }
+
+                // Local space posts — same PostCard/PollFeedCard components and the
+                // same hubService/writeQueueService calls Feed's own feed uses, so a
+                // post looks and behaves identically whether it's viewed here or there.
+                const authorAvatarUrl = post.author_id ? hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined : undefined;
+                const canManagePost = isHubMod || post.author_id === myUserId;
+                const shareRow = post.author_id === myUserId && !sharedPosts.has(post.id) && !(post as any).shared_to_feed && (
+                  <div className="max-w-2xl mx-auto mt-1.5 flex justify-end">
+                    <button onClick={() => handleShareToFeed(post.id)} disabled={sharingPost === post.id}
+                      className="flex items-center gap-1.5 text-xs cn-text-3 hover:cn-text-1 transition-colors">
+                      {sharingPost === post.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />} Share to hub feed
+                    </button>
+                  </div>
+                );
+                const sharedRow = (sharedPosts.has(post.id) || (post as any).shared_to_feed) && (
+                  <div className="max-w-2xl mx-auto mt-1.5 flex justify-end">
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"><Check className="w-3.5 h-3.5" /> Shared to feed</span>
+                  </div>
+                );
+
+                if (post.category === 'POLL') {
+                  return (
+                    <div key={post.id}>
+                      <div className="max-w-2xl mx-auto">
+                        <PollFeedCard
+                          post={post}
+                          canManage={canManagePost}
+                          voting={pollVoting === post.id}
+                          closing={pollClosing === post.id}
+                          reopening={pollReopening === post.id}
+                          onVote={idx => handlePollVote(post, idx)}
+                          onClose={() => handlePollClose(post.id)}
+                          onReopen={() => handlePollReopen(post.id)}
+                          onEdit={() => setSelectedPost(post)}
+                          onDelete={() => handlePollDelete(post.id)}
+                          deleting={pollDeleting === post.id}
+                          onCopyLink={() => handleCopyPostLink(post.id)}
+                          copyLinkActive={copyLinkFeedback === post.id}
+                          onNavigateToProfile={post.author_id ? () => navigate(hubPath(`/profile/${post.author_id}`)) : undefined}
+                          onLike={() => handlePostLike(post)}
+                          onCommentClick={() => setSelectedPost(post)}
+                          likeCount={post.like_count}
+                          myLiked={post.my_liked}
+                          replyCount={post.reply_count}
+                          authorAvatarUrl={authorAvatarUrl}
+                          currentUserId={myUserId}
+                          currentUserAvatarUrl={currentUser?.avatarUrl}
+                          saved={savedPostIds.includes(post.id)}
+                          onToggleSave={() => toggleSavedPost(post.id)}
+                        />
+                      </div>
+                      {shareRow}
+                      {sharedRow}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={post.id}>
+                    <div className="max-w-2xl mx-auto cursor-pointer" onClick={() => setSelectedPost(post)}>
+                      <PostCard
+                        id={post.id}
+                        variant={postCardVariant(post.media_file_name, mediaUrl)}
+                        category={post.category}
+                        title={post.title ?? ''}
+                        author={post.author_username}
+                        timestamp={timeAgo(post.created_at)}
+                        content={post.body}
+                        mediaUrl={mediaUrl ?? undefined}
+                        replyCount={post.reply_count}
+                        likeCount={post.like_count}
+                        myLiked={post.my_liked}
+                        onLike={() => handlePostLike(post)}
+                        onCommentClick={() => setSelectedPost(post)}
+                        eventDate={post.event_date}
+                        eventLocation={post.event_location}
+                        onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, screen => navigate(hubPath(`/${screen}`)), currentHub?.location) : undefined}
+                        autoPlay={false}
+                        authorId={post.author_id ?? undefined}
+                        onNavigateToProfile={post.author_id ? () => navigate(hubPath(`/profile/${post.author_id}`)) : undefined}
+                        canDelete={currentUser?.isAdmin === true || post.author_id === myUserId}
+                        onDelete={() => handlePostDelete(post.id)}
+                        deleting={postDeleting === post.id}
+                        canEdit={post.author_id === myUserId}
+                        onEdit={() => setSelectedPost(post)}
+                        onShare={() => handleCopyPostLink(post.id)}
+                        shareCopied={copyLinkFeedback === post.id}
+                        authorAvatarUrl={authorAvatarUrl}
+                        currentUserId={myUserId}
+                        currentUserAvatarUrl={currentUser?.avatarUrl}
+                        saved={savedPostIds.includes(post.id)}
+                        onToggleSave={() => toggleSavedPost(post.id)}
+                      />
+                    </div>
+                    {shareRow}
+                    {sharedRow}
                   </div>
                 );
               })}
             </div>
+        )}
+
+        {/* Initiatives tab */}
+        {isActive && tab === 'initiatives' && (
+          <div className="p-5">
+            <SpaceInitiativesSection hubSlug={hubSlug} spaceId={space.id} />
+          </div>
         )}
 
         {/* Members tab */}
@@ -1249,7 +1572,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                 <p className="text-xs font-semibold uppercase tracking-widest cn-text-4 mb-2">Pending Approval</p>
                 {members.filter(m => m.status === 'pending').map(m => (
                   <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
-                    <AvatarFallback className="w-9 h-9 rounded-full flex-shrink-0" name={m.username} />
+                    <MemberAvatar member={m} hubSlug={hubSlug} size="row" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
                       <p className="text-xs cn-text-4">@{m.username}</p>
@@ -1266,7 +1589,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                   <div key={m.user_id} className="flex items-center gap-3 py-2.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5">
                     <MemberPopoverRow member={m} hubSlug={hubSlug} myUserId={myUserId}>
                       <button className="flex-1 min-w-0 flex items-center gap-3 text-left">
-                        <AvatarFallback className="w-9 h-9 rounded-full flex-shrink-0" name={m.username} />
+                        <MemberAvatar member={m} hubSlug={hubSlug} size="row" />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium cn-text-1 truncate">{m.display_name || m.username}</p>
                           <p className="text-xs cn-text-4 capitalize">{m.role}</p>
@@ -1357,6 +1680,13 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                     className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors">
                     {spaceLinkCopied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Link2 className="w-3.5 h-3.5" /> Copy share link</>}
                   </button>
+                  {canNativeShare() && (
+                    <button type="button"
+                      onClick={() => nativeShare({ url: spacesService.getPublicSpaceLink(hubSlug, space.slug), title: space.name })}
+                      className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 transition-colors">
+                      <Share2 className="w-3.5 h-3.5" /> Share…
+                    </button>
+                  )}
                   <span className="text-xs cn-text-4">Anyone with the link can read this space.</span>
                 </div>
               )}
@@ -1399,7 +1729,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         as part of the outer div's single scroll. Shown for every tab, not
         just Feed. */}
     <div className="lg:w-72 lg:flex-shrink-0 border-t lg:border-t-0 lg:border-l cn-border lg:overflow-y-auto">
-      <SpaceInfoSidebar space={space} hubSlug={hubSlug} members={members} membersLoading={membersLoading} posts={posts} myUserId={myUserId} />
+      <SpaceInfoSidebar space={space} hubSlug={hubSlug} posts={posts} />
     </div>
 
       <AnimatePresence>
@@ -1417,7 +1747,6 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
               currentUserId={myUserId}
               currentUserAvatarUrl={currentUser?.avatarUrl}
               isAdmin={currentUser?.isAdmin}
-              categoryColors={{}}
               publicFileUrl={(name: string) => {
                 // Full URL (SP proxy) → return as-is; filename (local) → build auth space-files URL
                 if (name.startsWith('http')) return name;

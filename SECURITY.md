@@ -180,15 +180,38 @@ payloads from an admin/moderator account (or one that's been compromised).
 
 ---
 
-## Scope gap: Comms (calls/broadcasts) not yet covered by this audit
+## Comms (calls/broadcasts) — reviewed 2026-09-08
 
 `api/comms.js` (self-hosted LiveKit integration for 1:1 calls and broadcasts, shipped
-2026-08-28) postdates the 2026-08-05 route-by-route audit above and hasn't had an
-equivalent pass. Confirmed in passing: token minting (`POST /api/comms/token`) and the
-other REST routes require `authenticate`. Not yet reviewed: LiveKit token scoping (does a
-minted token grant access to only the intended room?), the exposed media ports
-(`7881/tcp`, `50000-50100/udp` in the hub's `docker-compose.yml`) as new network attack
-surface, and the in-memory WebSocket signaling registry's authorization.
+2026-08-28) postdated the 2026-08-05 route-by-route audit above and got its own pass now.
+
+- **All REST routes require `authenticate`.** Confirmed.
+- **A minted token is genuinely room-scoped.** `mintToken()` calls
+  `at.addGrant({ room: roomName, ... })` — a token for room A cannot be used to join room
+  B. This part of the original concern turned out to be unfounded.
+- **The WebSocket signaling registry is correctly authorized.** `attachCommsSignaling`
+  validates the token against `hub_sessions` (`expires_at > NOW()`) before upgrading —
+  no anonymous WS connections.
+- **Real gap found and fixed:** `POST /api/comms/token`, when joining an *existing* room
+  (`room_name` given), did `authenticate` and nothing else — no membership/audience check.
+  Any logged-in hub member could mint a join token for any live broadcast/room by name,
+  and `GET /api/comms/live` handed out every live room hub-wide with no filtering, making
+  discovery trivial. This meant a broadcast started inside a `private`/`invite-only` space
+  was joinable by any hub member, not just that space's members. Fixed: `POST
+  /api/comms/token` now accepts an optional `space_slug` on creation (membership-checked,
+  stamped into the room's LiveKit metadata) and re-checks active space membership on every
+  subsequent join of a space-scoped room; `GET /api/comms/live` now excludes space-scoped
+  rooms from the plain hub-wide list, with a new `?space_slug=X` (membership-checked)
+  variant for a space's own live list. `SpaceInfoSidebar`'s "Broadcast to space" now
+  actually scopes to that space instead of just seeding the title text.
+- **Exposed media ports** (`7881/tcp`, `50000-50100/udp` in `docker-compose.yml`) are real
+  but not a code-fixable gap — WebRTC media has to reach clients directly, including
+  off-LAN ones over Tailscale/Cloudflare, so this is inherent to self-hosting LiveKit, not
+  something a route-level fix closes without breaking calls/broadcasts. One adjacent note:
+  LiveKit's own admin REST API rides the same published port (7880) as client signaling —
+  if `LIVEKIT_API_KEY`/`SECRET` ever leaked, someone could manage rooms directly against
+  LiveKit, bypassing `citinet-api`'s `authenticate` entirely. Not a new hole (same
+  secret-exposure risk as any other API key), just worth knowing.
 
 ---
 
@@ -246,9 +269,10 @@ if (description?.length > 1000) return res.status(400).json({ error: 'Descriptio
 #### 3. Session/user-agent binding
 See "Session token access via direct DB access" above.
 
-#### 6. Comms (LiveKit) security review
-See "Scope gap: Comms (calls/broadcasts) not yet covered by this audit" above — needs a
-dedicated pass now that it's shipped, not a placeholder gap left over from before it existed.
+#### 6. ~~Comms (LiveKit) security review~~ — done 2026-09-08
+See "Comms (calls/broadcasts) — reviewed 2026-09-08" above. Found and fixed a real gap
+(any hub member could join any broadcast/room by name, including ones in private spaces);
+token scoping and WS signaling auth were already correct.
 
 #### 4. ~~Raise password minimum from 8 to 10~~ — done 2026-08-05
 
@@ -300,7 +324,9 @@ container list, plus doc references in `README.md`, `docs/hub-setup.md`, and
 - [ ] Input length limits on posts, pins, descriptions
 - [ ] Session binding to user-agent/IP (optional hardening)
 - [ ] Encrypt file names client-side (closes last plaintext metadata gap)
-- [ ] Comms (LiveKit) security review — token scoping, exposed media ports, WS signaling auth
+- [x] Comms (LiveKit) security review — token scoping and WS signaling auth were already
+      correct; fixed a real gap where any hub member could join any broadcast/room by name
+      regardless of the hosting space's own visibility
 
 **Note:** none of the code fixes on this page take effect on a running hub until the
 Docker image (`ghcr.io/fergtech/citinet-api:latest`) is rebuilt, pushed, and the
