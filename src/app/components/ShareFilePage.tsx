@@ -55,23 +55,26 @@ export function ShareFilePage() {
       .finally(() => setLoading(false));
   }, [hubSlug]);
 
+  const fileUrl = tunnelUrl && fileName ? `${tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}` : null;
+
   const handleDownload = () => {
-    if (!tunnelUrl || !fileName) return;
-    const url = `${tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}`;
+    if (!fileUrl) return;
     const a = document.createElement('a');
-    a.href = url;
+    a.href = fileUrl;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'ogv'].includes(ext);
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'].includes(ext);
+  const isMedia = isVideo || isImage;
+
   const fileIcon = (() => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'ogv'].includes(ext))
-      return <FileVideo className="w-12 h-12 text-blue-400" />;
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'].includes(ext))
-      return <FileImage className="w-12 h-12 text-pink-400" />;
+    if (isVideo) return <FileVideo className="w-12 h-12 text-blue-400" />;
+    if (isImage) return <FileImage className="w-12 h-12 text-pink-400" />;
     if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext))
       return <FileAudio className="w-12 h-12 text-blue-400" />;
     if (['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'xls', 'xlsx'].includes(ext))
@@ -80,25 +83,51 @@ export function ShareFilePage() {
   })();
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6">
+    <div className={`min-h-screen bg-zinc-950 flex flex-col items-center p-6 ${isMedia && !loading && !error ? 'justify-start pt-12' : 'justify-center'}`}>
       {/* Wordmark */}
-      <div className="mb-12 flex items-baseline gap-1.5">
+      <div className="mb-8 flex items-baseline gap-1.5">
         <span className="text-2xl font-bold tracking-tight text-white">citinet</span>
         <span className="text-xs text-zinc-500 font-medium">community network</span>
       </div>
 
-      <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
-        {loading ? (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
-            <p className="text-sm text-zinc-400">Loading…</p>
+      {loading ? (
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-3 py-6">
+          <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+          <p className="text-sm text-zinc-400">Loading…</p>
+        </div>
+      ) : error ? (
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-3 py-4 text-center">
+          <AlertCircle className="w-10 h-10 text-red-400" />
+          <p className="text-sm text-red-300">{error}</p>
+        </div>
+      ) : isMedia && fileUrl ? (
+        // Images/videos are meant to be seen right here — the media is the primary
+        // focus, download is a small secondary action underneath, not the CTA.
+        <div className="w-full max-w-2xl flex flex-col items-center gap-4">
+          <div className="w-full rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 shadow-2xl">
+            {isVideo ? (
+              <video src={fileUrl} controls preload="metadata" className="w-full max-h-[75vh] bg-black" />
+            ) : (
+              <img src={fileUrl} alt={fileName} className="w-full max-h-[75vh] object-contain bg-black" />
+            )}
           </div>
-        ) : error ? (
-          <div className="flex flex-col items-center gap-3 py-4 text-center">
-            <AlertCircle className="w-10 h-10 text-red-400" />
-            <p className="text-sm text-red-300">{error}</p>
+          <div className="text-center w-full">
+            <p className="text-sm font-medium text-zinc-300 break-all leading-snug">{fileName}</p>
+            {hubName && (
+              <p className="text-xs text-zinc-500 mt-1">
+                Shared from <span className="text-zinc-400 font-medium">{hubName}</span>
+              </p>
+            )}
           </div>
-        ) : (
+          <button
+            onClick={handleDownload}
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Download {isVideo ? 'video' : 'image'}
+          </button>
+        </div>
+      ) : (
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
           <div className="flex flex-col items-center gap-6">
             <div className="w-20 h-20 rounded-2xl bg-zinc-800 flex items-center justify-center">
               {fileIcon}
@@ -123,8 +152,8 @@ export function ShareFilePage() {
               Download file
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <p className="mt-8 text-xs text-zinc-600 text-center max-w-xs">
         File is hosted on the hub owner's device and served over their Tailscale connection.
