@@ -17,7 +17,11 @@
  */
 
 import React from 'react';
-import { unstable_createNodejsStream } from '@vercel/og';
+// Imported dynamically inside the handler's try/catch, not at module scope —
+// @vercel/og loads resvg.wasm/yoga.wasm/a font file off disk at import time
+// (see vercel.json's includeFiles for this function), so any bundling gap in
+// the deployed function must fail into the DEFAULT_IMAGE redirect below
+// rather than crashing the whole function before a request is even handled.
 
 const REGISTRY_JSON_URL = 'https://raw.githubusercontent.com/fergtech/citinet-registry/main/registry.json';
 const FETCH_TIMEOUT_MS = 3500;
@@ -162,7 +166,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { base, hubName } = await resolveHubBase(hubSlug, typeof src === 'string' ? src : null);
+    const [{ base, hubName }, { unstable_createNodejsStream }] = await Promise.all([
+      resolveHubBase(hubSlug, typeof src === 'string' ? src : null),
+      import('@vercel/og'),
+    ]);
     const { kicker, title, description } = await loadCardText(type, id, base, hubName);
 
     const stream = await unstable_createNodejsStream(

@@ -9,8 +9,8 @@
  * vercel.json rewrites the public share routes (/share-note, /share-space,
  * /v, /u, /share) to this function *before* the catch-all SPA rewrite. It
  * fetches the shared item's public data from the hub itself, patches the
- * <title>/og:*/twitter:* tags in the real built index.html, and returns
- * that — so crawlers get content-specific previews and human visitors get
+ * title, og: tags, and twitter: tags in the real built index.html, and
+ * returns that — so crawlers get content-specific previews and human visitors get
  * the exact same SPA (same script tags) that boots and takes over normally.
  *
  * Any failure (hub offline, item not public, registry unreachable) falls

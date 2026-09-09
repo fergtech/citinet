@@ -1,6 +1,11 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/share-card.js": {
+      "includeFiles": "node_modules/@vercel/og/dist/**"
+    }
+  },
   "rewrites": [
     { "source": "/share-note/:hubSlug/:noteId", "destination": "/api/share-og?type=note&hubSlug=:hubSlug&id=:noteId" },
     { "source": "/share-space/:hubSlug/:spaceSlug", "destination": "/api/share-og?type=space&hubSlug=:hubSlug&id=:spaceSlug" },
