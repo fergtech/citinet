@@ -86,27 +86,46 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
   } catch { return null; }
 }
 
+/** Pulls a [lat, lng] tuple out of a Hub-shaped object for passing to
+ * geocodeLocation/openLocationInAtlas, or undefined if the hub has no
+ * geocoded center yet — the common `currentHub?.lat != null && ... ?
+ * [currentHub.lat, currentHub.lng] : undefined` ternary every call site
+ * otherwise needed to repeat. */
+export function hubCenterOf(hub?: { lat?: number | null; lng?: number | null } | null): [number, number] | undefined {
+  return hub?.lat != null && hub?.lng != null ? [hub.lat, hub.lng] : undefined;
+}
+
 /** Deep-links a location into Atlas — reuses real coordinates captured at compose
  * time when available, falling back to a one-off geocode for older posts/events
- * that only ever had free text. Atlas resolves this to a nearby pin if one exists,
- * or offers to add one if not — nothing is created here.
+ * that only ever had free text (e.g. a location typed without picking an
+ * autocomplete suggestion, which never populates event_lat/event_lng in the
+ * first place). Atlas resolves this to a nearby pin if one exists, or offers
+ * to add one if not — nothing is created here.
  *
- * Free-text locations without a city/state (e.g. "Forest Hill Middle School") often
- * fail to geocode on their own, so a second attempt appends the hub's own location
- * as context. If both attempts fail we still navigate to Atlas rather than leaving
- * the button a dead click — Atlas opens with its own search box pre-filled so the
- * user can pick the right result themselves. */
+ * The one-off geocode passes hubCenter straight through to geocodeLocation,
+ * same as Atlas's own search box — same bounded-viewbox + re-rank-by-real-
+ * distance fix as atlas_geocode_distance_ranking (see AtlasScreen's search),
+ * not a last-resort fallback only tried once an *unscoped* global search
+ * already came back completely empty. An unscoped search for a generic
+ * business name (e.g. "THB Bagelry & Deli", a real regional chain with
+ * multiple locations) reliably returns *some* global top-"importance" match
+ * — often nowhere near the hub — so gating the hub-scoped attempt on "the
+ * first one found literally nothing" essentially never gave it a chance to
+ * run, and Atlas would then correctly fail to find an existing pin within
+ * 100m of that wrong, distant point and offer to create a duplicate one
+ * instead — even when the right pin already existed nearby. */
 export async function openLocationInAtlas(
   location: string,
   lat: number | null | undefined,
   lng: number | null | undefined,
   onNavigate?: (screen: string) => void,
   hubLocationHint?: string,
+  hubCenter?: [number, number],
 ) {
   let resolvedLat = lat, resolvedLng = lng;
   if (resolvedLat == null || resolvedLng == null) {
-    let coords = await geocodeLocation(location);
-    if (!coords && hubLocationHint) coords = await geocodeLocation(`${location}, ${hubLocationHint}`);
+    let coords = await geocodeLocation(location, hubCenter);
+    if (!coords && hubLocationHint) coords = await geocodeLocation(`${location}, ${hubLocationHint}`, hubCenter);
     if (!coords) {
       sessionStorage.setItem('citinet-deeplink-atlas-search', location);
       onNavigate?.('atlas');

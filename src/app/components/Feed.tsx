@@ -8,7 +8,7 @@ import { PostComposer, contextualDefaultCategory } from './PostComposer';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film, Newspaper,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
-  MessageCircle, ShieldCheck, ChevronLeft, ChevronRight, Send, Vote, Plus, Link2,
+  MessageCircle, ShieldCheck, ChevronLeft, ChevronRight, ChevronUp, Send, Vote, Plus, Link2,
   MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,8 +16,10 @@ import { hubService } from '../services/hubService';
 import { nativeShare } from '../utils/share';
 import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
-import { openLocationInAtlas } from '../utils/geocoding';
+import { openLocationInAtlas, hubCenterOf } from '../utils/geocoding';
 import { hubPath } from '../utils/subdomain';
+import { buildReplyTree, countDescendants, AUTO_COLLAPSE_DEPTH, type ReplyNode } from '../utils/replyTree';
+import { MemberPreviewPopover, type MemberPreviewSummary } from './MemberPreview';
 import { requestsService, type HubRequest } from '../services/requestsService';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { useHubGeoCenter } from '../hooks/useHubGeoCenter';
@@ -332,6 +334,98 @@ function getSourceBranding(post: HubPost) {
 
 // ── Post Detail View ──────────────────────────────────────────
 
+// Recursive nested comment thread — ported from citinet-mobile's CommentNode
+// (app/post/[id].tsx): a left-border "connector line" per depth, avatars
+// step down a size below the top level, and any node's own replies default
+// to collapsed behind "Show N more replies" past AUTO_COLLAPSE_DEPTH so a
+// long thread doesn't turn into an unbroken wall. See also PostDetailModal's
+// own copy of this pattern (kept separate — different avatar/token system).
+function CommentThreadNode({
+  node, depth, hubSlug, currentUserId, currentUserAvatarUrl,
+  highlightedReplyId, onReply, onJumpTo,
+}: {
+  node: ReplyNode;
+  depth: number;
+  hubSlug: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+  highlightedReplyId: string | null;
+  onReply: (reply: HubPostReply) => void;
+  onJumpTo: (replyId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(depth + 1 < AUTO_COLLAPSE_DEPTH);
+  const hasChildren = node.children.length > 0;
+  // Computed regardless of expanded state — the toggle stays labeled either
+  // way ("Show" / "Hide N replies"), so collapsing a branch you opened
+  // yourself (or one that started auto-expanded) is always one click, not
+  // a one-way door.
+  const descendantCount = hasChildren ? countDescendants(node) : 0;
+  const memberSummary: MemberPreviewSummary = { user_id: node.author_id, username: node.author_username };
+
+  return (
+    <div>
+      <div
+        id={`pdv-reply-${node.id}`}
+        className={`flex gap-3 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === node.id ? 'bg-blue-500/10' : ''}`}
+      >
+        <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+          <button type="button" className="shrink-0">
+            <AvatarCircle
+              authorId={node.author_id}
+              authorUsername={node.author_username}
+              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, node.author_id) ?? undefined}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size={depth === 0 ? 'md' : 'sm'}
+            />
+          </button>
+        </MemberPreviewPopover>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-1">
+            <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+              <button type="button" className="text-sm font-semibold cn-text-1 hover:underline">
+                {node.author_username}
+              </button>
+            </MemberPreviewPopover>
+            <span className="text-xs cn-text-4">{formatTimestamp(node.created_at)}</span>
+          </div>
+          {node.reply_to_username && node.reply_to_reply_id && (
+            <button type="button" onClick={() => onJumpTo(node.reply_to_reply_id!)}
+              className="flex items-center gap-1 mb-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              <CornerDownRight className="w-3 h-3 shrink-0" />
+              @{node.reply_to_username}
+            </button>
+          )}
+          <p className="text-sm cn-text-2 leading-relaxed whitespace-pre-wrap">{node.body}</p>
+          <button type="button" onClick={() => onReply(node)}
+            className="mt-1.5 flex items-center gap-1 text-xs cn-text-4 hover:text-blue-400 transition-colors">
+            <CornerDownRight className="w-3 h-3" /> Reply
+          </button>
+        </div>
+      </div>
+      {hasChildren && (
+        <div className="ml-4 pl-4 border-l-2 cn-border mb-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            className="flex items-center gap-1 py-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {expanded ? 'Hide' : 'Show'} {descendantCount} {descendantCount === 1 ? 'reply' : 'replies'}
+          </button>
+          {expanded && node.children.map(child => (
+            <CommentThreadNode
+              key={child.id} node={child} depth={depth + 1} hubSlug={hubSlug}
+              currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl}
+              highlightedReplyId={highlightedReplyId} onReply={onReply} onJumpTo={onJumpTo}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type PdvVisibility = 'inherit' | 'hub' | 'private';
 const PDV_VIS_OPTIONS: { value: PdvVisibility; label: string; icon: ReactNode; desc: string }[] = [
   { value: 'inherit', label: 'Default',  icon: <Globe className="w-3.5 h-3.5" />, desc: 'Follows your profile visibility' },
@@ -380,6 +474,7 @@ export function PostDetailView({
   saved, onToggleSave,
 }: PostDetailViewProps) {
   const [replies, setReplies] = useState<HubPostReply[]>([]);
+  const replyTree = useMemo(() => buildReplyTree(replies), [replies]);
   const [loadingReplies, setLoadingReplies] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
@@ -401,6 +496,8 @@ export function PostDetailView({
   const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
   const repliesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const [showFloatingActions, setShowFloatingActions] = useState(false);
   const { currentHub } = useHub();
 
   const loadReplies = useCallback(async (silent = false) => {
@@ -417,6 +514,22 @@ export function PostDetailView({
     const id = setInterval(() => loadReplies(true), 15_000);
     return () => clearInterval(id);
   }, [loadReplies]);
+
+  // Floating "scroll to top" / "jump to reply box" actions — this page
+  // scrolls inside HubLayout's own content container, not the window, so
+  // rather than guessing at that ancestor an IntersectionObserver on a
+  // sentinel at the very top of the page just tells us when we've scrolled
+  // far enough to need the shortcuts.
+  useEffect(() => {
+    const el = topSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowFloatingActions(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Arrived here via the list view's Comment button (see handleCommentClick) — jump
   // straight to the reply box the same way clicking Comment from inside this view does.
@@ -542,6 +655,7 @@ export function PostDetailView({
 
   return (
     <div>
+      <div ref={topSentinelRef} />
       {/* Back nav */}
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-3 pb-5">
         <button
@@ -784,7 +898,7 @@ export function PostDetailView({
                 {/* Referenced location — always clickable when present, whether or not a pin exists yet */}
                 {post.event_location && (
                   <button
-                    onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location)}
+                    onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location, hubCenterOf(currentHub))}
                     className="mt-3 w-full flex items-center gap-3 p-3 rounded-xl border cn-border bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left"
                   >
                     <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">
@@ -872,18 +986,18 @@ export function PostDetailView({
                 <Clock className="w-3 h-3" /> Hub's unreachable — this reply will send once it's back.
               </p>
             )}
-            <form onSubmit={handleSendReply} className="flex gap-3">
+            <form onSubmit={handleSendReply} className="flex items-center gap-3">
               <textarea
                 ref={textareaRef}
                 value={replyText}
                 onChange={e => setReplyText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                 placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment… (Enter to send)'}
-                rows={2}
-                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                rows={1}
+                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
               <button type="submit" disabled={sending || !replyText.trim()}
-                className="w-10 h-10 self-end rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
+                className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
                 {sending ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Send className="w-4 h-4 text-white" />}
               </button>
             </form>
@@ -895,43 +1009,64 @@ export function PostDetailView({
             {!loadingReplies && replies.length === 0 && (
               <p className="text-center text-sm cn-text-4 py-4">Be the first to comment!</p>
             )}
-            {!loadingReplies && replies.map(reply => (
-              <div
-                key={reply.id}
-                id={`pdv-reply-${reply.id}`}
-                className={`flex gap-3 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === reply.id ? 'bg-blue-500/10' : ''}`}
-              >
-                <AvatarCircle
-                  authorId={reply.author_id}
-                  authorUsername={reply.author_username}
-                  authorAvatarUrl={hubService.getAvatarUrl(hubSlug, reply.author_id) ?? undefined}
-                  currentUserId={currentUserId}
-                  currentUserAvatarUrl={currentUserAvatarUrl}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-sm font-semibold cn-text-1">{reply.author_username}</span>
-                    <span className="text-xs cn-text-4">{formatTimestamp(reply.created_at)}</span>
-                  </div>
-                  {reply.reply_to_username && reply.reply_to_reply_id && (
-                    <button type="button" onClick={() => scrollToReply(reply.reply_to_reply_id!)}
-                      className="flex items-center gap-1 mb-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                      <CornerDownRight className="w-3 h-3 shrink-0" />
-                      @{reply.reply_to_username}
-                    </button>
-                  )}
-                  <p className="text-sm cn-text-2 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
-                  <button type="button" onClick={() => handleClickReply(reply)}
-                    className="mt-1.5 flex items-center gap-1 text-xs cn-text-4 hover:text-blue-400 transition-colors">
-                    <CornerDownRight className="w-3 h-3" /> Reply
-                  </button>
-                </div>
-              </div>
+            {!loadingReplies && replyTree.map(node => (
+              <CommentThreadNode
+                key={node.id}
+                node={node}
+                depth={0}
+                hubSlug={hubSlug}
+                currentUserId={currentUserId}
+                currentUserAvatarUrl={currentUserAvatarUrl}
+                highlightedReplyId={highlightedReplyId}
+                onReply={handleClickReply}
+                onJumpTo={scrollToReply}
+              />
             ))}
             <div ref={repliesEndRef} />
           </div>
         </div>
       </div>
+
+      {/* Floating shortcuts for a long comment thread — this page has no
+          fixed-footer composer (unlike PostDetailModal's), so "jump to the
+          reply box" stands in for "always in view" without needing a
+          viewport-pinned bar that could fight HubLayout's mobile bottom dock. */}
+      {/* Anchored to the content column's own right edge (max-w-3xl, so
+          half-width = 24rem from center) plus a 2.5rem gap, not the literal
+          screen edge — on a wide viewport that column sits centered with a
+          lot of empty margin beside it, and right-6 alone just hugs the far
+          edge of that margin regardless of how far it is from the actual
+          content. max(...) floors it at 1rem from the viewport edge once
+          the viewport gets narrow enough that this column has no side
+          margin left (mobile), where it behaves like plain right-4 again. */}
+      {showFloatingActions && (
+        <div
+          className="fixed bottom-20 md:bottom-6 z-20 flex flex-col gap-2"
+          style={{ right: 'max(1rem, calc(50vw - 24rem - 2.5rem))' }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              textareaRef.current?.focus();
+            }}
+            title="Jump to comment box"
+            aria-label="Jump to comment box"
+            className="w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg flex items-center justify-center transition-colors"
+          >
+            <MessageCircle className="w-[18px] h-[18px]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => topSentinelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            title="Scroll to top"
+            aria-label="Scroll to top"
+            className="w-11 h-11 rounded-full cn-surface border cn-border shadow-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            <ChevronUp className="w-[18px] h-[18px] cn-text-2" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2074,7 +2209,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       categoryColors={CATEGORY_COLORS}
                       eventDate={post.event_date}
                       eventLocation={post.event_location}
-                      onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location) : undefined}
+                      onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location, hubCenterOf(currentHub)) : undefined}
                       autoPlay={false}
                       authorId={post.author_id && !isExternalSourcePost(post) ? post.author_id : undefined}
                       onNavigateToProfile={post.author_id && !isExternalSourcePost(post) && onNavigate ? () => onNavigate(`profile/${post.author_id}`) : undefined}

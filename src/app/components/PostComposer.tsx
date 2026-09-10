@@ -373,6 +373,13 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
             {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Vote className="w-3.5 h-3.5" />} Post poll
           </button>
         </div>
+
+        {/* mediaChipsRow's Photo/Video buttons click these — without them
+            here too, they only exist in the idle-mode return below, so
+            clicking Photo/Video while in poll mode silently does nothing
+            (photoInputRef.current is null, not just unmounted-and-stale). */}
+        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
       </div>
     );
   }
@@ -430,6 +437,11 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
             {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />} Post event
           </button>
         </div>
+
+        {/* See the matching comment in the poll-mode return above — same
+            reason these need to be duplicated here rather than shared. */}
+        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
       </div>
     );
   }

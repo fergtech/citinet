@@ -23,7 +23,7 @@ import { isOnline } from '../utils/presence';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import { aiService } from '../services/aiService';
-import { openLocationInAtlas } from '../utils/geocoding';
+import { openLocationInAtlas, hubCenterOf } from '../utils/geocoding';
 import { readCache, writeCache } from '../utils/dataCache';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
@@ -166,7 +166,7 @@ function EventDetailModal({ event, hubSlug, onClose, onNavigate }: { event: HubP
                 exists nearby or offering to add one if not (mirrors Feed's post locations). */}
             {event.event_location && (
               <button
-                onClick={() => openLocationInAtlas(event.event_location!, event.event_lat, event.event_lng, onNavigate, currentHub?.location)}
+                onClick={() => openLocationInAtlas(event.event_location!, event.event_lat, event.event_lng, onNavigate, currentHub?.location, hubCenterOf(currentHub))}
                 className="w-full flex items-center gap-3 p-2.5 rounded-xl border cn-border bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-left"
               >
                 <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0">

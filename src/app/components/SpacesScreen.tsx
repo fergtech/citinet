@@ -32,7 +32,7 @@ import { PollFeedCard } from './PollFeedCard';
 import { useHubGeoCenter } from '../hooks/useHubGeoCenter';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { voteOrQueue } from '../services/writeQueueService';
-import { openLocationInAtlas } from '../utils/geocoding';
+import { openLocationInAtlas, hubCenterOf } from '../utils/geocoding';
 import type { HubSpace, HubSpaceMember, HubPost, HubMember, HubSpaceFile, HubSpaceCategory, HubUser } from '../types/hub';
 
 interface SpacesScreenProps {
@@ -1526,7 +1526,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
                         onCommentClick={() => setSelectedPost(post)}
                         eventDate={post.event_date}
                         eventLocation={post.event_location}
-                        onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, screen => navigate(hubPath(`/${screen}`)), currentHub?.location) : undefined}
+                        onOpenInAtlas={post.event_location ? () => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, screen => navigate(hubPath(`/${screen}`)), currentHub?.location, hubCenterOf(currentHub)) : undefined}
                         autoPlay={false}
                         authorId={post.author_id ?? undefined}
                         onNavigateToProfile={post.author_id ? () => navigate(hubPath(`/profile/${post.author_id}`)) : undefined}

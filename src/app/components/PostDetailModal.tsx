@@ -1,9 +1,12 @@
-import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film, Globe, Users, Lock, ChevronDown, Heart, Share2, Bookmark } from 'lucide-react';
+import { X, MessageCircle, Clock, Send, Loader2, Trash2, Edit2, MoreVertical, Check, CornerDownRight, Calendar, MapPin, Image, Film, Globe, Users, Lock, ChevronDown, ChevronRight, ChevronUp, Heart, Share2, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { hubService } from '../services/hubService';
 import { createReplyOrQueue, voteOrQueue } from '../services/writeQueueService';
-import { openLocationInAtlas } from '../utils/geocoding';
+import { useHub } from '../context/HubContext';
+import { openLocationInAtlas, hubCenterOf } from '../utils/geocoding';
+import { buildReplyTree, countDescendants, AUTO_COLLAPSE_DEPTH, type ReplyNode } from '../utils/replyTree';
+import { MemberPreviewPopover, type MemberPreviewSummary } from './MemberPreview';
 import { AvatarFallback } from './icons';
 import { PollFeedCard } from './PollFeedCard';
 import type { HubPost, HubPostReply } from '../types/hub';
@@ -84,6 +87,103 @@ function AvatarCircle({ authorId, authorUsername, authorAvatarUrl, currentUserId
   return <AvatarFallback className={`${dim} rounded-full flex-shrink-0`} name={authorUsername} />;
 }
 
+// Recursive nested comment thread — ported from citinet-mobile's CommentNode
+// (app/post/[id].tsx): a left-border "connector line" per depth, avatars
+// step down a size below the top level, and any node's own replies default
+// to collapsed behind "Show N more replies" past AUTO_COLLAPSE_DEPTH so a
+// long thread doesn't turn into an unbroken wall.
+function ReplyThreadNode({
+  node, depth, hubSlug, currentUserId, currentUserAvatarUrl,
+  highlightedReplyId, onReply, onJumpTo,
+}: {
+  node: ReplyNode;
+  depth: number;
+  hubSlug: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+  highlightedReplyId: string | null;
+  onReply: (reply: { id: string; author_id: string; author_username: string }) => void;
+  onJumpTo: (replyId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(depth + 1 < AUTO_COLLAPSE_DEPTH);
+  const hasChildren = node.children.length > 0;
+  // Computed regardless of expanded state — the toggle stays labeled either
+  // way ("Show" / "Hide N replies"), so collapsing a branch you opened
+  // yourself (or one that started auto-expanded) is always one click, not
+  // a one-way door.
+  const descendantCount = hasChildren ? countDescendants(node) : 0;
+  const memberSummary: MemberPreviewSummary = { user_id: node.author_id, username: node.author_username };
+
+  return (
+    <div>
+      <div
+        id={`reply-${node.id}`}
+        className={`flex gap-3 mb-1 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === node.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+      >
+        <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+          <button type="button" className="shrink-0">
+            <AvatarCircle
+              authorId={node.author_id}
+              authorUsername={node.author_username}
+              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, node.author_id) ?? undefined}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size={depth === 0 ? 'md' : 'sm'}
+            />
+          </button>
+        </MemberPreviewPopover>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-1">
+            <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+              <button type="button" className="text-sm font-medium text-slate-900 dark:text-white hover:underline">
+                {node.author_username}
+              </button>
+            </MemberPreviewPopover>
+            <span className="text-xs text-slate-400 dark:text-zinc-500">{formatTimestamp(node.created_at)}</span>
+          </div>
+          {node.reply_to_username && node.reply_to_reply_id && (
+            <button
+              type="button"
+              onClick={() => onJumpTo(node.reply_to_reply_id!)}
+              className="flex items-center gap-1 mb-1 text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+            >
+              <CornerDownRight className="w-3 h-3 shrink-0" />
+              @{node.reply_to_username}
+            </button>
+          )}
+          <p className="text-sm text-slate-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">{node.body}</p>
+          <button
+            type="button"
+            onClick={() => onReply({ id: node.id, author_id: node.author_id, author_username: node.author_username })}
+            className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+          >
+            <CornerDownRight className="w-3 h-3" /> Reply
+          </button>
+        </div>
+      </div>
+      {hasChildren && (
+        <div className="ml-4 pl-4 border-l-2 border-slate-200 dark:border-zinc-800 mb-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            className="flex items-center gap-1 py-1.5 text-xs font-semibold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {expanded ? 'Hide' : 'Show'} {descendantCount} {descendantCount === 1 ? 'reply' : 'replies'}
+          </button>
+          {expanded && node.children.map(child => (
+            <ReplyThreadNode
+              key={child.id} node={child} depth={depth + 1} hubSlug={hubSlug}
+              currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl}
+              highlightedReplyId={highlightedReplyId} onReply={onReply} onJumpTo={onJumpTo}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function isExternalSourcePost(post: HubPost): boolean {
   const authorUsername = (post.author_username || '').trim().toLowerCase();
   return Boolean(
@@ -141,7 +241,9 @@ export function PostDetailModal({
   publicFileUrl, onDeleted, sourceBrandInfo, onNavigateToProfile, onNavigate,
   onLike, onShare, shareCopied, saved, onToggleSave,
 }: PostDetailModalProps) {
+  const { currentHub } = useHub();
   const [replies, setReplies] = useState<HubPostReply[]>([]);
+  const replyTree = useMemo(() => buildReplyTree(replies), [replies]);
   const [loadingReplies, setLoadingReplies] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
@@ -161,6 +263,8 @@ export function PostDetailModal({
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const repliesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ replyId: string; userId: string; username: string } | null>(null);
   const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
   const [pollState, setPollState] = useState(post.poll);
@@ -368,17 +472,148 @@ export function PostDetailModal({
             className="fixed inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm z-50"
           />
 
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          {/* Excludes HubLayout's own fixed chrome from this container's box
+              — the bottom dock nav (h-16 mobile / h-14 desktop) and, on
+              desktop only, the top search bar (fixed, h-9, md:flex — no
+              mobile equivalent) — rather than centering against the *full*
+              viewport and hoping max-h-[90vh] leaves enough room. Neither
+              bar shrinks with the window, so on a short one they'd eat a
+              growing share of it; sizing the modal off max-h-full (100% of
+              THIS now-smaller box) instead of a raw vh value means it always
+              fits clear of both by construction, at any window height. */}
+          <div className="fixed top-0 md:top-9 left-0 right-0 bottom-16 md:bottom-14 z-50 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
               onClick={e => e.stopPropagation()}
-              className="cn-glass rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden pointer-events-auto flex flex-col"
+              className="cn-glass rounded-2xl shadow-2xl w-full max-w-2xl max-h-full overflow-hidden pointer-events-auto flex flex-col"
             >
-              {/* Scrollable body */}
-              <div className="flex-1 overflow-y-auto">
+              {/* Scrollable body — the outer div stays a fixed-size window (so
+                  a floating "scroll to top" button can be absolutely
+                  positioned within it, pinned regardless of scroll position);
+                  the inner div is what actually scrolls. Both get their
+                  height from flex-1/min-h-0, not a height:100% on the inner
+                  div — that depends on the outer div resolving to a definite
+                  pixel height first, which flexbox doesn't reliably give a
+                  plain (non-flex) child, and silently breaks scrolling. */}
+              <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
+              <div
+                ref={scrollContainerRef}
+                onScroll={e => setShowScrollTop(e.currentTarget.scrollTop > 400)}
+                className="flex-1 min-h-0 overflow-y-auto"
+              >
+
+                {/* Sticky post header — a direct child of the scroll
+                    container itself (not nested inside the shorter
+                    post-content block), so its containing block spans the
+                    *entire* scrollable area (post body + the whole reply
+                    thread below it), not just the post's own content. A
+                    sticky element can only stay stuck while its immediate
+                    parent is still in view — nested one level deeper inside
+                    just the post-content div, it looked pinned right up
+                    until you scrolled past the post itself and into
+                    replies, then scrolled away with the rest of that
+                    (much shorter) parent. Skipped for polls, which already
+                    show author/timestamp via PollFeedCard's own embedded
+                    header — a second one here would just duplicate it. */}
+                {!isEditing && post.category !== 'POLL' && (
+                  <div
+                    className="sticky top-0 z-10 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-zinc-800 flex items-center gap-3"
+                    style={{ background: 'var(--cn-glass-bg)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+                  >
+                    {externalSourcePost ? (
+                      <a
+                        href={sourceBrand.websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-slate-400 dark:hover:border-zinc-500 transition-colors"
+                      >
+                        {sourceBrand.logoUrl
+                          ? <img src={sourceBrand.logoUrl} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          : <div className="w-3.5 h-3.5 rounded-sm bg-slate-300 dark:bg-zinc-700 text-[8px] font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-center">SP</div>
+                        }
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Shared from</span>
+                        <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
+                        disabled={!onNavigateToProfile || !post.author_id}
+                        className="shrink-0 disabled:pointer-events-none"
+                      >
+                        <AvatarCircle
+                          authorId={post.author_id}
+                          authorUsername={post.author_username}
+                          authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
+                          currentUserId={currentUserId}
+                          currentUserAvatarUrl={currentUserAvatarUrl}
+                          size="sm"
+                        />
+                      </button>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {!externalSourcePost && (
+                        <button
+                          onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
+                          disabled={!onNavigateToProfile || !post.author_id}
+                          className="text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-blue-300 transition-colors disabled:pointer-events-none"
+                        >
+                          {post.author_username}
+                        </button>
+                      )}
+                      <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span>{formatTimestamp(post.created_at)}</span>
+                        {post.category && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(canEdit || canDelete) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              title="Post actions"
+                              aria-label="Post actions"
+                              className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
+                            >
+                              <MoreVertical className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            {canEdit && (
+                              <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                                <Edit2 className="w-4 h-4" />
+                                <span>Edit post</span>
+                              </DropdownMenuItem>
+                            )}
+                            {canDelete && (
+                              <DropdownMenuItem variant="destructive" onClick={handleDeletePost} disabled={deleting}>
+                                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                <span>Delete post</span>
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      <button
+                        onClick={onClose}
+                        title="Close"
+                        aria-label="Close"
+                        className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
+                      >
+                        <X className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Media */}
                 {variant === 'image' && mediaUrl && (
@@ -564,97 +799,6 @@ export function PostDetailModal({
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-3 mb-4">
-                        {externalSourcePost ? (
-                          <a
-                            href={sourceBrand.websiteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-slate-400 dark:hover:border-zinc-500 transition-colors"
-                          >
-                            {sourceBrand.logoUrl
-                              ? <img src={sourceBrand.logoUrl} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                              : <div className="w-3.5 h-3.5 rounded-sm bg-slate-300 dark:bg-zinc-700 text-[8px] font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-center">SP</div>
-                            }
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Shared from</span>
-                            <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
-                          </a>
-                        ) : (
-                          <button
-                            onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
-                            disabled={!onNavigateToProfile || !post.author_id}
-                            className="shrink-0 disabled:pointer-events-none"
-                          >
-                            <AvatarCircle
-                              authorId={post.author_id}
-                              authorUsername={post.author_username}
-                              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, post.author_id) ?? undefined}
-                              currentUserId={currentUserId}
-                              currentUserAvatarUrl={currentUserAvatarUrl}
-                              size="sm"
-                            />
-                          </button>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          {!externalSourcePost && (
-                            <button
-                              onClick={() => onNavigateToProfile && post.author_id && (onClose(), onNavigateToProfile(post.author_id))}
-                              disabled={!onNavigateToProfile || !post.author_id}
-                              className="text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-blue-300 transition-colors disabled:pointer-events-none"
-                            >
-                              {post.author_username}
-                            </button>
-                          )}
-                          <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-                            <Clock className="w-3 h-3 shrink-0" />
-                            <span>{formatTimestamp(post.created_at)}</span>
-                            {post.category && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {(canEdit || canDelete) && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  title="Post actions"
-                                  aria-label="Post actions"
-                                  className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
-                                >
-                                  <MoreVertical className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-40">
-                                {canEdit && (
-                                  <DropdownMenuItem onClick={() => setIsEditing(true)}>
-                                    <Edit2 className="w-4 h-4" />
-                                    <span>Edit post</span>
-                                  </DropdownMenuItem>
-                                )}
-                                {canDelete && (
-                                  <DropdownMenuItem variant="destructive" onClick={handleDeletePost} disabled={deleting}>
-                                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                                    <span>Delete post</span>
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                          <button
-                            onClick={onClose}
-                            title="Close"
-                            aria-label="Close"
-                            className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
-                          >
-                            <X className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
-                          </button>
-                        </div>
-                      </div>
                       {post.title && <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2 leading-snug">{post.title}</h2>}
 
                       {/* Event metadata strip */}
@@ -671,7 +815,7 @@ export function PostDetailModal({
                           {post.event_location && (
                             <button
                               type="button"
-                              onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate)}
+                              onClick={() => openLocationInAtlas(post.event_location!, post.event_lat, post.event_lng, onNavigate, currentHub?.location, hubCenterOf(currentHub))}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
                             >
                               <MapPin className="w-3.5 h-3.5 shrink-0" />
@@ -795,50 +939,34 @@ export function PostDetailModal({
                     </div>
                   )}
 
-                  {!loadingReplies && replies.map(reply => (
-                    <div
-                      key={reply.id}
-                      id={`reply-${reply.id}`}
-                      className={`flex gap-3 mb-4 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === reply.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                    >
-                      <AvatarCircle
-                        authorId={reply.author_id}
-                        authorUsername={reply.author_username}
-                        authorAvatarUrl={hubService.getAvatarUrl(hubSlug, reply.author_id) ?? undefined}
-                        currentUserId={currentUserId}
-                        currentUserAvatarUrl={currentUserAvatarUrl}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 mb-1">
-                          <span className="text-sm font-medium text-slate-900 dark:text-white">{reply.author_username}</span>
-                          <span className="text-xs text-slate-400 dark:text-zinc-500">{formatTimestamp(reply.created_at)}</span>
-                        </div>
-                        {/* @mention reference — click to jump to that reply */}
-                        {reply.reply_to_username && reply.reply_to_reply_id && (
-                          <button
-                            type="button"
-                            onClick={() => scrollToReply(reply.reply_to_reply_id!)}
-                            className="flex items-center gap-1 mb-1 text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
-                          >
-                            <CornerDownRight className="w-3 h-3 shrink-0" />
-                            @{reply.reply_to_username}
-                          </button>
-                        )}
-                        <p className="text-sm text-slate-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
-                        {/* Reply button */}
-                        <button
-                          type="button"
-                          onClick={() => handleClickReply(reply)}
-                          className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
-                        >
-                          <CornerDownRight className="w-3 h-3" /> Reply
-                        </button>
-                      </div>
-                    </div>
+                  {!loadingReplies && replyTree.map(node => (
+                    <ReplyThreadNode
+                      key={node.id}
+                      node={node}
+                      depth={0}
+                      hubSlug={hubSlug}
+                      currentUserId={currentUserId}
+                      currentUserAvatarUrl={currentUserAvatarUrl}
+                      highlightedReplyId={highlightedReplyId}
+                      onReply={handleClickReply}
+                      onJumpTo={scrollToReply}
+                    />
                   ))}
 
                   <div ref={repliesEndRef} />
                 </div>
+              </div>
+              {showScrollTop && (
+                <button
+                  type="button"
+                  onClick={() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  title="Scroll to top"
+                  aria-label="Scroll to top"
+                  className="absolute bottom-4 right-4 w-9 h-9 rounded-full cn-surface border cn-border shadow-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors z-10"
+                >
+                  <ChevronUp className="w-4 h-4 text-slate-600 dark:text-zinc-300" />
+                </button>
+              )}
               </div>
 
               {/* Reply input */}

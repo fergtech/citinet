@@ -1040,7 +1040,18 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     sessionStorage.removeItem('citinet-deeplink-coords');
     try {
       const { lat, lng, label } = JSON.parse(raw) as { lat: number; lng: number; label: string };
-      const nearby = pins.find(p => distanceMeters(lat, lng, p.latitude, p.longitude) <= 100);
+      // Exact-name match takes priority over raw coordinate proximity. A geocoded
+      // deep-link for a named business (e.g. an event/post location that never had
+      // its own lat/lng stored, so it had to be re-geocoded from free text — see
+      // openLocationInAtlas) can easily resolve to the WRONG branch of a real
+      // multi-location chain (Nominatim/OSM has no way to know which one the
+      // original poster meant), landing many miles from an already-pinned branch
+      // with the identical name and failing the distance check even though the
+      // user clearly already has "the" pin for that name in this hub. A same-hub
+      // pin whose title matches exactly is a far stronger signal than "closest
+      // geocode result to the hub center" ever is.
+      const nameMatch = pins.find(p => p.title.trim().toLowerCase() === label.trim().toLowerCase());
+      const nearby = nameMatch ?? pins.find(p => distanceMeters(lat, lng, p.latitude, p.longitude) <= 100);
       if (nearby) {
         handlePinSelect(nearby);
       } else {
