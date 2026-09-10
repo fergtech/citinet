@@ -864,7 +864,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               {/* Hub Name — editable */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Hub Name</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">Hub Name</p>
                   {!editingName && (
                     <button
                       onClick={() => { setNameValue(currentHub?.name ?? ''); setEditingName(true); }}
@@ -876,7 +876,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   )}
                 </div>
                 {!editingName ? (
-                  <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub?.name}</p>
+                  <p className="text-sm text-slate-800 dark:text-zinc-200">{currentHub?.name}</p>
                 ) : (
                   <div className="space-y-2 mt-1">
                     <input
@@ -889,7 +889,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
                         focus:border-blue-500 focus:outline-none transition-colors"
                     />
-                    <p className="text-xs text-slate-400 dark:text-slate-500">Slug stays unchanged — only the display name updates.</p>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">Slug stays unchanged — only the display name updates.</p>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={saveName}
@@ -902,7 +902,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       </button>
                       <button
                         onClick={() => { setEditingName(false); setNameError(''); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-zinc-400 text-xs
                           hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -917,7 +917,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               {/* Hub Icon — editable */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Hub Icon</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">Hub Icon</p>
                   <button
                     onClick={() => setShowIconEditor(true)}
                     className="flex items-center gap-1 text-xs cn-text-3 hover:cn-text-1 hover:underline"
@@ -928,7 +928,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
                 <div className="flex items-center gap-3">
                   <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={44} variant="badge" />
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
                     Shown wherever this hub's identity appears — the top bar, the "About this hub" panel, and the login/signup screen.
                   </p>
                 </div>
@@ -939,7 +939,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               {/* Description — editable */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Description</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">Description</p>
                   {!editingDescription && (
                     <button
                       onClick={() => { setDescriptionValue(currentHub?.description ?? ''); setEditingDescription(true); }}
@@ -952,8 +952,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
                 {!editingDescription ? (
                   currentHub?.description
-                    ? <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub.description}</p>
-                    : <p className="text-sm italic text-slate-400 dark:text-slate-500">No description set</p>
+                    ? <p className="text-sm text-slate-800 dark:text-zinc-200">{currentHub.description}</p>
+                    : <p className="text-sm italic text-slate-400 dark:text-zinc-500">No description set</p>
                 ) : (
                   <div className="space-y-2 mt-1">
                     <textarea
@@ -977,7 +977,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       </button>
                       <button
                         onClick={() => { setEditingDescription(false); setDescriptionValue(''); setDescriptionError(''); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-zinc-400 text-xs
                           hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -993,7 +993,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               {/* Location — editable */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">Location</p>
                   {!editingLocation && (
                     <button
                       onClick={() => setEditingLocation(true)}
@@ -1007,8 +1007,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
                 {!editingLocation ? (
                   currentHub?.location
-                    ? <p className="text-sm text-slate-800 dark:text-slate-200">{currentHub.location}</p>
-                    : <p className="text-sm italic text-slate-400 dark:text-slate-500">Not set — hub won't appear on the map</p>
+                    ? <p className="text-sm text-slate-800 dark:text-zinc-200">{currentHub.location}</p>
+                    : <p className="text-sm italic text-slate-400 dark:text-zinc-500">Not set — hub won't appear on the map</p>
                 ) : (
                   <div className="space-y-2 mt-1">
                     <LocationPicker
@@ -1031,7 +1031,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       </button>
                       <button
                         onClick={() => { setEditingLocation(false); setLocationResult(null); setLocationError(''); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-slate-600 dark:text-zinc-400 text-xs
                           hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -1067,12 +1067,12 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       </span>
                     )}
                     {registryListed === false && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400">
                         Not listed
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                     Keeps your hub discoverable and makes public vendor/space URLs work.
                   </p>
                 </div>
@@ -1099,8 +1099,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   }
                 </button>
               </div>
-              <div className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50 dark:bg-zinc-800 rounded-lg px-3 py-2">
-                citinet.cloud/v/<span className="text-slate-800 dark:text-slate-200">{currentHub?.slug}</span>/…
+              <div className="text-xs text-slate-500 dark:text-zinc-400 font-mono bg-slate-50 dark:bg-zinc-800 rounded-lg px-3 py-2">
+                citinet.cloud/v/<span className="text-slate-800 dark:text-zinc-200">{currentHub?.slug}</span>/…
               </div>
               {!currentHub?.tunnelUrl && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
@@ -1112,7 +1112,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               )}
               {registryListed && (
                 <div className="flex items-start justify-between gap-3 mt-3 pt-3 border-t border-slate-100 dark:border-zinc-800">
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
                     About to restart the hub machine? Let people trying to join know it's a brief planned restart, not down for good.
                   </p>
                   <button
@@ -1121,7 +1121,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
                       restartAnnounced
                         ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                        : 'border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                        : 'border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
                     }`}
                   >
                     {announcingRestart
@@ -1164,7 +1164,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               )}
 
               {!featuredLoading && featuredItems.length === 0 && !featuredError && (
-                <p className="px-4 py-6 text-center text-sm text-slate-400 dark:text-slate-500">
+                <p className="px-4 py-6 text-center text-sm text-slate-400 dark:text-zinc-500">
                   No featured items yet — pin a post or add a custom card below.
                 </p>
               )}
@@ -1176,7 +1176,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       {/* Thumbnail */}
                       <div className={`w-10 h-10 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${
                         item.mediaType === 'gradient' ? 'bg-gradient-to-br from-purple-500 to-indigo-500' :
-                        item.mediaType === 'video' ? 'bg-zinc-800' : 'bg-slate-100 dark:bg-zinc-800'
+                        item.mediaType === 'video' ? 'bg-slate-800' : 'bg-slate-100 dark:bg-zinc-800'
                       }`}>
                         {(item.imageUrl || item.mediaFileName) && item.mediaType === 'image' ? (
                           <img
@@ -1202,7 +1202,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       {/* Info */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.title}</p>
-                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                        <p className="text-xs text-slate-400 dark:text-zinc-500">
                           {item.type === 'post' ? 'pinned post' : 'custom card'}
                           {item.categoryLabel && ` · ${item.categoryLabel}`}
                           {item.mediaType !== 'gradient' && ` · ${item.mediaType}`}
@@ -1214,7 +1214,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         <button
                           onClick={() => handleReorder(index, 'up')}
                           disabled={index === 0}
-                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
                           aria-label="Move up"
                         >
                           <ChevronUp className="w-3.5 h-3.5" />
@@ -1222,7 +1222,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         <button
                           onClick={() => handleReorder(index, 'down')}
                           disabled={index === featuredItems.length - 1}
-                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                          className="p-1 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
                           aria-label="Move down"
                         >
                           <ChevronDown className="w-3.5 h-3.5" />
@@ -1232,7 +1232,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       {/* Edit */}
                       <button
                         onClick={() => editingId === item.id ? setEditingId(null) : handleStartEdit(item)}
-                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${editingId === item.id ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        className={`p-1.5 rounded-lg transition-colors shrink-0 ${editingId === item.id ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300'}`}
                         aria-label="Edit"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -1278,11 +1278,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           <div className="space-y-2">
                             <div className="flex gap-1 p-0.5 bg-slate-100 dark:bg-zinc-800 rounded-lg">
                               <button type="button" onClick={() => setEditImageMode('upload')}
-                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
                                 Upload image
                               </button>
                               <button type="button" onClick={() => setEditImageMode('url')}
-                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${editImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
                                 Image URL
                               </button>
                             </div>
@@ -1302,7 +1302,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                                   onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleEditImageFileSelect(f); }}
                                 >
                                   <ImagePlus className="w-5 h-5 text-slate-400" />
-                                  <span className="text-xs text-slate-500 dark:text-slate-400 text-center px-4">
+                                  <span className="text-xs text-slate-500 dark:text-zinc-400 text-center px-4">
                                     Drag an image here, or click to browse
                                     {item.imageUrl && <><br /><span className="text-slate-400 dark:text-zinc-500">Current image kept if left blank</span></>}
                                   </span>
@@ -1331,7 +1331,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           </button>
                           <button
                             onClick={() => { clearEditImage(); setEditingId(null); }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
                           >
                             Cancel
                           </button>
@@ -1351,7 +1351,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <Link className="w-4 h-4 cn-text-3" />
                     Pin a post
                   </p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
                     Select a recent post to feature on the dashboard
                   </p>
                 </div>
@@ -1367,7 +1367,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       <div key={post.id} className="flex items-center gap-3 px-4 py-3">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{post.title}</p>
-                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                          <p className="text-xs text-slate-400 dark:text-zinc-500">
                             {post.category} · {post.author_username}
                             {post.media_file_name && ` · 📎 ${post.media_file_name.split('.').pop()?.toUpperCase()}`}
                           </p>
@@ -1434,14 +1434,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         <button
                           type="button"
                           onClick={() => setCustomImageMode('upload')}
-                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'upload' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300'}`}
                         >
                           Upload image
                         </button>
                         <button
                           type="button"
                           onClick={() => setCustomImageMode('url')}
-                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${customImageMode === 'url' ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300'}`}
                         >
                           Image URL
                         </button>
@@ -1466,7 +1466,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImageFileSelect(f); }}
                           >
                             <ImagePlus className="w-6 h-6 text-slate-400" />
-                            <span className="text-xs text-slate-500 dark:text-slate-400 text-center px-4">Drag an image here, or click to browse<br /><span className="text-slate-400 dark:text-zinc-500">Leave blank for a gradient background</span></span>
+                            <span className="text-xs text-slate-500 dark:text-zinc-400 text-center px-4">Drag an image here, or click to browse<br /><span className="text-slate-400 dark:text-zinc-500">Leave blank for a gradient background</span></span>
                             <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFileSelect(f); }} />
                           </label>
                         )
@@ -1492,7 +1492,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       </button>
                       <button
                         onClick={() => { setShowCustomForm(false); setCustomError(''); setCustomImageFile(null); if (customImagePreview) URL.revokeObjectURL(customImagePreview); setCustomImagePreview(''); }}
-                        className="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-400 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                        className="px-3 py-1.5 rounded-lg text-slate-600 dark:text-zinc-400 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       >
                         Cancel
                       </button>
@@ -1503,7 +1503,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             )}
 
             {featuredItems.length >= 5 && (
-              <p className="text-xs text-center text-slate-400 dark:text-slate-500">
+              <p className="text-xs text-center text-slate-400 dark:text-zinc-500">
                 Maximum of 5 featured items reached. Remove one to add another.
               </p>
             )}
@@ -1514,7 +1514,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {activeTab === 'members' && currentUser?.isAdmin && (
           <div className="cn-glass rounded-2xl p-4 mb-4">
             <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">How new members get approved</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-3">
               {currentHub?.joinApprovalMode === 'member_vote'
                 ? 'New join requests open a vote in Decisions. Members decide, using this hub\'s quorum threshold.'
                 : 'You (and other admins) approve or decline each new join request.'}
@@ -1526,7 +1526,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
                   (currentHub?.joinApprovalMode ?? 'admin') === 'admin'
                     ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
-                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-blue-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300 hover:border-blue-400'
                 }`}
               >
                 Admin approval
@@ -1537,7 +1537,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 className={`flex-1 py-2 px-3 rounded-lg border text-[13px] font-medium transition-all disabled:opacity-50 ${
                   currentHub?.joinApprovalMode === 'member_vote'
                     ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
-                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-blue-400'
+                    : 'border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300 hover:border-blue-400'
                 }`}
               >
                 Member vote
@@ -1559,7 +1559,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                 aria-label="Refresh pending requests"
               >
-                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${pendingLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-zinc-400 ${pendingLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
             <div className="divide-y divide-slate-100 dark:divide-zinc-800">
@@ -1573,7 +1573,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-slate-900 dark:text-white truncate block">{u.username}</span>
                       {u.created_at && (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                        <span className="text-xs text-slate-400 dark:text-zinc-500">
                           Requested {new Date(u.created_at).toLocaleDateString()}
                         </span>
                       )}
@@ -1618,19 +1618,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                 aria-label="Refresh members"
               >
-                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-slate-400 ${membersLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 text-slate-500 dark:text-zinc-400 ${membersLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
 
             {membersError && (
               <div className="px-4 py-6 text-center space-y-1">
-                <p className="text-sm text-slate-500 dark:text-slate-400">{membersError}</p>
-                <p className="text-xs text-slate-400 dark:text-slate-500">Member list requires hub API access</p>
+                <p className="text-sm text-slate-500 dark:text-zinc-400">{membersError}</p>
+                <p className="text-xs text-slate-400 dark:text-zinc-500">Member list requires hub API access</p>
               </div>
             )}
 
             {!membersLoading && !membersError && members.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+              <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-zinc-500">
                 No members found
               </div>
             )}
@@ -1652,7 +1652,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-900 dark:text-white truncate">
                           {member.username}
-                          {isSelf && <span className="text-slate-400 dark:text-slate-500 font-normal"> (you)</span>}
+                          {isSelf && <span className="text-slate-400 dark:text-zinc-500 font-normal"> (you)</span>}
                         </span>
                         {memRole === 'admin' && (
                           <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0 font-semibold">
@@ -1666,7 +1666,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         )}
                       </div>
                       {member.created_at && (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                        <span className="text-xs text-slate-400 dark:text-zinc-500">
                           Joined {new Date(member.created_at).toLocaleDateString()}
                         </span>
                       )}
@@ -1721,7 +1721,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             <div>
               <div className="mb-3">
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Dashboard Features</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                   Choose which built-in features are visible on this hub's dashboard.
                 </p>
               </div>
@@ -1783,7 +1783,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             <div>
               <div className="mb-3">
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">External Integrations</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                   Connect third-party services to extend your hub with additional capabilities.
                 </p>
               </div>
@@ -1803,7 +1803,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <h3 className="font-semibold text-slate-900 dark:text-white">
                       {connectedApp ? appDisplayName : 'Hub App Integration'}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                       {connectedApp
                         ? `Connected — powering ${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length} feature${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length === 1 ? '' : 's'} on this hub.`
                         : 'Connect any compatible app to extend this hub with Initiatives, Spaces, and more.'}
@@ -1871,13 +1871,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
                         {/* Update connection form (collapsed header) */}
                         <details className="group">
-                          <summary className="cursor-pointer text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 list-none flex items-center gap-1 select-none">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300 list-none flex items-center gap-1 select-none">
                             <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
                             Update connection
                           </summary>
                           <div className="mt-3 space-y-3 pl-4 border-l-2 border-slate-100 dark:border-zinc-800">
                             <div>
-                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">App URL</label>
                               <input
                                 type="url"
                                 value={appUrl}
@@ -1887,7 +1887,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
+                              <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">API Key</label>
                               <input
                                 type="password"
                                 value={appKey}
@@ -1929,7 +1929,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
                         <div className="space-y-3">
                           <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">App URL</label>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">App URL</label>
                             <input
                               type="url"
                               value={appUrl}
@@ -1939,7 +1939,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">API Key</label>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">API Key</label>
                             <input
                               type="password"
                               value={appKey}
@@ -1989,7 +1989,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Support &amp; Requests</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Help requests, bug reports, and feature suggestions from members</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Help requests, bug reports, and feature suggestions from members</p>
               </div>
               <button
                 onClick={loadRequests}
@@ -2088,7 +2088,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               <span className="text-[10px] text-indigo-500 font-medium">Network-wide</span>
                             )}
                           </div>
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-200 line-clamp-2">{req.problem}</p>
+                          <p className="text-sm font-medium text-slate-800 dark:text-zinc-200 line-clamp-2">{req.problem}</p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             {req.authorUsername && (
                               <p className="text-xs text-slate-400 dark:text-zinc-500">by {req.authorUsername}</p>
@@ -2106,13 +2106,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           {req.whoItHelps && (
                             <div>
                               <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Who it helps</p>
-                              <p className="text-sm text-slate-700 dark:text-slate-300">{req.whoItHelps}</p>
+                              <p className="text-sm text-slate-700 dark:text-zinc-300">{req.whoItHelps}</p>
                             </div>
                           )}
                           {req.expectedOutcome && (
                             <div>
                               <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Expected outcome</p>
-                              <p className="text-sm text-slate-700 dark:text-slate-300">{req.expectedOutcome}</p>
+                              <p className="text-sm text-slate-700 dark:text-zinc-300">{req.expectedOutcome}</p>
                             </div>
                           )}
                           <div className="flex gap-4 flex-wrap text-xs text-slate-400 dark:text-zinc-500">
@@ -2131,7 +2131,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               onChange={e => setRequestNote(prev => ({ ...prev, [req.id]: e.target.value }))}
                               rows={2}
                               placeholder="Add a note for the requester…"
-                              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-300 dark:placeholder-zinc-600 focus:outline-none focus:border-indigo-400 resize-none"
+                              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-zinc-200 placeholder-slate-300 dark:placeholder-zinc-600 focus:outline-none focus:border-indigo-400 resize-none"
                             />
                           </div>
 
@@ -2194,7 +2194,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Hub Assistant</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Local AI that knows your community. No cloud. No data leaves the hub.</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Local AI that knows your community. No cloud. No data leaves the hub.</p>
               </div>
               <button onClick={loadAiStatus} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
                 <RefreshCw className={`w-4 h-4 text-slate-400 ${aiStatusLoading ? 'animate-spin' : ''}`} />
@@ -2223,7 +2223,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <p className="text-sm font-medium text-slate-900 dark:text-white">
                       {aiStatus?.ollamaReady ? 'Ollama is running' : 'Ollama not detected'}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                       {aiStatus?.ollamaReady
                         ? `Active model: ${aiStatus.model}`
                         : 'The citinet-ollama container may still be starting up'}
@@ -2237,7 +2237,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <Loader2 className="w-4 h-4 text-violet-500 animate-spin shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-white">Downloading AI model…</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
                         {aiStatus.autoPullStatus || 'Starting…'}
                       </p>
                     </div>
@@ -2248,7 +2248,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <WifiOff className="w-4 h-4 text-rose-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-white">Automatic download failed</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                         {aiStatus.autoPullError} — pull a model manually below
                       </p>
                     </div>
@@ -2262,7 +2262,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Hub Assistant</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                       {aiStatus?.enabled ? 'Visible to all hub members' : 'Hidden from members'}
                     </p>
                   </div>
@@ -2283,7 +2283,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Chat Model</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Powers all AI responses — click a model to make it active</p>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Powers all AI responses — click a model to make it active</p>
                   </div>
                   <div className="space-y-2">
                     {installedModels.length > 0 ? (
@@ -2302,14 +2302,14 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                           >
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-slate-900 dark:text-white">{m}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{isActive ? 'Currently active' : 'Installed — click to activate'}</p>
+                              <p className="text-xs text-slate-500 dark:text-zinc-400">{isActive ? 'Currently active' : 'Installed — click to activate'}</p>
                             </div>
                             {isActive && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-violet-600 text-white shrink-0">Active</span>}
                           </button>
                         );
                       })
                     ) : (
-                      <p className="text-xs text-slate-400 dark:text-slate-500 italic">No chat models downloaded yet — add one below</p>
+                      <p className="text-xs text-slate-400 dark:text-zinc-500 italic">No chat models downloaded yet — add one below</p>
                     )}
                   </div>
                 </div>
@@ -2318,7 +2318,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Smart Context (RAG)</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Retrieves posts relevant to each question instead of always injecting the most recent ones</p>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Retrieves posts relevant to each question instead of always injecting the most recent ones</p>
                   </div>
 
                   {/* Embedding model status */}
@@ -2330,7 +2330,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <div className={`w-2 h-2 rounded-full shrink-0 ${indexStatus?.embedReady ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-600'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-slate-900 dark:text-white">{indexStatus?.embedModel ?? 'nomic-embed-text'}</p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{indexStatus?.embedReady ? 'Installed · Smart context active' : 'Not installed · Using recency fallback'}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-zinc-400">{indexStatus?.embedReady ? 'Installed · Smart context active' : 'Not installed · Using recency fallback'}</p>
                     </div>
                   </div>
 
@@ -2338,7 +2338,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                   {indexStatus && (
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-500 dark:text-slate-400">Posts indexed</span>
+                        <span className="text-slate-500 dark:text-zinc-400">Posts indexed</span>
                         <span className="font-medium text-slate-900 dark:text-white">{indexStatus.indexed} / {indexStatus.total}</span>
                       </div>
                       <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
@@ -2370,19 +2370,19 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       <button
                         onClick={handleReindex}
                         disabled={reindexing || indexStatus?.reindexing}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
                       >
                         {reindexing || indexStatus?.reindexing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                         {indexStatus?.reindexing ? 'Re-indexing…' : 'Re-index all posts'}
                       </button>
                     )}
-                    {reindexMsg && <p className="text-xs text-slate-500 dark:text-slate-400">{reindexMsg}</p>}
+                    {reindexMsg && <p className="text-xs text-slate-500 dark:text-zinc-400">{reindexMsg}</p>}
                   </div>
                   {/* Live re-index progress — counts don't move via indexed/total above
                       since overwriting embeddings doesn't change the row count, so this
                       is the only place actual re-index progress is visible. */}
                   {indexStatus?.reindexing && (
-                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400">
                       Re-indexing… {indexStatus.reindexDone ?? 0} / {indexStatus.reindexTotal || '?'} posts
                     </div>
                   )}
@@ -2392,7 +2392,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     </div>
                   )}
                   {pulling && pullModel === 'nomic-embed-text' && pullProgress && (
-                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400">
+                    <div className="text-xs px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400">
                       {pullProgress}
                     </div>
                   )}
@@ -2402,7 +2402,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 <div className="cn-glass rounded-2xl p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Add a Chat Model</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select a model to download, then click Pull. Once downloaded it appears above.</p>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Select a model to download, then click Pull. Once downloaded it appears above.</p>
                   </div>
                   <div className="space-y-1.5">
                     {SUGGESTED_MODELS.map(m => (
@@ -2420,7 +2420,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                             <p className="text-sm font-medium text-slate-900 dark:text-white">{m.label}</p>
                             {installedModels.includes(m.id) && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Installed</span>}
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{m.note}</p>
+                          <p className="text-xs text-slate-500 dark:text-zinc-400">{m.note}</p>
                         </div>
                         <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${pullModel === m.id ? 'border-slate-500 dark:border-zinc-400' : 'border-slate-300 dark:border-zinc-600'}`}>
                           {pullModel === m.id && <div className="w-2 h-2 rounded-full bg-slate-500 dark:bg-zinc-400" />}
@@ -2453,7 +2453,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400'
                         : pullProgress === 'Download complete'
                           ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
-                          : 'bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-slate-400'
+                          : 'bg-slate-50 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400'
                     }`}>
                       {pullProgress}
                     </div>
@@ -2590,15 +2590,15 @@ function InfoRow({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{label}</p>
+      <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1">{label}</p>
       {value ? (
-        <p className={`${small ? 'text-xs' : 'text-sm'} ${mono ? 'font-mono break-all' : ''} text-slate-800 dark:text-slate-200`}>
+        <p className={`${small ? 'text-xs' : 'text-sm'} ${mono ? 'font-mono break-all' : ''} text-slate-800 dark:text-zinc-200`}>
           {value}
         </p>
       ) : (
-        <p className="text-sm italic text-slate-400 dark:text-slate-500">{placeholder ?? 'Not set'}</p>
+        <p className="text-sm italic text-slate-400 dark:text-zinc-500">{placeholder ?? 'Not set'}</p>
       )}
-      {note && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{note}</p>}
+      {note && <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">{note}</p>}
     </div>
   );
 }
@@ -2607,7 +2607,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4">
       <div className="text-2xl font-bold text-slate-900 dark:text-white">{value}</div>
-      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{label}</div>
+      <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">{label}</div>
     </div>
   );
 }

@@ -26,6 +26,10 @@ import React from 'react';
 const REGISTRY_JSON_URL = 'https://raw.githubusercontent.com/fergtech/citinet-registry/main/registry.json';
 const FETCH_TIMEOUT_MS = 3500;
 const DEFAULT_IMAGE = 'https://citinet.cloud/icons/og-image.png';
+const CATEGORY_LABEL = {
+  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Project',
+  REQUEST: 'Request', EVENT: 'Event', POLL: 'Poll',
+};
 
 function truncate(text, max) {
   const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -110,6 +114,17 @@ async function loadCardText(type, id, base, hubName) {
       if (!r.ok) return fallback;
       const profile = await r.json();
       return { kicker: 'Profile', title: truncate(profile.display_name || profile.username || id, 90), description: truncate(profile.bio || profile.profile_headline, 150) };
+    }
+    if (type === 'post') {
+      const r = await fetchWithTimeout(`${base}/api/public/posts/${encodeURIComponent(id)}`);
+      if (!r.ok) return fallback;
+      const post = await r.json();
+      const kicker = CATEGORY_LABEL[post.category] || 'Post';
+      const title = truncate(post.title || post.body || `${kicker} from ${hubName}`, 90);
+      const description = post.category === 'POLL' && post.poll
+        ? `${post.poll.options.length} options · ${post.poll.total_votes} vote${post.poll.total_votes === 1 ? '' : 's'}`
+        : truncate(post.body, 150);
+      return { kicker, title, description };
     }
   } catch {
     return fallback;

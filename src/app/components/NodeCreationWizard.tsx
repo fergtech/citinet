@@ -97,9 +97,9 @@ interface NodeCreationWizardProps {
 
 function FieldLabel({ label, hint }: { label: string; hint?: string }) {
   return (
-    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">
       {label}
-      {hint && <span className="text-slate-400 dark:text-slate-500 font-normal ml-1">({hint})</span>}
+      {hint && <span className="text-slate-400 dark:text-zinc-500 font-normal ml-1">({hint})</span>}
     </label>
   );
 }
@@ -167,7 +167,7 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied
         ? <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-        : <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
+        : <Copy className="w-4 h-4 text-slate-500 dark:text-zinc-400" />}
     </button>
   );
 }
@@ -190,7 +190,7 @@ function ProgressBar({ currentStep }: { currentStep: WizardStep }) {
         <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
           Step {idx + 1} of {PROGRESS_STEPS.length} — {labels[idx]}
         </span>
-        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+        <span className="text-[11px] font-semibold text-slate-400 dark:text-zinc-500">
           {Math.round(pct)}%
         </span>
       </div>
@@ -499,7 +499,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
               {data.hubName} is live!
             </h2>
-            <p className="text-slate-500 dark:text-slate-400">
+            <p className="text-slate-500 dark:text-zinc-400">
               Your hub is running and ready for neighbors to join.
             </p>
           </div>
@@ -510,7 +510,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
               border-2 border-slate-200 dark:border-zinc-700">
               <Server className="w-5 h-5 text-slate-500 flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">This machine</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mb-0.5">This machine</p>
                 <p className="font-mono text-sm text-slate-900 dark:text-white">
                   {liveInfo?.localUrl ?? 'http://localhost:9090'}
                 </p>
@@ -616,7 +616,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         Name Your Community Hub
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         This is what neighbors will see when they discover your hub
                       </p>
                     </div>
@@ -633,7 +633,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       {generateSlug(data.hubName).length >= 2 && (
                         <p className="text-xs mt-1.5">
                           {slugChecking ? (
-                            <span className="text-slate-400 dark:text-slate-500">Checking availability…</span>
+                            <span className="text-slate-400 dark:text-zinc-500">Checking availability…</span>
                           ) : slugAvailable === false ? (
                             <span className="text-rose-600 dark:text-rose-400">
                               "{generateSlug(data.hubName)}" is already taken — try a different name.
@@ -665,7 +665,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         }}
                       />
                       {!data.hubLat && (
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 ml-1">
                           Type your neighborhood or city and select from the suggestions
                         </p>
                       )}
@@ -692,7 +692,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     {/* Data storage location */}
                     <div>
                       <div className="flex items-center gap-2 mb-2">
-                        <HardDrive className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0" />
+                        <HardDrive className="w-4 h-4 text-slate-400 dark:text-zinc-500 flex-shrink-0" />
                         <FieldLabel label="Data storage location" hint="optional" />
                       </div>
                       <TextInput
@@ -700,7 +700,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         onChange={v => set({ dataDir: v })}
                         placeholder="e.g. H:\citinet-hub\data  or  /mnt/data/citinet"
                       />
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+                      <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 ml-1">
                         Where your hub stores all data (database, files, cache). Defaults to a <code className="font-mono">data/</code> folder inside your hub directory. You can point this to any drive — internal, external, or NAS — and change it any time by editing <code className="font-mono">.env</code> and restarting.
                       </p>
                     </div>
@@ -714,7 +714,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         How will people access your hub?
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         You can change this later
                       </p>
                     </div>
@@ -742,7 +742,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
                             Local Network Only
                           </h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Neighbors connect using your machine's local IP address (e.g.
                             <code className="bg-slate-100 dark:bg-zinc-700 px-1 rounded ml-1 text-xs">
                               192.168.x.x:9090
@@ -781,7 +781,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               Worldwide
                             </span>
                           </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Your hub gets a permanent HTTPS URL (
                             <code className="bg-slate-100 dark:bg-zinc-700 px-1 rounded text-xs">
                               https://your-hub.ts.net
@@ -813,7 +813,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                 href="https://login.tailscale.com/admin/settings/keys"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400
+                                className="flex items-center gap-1 text-xs text-slate-600 dark:text-zinc-400
                                   hover:underline"
                               >
                                 Generate a key
@@ -829,7 +829,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                 text-slate-900 dark:text-white bg-white dark:bg-zinc-900 font-mono text-[13px]
                                 focus:border-blue-500 focus:outline-none transition-colors"
                             />
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                            <p className="text-xs text-slate-500 dark:text-zinc-400">
                               In Tailscale → Settings → Keys, create a <strong>reusable</strong> auth key.
                               One key can be used for multiple hubs. The key is embedded in your
                               setup script and used to authenticate without a browser login.
@@ -848,7 +848,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         Create your admin account
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         This becomes the hub's admin — baked into the configuration automatically
                       </p>
                     </div>
@@ -883,7 +883,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           type="button"
                           onClick={() => setShowPassword(p => !p)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400
-                            hover:text-slate-600 dark:hover:text-slate-300"
+                            hover:text-slate-600 dark:hover:text-zinc-300"
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -964,7 +964,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                           Choose your apps
                         </h2>
-                        <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                        <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                           What's this hub for? Pick a starting point, then fine-tune below — you can change this any time in Hub Management
                         </p>
                       </div>
@@ -984,7 +984,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                             <span className="text-[13.5px] font-semibold text-slate-800 dark:text-white">
                               {activeCategory?.label ?? 'Custom selection'}
                             </span>
-                            <ChevronDown className="w-4 h-4 text-slate-400 dark:text-slate-500 ml-auto flex-shrink-0" />
+                            <ChevronDown className="w-4 h-4 text-slate-400 dark:text-zinc-500 ml-auto flex-shrink-0" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
@@ -997,7 +997,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               onSelect={() => set({ enabledApps: cat.apps, hubFocus: cat.hubFocus })}
                               className="gap-2.5 py-2"
                             >
-                              <cat.Icon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                              <cat.Icon className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                               <span className="text-[13px] font-medium">{cat.label}</span>
                               {activeCategory?.id === cat.id && (
                                 <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ml-auto" />
@@ -1007,7 +1007,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         </DropdownMenuContent>
                       </DropdownMenu>
                       {activeCategory && (
-                        <p className="text-[12px] text-slate-500 dark:text-slate-400 -mt-1.5">
+                        <p className="text-[12px] text-slate-500 dark:text-zinc-400 -mt-1.5">
                           {activeCategory.description}
                         </p>
                       )}
@@ -1029,7 +1029,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               <div className="flex items-center gap-2 mb-1">
                                 <MaskIcon
                                   src={app.icon}
-                                  className={`w-5 h-5 flex-shrink-0 ${on ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}
+                                  className={`w-5 h-5 flex-shrink-0 ${on ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-zinc-500'}`}
                                 />
                                 <span className={`text-sm font-semibold ${on ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-white'}`}>
                                   {app.label}
@@ -1038,7 +1038,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                   <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 ml-auto flex-shrink-0" />
                                 )}
                               </div>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug">
+                              <p className="text-xs text-slate-500 dark:text-zinc-400 leading-snug">
                                 {app.desc}
                               </p>
                             </button>
@@ -1046,7 +1046,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         })}
                       </div>
 
-                      <p className="text-xs text-slate-400 dark:text-slate-500 text-center">
+                      <p className="text-xs text-slate-400 dark:text-zinc-500 text-center">
                         {data.enabledApps.length} of {ALL_HUB_APPS.length} apps selected
                       </p>
                     </div>
@@ -1060,7 +1060,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         Enable a local AI assistant?
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         Off by default — you can turn this on later from Hub Management instead
                       </p>
                     </div>
@@ -1086,7 +1086,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
                             No local AI
                           </h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Everything else works exactly the same. Recommended for a Raspberry Pi,
                             an older laptop, or any lower-power machine.
                           </p>
@@ -1115,7 +1115,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <div className="flex items-center gap-2 mb-1">
                             <MaskIcon
                               src="/icons/onboard/ai.png"
-                              className={`w-5 h-5 flex-shrink-0 ${data.enableAi ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`}
+                              className={`w-5 h-5 flex-shrink-0 ${data.enableAi ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-zinc-500'}`}
                             />
                             <h3 className="font-semibold text-slate-900 dark:text-white">
                               Enable local AI assistant
@@ -1125,7 +1125,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               Heavier
                             </span>
                           </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Runs a real language model on your own hardware via Ollama — drafts posts,
                             summarizes discussions, answers questions about your community. Needs more
                             RAM and a few GB of disk for the model itself. Works on CPU alone, just
@@ -1148,7 +1148,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                             border border-slate-200 dark:border-white/10 space-y-3">
                             <div className="flex items-start gap-3">
                               <Cpu className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                              <p className="text-xs text-slate-500 dark:text-zinc-400">
                                 Recommended minimum: 8 GB RAM and 10 GB free disk. The default model
                                 downloads automatically once the hub is running — no extra step here.
                               </p>
@@ -1161,11 +1161,11 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                                 className="w-4 h-4 mt-0.5 rounded border-slate-300 dark:border-zinc-600
                                   text-blue-600 focus:ring-blue-500 cursor-pointer"
                               />
-                              <span className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="text-sm text-slate-700 dark:text-zinc-300">
                                 This machine has an <strong>NVIDIA GPU</strong> — use it for AI
                               </span>
                             </label>
-                            <p className="text-xs text-slate-400 dark:text-slate-500 pl-7">
+                            <p className="text-xs text-slate-400 dark:text-zinc-500 pl-7">
                               Leave unchecked if you're not sure. Requesting a GPU that isn't there
                               stops the AI container from starting at all — CPU-only is always safe,
                               just slower to respond.
@@ -1184,7 +1184,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         Enable calls &amp; broadcasts?
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         Off by default — you can turn this on later by editing your hub's docker-compose.yml
                       </p>
                     </div>
@@ -1210,7 +1210,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
                             No calls or broadcasts
                           </h3>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Messages, Feed, and everything else work exactly the same. Fewer moving
                             parts and no extra ports to open on your router.
                           </p>
@@ -1237,7 +1237,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <Radio className={`w-5 h-5 flex-shrink-0 ${data.enableComms ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                            <Radio className={`w-5 h-5 flex-shrink-0 ${data.enableComms ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400 dark:text-zinc-500'}`} />
                             <h3 className="font-semibold text-slate-900 dark:text-white">
                               Enable calls &amp; broadcasts
                             </h3>
@@ -1246,7 +1246,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                               Heavier
                             </span>
                           </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">
+                          <p className="text-sm text-slate-600 dark:text-zinc-400">
                             Runs a self-hosted LiveKit server for Messages' 1:1 video/audio calls and
                             live broadcasts. Opens a few extra ports for the actual call media
                             (7881/tcp, 50000–50100/udp) — safe on a home network, but something to
@@ -1273,7 +1273,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                       <h2 className="text-[19px] font-bold text-slate-900 dark:text-white mb-1">
                         Download &amp; launch
                       </h2>
-                      <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                      <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                         One script. One command. Everything is pre-configured.
                       </p>
                     </div>
@@ -1281,11 +1281,11 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     {/* What the script does */}
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800
                       border border-slate-200 dark:border-white/10">
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400
+                      <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400
                         uppercase tracking-wide mb-3">
                         Your {osLabel} setup script will:
                       </p>
-                      <ul className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                      <ul className="space-y-2 text-sm text-slate-700 dark:text-zinc-300">
                         {[
                           'Create a citinet-hub folder in your home directory',
                           'Write your hub configuration (all secrets pre-generated)',
@@ -1370,7 +1370,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                           </div>
                         )}
 
-                        <p className="text-center text-sm text-slate-500 dark:text-slate-400">
+                        <p className="text-center text-sm text-slate-500 dark:text-zinc-400">
                           Run the command, then click below to watch your hub come online.
                         </p>
                       </motion.div>
@@ -1385,7 +1385,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                 <button
                   onClick={back}
                   className="flex-1 px-5 py-3 border border-slate-200 dark:border-white/10
-                    text-slate-700 dark:text-slate-300 rounded-lg font-semibold text-sm
+                    text-slate-700 dark:text-zinc-300 rounded-lg font-semibold text-sm
                     hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                 >
                   {step === 'identity' ? 'Cancel' : 'Back'}
@@ -1397,7 +1397,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     justify-center gap-2 transition-all ${
                     canProceed[step]
                       ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
-                      : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                      : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-zinc-500 cursor-not-allowed'
                   }`}
                 >
                   {step === 'download' ? (

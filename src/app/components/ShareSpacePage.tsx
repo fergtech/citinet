@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { Loader2, AlertCircle, Users, Globe, MessageCircle, LayoutGrid } from 'lucide-react';
 import { hubService } from '../services/hubService';
 import { AvatarFallback } from './icons';
+import { ShareWallpaper } from './ShareWallpaper';
 import type { HubPost } from '../types/hub';
 
 interface PublicSpace {
@@ -108,10 +109,11 @@ export function ShareSpacePage() {
   }, [hubSlug, spaceSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col">
-      <header className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen flex flex-col">
+      <ShareWallpaper />
+      <header className="border-b border-slate-900 px-6 py-4 flex items-center justify-between">
         <a href="/" target="_blank" rel="noopener noreferrer" className="flex items-baseline gap-1.5 transition-opacity hover:opacity-70">
-          <span className="text-lg font-bold tracking-tight text-white">citinet</span>
+          <span className="text-lg font-bold tracking-tight cn-wordmark">citinet</span>
           <span className="text-xs text-zinc-500 font-medium">community cloud</span>
         </a>
         {data && (
@@ -125,8 +127,8 @@ export function ShareSpacePage() {
       <main className="flex-1 flex flex-col items-center px-4 py-8 max-w-2xl mx-auto w-full">
         {loading ? (
           <div className="flex flex-col items-center gap-3 mt-20">
-            <Loader2 className="w-8 h-8 text-zinc-400 animate-spin" />
-            <p className="text-sm text-zinc-400">Loading space…</p>
+            <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+            <p className="text-sm text-slate-400">Loading space…</p>
           </div>
         ) : error ? (
           <div className="flex flex-col items-center gap-3 mt-20 text-center max-w-sm">
@@ -206,8 +208,8 @@ export function ShareSpacePage() {
                               ? <img src={sourceBrandLogo} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                               : <LayoutGrid className="w-3 h-3 text-zinc-400" />
                             }
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Shared from</span>
-                            <span className="text-xs font-semibold text-zinc-200 leading-none">{sourceBrandName}</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Shared from</span>
+                            <span className="text-xs font-semibold text-slate-200 leading-none">{sourceBrandName}</span>
                           </div>
                         ) : (
                           <>
@@ -218,8 +220,8 @@ export function ShareSpacePage() {
                         <span className="text-xs text-zinc-500 ml-auto">{timeAgo(post.created_at)}</span>
                       </div>
                       {post.body && (
-                        <p className="text-sm text-zinc-400 leading-relaxed mb-3">
-                          {truncated}{isTruncated && <span className="text-zinc-300 font-medium"> Sign in to read more</span>}
+                        <p className="text-sm text-slate-400 leading-relaxed mb-3">
+                          {truncated}{isTruncated && <span className="text-slate-300 font-medium"> Sign in to read more</span>}
                         </p>
                       )}
                       {mediaUrl && (
@@ -229,8 +231,8 @@ export function ShareSpacePage() {
                             : <img src={mediaUrl} alt={post.title ?? ''} className="w-full max-h-64 object-cover rounded-xl" />}
                         </div>
                       )}
-                      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-zinc-700">
-                        <span className="text-xs text-zinc-500 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
+                      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-700">
+                        <span className="text-xs text-slate-500 flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {post.reply_count}</span>
                       </div>
                     </div>
                   );

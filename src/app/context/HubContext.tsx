@@ -398,7 +398,7 @@ export function useHubStatus(): {
   const statusMap: Record<HubConnectionStatus, { label: string; color: string; dotColor: string }> = {
     connected: { label: 'Connected', color: 'text-green-600 dark:text-green-400', dotColor: 'bg-green-500' },
     connecting: { label: 'Connecting...', color: 'text-yellow-600 dark:text-yellow-400', dotColor: 'bg-yellow-500' },
-    disconnected: { label: 'Local Only', color: 'text-slate-600 dark:text-slate-400', dotColor: 'bg-slate-400' },
+    disconnected: { label: 'Local Only', color: 'text-slate-600 dark:text-zinc-400', dotColor: 'bg-slate-400' },
     unreachable: { label: 'Reconnecting…', color: 'text-orange-600 dark:text-orange-400', dotColor: 'bg-orange-500 animate-pulse' },
   };
 

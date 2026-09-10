@@ -34,7 +34,7 @@ import { BroadcastOverlay } from './comms/BroadcastOverlay';
 import { MinimizedBroadcastBar } from './comms/MinimizedBroadcastBar';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache, beginHubBrowsing } from '../utils/subdomain';
-import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
+import { APP_TILES, DOCK_PRIORITY_SCREENS, CN_TILE_AI, CN_TILE_VENDOR, CN_TILE_SUGGEST } from '../data/appTiles';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
 
@@ -65,7 +65,7 @@ function SortablePinnedRow({ app, onUnpin }: { app: NavTile; onUnpin: () => void
       <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
         <app.Icon className="w-4 h-4" />
       </div>
-      <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+      <span className="flex-1 text-sm font-medium text-slate-700 dark:text-zinc-200 truncate">{app.label}</span>
       <button
         onClick={onUnpin}
         title="Remove from navigation"
@@ -102,7 +102,7 @@ function DraggableUnpinnedTile({ app, onPin }: { app: NavTile; onPin: () => void
       <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
         <app.Icon className="w-4 h-4" />
       </div>
-      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+      <span className="text-sm font-medium text-slate-700 dark:text-zinc-200 truncate">{app.label}</span>
     </button>
   );
 }
@@ -128,7 +128,7 @@ function NavDragPreview({ app }: { app: NavTile }) {
       <div className={`w-8 h-8 rounded-lg ${app.gradient} flex items-center justify-center text-white shrink-0`}>
         <app.Icon className="w-4 h-4" />
       </div>
-      <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{app.label}</span>
+      <span className="text-sm font-medium text-slate-700 dark:text-zinc-200 truncate">{app.label}</span>
     </div>
   );
 }
@@ -271,7 +271,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   };
 
   const enabledSet = currentHub?.enabledApps ?? null;
-  const AI_TILE = { Icon: Sparkles, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-purple-600', notifyFeature: undefined as NotificationFeature | undefined };
+  const AI_TILE = { Icon: Sparkles, label: 'Assistant', screen: 'assistant', gradient: CN_TILE_AI, notifyFeature: undefined as NotificationFeature | undefined };
   const orderedTiles = hubCategory?.pinnedNav
     ? [...APP_TILES].sort((a, b) => {
         const ai = hubCategory.pinnedNav!.indexOf(a.screen);
@@ -383,13 +383,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
   const pinnedScreens = new Set(desktopNavItems.map(i => i.screen));
   const moreNavItems = [
     ...visibleTiles.filter(app => !pinnedScreens.has(app.screen) && !app.screen.startsWith('vendor/')),
-    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600', notifyFeature: undefined as NotificationFeature | undefined },
+    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: CN_TILE_SUGGEST, notifyFeature: undefined as NotificationFeature | undefined },
   ];
 
   const mobileLaunchpadItems = [
     ...visibleTiles,
-    ...(myVendor ? [{ Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-500 to-blue-700', notifyFeature: undefined as NotificationFeature | undefined }] : []),
-    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600', notifyFeature: undefined as NotificationFeature | undefined },
+    ...(myVendor ? [{ Icon: Store, label: myVendor.name, screen: `vendor/${myVendor.id}`, gradient: CN_TILE_VENDOR, notifyFeature: undefined as NotificationFeature | undefined }] : []),
+    { Icon: Sparkles, label: 'Suggest', screen: 'suggest', gradient: CN_TILE_SUGGEST, notifyFeature: undefined as NotificationFeature | undefined },
   ].filter(app => !DOCK_PRIORITY_SCREENS.includes(app.screen));
 
   // Navigation with deeplink/badge clearing
@@ -609,26 +609,26 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           title="About this hub"
         >
           <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
-          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">{nodeName}</span>
+          <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{nodeName}</span>
         </button>
         <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
           <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-slate-500 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search posts, people, files…"
-              className="w-full h-6 pl-7 pr-2 rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs text-slate-900 dark:text-slate-200 placeholder:text-slate-500 hover:bg-black/10 dark:hover:bg-white/10 focus:bg-black/10 dark:focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-blue-400/40 transition-colors"
+              className="w-full h-6 pl-7 pr-2 rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs text-slate-900 dark:text-zinc-200 placeholder:text-slate-500 hover:bg-black/10 dark:hover:bg-white/10 focus:bg-black/10 dark:focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-blue-400/40 transition-colors"
             />
           </div>
         </form>
         <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-        <span className="text-xs text-slate-700 dark:text-slate-300">{statusLabel}</span>
+        <span className="text-xs text-slate-700 dark:text-zinc-300">{statusLabel}</span>
         {nodeStatus.onlineNow > 0 && (
           <>
             <span className="text-xs cn-text-4">·</span>
-            <span className="text-xs text-slate-700 dark:text-slate-300">{nodeStatus.onlineNow} online</span>
+            <span className="text-xs text-slate-700 dark:text-zinc-300">{nodeStatus.onlineNow} online</span>
           </>
         )}
         <button
@@ -636,7 +636,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
           title="Update tunnel URL"
         >
-          <Link2 className="w-3 h-3 text-slate-500 dark:text-slate-500" />
+          <Link2 className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
         </button>
       </div>
 
@@ -737,7 +737,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                       <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</span>
                       {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">Admin</span>}
                     </div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{nodeName}</span>
+                    <span className="text-xs text-slate-500 dark:text-zinc-400 truncate block">{nodeName}</span>
                   </div>
                 </div>
               </div>
@@ -747,25 +747,25 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                   >
-                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">View Profile</span>
+                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                    <span className="text-sm text-slate-700 dark:text-zinc-300">View Profile</span>
                   </button>
                 )}
                 <button
                   onClick={() => { setShowAccountMenu(false); navigate(hubPath('/account')); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
-                  <User className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Account Settings</span>
+                  <User className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-zinc-300">Account Settings</span>
                 </button>
                 <button
                   onClick={toggleTheme}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
                   {isDarkMode
-                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-                    : <Sun className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />}
-                  <span className="text-sm text-slate-700 dark:text-slate-300 flex-1">Dark Mode</span>
+                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                    : <Sun className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />}
+                  <span className="text-sm text-slate-700 dark:text-zinc-300 flex-1">Dark Mode</span>
                   <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
                   </span>
@@ -774,8 +774,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowAccountMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
-                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Help & Support</span>
+                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-zinc-300">Help & Support</span>
                 </button>
               </div>
               <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
@@ -784,8 +784,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowAccountMenu(false); handleSignOut(); }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
                 >
-                  <LogOut className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700 dark:text-slate-300">Sign Out</span>
+                  <LogOut className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-zinc-300">Sign Out</span>
                 </button>
                 <button
                   onClick={() => { setShowAccountMenu(false); handleSwitchHub(); }}
@@ -806,7 +806,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => navigate(hubPath('/'))}
             title="Home"
-            className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
+            className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
             <Home className="w-5 h-5" />
           </button>
@@ -817,11 +817,11 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
                 title={app.label}
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
+                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
               >
                 <app.Icon className="w-5 h-5" />
                 {badge > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                  <span className="absolute top-1 right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                     {badge > 9 ? '9+' : badge}
                   </span>
                 )}
@@ -832,7 +832,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setShowMoreMenu(true)}
             title="More"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
             <MoreGlyph className="w-5 h-5" />
           </button>
@@ -856,11 +856,11 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => { clearBadge('hub_management'); notificationsService.markRead(hubSlug, 'hub_management').catch(() => {}); handleNavigate('hub-management'); }}
               title="Hub Admin"
-              className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
+              className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
             >
               <Shield className="w-5 h-5" />
               {notifCounts.hub_management > 0 && (
-                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                <span className="absolute top-0.5 right-0.5 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                   {notifCounts.hub_management > 9 ? '9+' : notifCounts.hub_management}
                 </span>
               )}
@@ -869,7 +869,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openProjectInfo}
             title="About citinet"
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
             <CircleAlert className="w-5 h-5" />
           </button>
@@ -887,7 +887,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={toggleDesktopNavLayout}
             title="Switch to sidebar layout"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0 ml-1"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0 ml-1"
           >
             <PanelLeft className="w-4 h-4" />
           </button>
@@ -897,7 +897,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => navigate(hubPath('/'))}
             title="Home"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
               <Home className="w-5 h-5" />
@@ -911,12 +911,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
                 title={app.label}
-                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
               >
                 <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
                   <app.Icon className="w-5 h-5" />
                   {badge > 0 && (
-                    <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                    <span className="absolute top-2 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                       {badge > 9 ? '9+' : badge}
                     </span>
                   )}
@@ -929,7 +929,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setShowMoreMenu(true)}
             title="More"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><MoreGlyph className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">More</span>
@@ -940,7 +940,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               <button
                 onClick={() => handleNavigate(`vendor/${myVendor.id}`)}
                 title={myVendor.name}
-                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
               >
                 <span className="w-16 h-12 flex items-center justify-center shrink-0">
                   <span className="w-9 h-9 rounded-xl overflow-hidden">
@@ -959,12 +959,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => { clearBadge('hub_management'); notificationsService.markRead(hubSlug, 'hub_management').catch(() => {}); handleNavigate('hub-management'); }}
               title="Hub Admin"
-              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+              className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
             >
               <span className="relative w-16 h-12 flex items-center justify-center shrink-0">
                 <Shield className="w-5 h-5" />
                 {notifCounts.hub_management > 0 && (
-                  <span className="absolute top-1.5 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                  <span className="absolute top-1.5 right-3 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                     {notifCounts.hub_management > 9 ? '9+' : notifCounts.hub_management}
                   </span>
                 )}
@@ -975,7 +975,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={openProjectInfo}
             title="About citinet"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><CircleAlert className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">About citinet</span>
@@ -983,7 +983,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setShowAccountMenu(v => !v)}
             title="Account"
-            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-slate-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
               <span className="w-9 h-9 rounded-xl overflow-hidden">
@@ -998,7 +998,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={toggleDesktopNavLayout}
             title="Switch to bottom dock"
-            className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-500 dark:text-slate-400 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center h-12 shrink-0 mb-1 overflow-hidden text-slate-500 dark:text-zinc-400 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0"><PanelBottom className="w-5 h-5" /></span>
             <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Bottom dock</span>
@@ -1015,10 +1015,10 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
               <h1 className="text-sm font-semibold text-slate-900 dark:text-white truncate flex-1 min-w-0">{nodeName}</h1>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 shrink-0 whitespace-nowrap">{nodeStatus.onlineNow} online</span>
+              <span className="text-[10px] text-slate-500 dark:text-zinc-400 shrink-0 whitespace-nowrap">{nodeStatus.onlineNow} online</span>
               <div className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 bg-slate-100/80 dark:bg-zinc-800/80 shrink-0">
                 <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-                <span className="text-[9px] font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">{statusLabel}</span>
+                <span className="text-[9px] font-medium text-slate-600 dark:text-zinc-300 whitespace-nowrap">{statusLabel}</span>
               </div>
             </div>
             {connectionStatus === 'unreachable' && (
@@ -1030,7 +1030,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   {registryLoading && <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />}
                 </div>
                 <div className="space-y-1.5">
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Search for your hub by name:</p>
+                  <p className="text-[10px] text-slate-500 dark:text-zinc-400">Search for your hub by name:</p>
                   <input
                     type="text"
                     value={registrySearchQuery}
@@ -1041,7 +1041,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   {registrySearchQuery.trim() && (
                     <div className="space-y-1 max-h-32 overflow-y-auto">
                       {ownRegistryMatches.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 dark:text-slate-500 px-1">No listing found for this hub — try the URL option below.</p>
+                        <p className="text-[10px] text-slate-400 dark:text-zinc-500 px-1">No listing found for this hub — try the URL option below.</p>
                       ) : ownRegistryMatches.map(hub => (
                         <button
                           key={hub.id}
@@ -1050,14 +1050,14 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                           className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-left disabled:opacity-50"
                         >
                           <span className="text-xs font-medium text-slate-900 dark:text-white truncate">{hub.name}</span>
-                          <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{hub.location}</span>
+                          <span className="text-[10px] text-slate-400 dark:text-zinc-500 shrink-0">{hub.location}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
                 <div>
-                  <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 dark:text-slate-500 underline hover:no-underline">
+                  <button onClick={() => setShowManualUrl(v => !v)} className="text-[10px] text-slate-400 dark:text-zinc-500 underline hover:no-underline">
                     {showManualUrl ? 'Hide' : 'Enter URL manually'}
                   </button>
                   {showManualUrl && (
@@ -1108,7 +1108,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           {/* Home */}
           <button
             onClick={() => navigate(hubPath('/'))}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
             <Home className="w-5 h-5" />
             <span className="text-[10px] font-medium leading-none">Home</span>
@@ -1120,12 +1120,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               <button
                 key={app.screen}
                 onClick={() => handleNavigate(app.screen, app.notifyFeature)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
               >
                 <div className="relative">
                   <app.Icon className="w-5 h-5" />
                   {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                    <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                       {badge > 9 ? '9+' : badge}
                     </span>
                   )}
@@ -1138,7 +1138,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               <button
                 key="search"
                 onClick={() => handleNavigate('discover')}
-                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
+                className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
               >
                 <Search className="w-5 h-5" />
                 <span className="text-[10px] font-medium leading-none">Search</span>
@@ -1148,12 +1148,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           {/* Apps waffle — reveals the full app grid (incl. Messages); replaces the old fixed Messages slot */}
           <button
             onClick={() => setShowMobileAppsMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
             <div className="relative">
               <MoreGlyph className="w-5 h-5" />
               {notifCounts.messages > 0 && (
-                <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-slate-900/50">
+                <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 shadow ring-1 ring-white dark:ring-zinc-900/50">
                   {notifCounts.messages > 9 ? '9+' : notifCounts.messages}
                 </span>
               )}
@@ -1163,7 +1163,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           {/* Profile */}
           <button
             onClick={() => setShowMobileAccountMenu(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
             <div className="w-5 h-5 rounded-full overflow-hidden">
               {resolvedAvatarUrl
@@ -1208,7 +1208,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                         <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{displayName}</p>
                         {isAdmin && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full cn-surface-3 cn-text-2 shrink-0">Admin</span>}
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{nodeName}</p>
+                      <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">{nodeName}</p>
                     </div>
                   </div>
                   <button
@@ -1216,7 +1216,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center"
                     aria-label="Close menu"
                   >
-                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                   </button>
                 </div>
               </div>
@@ -1226,25 +1226,25 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
-                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    <span className="text-sm text-slate-800 dark:text-slate-200">View Profile</span>
+                    <UserCircle className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                    <span className="text-sm text-slate-800 dark:text-zinc-200">View Profile</span>
                   </button>
                 )}
                 <button
                   onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/account')); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Account Settings</span>
+                  <User className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span className="text-sm text-slate-800 dark:text-zinc-200">Account Settings</span>
                 </button>
                 <button
                   onClick={toggleTheme}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
                   {isDarkMode
-                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    : <Sun className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
-                  <span className="text-sm text-slate-800 dark:text-slate-200 flex-1">Dark Mode</span>
+                    ? <Moon className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                    : <Sun className="w-4 h-4 text-slate-500 dark:text-zinc-400" />}
+                  <span className="text-sm text-slate-800 dark:text-zinc-200 flex-1">Dark Mode</span>
                   <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${isDarkMode ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
                   </span>
@@ -1253,8 +1253,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowMobileAccountMenu(false); setShowSupportMenu(true); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Help & Support</span>
+                  <HelpCircle className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span className="text-sm text-slate-800 dark:text-zinc-200">Help & Support</span>
                 </button>
               </div>
               <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
@@ -1264,16 +1264,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/hub-management')); }}
                     className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                   >
-                    <Shield className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                    <span className="text-sm text-slate-800 dark:text-slate-200">Hub Admin</span>
+                    <Shield className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                    <span className="text-sm text-slate-800 dark:text-zinc-200">Hub Admin</span>
                   </button>
                 )}
                 <button
                   onClick={() => { setShowMobileAccountMenu(false); openProjectInfo(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <CircleAlert className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">About citinet</span>
+                  <CircleAlert className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span className="text-sm text-slate-800 dark:text-zinc-200">About citinet</span>
                 </button>
               </div>
               <div className="mx-3 border-t border-slate-100 dark:border-zinc-800" />
@@ -1282,8 +1282,8 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => { setShowMobileAccountMenu(false); handleSignOut(); }}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
                 >
-                  <LogOut className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-                  <span className="text-sm text-slate-800 dark:text-slate-200">Sign Out</span>
+                  <LogOut className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span className="text-sm text-slate-800 dark:text-zinc-200">Sign Out</span>
                 </button>
                 <button
                   onClick={() => { setShowMobileAccountMenu(false); handleSwitchHub(); }}
@@ -1324,13 +1324,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
               <div className="px-5 py-4 border-b border-slate-100 dark:border-zinc-800 flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-slate-900 dark:text-white">Support</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Choose a GitHub form to open in a new tab</p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Choose a GitHub form to open in a new tab</p>
                 </div>
                 <button
                   onClick={() => setShowSupportMenu(false)}
                   className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
                 >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                 </button>
               </div>
               <div className="p-2">
@@ -1338,21 +1338,21 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <HelpCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Get Help</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Troubleshooting or support questions</p>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Troubleshooting or support questions</p>
                   </div>
                 </button>
                 <button onClick={() => openSupportLink('bug')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left">
                   <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Report a Bug</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Something is broken or not working right</p>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Something is broken or not working right</p>
                   </div>
                 </button>
                 <button onClick={() => openSupportLink('feature')} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left">
                   <Lightbulb className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-slate-900 dark:text-white">Request a Feature</p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">Suggest a new feature or enhancement</p>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">Suggest a new feature or enhancement</p>
                   </div>
                 </button>
               </div>
@@ -1384,25 +1384,25 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={40} variant="badge" />
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold text-slate-900 dark:text-white truncate">{nodeName}</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Hub</p>
+                    <p className="text-xs text-slate-500 dark:text-zinc-400">Hub</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowHubInfoModal(false)}
                   className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
                 >
-                  <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                  <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                 </button>
               </div>
               <div className="p-5 space-y-4">
                 {currentHub?.description ? (
-                  <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{currentHub.description}</p>
+                  <p className="text-sm text-slate-700 dark:text-zinc-300 whitespace-pre-wrap">{currentHub.description}</p>
                 ) : (
-                  <p className="text-sm italic text-slate-400 dark:text-slate-500">
+                  <p className="text-sm italic text-slate-400 dark:text-zinc-500">
                     {isAdmin ? 'No description yet — tell your neighbors what this hub is about.' : "This hub hasn't added a description yet."}
                   </p>
                 )}
-                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-zinc-400">
                   {currentHub?.location && (
                     <div className="flex items-center gap-1.5 min-w-0">
                       <MapPin className="w-3.5 h-3.5 shrink-0" />
@@ -1416,7 +1416,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 </div>
                 {otherJoinedHubs.length > 0 && (
                   <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-zinc-800">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide pt-3">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide pt-3">
                       You're also signed into
                     </p>
                     <div className="space-y-1">
@@ -1428,12 +1428,12 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                         >
                           <HubIcon hub={hub} baseUrl={hub.tunnelUrl} size={32} variant="badge" />
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{hub.name}</p>
+                            <p className="text-sm font-medium text-slate-800 dark:text-zinc-200 truncate">{hub.name}</p>
                             {hub.location && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{hub.location}</p>
+                              <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">{hub.location}</p>
                             )}
                           </div>
-                          <ArrowRightLeft className="w-4 h-4 text-slate-400 dark:text-slate-500 shrink-0" />
+                          <ArrowRightLeft className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
                         </button>
                       ))}
                     </div>
@@ -1488,7 +1488,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                     onClick={() => { setShowMoreMenu(false); setShowMobileAppsMenu(false); setNavEditMode(false); }}
                     className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center shrink-0"
                   >
-                    <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                   </button>
                 </div>
               </div>
@@ -1502,13 +1502,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 >
                 <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide mb-2">
                       Pinned in navigation
                     </p>
                     <SortableContext items={pinnedNavScreens} strategy={verticalListSortingStrategy}>
                       <div className="flex flex-col gap-1.5 min-h-[2.75rem]">
                         {desktopNavItems.length === 0 && (
-                          <p className="text-xs text-slate-400 dark:text-slate-500 italic px-3 py-2">
+                          <p className="text-xs text-slate-400 dark:text-zinc-500 italic px-3 py-2">
                             Nothing pinned — drag or tap an app below to add it.
                           </p>
                         )}
@@ -1520,7 +1520,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                   </div>
                   {moreNavItems.filter(a => a.screen !== 'suggest').length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide mb-2">
                         Tap to pin
                       </p>
                       <UnpinnedDropZone>
@@ -1538,7 +1538,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 {!showMobileAppsMenu && moreNavItems.filter(a => a.screen !== 'suggest').length === 0 && (
                   <div className="flex flex-col items-center text-center gap-2 py-5 mb-2">
                     <Grid3x3 className="w-7 h-7 text-slate-300 dark:text-zinc-600" />
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Everything's pinned to your navigation</p>
+                    <p className="text-sm font-medium text-slate-600 dark:text-zinc-300">Everything's pinned to your navigation</p>
                     <button
                       onClick={() => setNavEditMode(true)}
                       className="text-xs font-semibold cn-text-3 hover:cn-text-1 hover:underline"
@@ -1577,7 +1577,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                           </span>
                         )}
                       </div>
-                      <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                      <span className={`text-[11px] font-medium text-center leading-tight ${isSuggest ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-700 dark:text-zinc-200'}`}>
                         {app.label}
                       </span>
                     </button>

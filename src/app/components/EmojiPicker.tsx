@@ -43,7 +43,7 @@ export function EmojiPicker({ onSelect }: { onSelect: (emoji: string) => void })
             className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
               activeGroup === i
                 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
             }`}
           >
             {g.label}

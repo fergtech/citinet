@@ -85,8 +85,8 @@ function ActionConfirmCard({ action, onConfirm, onCancel, confirming }: {
         <div className="px-4 py-3 space-y-3">
           {action.preview.fields.map(f => (
             <div key={f.key}>
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">{f.key}</p>
-              <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">{f.value}</p>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wide mb-0.5">{f.key}</p>
+              <p className="text-sm text-slate-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">{f.value}</p>
             </div>
           ))}
         </div>
@@ -94,7 +94,7 @@ function ActionConfirmCard({ action, onConfirm, onCancel, confirming }: {
           <button
             onClick={onCancel}
             disabled={confirming}
-            className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-xs font-medium text-slate-600 dark:text-zinc-400 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
@@ -390,11 +390,11 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
             <span className="text-xs">Loading…</span>
           </div>
         ) : convos.length === 0 ? (
-          <p className="text-xs text-slate-400 dark:text-slate-600 text-center px-3 py-6">No conversations yet</p>
+          <p className="text-xs text-slate-400 dark:text-zinc-600 text-center px-3 py-6">No conversations yet</p>
         ) : (
           groups.map(group => (
             <div key={group.label}>
-              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-600 uppercase tracking-wider px-2 mb-1">{group.label}</p>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-zinc-600 uppercase tracking-wider px-2 mb-1">{group.label}</p>
               <div className="space-y-0.5">
                 {group.items.map(c => (
                   <div key={c.id} className="relative group">
@@ -403,7 +403,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                       className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-start gap-2 ${
                         c.id === activeId
                           ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-900 dark:text-violet-100'
-                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                          : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800'
                       }`}
                     >
                       <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-60" />
@@ -466,20 +466,20 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
           <div className="sticky top-0 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border-b border-slate-200/50 dark:border-zinc-800/50 z-10">
             <div className="px-4 py-3 flex items-center gap-3">
               <button onClick={onBack} title="Back" aria-label="Back" className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors">
-                <ArrowLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                <ArrowLeft className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
               </button>
               <button onClick={() => setSidebarOpen(true)} className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="History">
-                <Clock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <Clock className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
               </button>
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center shrink-0">
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white leading-none">Hub Assistant</p>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{currentHub?.name}</p>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 truncate">{currentHub?.name}</p>
               </div>
               <button onClick={newConversation} className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="New">
-                <Plus className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <Plus className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
               </button>
               <button onClick={() => setShowPrivacy(v => !v)} className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors" title="Privacy info">
                 <Info className="w-4 h-4 text-slate-400" />
@@ -512,11 +512,11 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                 </div>
                 <div className="text-center space-y-1">
                   <p className="text-lg font-semibold text-slate-900 dark:text-white">Hub Assistant</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Powered by your hub. Knows your community.</p>
+                  <p className="text-sm text-slate-500 dark:text-zinc-400">Powered by your hub. Knows your community.</p>
                 </div>
                 <div className="w-full space-y-2">
                   {STARTERS.map(s => (
-                    <button key={s} onClick={() => send(s)} className="w-full text-left px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all">
+                    <button key={s} onClick={() => send(s)} className="w-full text-left px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-sm text-slate-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all">
                       {s}
                     </button>
                   ))}
@@ -536,14 +536,14 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                   <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed break-words ${
                     msg.role === 'user'
                       ? 'bg-violet-600 text-white rounded-br-sm'
-                      : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-slate-200 rounded-bl-sm'
+                      : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-800 dark:text-zinc-200 rounded-bl-sm'
                   }`}>
                     {msg.role === 'user' ? msg.content : (
                       msg.content === '' && thinking && i === messages.length - 1
                         ? <div className="space-y-1.5">
                             <ThinkingDots />
                             {mightNeedAction && (
-                              <p className="text-[10px] text-slate-400 dark:text-slate-500">Working on it…</p>
+                              <p className="text-[10px] text-slate-400 dark:text-zinc-500">Working on it…</p>
                             )}
                           </div>
                         : <>
@@ -588,7 +588,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                 onKeyDown={handleKey}
                 placeholder="Ask anything about your community…"
                 rows={1}
-                className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400 dark:focus:border-violet-600 transition-all overflow-hidden"
+                className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400 dark:focus:border-violet-600 transition-all overflow-hidden"
                 disabled={thinking || streaming}
               />
               {thinking || streaming ? (
@@ -601,7 +601,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                 </button>
               )}
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-600 text-center mt-2">
+            <p className="text-[10px] text-slate-400 dark:text-zinc-600 text-center mt-2">
               Runs on-hub · no cloud · history synced to your account
             </p>
           </div>
@@ -615,9 +615,9 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-5 w-full max-w-xs space-y-4 shadow-xl">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Delete conversation?</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">This can't be undone.</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">This can't be undone.</p>
               <div className="flex gap-2">
-                <button onClick={() => setDeleteId(null)} className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+                <button onClick={() => setDeleteId(null)} className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
                 <button onClick={() => deleteConvo(deleteId)} className="flex-1 px-3 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-medium transition-colors">Delete</button>
               </div>
             </div>

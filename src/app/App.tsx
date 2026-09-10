@@ -35,6 +35,7 @@ import { ShareFilePage } from './components/ShareFilePage';
 import { ShareNotePage } from './components/ShareNotePage';
 import { ShareSpacePage } from './components/ShareSpacePage';
 import { ShareVendorPage } from './components/ShareVendorPage';
+import { SharePostPage } from './components/SharePostPage';
 import { PublicProfilePage } from './components/PublicProfilePage';
 import { HubBackground } from './components/HubBackground';
 import { HubLayout } from './components/HubLayout';
@@ -491,6 +492,7 @@ function OnboardingModeRoutes() {
       <Route path="/u/:hubSlug/:username" element={<PublicProfilePage />} />
       <Route path="/share-space/:hubSlug/:spaceSlug" element={<ShareSpacePage />} />
       <Route path="/v/:hubSlug/:vendorSlug" element={<ShareVendorPage />} />
+      <Route path="/share-post/:hubSlug/:postId" element={<SharePostPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -547,7 +549,7 @@ function HubModeRoutes() {
 // ──────────────────────────────────────────────
 
 function AppInner() {
-  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/v/') || window.location.pathname.startsWith('/u/');
+  const isSharePath = window.location.pathname.startsWith('/share/') || window.location.pathname.startsWith('/share-note/') || window.location.pathname.startsWith('/share-space/') || window.location.pathname.startsWith('/share-post/') || window.location.pathname.startsWith('/v/') || window.location.pathname.startsWith('/u/');
   // /join and /create are explicit requests to reach the multi-hub portal (e.g. after
   // "Switch Hub" clears the local connection) — the same-origin auto-rejoin below must not
   // silently override that by re-joining the hub this domain happens to be served from.

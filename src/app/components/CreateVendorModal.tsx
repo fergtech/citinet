@@ -102,13 +102,13 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
             <form onSubmit={handleSubmit} className="overflow-y-auto flex-1">
               <div className="px-5 py-4 space-y-4">
                 {!isEdit && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
                     Create a vendor page to list products and services on the community exchange. Your existing account stays the same.
                   </p>
                 )}
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">
                     Vendor / Organization Name <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -122,14 +122,14 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Category</label>
                   <select value={category} onChange={e => setCategory(e.target.value)} className={inputCls}>
                     {VENDOR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Description</label>
                   <textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
@@ -143,22 +143,22 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Email</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Email</label>
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="contact@example.com" className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Phone</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Phone</label>
                     <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 000-0000" className={inputCls} />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Website</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Website</label>
                     <input type="text" value={website} onChange={e => setWebsite(e.target.value)} placeholder="yoursite.com" className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Hours</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Hours</label>
                     <input type="text" value={hours} onChange={e => setHours(e.target.value)} placeholder="Mon-Fri 9am-5pm" className={inputCls} />
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
 
               <div className="px-5 py-4 border-t border-slate-200 dark:border-zinc-800 shrink-0">
                 <div className="flex gap-3">
-                  <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                  <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
                     Cancel
                   </button>
                   <button

@@ -88,6 +88,23 @@
   50%      { opacity: 0.45; }
 }
 
+/* Citinet wordmark — cycling brand-color text, matching citinet-mobile's
+   CitinetWordmark (components/app-drawer.tsx): same 3-stop palette and
+   6s linear loop, ported here as the public-facing wordmark's identity
+   treatment (used on the public share pages' header, e.g. ShareFilePage). */
+.cn-wordmark {
+  animation: cn-wordmark-shift 6s linear infinite;
+}
+@keyframes cn-wordmark-shift {
+  0%      { color: #ff9f43; }
+  33.333% { color: #8b5cf6; }
+  66.667% { color: #ef4444; }
+  100%    { color: #ff9f43; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cn-wordmark { animation: none; color: #ffffff; }
+}
+
 /* Glass card surface — theme-aware */
 .cn-glass {
   background: var(--cn-glass-bg);

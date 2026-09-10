@@ -5,6 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { nativeShare } from '../utils/share';
 import { AvatarFallback, SearchGlyph } from './icons';
 import { spacesService } from '../services/spacesService';
 import { registryService, type RegistryHub } from '../services/registryService';
@@ -13,7 +14,6 @@ import { useHub } from '../context/HubContext';
 import { PostDetailModal } from './PostDetailModal';
 import { HubIcon } from './HubIcon';
 import { useSavedIds } from '../hooks/useSavedIds';
-import { hubPath } from '../utils/subdomain';
 import type { HubPost, HubMember, HubSpace, SearchResults } from '../types/hub';
 import type { Tool } from '../types/toolkit';
 
@@ -57,7 +57,7 @@ const INI_STATUS_LABEL: Record<DiscoverInitiative['status'], string> = { active:
 const INI_STATUS_BADGE: Record<DiscoverInitiative['status'], string> = {
   active:    'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
   planning:  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
+  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400',
 };
 
 function getSpaceBanner(space: HubSpace, tunnelUrl: string): React.CSSProperties {
@@ -522,8 +522,10 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     }
   }
 
-  function handleCopyPostLink(postId: string) {
-    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+  async function handleCopyPostLink(postId: string) {
+    const link = hubService.getPublicPostLink(slug, postId);
+    const result = await nativeShare({ url: link });
+    if (result !== 'unsupported') return;
     navigator.clipboard.writeText(link).then(() => {
       setShareCopiedPostId(postId);
       setTimeout(() => setShareCopiedPostId(null), 2000);

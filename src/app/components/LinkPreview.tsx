@@ -126,9 +126,9 @@ function CardShell({ url, content, loading, iconGrad }: {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{content.title}</p>
         {content.subtitle && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{content.subtitle}</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">{content.subtitle}</p>
         )}
-        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wide mt-0.5 truncate">{content.domain}</p>
+        <p className="text-[10px] text-slate-400 dark:text-zinc-500 uppercase tracking-wide mt-0.5 truncate">{content.domain}</p>
       </div>
     </a>
   );

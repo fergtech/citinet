@@ -1387,7 +1387,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                   {myLocation && (
                     <button
                       onClick={recenterOnMe}
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       title="Recenter on my location"
                       aria-label="Recenter on my location"
                     >
@@ -1398,7 +1398,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                   {pins.length > 0 && (
                     <button
                       onClick={resetToOverview}
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                       title="Reset to all pins"
                       aria-label="Reset to all pins"
                     >

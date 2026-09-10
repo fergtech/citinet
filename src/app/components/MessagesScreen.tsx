@@ -162,13 +162,13 @@ function AttachTrayItem({ icon: Icon, label, onClick, disabled }: {
       className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm transition-colors ${
         disabled
           ? 'text-slate-300 dark:text-zinc-600 cursor-not-allowed'
-          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-zinc-800/60'
+          : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800/60'
       }`}
     >
       <Icon className="w-4 h-4 shrink-0" />
       <span className="flex-1">{label}</span>
       {disabled && (
-        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-slate-500">
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500">
           Soon
         </span>
       )}
@@ -304,7 +304,7 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
   if (kind === 'audio') {
     return (
       <div className="flex flex-col gap-1 bg-slate-100 dark:bg-zinc-700 rounded-lg px-3 py-2 min-w-[220px]">
-        <span className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{fileName}</span>
+        <span className="text-xs text-slate-500 dark:text-zinc-400 truncate max-w-[200px]">{fileName}</span>
         <audio src={blobUrl} controls className="w-full h-8" />
       </div>
     );
@@ -1195,8 +1195,8 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     return (
       <div className="h-full bg-slate-50 dark:bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-slate-400 dark:text-slate-500 mx-auto mb-3" />
-          <p className="text-sm text-slate-600 dark:text-slate-400">Loading conversations…</p>
+          <Loader2 className="w-8 h-8 animate-spin text-slate-400 dark:text-zinc-500 mx-auto mb-3" />
+          <p className="text-sm text-slate-600 dark:text-zinc-400">Loading conversations…</p>
         </div>
       </div>
     );
@@ -1211,8 +1211,8 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-3" />
           {isOffline ? (
             <>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">No messages yet</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Messages will appear here once the hub API is reachable and other members join.</p>
+              <p className="text-sm font-medium text-slate-700 dark:text-zinc-300 mb-1">No messages yet</p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500">Messages will appear here once the hub API is reachable and other members join.</p>
             </>
           ) : (
             <>
@@ -1339,7 +1339,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 {/* Member list */}
                 <div className="max-h-64 overflow-y-auto space-y-1">
                   {membersLoading ? (
-                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
+                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-zinc-500" /></div>
                   ) : filteredMembers.length === 0 ? (
                     <p className="text-center text-sm text-slate-500 py-6">No neighbors found</p>
                   ) : (
@@ -1404,7 +1404,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             >
               <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                  Group Members <span className="text-slate-400 dark:text-slate-500 font-normal text-sm">({selectedConvo.members.length})</span>
+                  Group Members <span className="text-slate-400 dark:text-zinc-500 font-normal text-sm">({selectedConvo.members.length})</span>
                 </h2>
                 <button onClick={() => setShowGroupMembers(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Close group members">
                   <X className="w-5 h-5 text-slate-500" />
@@ -1413,7 +1413,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
               <div className="p-2 overflow-y-auto">
                 {membersLoading ? (
-                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
+                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-zinc-500" /></div>
                 ) : (
                   selectedConvo.members.map(participant => {
                     const isSelf = participant.user_id === myUserId;
@@ -1446,12 +1446,12 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             <span className="text-sm font-medium text-slate-900 dark:text-white truncate">{displayName}</span>
                             {isSelf && <span className="text-[10px] text-slate-400 shrink-0">(You)</span>}
                             {!isSelf && detail && detail.role !== 'member' && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-slate-300 shrink-0 uppercase">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300 shrink-0 uppercase">
                                 {detail.role}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                             {!isSelf && (detail?.profile_headline || detail?.bio) || `@${participant.username}`}
                           </p>
                         </div>
@@ -1485,7 +1485,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             >
               <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-                  Shared media {!mediaLoading && <span className="text-slate-400 dark:text-slate-500 font-normal text-sm">({mediaItems.length})</span>}
+                  Shared media {!mediaLoading && <span className="text-slate-400 dark:text-zinc-500 font-normal text-sm">({mediaItems.length})</span>}
                 </h2>
                 <button onClick={() => setShowMediaGallery(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors" title="Close shared media">
                   <X className="w-5 h-5 text-slate-500" />
@@ -1494,7 +1494,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
               <div className="p-4 overflow-y-auto">
                 {mediaLoading ? (
-                  <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-slate-500" /></div>
+                  <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-slate-400 dark:text-zinc-500" /></div>
                 ) : mediaError ? (
                   <div className="flex flex-col items-center py-10 text-center gap-2">
                     <AlertCircle className="w-6 h-6 text-red-400" />
@@ -1503,7 +1503,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 ) : mediaItems.length === 0 ? (
                   <div className="flex flex-col items-center py-10 text-center gap-2">
                     <Images className="w-8 h-8 text-slate-300 dark:text-zinc-600" />
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No files shared in this conversation yet</p>
+                    <p className="text-sm text-slate-500 dark:text-zinc-400">No files shared in this conversation yet</p>
                   </div>
                 ) : (
                   (() => {
@@ -1534,9 +1534,9 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             {other.map(m => (
                               <div key={m.file_id} className="flex items-center gap-2.5 bg-slate-50 dark:bg-zinc-800/60 rounded-lg px-3 py-2 border border-slate-200 dark:border-zinc-700">
                                 <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
-                                <span className="text-xs text-slate-700 dark:text-slate-200 truncate flex-1">{m.file_name}</span>
+                                <span className="text-xs text-slate-700 dark:text-zinc-200 truncate flex-1">{m.file_name}</span>
                                 <button
-                                  className="text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shrink-0"
+                                  className="text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shrink-0"
                                   onClick={() => hubService.downloadFile(slug, m.file_name)}
                                   title={`Download ${m.file_name}`}
                                 >
@@ -1566,7 +1566,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               className="md:hidden w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors shrink-0"
               aria-label="Back"
             >
-              <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <ArrowLeft className="w-5 h-5 text-slate-500 dark:text-zinc-400" />
             </button>
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight flex-1">Communications</h1>
             <button
@@ -1586,11 +1586,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all"
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all"
             />
           </div>
           {indexingHistory && (
-            <p className="mt-1.5 px-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1.5 px-1 text-[11px] text-slate-400 dark:text-zinc-500">
               Indexing older messages for search…
             </p>
           )}
@@ -1610,7 +1610,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               <>
                 <div className="flex items-center gap-1.5 mt-3 mb-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Live now</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Live now</span>
                 </div>
                 <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1">
                   {filteredLive.map(item => {
@@ -1634,14 +1634,14 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
 
           {filteredConversations.length > 0 && (
             <div className="mt-1 mb-2 px-0.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Direct messages</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Direct messages</span>
             </div>
           )}
 
           {filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center px-4">
               <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mb-3" />
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+              <p className="text-sm text-slate-500 dark:text-zinc-400 mb-4">
                 {searchQuery ? 'No matching conversations' : 'No conversations yet'}
               </p>
               {!searchQuery && (
@@ -1701,7 +1701,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         <h3 className={`font-semibold text-[15px] truncate ${isUnread ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>
                           {displayName}
                         </h3>
-                        <span className="text-[11px] text-slate-400 dark:text-slate-500 flex-shrink-0 font-medium">
+                        <span className="text-[11px] text-slate-400 dark:text-zinc-500 flex-shrink-0 font-medium">
                           {formatTimestamp(convo.lastMessage?.created_at || convo.updated_at || convo.created_at)}
                         </span>
                       </div>
@@ -1709,19 +1709,19 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         {convo.kind === 'group' && (
                           <>
                             <Users className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                            <span className="text-[11px] text-slate-500 dark:text-slate-500">
+                            <span className="text-[11px] text-slate-500 dark:text-zinc-500">
                               {convo.members.length}
                             </span>
-                            <span className="text-slate-400 dark:text-slate-600">·</span>
+                            <span className="text-slate-400 dark:text-zinc-600">·</span>
                           </>
                         )}
                         {showHistoricalHit ? (
-                          <p className="text-[13px] text-slate-600 dark:text-slate-400 truncate flex-1">
-                            <span className="text-slate-400 dark:text-slate-500">{formatTimestamp(historicalHit!.createdAt)} · </span>
+                          <p className="text-[13px] text-slate-600 dark:text-zinc-400 truncate flex-1">
+                            <span className="text-slate-400 dark:text-zinc-500">{formatTimestamp(historicalHit!.createdAt)} · </span>
                             {historicalHit!.body}
                           </p>
                         ) : (preview || convo.lastMessage?.attachments?.length) ? (
-                          <p className="text-[13px] text-slate-600 dark:text-slate-400 truncate flex-1">
+                          <p className="text-[13px] text-slate-600 dark:text-zinc-400 truncate flex-1">
                             {preview || (convo.lastMessage?.attachments?.length
                               ? `${convo.lastMessage.attachments.length === 1 ? 'Sent an attachment' : `Sent ${convo.lastMessage.attachments.length} attachments`}`
                               : '')}
@@ -1771,7 +1771,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 aria-label="Back to conversations"
                 className="md:hidden w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center transition-colors"
               >
-                <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                <ArrowLeft className="w-5 h-5 text-slate-700 dark:text-zinc-300" />
               </button>
 
               <button
@@ -1817,7 +1817,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     )}
                   </div>
                   {selectedConvo.kind === 'group' ? (
-                    <span className="text-xs text-slate-600 dark:text-slate-400">
+                    <span className="text-xs text-slate-600 dark:text-zinc-400">
                       {selectedConvo.members.length} members
                     </span>
                   ) : peerOnline ? (
@@ -1825,7 +1825,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> Online
                   </p>
                 ) : (
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-zinc-400">
                     {peerMember?.last_seen_at ? `Last active ${formatTimestamp(peerMember.last_seen_at)}` : 'Direct message'}
                   </p>
                 )}
@@ -1847,7 +1847,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                       title={callBusy ? 'Already in a call' : 'Audio call'}
                       className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     >
-                      <Phone className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      <Phone className="w-5 h-5 text-slate-500 dark:text-zinc-400" />
                     </button>
                     <button
                       onClick={() => setOutgoingCall({ peerId, peerName, mode: 'video' })}
@@ -1855,7 +1855,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                       title={callBusy ? 'Already in a call' : 'Video call'}
                       className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     >
-                      <Video className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                      <Video className="w-5 h-5 text-slate-500 dark:text-zinc-400" />
                     </button>
                   </>
                 );
@@ -1865,7 +1865,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 title="Shared media"
                 className="w-9 h-9 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center transition-colors"
               >
-                <Images className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                <Images className="w-5 h-5 text-slate-500 dark:text-zinc-400" />
               </button>
             </div>
           </div>
@@ -1885,17 +1885,17 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
           <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2.5">
             {loadingOlder && (
               <div className="flex items-center justify-center py-2">
-                <Loader2 className="w-4 h-4 animate-spin text-slate-400 dark:text-slate-500" />
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400 dark:text-zinc-500" />
               </div>
             )}
             {msgsLoading ? (
               <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-slate-500" />
+                <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-zinc-500" />
               </div>
             ) : messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mb-3" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">No messages yet — say hello!</p>
+                <p className="text-sm text-slate-500 dark:text-zinc-400">No messages yet — say hello!</p>
               </div>
             ) : (
               (() => {
@@ -1916,7 +1916,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                       {showSeparator && (
                         <div className="flex items-center gap-3 my-1 select-none">
                           <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
-                          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 px-1">
+                          <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 px-1">
                             {formatDateSeparator(msg.created_at)}
                           </span>
                           <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
@@ -1986,7 +1986,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                 <button
                                   type="button"
                                   onClick={() => { setReactionPickerFor(null); setFullEmojiPickerFor(msg.id); }}
-                                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-slate-500 transition-colors"
+                                  className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-400 dark:text-zinc-500 transition-colors"
                                   title="More emoji"
                                 >
                                   <Plus className="w-3.5 h-3.5" />
@@ -2069,7 +2069,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                             <FileIcon className="w-4 h-4 text-slate-400" />
                                             <span className="text-xs truncate max-w-[120px]">{att.file_name}</span>
                                             <button
-                                              className="ml-1 text-slate-600 dark:text-slate-300 hover:underline text-xs"
+                                              className="ml-1 text-slate-600 dark:text-zinc-300 hover:underline text-xs"
                                               onClick={() => hubService.downloadFile(slug, att.file_name)}
                                               title={`Download ${att.file_name}`}
                                             >
@@ -2098,7 +2098,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
                                   r.reacted_by_me
                                     ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
-                                    : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                                    : 'bg-slate-100 dark:bg-zinc-800 border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                                 }`}
                                 title={r.reacted_by_me ? 'Remove your reaction' : 'React'}
                               >
@@ -2108,7 +2108,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                             ))}
                           </div>
                         )}
-                        <p className={`text-xs text-slate-500 dark:text-slate-400 mt-0.5 ${isMe ? 'text-right' : 'text-left'}`}>
+                        <p className={`text-xs text-slate-500 dark:text-zinc-400 mt-0.5 ${isMe ? 'text-right' : 'text-left'}`}>
                           {formatMessageTime(msg.created_at)}
                         </p>
                         {isRead && (
@@ -2137,11 +2137,11 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 )}
                 <div className="flex flex-col gap-0.5">
                   <div className="rounded-2xl rounded-bl-sm px-4 py-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 ml-1">{typingLabel}</p>
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500 ml-1">{typingLabel}</p>
                 </div>
               </div>
             )}
@@ -2237,7 +2237,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 )}
                 {/* Upload progress */}
                 {uploadProgress && (
-                  <div className="mb-1.5 text-xs text-slate-600 dark:text-slate-400">{uploadProgress}</div>
+                  <div className="mb-1.5 text-xs text-slate-600 dark:text-zinc-400">{uploadProgress}</div>
                 )}
                 {/* Send error */}
                 {sendError && (
@@ -2258,7 +2258,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     placeholder="Type a message…"
                     title="Message input"
                     rows={1}
-                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
+                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
                   />
                   {/* Inline icon cluster, paired together on a shared 24x24 grid — emoji
                       is functional, mic is visible-but-disabled. GIF lives in the "+"
@@ -2268,7 +2268,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker(v => !v)}
-                        className="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
                         title="Emoji"
                       >
                         <Smile className="w-4 h-4" />
@@ -2342,7 +2342,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
             <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
               Select a conversation
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
+            <p className="text-sm text-slate-600 dark:text-zinc-400 mb-6">
               Choose a conversation from the sidebar to start messaging your neighbors and community groups
             </p>
             <button

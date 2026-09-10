@@ -211,8 +211,8 @@ export function LocationPicker({
                   : 'hover:bg-slate-50 dark:hover:bg-zinc-700'
               }`}
             >
-              <MapPin className="w-4 h-4 text-slate-400 dark:text-slate-500 flex-shrink-0 mt-0.5" />
-              <span className="text-slate-800 dark:text-slate-200">{r.displayName}</span>
+              <MapPin className="w-4 h-4 text-slate-400 dark:text-zinc-500 flex-shrink-0 mt-0.5" />
+              <span className="text-slate-800 dark:text-zinc-200">{r.displayName}</span>
             </button>
           ))}
         </div>
@@ -220,14 +220,14 @@ export function LocationPicker({
 
       {/* "No results" hint */}
       {!selected && query.trim().length >= 2 && !loading && !open && results.length === 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+        <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 ml-1">
           No places found — try a different search
         </p>
       )}
 
       {/* "Select from list" nudge when user has typed but not selected */}
       {!selected && query.trim().length >= 2 && !loading && results.length > 0 && !open && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">
+        <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 ml-1">
           Select a location from the suggestions to continue
         </p>
       )}

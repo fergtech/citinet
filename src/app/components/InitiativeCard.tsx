@@ -16,7 +16,7 @@ export const COLOR = {
 export const STATUS_BADGE = {
   active:    'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
   planning:  'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400',
+  completed: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400',
 };
 export const STATUS_LABEL = { active: 'In progress', planning: 'Planning', completed: 'Completed' };
 
@@ -27,7 +27,7 @@ export const STATUS_LABEL = { active: 'In progress', planning: 'Planning', compl
 export type TaskDisplayStatus = 'not-started' | 'in-progress' | 'blocked' | 'done';
 
 export const TASK_STATUS_META: Record<TaskDisplayStatus, { label: string; badge: string }> = {
-  'not-started': { label: 'Not started', badge: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400' },
+  'not-started': { label: 'Not started', badge: 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400' },
   'in-progress': { label: 'In progress', badge: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' },
   blocked:       { label: 'Blocked', badge: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' },
   done:          { label: 'Done', badge: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' },

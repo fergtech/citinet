@@ -73,7 +73,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
             <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
               Join Your Local Network
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+            <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
               Browse available community hubs or connect directly with a hub URL
             </p>
             <div className="mt-4 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-semibold text-sm group-hover:gap-3 transition-all">

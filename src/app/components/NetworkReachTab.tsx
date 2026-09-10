@@ -20,7 +20,7 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied
         ? <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-        : <Copy className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
+        : <Copy className="w-4 h-4 text-slate-500 dark:text-zinc-400" />}
     </button>
   );
 }

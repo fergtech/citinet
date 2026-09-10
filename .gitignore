@@ -52,3 +52,9 @@ CLAUDE_CONTEXT.md
 
 .vercel
 .env*
+
+# Local design sandbox — dev-server-only preview harness for design
+# iteration (fixture-data, no real hub/network calls). Never committed,
+# never pushed — see sandbox.html and src/sandbox/.
+/sandbox.html
+/src/sandbox/

@@ -138,7 +138,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
                 No hubs listed yet
               </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 max-w-xs mx-auto">
+              <p className="text-sm text-slate-500 dark:text-zinc-400 mb-6 max-w-xs mx-auto">
                 The registry is live but no hubs have registered yet — or it may
                 be temporarily unreachable. You can still join a hub directly
                 with its URL.
@@ -153,7 +153,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
                 </button>
                 <button
                   onClick={onBack}
-                  className="px-5 py-2.5 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl font-semibold text-sm hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                  className="px-5 py-2.5 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 rounded-xl font-semibold text-sm hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                 >
                   Connect with a URL
                 </button>
@@ -164,7 +164,7 @@ export function HubDirectoryScreen({ onBack, onJoinHub }: HubDirectoryScreenProp
           {/* No search results */}
           {!loading && hubs.length > 0 && filtered.length === 0 && (
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl p-8 text-center">
-              <p className="text-slate-500 dark:text-slate-400 text-sm">
+              <p className="text-slate-500 dark:text-zinc-400 text-sm">
                 No hubs match <strong>"{search}"</strong>
               </p>
               <button
@@ -234,21 +234,21 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
           {hub.location && (
             <div className="flex items-center gap-1.5 mb-1.5">
               <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-              <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              <span className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                 {hub.location}
               </span>
             </div>
           )}
 
           {hub.description && (
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2 mb-2">
+            <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed line-clamp-2 mb-2">
               {hub.description}
             </p>
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
             {hub.member_count !== undefined && (
-              <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-zinc-400">
                 <Users className="w-3.5 h-3.5" />
                 {hub.member_count} {hub.member_count === 1 ? 'member' : 'members'}
               </span>
@@ -258,7 +258,7 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
                 ? 'text-amber-600 dark:text-amber-400'
                 : isOnline
                 ? 'text-green-600 dark:text-green-400'
-                : 'text-slate-400 dark:text-slate-500'
+                : 'text-slate-400 dark:text-zinc-500'
             }`}>
               {isRestarting ? (
                 <><RotateCw className="w-3.5 h-3.5 animate-spin" /> Restarting</>
@@ -269,7 +269,7 @@ function HubCard({ hub, onJoin }: { hub: RegistryHub; onJoin: () => void }) {
               )}
             </span>
             {lastSeen && (
-              <span className="text-xs text-slate-400 dark:text-slate-500">{lastSeen}</span>
+              <span className="text-xs text-slate-400 dark:text-zinc-500">{lastSeen}</span>
             )}
           </div>
         </div>

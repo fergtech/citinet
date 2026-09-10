@@ -235,7 +235,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
               Submission Received!
             </h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">
+            <p className="text-slate-600 dark:text-zinc-400 mb-6">
               Thanks for recommending a tool! Community moderators will review your submission
               before it appears publicly in Discover.
             </p>
@@ -277,7 +277,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
         {/* Progress bar */}
         <div className="px-6 pt-10 pb-0">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <span className="text-xs font-medium text-slate-500 dark:text-zinc-400">
               Step {step} of {TOTAL_STEPS}
             </span>
             <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
@@ -318,7 +318,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
               <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
                 {stepTitles[step - 1]}
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-slate-500 dark:text-zinc-400">
                 {stepSubtitles[step - 1]}
               </p>
             </div>
@@ -391,7 +391,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                           <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
                             {formData.name || domain}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                          <p className="text-xs text-slate-500 dark:text-zinc-400 truncate flex items-center gap-1">
                             <ExternalLink className="w-3 h-3 flex-shrink-0" />
                             {domain}
                           </p>
@@ -415,7 +415,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                         className={`p-3 rounded-xl border-2 text-left text-sm font-medium transition-all ${
                           selectedCategories.includes(category)
                             ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 hover:border-blue-300 dark:hover:border-blue-700'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 hover:border-blue-300 dark:hover:border-blue-700'
                         }`}
                       >
                         {selectedCategories.includes(category) && (
@@ -433,14 +433,14 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                         className={`p-3 rounded-xl border-2 border-dashed text-left text-sm font-medium transition-all ${
                           selectedCategories.includes(category)
                             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                            : 'border-slate-300 dark:border-zinc-600 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                            : 'border-slate-300 dark:border-zinc-600 text-slate-600 dark:text-zinc-400 hover:border-blue-300'
                         }`}
                       >
                         {selectedCategories.includes(category) && (
                           <CheckCircle2 className="w-4 h-4 inline mr-1.5 -mt-0.5 text-blue-600 dark:text-blue-400" />
                         )}
                         {category}
-                        <span className="ml-1.5 text-xs text-slate-400 dark:text-slate-500">suggestion</span>
+                        <span className="ml-1.5 text-xs text-slate-400 dark:text-zinc-500">suggestion</span>
                       </button>
                     ))}
                   </div>
@@ -479,14 +479,14 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                     <button
                       type="button"
                       onClick={() => setShowNewCatInput(true)}
-                      className="w-full p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 text-sm text-slate-400 dark:text-slate-500 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-700 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-1.5"
+                      className="w-full p-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 text-sm text-slate-400 dark:text-zinc-500 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-700 dark:hover:text-blue-400 transition-all flex items-center justify-center gap-1.5"
                     >
                       <Plus className="w-4 h-4" />
                       None of these fit? Suggest a new category
                     </button>
                   )}
                   {suggestedCategories.length > 0 && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">
                       Suggested categories will be reviewed with your submission.
                     </p>
                   )}
@@ -529,7 +529,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                       className={`px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
                         selectedTags.includes(tag)
                           ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600'
                       }`}
                     >
                       {tag.replace(/-/g, ' ')}
@@ -572,12 +572,12 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                           <p className="font-semibold text-slate-900 dark:text-white truncate">
                             {formData.name}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                             {domain || formData.websiteUrl}
                           </p>
                         </div>
                       </div>
-                      <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+                      <p className="text-slate-600 dark:text-zinc-300 text-xs leading-relaxed">
                         {formData.shortDescription}
                       </p>
                       <div className="flex flex-wrap gap-1 pt-1">
@@ -585,7 +585,7 @@ export function AddToolModal({ onClose, onSuccess }: AddToolModalProps) {
                           <Badge key={c} variant="outline" className="text-xs">{c}</Badge>
                         ))}
                         {selectedTags.map((t) => (
-                          <Badge key={t} className="text-xs bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 border-0">
+                          <Badge key={t} className="text-xs bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 border-0">
                             {t.replace(/-/g, ' ')}
                           </Badge>
                         ))}

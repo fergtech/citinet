@@ -63,7 +63,7 @@ function MiniProgress({ step }: { step: 1 | 2 }) {
         <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
           Step {step} of 2 : {label}
         </span>
-        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">{pct}%</span>
+        <span className="text-[11px] font-semibold text-slate-400 dark:text-zinc-500">{pct}%</span>
       </div>
       <div className="w-full bg-slate-100 dark:bg-zinc-800 rounded-full h-1">
         <motion.div
@@ -270,7 +270,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
     username.trim().length >= 2 &&
     passwordStrength.acceptable;
 
-  const labelClass = 'block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1';
+  const labelClass = 'block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1';
   const inputClass = 'w-full h-[42px] px-3.5 border border-slate-200 dark:border-white/10 rounded-lg text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px] focus:border-blue-500 focus:outline-none transition-colors';
   const cardClass = 'p-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-zinc-800/60';
 
@@ -295,7 +295,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 <KeyRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Save your recovery phrase</h2>
-              <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
+              <p className="text-[13px] text-slate-500 dark:text-zinc-400 max-w-sm">
                 This unlocks your encrypted notes on a new device. It's shown only once — the hub doesn't store it anywhere it could read it back to you.
               </p>
             </div>
@@ -307,7 +307,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
             <button
               type="button"
               onClick={handleCopyPhrase}
-              className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+              className="w-full mt-3 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
             >
               {phraseCopied ? <CheckIcon className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {phraseCopied ? 'Copied' : 'Copy to clipboard'}
@@ -327,7 +327,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 onChange={e => setPhraseSavedConfirmed(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-300 dark:border-blue-600 text-blue-600 focus:ring-2 focus:ring-blue-500 cursor-pointer"
               />
-              <span className="text-xs text-slate-600 dark:text-slate-300">I've saved this phrase somewhere safe</span>
+              <span className="text-xs text-slate-600 dark:text-zinc-300">I've saved this phrase somewhere safe</span>
             </label>
 
             <button
@@ -336,7 +336,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
               className={`w-full mt-5 py-3.5 cn-action font-bold text-white flex items-center justify-center gap-2 transition-all ${
                 phraseSavedConfirmed
                   ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl'
-                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-zinc-500 cursor-not-allowed'
               }`}
             >
               Continue <ArrowRight className="w-4 h-4" />
@@ -365,7 +365,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 <KeyRound className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">New device detected</h2>
-              <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
+              <p className="text-[13px] text-slate-500 dark:text-zinc-400 max-w-sm">
                 Enter your recovery phrase to unlock your encrypted notes here too. If this account is old enough to predate recovery phrases, try the login password that was active back then instead — it may still work.
               </p>
             </div>
@@ -393,7 +393,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
               <button
                 onClick={() => setConfirmingSkip(true)}
                 disabled={recoveryBusy}
-                className="w-full mt-2.5 py-2.5 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                className="w-full mt-2.5 py-2.5 rounded-xl text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors"
               >
                 I don't have it — start fresh on this device
               </button>
@@ -409,7 +409,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                   <button
                     onClick={() => setConfirmingSkip(false)}
                     disabled={recoveryBusy}
-                    className="flex-1 py-2 rounded-lg text-xs font-medium border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                    className="flex-1 py-2 rounded-lg text-xs font-medium border border-slate-200 dark:border-white/10 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                   >
                     Go back
                   </button>
@@ -451,7 +451,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                 <CitinetLogo size={44} className="mb-2" />
               )}
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Welcome back</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{locationName}</p>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">{locationName}</p>
             </div>
 
             <div className="space-y-3">
@@ -485,7 +485,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                   <button
                     type="button"
                     onClick={() => setShowLoginPassword(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
                   >
                     {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -516,15 +516,15 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
               <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
             </div>
 
-            <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-center text-xs text-slate-500 dark:text-zinc-400">
               New to {locationName}?{' '}
-              <button onClick={() => switchMode('signup')} className="text-slate-700 dark:text-slate-200 font-semibold hover:underline">
+              <button onClick={() => switchMode('signup')} className="text-slate-700 dark:text-zinc-200 font-semibold hover:underline">
                 Create account
               </button>
             </p>
-            <p className="text-center text-xs text-slate-400 dark:text-slate-500 mt-2">
+            <p className="text-center text-xs text-slate-400 dark:text-zinc-500 mt-2">
               Not your hub?{' '}
-              <button onClick={handleSwitchHub} className="hover:underline hover:text-slate-600 dark:hover:text-slate-300">
+              <button onClick={handleSwitchHub} className="hover:underline hover:text-slate-600 dark:hover:text-zinc-300">
                 Switch hubs
               </button>
             </p>
@@ -563,14 +563,14 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                           Welcome to {locationName}
                         </h2>
-                        <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                        <p className="text-[13px] text-slate-500 dark:text-zinc-400">
                           Set up how you appear to your neighbors.
                         </p>
                       </div>
 
                       <div>
                         <label className={labelClass}>
-                          Display Name <span className="text-slate-400 dark:text-slate-500 font-normal"> how neighbors see you</span>
+                          Display Name <span className="text-slate-400 dark:text-zinc-500 font-normal"> how neighbors see you</span>
                         </label>
                         <input
                           type="text"
@@ -581,11 +581,11 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                           autoFocus
                           className={inputClass}
                         />
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 ml-1">{displayName.length}/50 - No real name required, pseudonyms welcome.</p>
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 ml-1">{displayName.length}/50 - No real name required, pseudonyms welcome.</p>
                       </div>
                       <div>
                         <label className={labelClass}>
-                          Username <span className="text-slate-400 dark:text-slate-500 font-normal"> used to log in</span>
+                          Username <span className="text-slate-400 dark:text-zinc-500 font-normal"> used to log in</span>
                         </label>
                         <input
                           type="text"
@@ -598,7 +598,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                       </div>
                       <div>
                         <label className={labelClass}>
-                          Password <span className="text-slate-400 dark:text-slate-500 font-normal"> min 10 characters</span>
+                          Password <span className="text-slate-400 dark:text-zinc-500 font-normal"> min 10 characters</span>
                         </label>
                         <div className="relative">
                           <input
@@ -611,7 +611,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                           <button
                             type="button"
                             onClick={() => setShowPassword(v => !v)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
                           >
                             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
@@ -623,11 +623,11 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
 
                       <div className={cardClass}>
                         <div className="flex items-center gap-2 mb-1">
-                          <Tag className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                          <Tag className="w-4 h-4 text-slate-400 dark:text-zinc-500" />
                           <span className="text-sm font-semibold text-slate-800 dark:text-white">Community Interests</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">Optional</span>
+                          <span className="text-xs text-slate-400 dark:text-zinc-500">Optional</span>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                        <p className="text-xs text-slate-500 dark:text-zinc-400 mb-3">
                           Select areas you care about. These show on your profile and help neighbors find common ground.
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -638,7 +638,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                                 selectedTags.includes(tag)
                                   ? 'bg-blue-600 text-white'
-                                  : 'bg-white dark:bg-zinc-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-600'
+                                  : 'bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 border border-slate-200 dark:border-white/10 hover:border-blue-300 dark:hover:border-blue-600'
                               }`}
                             >
                               {tag}
@@ -647,9 +647,9 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                         </div>
                       </div>
 
-                      <p className="text-center text-xs text-slate-500 dark:text-slate-400 pt-1">
+                      <p className="text-center text-xs text-slate-500 dark:text-zinc-400 pt-1">
                         Already have an account?{' '}
-                        <button onClick={() => switchMode('login')} className="text-slate-700 dark:text-slate-200 font-semibold hover:underline">
+                        <button onClick={() => switchMode('login')} className="text-slate-700 dark:text-zinc-200 font-semibold hover:underline">
                           Sign in
                         </button>
                       </p>
@@ -660,11 +660,11 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                   {step === 2 && (
                     <div className="space-y-4">
                       <div className="flex flex-col items-center text-center gap-1 mb-5">
-                        <FileText className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-1" />
+                        <FileText className="w-8 h-8 text-slate-400 dark:text-zinc-500 mb-1" />
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                           How This Network Operates
                         </h2>
-                        <p className="text-[13px] text-slate-500 dark:text-slate-400 max-w-sm">
+                        <p className="text-[13px] text-slate-500 dark:text-zinc-400 max-w-sm">
                           Not terms of service, but shared principles. Understanding these is how trust is built.
                         </p>
                       </div>
@@ -673,10 +673,10 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                         {manifestoPrinciples.map((principle, i) => (
                           <div key={i} className={cardClass}>
                             <div className="flex items-start gap-3">
-                              <Shield className="w-4 h-4 text-slate-400 dark:text-slate-500 mt-0.5 shrink-0" />
+                              <Shield className="w-4 h-4 text-slate-400 dark:text-zinc-500 mt-0.5 shrink-0" />
                               <div>
                                 <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-0.5">{principle.title}</h3>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{principle.description}</p>
+                                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">{principle.description}</p>
                               </div>
                             </div>
                           </div>
@@ -695,7 +695,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                             <p className="text-sm font-semibold text-slate-800 dark:text-white">
                               I understand and agree to these community principles
                             </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                               By joining, you commit to participating in good faith and respecting community standards.
                             </p>
                           </div>
@@ -721,7 +721,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                     className={`w-full px-5 py-3 cn-action font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
                       canProceedStep1
                         ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
-                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-zinc-500 cursor-not-allowed'
                     }`}
                   >
                     Continue <ArrowRight className="w-4 h-4" />
@@ -731,7 +731,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                     <button
                       onClick={() => setStep(1)}
                       disabled={loading}
-                      className="flex-1 px-5 py-3 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded-lg font-semibold text-sm hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
+                      className="flex-1 px-5 py-3 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300 rounded-lg font-semibold text-sm hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors"
                     >
                       Back
                     </button>
@@ -741,7 +741,7 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
                       className={`flex-1 px-5 py-3 cn-action font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all ${
                         agreedToManifesto && !loading
                           ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95'
-                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
+                          : 'bg-slate-200 dark:bg-zinc-700 text-slate-400 dark:text-zinc-500 cursor-not-allowed'
                       }`}
                     >
                       {loading

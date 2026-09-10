@@ -15,6 +15,7 @@ import { useBroadcast } from '../context/BroadcastContext';
 import { featuredService } from '../services/featuredService';
 import { FeatureRequestModal } from './FeatureRequestModal';
 import { hubService } from '../services/hubService';
+import { nativeShare } from '../utils/share';
 import { marketplaceService } from '../services/marketplaceService';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import { useSavedIds } from '../hooks/useSavedIds';
@@ -23,11 +24,10 @@ import { useNotificationCounts } from '../hooks/useNotificationCounts';
 import { notificationsService, type NotificationFeature } from '../services/notificationsService';
 import { aiService } from '../services/aiService';
 import { openLocationInAtlas } from '../utils/geocoding';
-import { hubPath } from '../utils/subdomain';
 import { readCache, writeCache } from '../utils/dataCache';
 import type { FeaturedItem } from '../types/featured';
 import type { HubPost, HubVendor, HubEventAttendee } from '../types/hub';
-import { APP_TILES, DOCK_PRIORITY_SCREENS } from '../data/appTiles';
+import { APP_TILES, DOCK_PRIORITY_SCREENS, CN_TILE_AI, CN_TILE_VENDOR, CN_TILE_SUGGEST } from '../data/appTiles';
 
 const MOBILE_LAUNCHPAD_COLUMNS = 5;
 const MOBILE_LAUNCHPAD_ROWS = 2;
@@ -340,8 +340,10 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
     }
   }
 
-  function handleFeaturedCopyPostLink(postId: string) {
-    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+  async function handleFeaturedCopyPostLink(postId: string) {
+    const link = hubService.getPublicPostLink(hubSlug, postId);
+    const result = await nativeShare({ url: link });
+    if (result !== 'unsupported') return;
     navigator.clipboard.writeText(link).then(() => {
       setCopyLinkFeedback(postId);
       setTimeout(() => setCopyLinkFeedback(null), 2000);
@@ -400,12 +402,12 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
 
   // enabledApps: null = all enabled (existing hubs), array = restrict to those IDs
   const enabledSet = currentHub?.enabledApps ?? null;
-  const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: 'bg-gradient-to-br from-violet-500 to-blue-600' };
+  const AI_TILE = { Icon: Bot, label: 'Assistant', screen: 'assistant', gradient: CN_TILE_AI };
   const baseTiles = enabledSet ? APP_TILES.filter(t => enabledSet.includes(t.screen)) : APP_TILES;
   const visibleTiles = aiEnabled ? [...baseTiles, AI_TILE] : baseTiles;
 
   const mobileLauncherTiles: typeof APP_TILES = myVendor
-    ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: 'bg-gradient-to-br from-blue-500 to-blue-700' }]
+    ? [...visibleTiles, { Icon: Store, label: 'My Store', screen: `vendor/${myVendor.id}`, gradient: CN_TILE_VENDOR }]
     : visibleTiles;
 
   // Excludes DOCK_PRIORITY_SCREENS — those already live in the fixed bottom
@@ -417,7 +419,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
       Icon: Plus,
       label: 'Suggest',
       screen: 'suggest',
-      gradient: 'bg-gradient-to-br from-indigo-500 to-violet-600',
+      gradient: CN_TILE_SUGGEST,
     },
   ].filter(app => !DOCK_PRIORITY_SCREENS.includes(app.screen));
 
@@ -461,7 +463,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
           <div className="max-w-full overflow-hidden">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">Featured</h2>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-light">Curated by community moderators</span>
+              <span className="text-xs text-slate-500 dark:text-zinc-400 font-light">Curated by community moderators</span>
             </div>
             <FeaturedCarousel
               items={featuredItems}
@@ -505,7 +507,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                 aria-label="Refresh activity"
               >
-                <RefreshCw className={`w-4 h-4 text-slate-400 dark:text-slate-500 ${activityLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 text-slate-400 dark:text-zinc-500 ${activityLoading ? 'animate-spin' : ''}`} />
               </button>
             </div>
 
@@ -546,7 +548,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                           )}
                           <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-950 ${fresh ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-zinc-600'}`} />
                         </div>
-                        <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 max-w-[48px] truncate leading-tight">{item.actor.split(' ')[0]}</span>
+                        <span className="text-[10px] font-medium text-slate-600 dark:text-zinc-400 max-w-[48px] truncate leading-tight">{item.actor.split(' ')[0]}</span>
                       </button>
                     );
                   })}
@@ -604,7 +606,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                   {!activityExpanded && hiddenCount > 0 && (
                     <button
                       onClick={() => setActivityExpanded(true)}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all font-medium"
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-zinc-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all font-medium"
                     >
                       Show {hiddenCount} more
                     </button>
@@ -612,7 +614,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
                   {activityExpanded && activityItems.length > PAGE && (
                     <button
                       onClick={() => setActivityExpanded(false)}
-                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-all font-medium"
+                      className="w-full py-2.5 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 text-sm text-slate-500 dark:text-zinc-400 hover:border-slate-400 dark:hover:border-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800/50 transition-all font-medium"
                     >
                       Show less
                     </button>
@@ -715,7 +717,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
           {/* Mobile launcher — apps after community content */}
           {SHOW_MOBILE_LAUNCHPAD && (
           <div className="md:hidden space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Apps</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Apps</h2>
             <div
               ref={mobileLaunchpadRef}
               onScroll={handleMobileLaunchpadScroll}
@@ -782,7 +784,7 @@ export function Dashboard({ userName = "Neighbor", onNavigate }: DashboardProps)
               </div>
             )}
             {mobileLaunchpadPages.length > 1 && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Swipe left for more apps</p>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400">Swipe left for more apps</p>
             )}
           </div>
           )}
@@ -974,11 +976,11 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
                 <img src={item.actorAvatarUrl} alt={item.actor} className="absolute inset-0 w-full h-full rounded-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
               )}
             </div>
-            <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{item.actor}</span>
+            <span className="text-xs font-medium text-slate-700 dark:text-zinc-300">{item.actor}</span>
             <span className={`text-xs font-medium ${cfg.verbColor}`}>{item.summary}</span>
             {!isBannerType && location && <><span className="text-xs cn-text-4">·</span><span className="text-xs cn-text-3">{location}</span></>}
             <span className="text-xs cn-text-4">·</span>
-            <span className="font-mono text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
+            <span className="font-mono text-xs text-slate-400 dark:text-zinc-500 flex items-center gap-1">
               {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
               {timeAgo(item.timestamp)}
             </span>
@@ -997,7 +999,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
           {((item.replyCount !== undefined && item.replyCount > 0) || item.cta || item.type === 'event') && (
             <div className="flex items-center gap-3 pt-0.5 flex-wrap">
               {item.replyCount !== undefined && item.replyCount > 0 && (
-                <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <span className="text-xs text-slate-500 dark:text-zinc-400 flex items-center gap-1">
                   <MessageCircle className="w-3 h-3" />
                   {item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}
                 </span>
@@ -1009,7 +1011,7 @@ function ActivityCard({ item, onClick }: { item: ActivityItem; onClick: () => vo
                 </span>
               )}
               {item.cta && (
-                <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-zinc-900/20 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-zinc-800 group-hover:bg-slate-100 dark:group-hover:bg-zinc-900/40 transition-colors">
+                <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-zinc-900/20 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-zinc-800 group-hover:bg-slate-100 dark:group-hover:bg-zinc-900/40 transition-colors">
                   {item.cta}
                 </span>
               )}

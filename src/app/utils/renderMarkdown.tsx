@@ -120,7 +120,7 @@ export function MarkdownText({ content, className }: MarkdownTextProps) {
           case 'h2':
             return <p key={bi} className="text-sm font-bold text-slate-900 dark:text-white">{renderInline(block.text!)}</p>;
           case 'h3':
-            return <p key={bi} className="text-sm font-semibold text-slate-800 dark:text-slate-100">{renderInline(block.text!)}</p>;
+            return <p key={bi} className="text-sm font-semibold text-slate-800 dark:text-zinc-100">{renderInline(block.text!)}</p>;
           case 'hr':
             return <hr key={bi} className="border-slate-200 dark:border-zinc-700" />;
           case 'ul':
@@ -128,7 +128,7 @@ export function MarkdownText({ content, className }: MarkdownTextProps) {
               <ul key={bi} className="space-y-1 pl-1">
                 {block.items!.map((item, ii) => (
                   <li key={ii} className="flex items-start gap-2">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500 shrink-0" />
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 shrink-0" />
                     <span>{renderInline(item)}</span>
                   </li>
                 ))}
@@ -139,7 +139,7 @@ export function MarkdownText({ content, className }: MarkdownTextProps) {
               <ol key={bi} className="space-y-1 pl-1">
                 {block.items!.map((item, ii) => (
                   <li key={ii} className="flex items-start gap-2">
-                    <span className="shrink-0 text-slate-400 dark:text-slate-500 text-xs font-medium mt-0.5 min-w-[1.1rem] text-right">{ii + 1}.</span>
+                    <span className="shrink-0 text-slate-400 dark:text-zinc-500 text-xs font-medium mt-0.5 min-w-[1.1rem] text-right">{ii + 1}.</span>
                     <span>{renderInline(item)}</span>
                   </li>
                 ))}

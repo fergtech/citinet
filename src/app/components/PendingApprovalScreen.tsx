@@ -44,19 +44,19 @@ export function PendingApprovalScreen({ status, hubName, joinApprovalMode, onChe
         <button
           onClick={handleCheckAgain}
           disabled={checking}
-          className="flex items-center gap-2 px-4 py-2 mb-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-medium disabled:opacity-60"
+          className="flex items-center gap-2 px-4 py-2 mb-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium disabled:opacity-60"
         >
           <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
           {checking ? 'Checking…' : 'Check again'}
         </button>
       )}
       {stillWaiting && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">Still waiting on approval.</p>
+        <p className="text-xs text-slate-400 dark:text-zinc-500 mb-3">Still waiting on approval.</p>
       )}
 
       <button
         onClick={onSignOut}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
       >
         <LogOut className="w-3.5 h-3.5" /> Back to onboarding
       </button>

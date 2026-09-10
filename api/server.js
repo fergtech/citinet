@@ -6341,7 +6341,11 @@ app.get('/api/public/profile/:username/pins', async (req, res) => {
   }
 });
 
-// Public single post — no auth, only if author is public and post visibility = inherit
+// Public single post — no auth. Public either because the author's whole
+// profile is public (default-visibility posts only — 'hub'/'private' stay
+// gated even then), or because the post lives in a web_public space, which
+// already exposes every post in it unfiltered via GET /api/public/spaces/:slug
+// — this just makes the same post individually linkable/shareable.
 app.get('/api/public/posts/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -6350,16 +6354,27 @@ app.get('/api/public/posts/:id', async (req, res) => {
               u.username AS author_username, u.id AS author_id,
               u.display_name, u.avatar_url,
               f.file_name AS media_file_name,
-              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count
+              s.slug AS space_slug, s.name AS space_name,
+              (SELECT COUNT(*) FROM hub_post_replies r WHERE r.post_id = p.id)::int AS reply_count,
+              (SELECT COUNT(*) FROM hub_event_rsvps er WHERE er.post_id = p.id)::int AS rsvp_count,
+              pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
+              pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct
        FROM hub_posts p
        JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_files f ON p.media_file_id = f.id
-       WHERE p.id = $1 AND p.visibility = 'inherit' AND u.profile_visibility = 'public'`,
+       LEFT JOIN hub_spaces s ON s.id = p.space_id
+       LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
+       WHERE p.id = $1
+         AND (
+           s.web_public = TRUE
+           OR (p.visibility = 'inherit' AND u.profile_visibility = 'public' AND (p.space_id IS NULL OR p.shared_to_feed = TRUE))
+         )`,
       [req.params.id],
     );
     if (!rows[0])
       return res.status(404).json({ error: 'Post not found or not public' });
-    res.json(rows[0]);
+    const [withPoll] = await attachPollData(rows, null);
+    res.json(withPoll);
   } catch (err) {
     console.error('Public post error:', err);
     res.status(500).json({ error: 'Failed to load post' });

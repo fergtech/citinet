@@ -38,7 +38,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
             aria-label="Close node details modal"
             className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/80 dark:bg-zinc-900/80 hover:bg-white dark:hover:bg-zinc-900 flex items-center justify-center transition-all"
           >
-            <X className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+            <X className="w-4 h-4 text-slate-700 dark:text-zinc-300" />
           </button>
 
           <div className="flex items-start gap-4">
@@ -60,7 +60,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                 <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${
                   node.status === 'online' 
                     ? 'bg-green-100 dark:bg-green-900/30' 
-                    : 'bg-slate-200 dark:bg-slate-700'
+                    : 'bg-slate-200 dark:bg-zinc-700'
                 }`}>
                   <div className={`w-2 h-2 rounded-full ${
                     node.status === 'online' ? 'bg-green-500 animate-pulse' : 'bg-slate-400'
@@ -68,12 +68,12 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                   <span className={`text-xs font-medium ${
                     node.status === 'online' 
                       ? 'text-green-700 dark:text-green-400' 
-                      : 'text-slate-600 dark:text-slate-400'
+                      : 'text-slate-600 dark:text-zinc-400'
                   }`}>
                     {node.status.toUpperCase()}
                   </span>
                 </div>
-                <span className="px-2 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-full">
+                <span className="px-2 py-1 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 text-xs font-medium rounded-full">
                   {isInfrastructure ? 'Infrastructure' : 'Member'}
                 </span>
               </div>
@@ -89,10 +89,10 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
               {node.location && (
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                    <MapPin className="w-5 h-5 text-slate-600 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Location</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-1">Location</div>
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{node.location}</div>
                   </div>
                 </div>
@@ -104,7 +104,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                     <Clock className="w-5 h-5 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Uptime</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-1">Uptime</div>
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{node.uptime}</div>
                   </div>
                 </div>
@@ -116,7 +116,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                     <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Connected Users</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-1">Connected Users</div>
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{node.connectedUsers}</div>
                   </div>
                 </div>
@@ -128,7 +128,7 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
                     <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="flex-1">
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">Services Hosted</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-2">Services Hosted</div>
                     <div className="flex flex-wrap gap-1.5">
                       {node.servicesHosted.map((service, idx) => (
                         <span
@@ -149,10 +149,10 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
               {node.joinedDate && (
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                    <Clock className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                    <Clock className="w-5 h-5 text-slate-600 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Joined</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-1">Joined</div>
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{node.joinedDate}</div>
                   </div>
                 </div>
@@ -161,10 +161,10 @@ export function NodeDetailsModal({ node, onClose }: NodeDetailsModalProps) {
               {node.status === 'offline' && node.lastSeen && (
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                    <Activity className="w-5 h-5 text-slate-600 dark:text-zinc-400" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Last Seen</div>
+                    <div className="text-xs text-slate-600 dark:text-zinc-400 mb-1">Last Seen</div>
                     <div className="text-sm font-medium text-slate-900 dark:text-white">{node.lastSeen}</div>
                   </div>
                 </div>

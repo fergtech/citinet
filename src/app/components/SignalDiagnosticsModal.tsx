@@ -21,7 +21,7 @@ function tunnelType(url: string): string {
 }
 
 function latencyColor(ms: number | null) {
-  if (ms === null) return 'text-slate-400 dark:text-slate-500';
+  if (ms === null) return 'text-slate-400 dark:text-zinc-500';
   if (ms < 100)   return 'text-green-600 dark:text-green-400';
   if (ms < 300)   return 'text-yellow-600 dark:text-yellow-400';
   return 'text-orange-600 dark:text-orange-400';
@@ -109,7 +109,7 @@ export function SignalDiagnosticsModal({ isOpen, onClose }: SignalDiagnosticsMod
           <div className="rounded-xl cn-surface-2 p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <Activity className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                 <span className="text-sm font-medium cn-text-1">Round-trip latency</span>
               </div>
               <button

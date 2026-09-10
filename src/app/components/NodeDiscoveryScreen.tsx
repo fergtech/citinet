@@ -327,14 +327,14 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={onBack}
-                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 text-xs font-semibold transition-colors"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />Home
                 </button>
                 <button
                   onClick={() => setRegistryRefreshKey(k => k + 1)}
                   disabled={registryLoading}
-                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors disabled:opacity-40"
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 text-xs font-semibold transition-colors disabled:opacity-40"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${registryLoading ? 'animate-spin' : ''}`} />Refresh
                 </button>
@@ -343,7 +343,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <div className="flex flex-col items-center text-center gap-1 mb-5">
                 <CitinetLogo size={44} className="mb-2" />
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Find a Hub</h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Connect to your community's hub</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">Connect to your community's hub</p>
               </div>
 
               <div className="relative mb-3">
@@ -366,7 +366,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 )}
 
                 {!registryLoading && filteredRegistryHubs.length === 0 && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 px-1 py-2">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 px-1 py-2">
                     {registryHubs.length === 0 ? 'No hubs registered yet — enter a URL below.' : 'No hubs found — enter a URL below.'}
                   </p>
                 )}
@@ -388,7 +388,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                   setUrlOpen(o => !o);
                   if (!urlOpen) setTimeout(() => urlInputRef.current?.focus(), 150);
                 }}
-                className="mt-3 text-xs text-slate-400 dark:text-slate-500 underline hover:no-underline"
+                className="mt-3 text-xs text-slate-400 dark:text-zinc-500 underline hover:no-underline"
               >
                 {urlOpen ? 'Hide' : 'Enter tunnel URL manually'}
               </button>
@@ -447,7 +447,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
             >
               <button
                 onClick={resetToBrowse}
-                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 text-xs font-semibold transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />Cancel
               </button>
@@ -455,7 +455,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
                 Connecting to Hub
               </h3>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">
+              <p className="text-slate-600 dark:text-zinc-400 text-sm">
                 {probingHubName
                   ? <>Reaching <strong>{probingHubName}</strong>…</>
                   : <>Reaching {hubService.normalizeTunnelUrl(tunnelUrl)}…</>
@@ -481,7 +481,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={resetToBrowse}
-                  className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+                  className="inline-flex items-center gap-1 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 text-xs font-semibold transition-colors"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />All hubs
                 </button>
@@ -499,7 +499,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="text-base font-bold text-slate-900 dark:text-white truncate">{probeInfo.name || 'Hub'}</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
                     {[probeInfo.location, probeStatus?.user_count !== undefined ? `${probeStatus.user_count} members` : null]
                       .filter(Boolean).join(' · ')}
                   </div>
@@ -524,7 +524,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                     className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
                       authMode === mode
                         ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-300'
                     }`}
                   >
                     {mode === 'login' ? 'Log in' : 'Sign up'}
@@ -535,7 +535,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <div className="space-y-3">
                 {/* Username */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Username</label>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1">Username</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
@@ -556,7 +556,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 {/* Email (signup only) */}
                 {authMode === 'signup' && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+                    <label className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1">Email</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
@@ -575,7 +575,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
 
                 {/* Password */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1">Password</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
@@ -589,7 +589,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                     <button
                       type="button"
                       onClick={() => setShowPassword(p => !p)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -609,7 +609,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 {/* Confirm Password (signup only) */}
                 {authMode === 'signup' && (
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Confirm Password</label>
+                    <label className="block text-xs font-medium text-slate-700 dark:text-zinc-300 mb-1">Confirm Password</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <input
@@ -661,7 +661,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 <span className="text-[11px] text-slate-400 dark:text-zinc-500">or</span>
                 <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
               </div>
-              <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-center text-xs text-slate-500 dark:text-zinc-400">
                 {authMode === 'login' ? 'New to this hub? ' : 'Already a member? '}
                 <button
                   onClick={() => switchAuthMode(authMode === 'login' ? 'signup' : 'login')}
@@ -682,7 +682,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
             >
               <button
                 onClick={onBack}
-                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 text-xs font-semibold transition-colors"
+                className="absolute top-5 left-5 inline-flex items-center gap-1 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 text-xs font-semibold transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />Home
               </button>
@@ -692,7 +692,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
                 Couldn't reach hub
               </h3>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-4 max-w-xs mx-auto">
+              <p className="text-slate-500 dark:text-zinc-400 text-sm mb-4 max-w-xs mx-auto">
                 {probeError || 'An unexpected error occurred. Please try again.'}
               </p>
 
@@ -722,7 +722,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
                 </button>
                 <button
                   onClick={resetToBrowse}
-                  className="w-full px-6 py-3 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-sm"
+                  className="w-full px-6 py-3 border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-sm"
                 >
                   Try a Different URL
                 </button>
@@ -767,7 +767,7 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
         </div>
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {hub.location && (
-            <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-zinc-400">
               <MapPin className="w-3 h-3" />{hub.location}
             </span>
           )}
@@ -787,13 +787,13 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
         </div>
         {hub.description && (
           <div className="flex items-start gap-1 mt-1">
-            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">{hub.description}</p>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 line-clamp-1">{hub.description}</p>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setShowFullDescription(true); }}
               title="Read full description"
               aria-label="Read full description"
-              className="shrink-0 text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors mt-0.5"
+              className="shrink-0 text-slate-400 dark:text-zinc-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors mt-0.5"
             >
               <Info className="w-3.5 h-3.5" />
             </button>
@@ -832,7 +832,7 @@ function DirectoryHubRow({ hub, alreadyJoined, entering, onJoin, onQuickEnter }:
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+              <p className="text-sm text-slate-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
                 {hub.description}
               </p>
             </motion.div>

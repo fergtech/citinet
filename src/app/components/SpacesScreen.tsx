@@ -1085,8 +1085,10 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
     setPollDeleting(null);
   }
 
-  function handleCopyPostLink(postId: string) {
-    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+  async function handleCopyPostLink(postId: string) {
+    const link = hubService.getPublicPostLink(hubSlug, postId);
+    const result = await nativeShare({ url: link });
+    if (result !== 'unsupported') return;
     navigator.clipboard.writeText(link).then(() => {
       setCopyLinkFeedback(postId);
       setTimeout(() => setCopyLinkFeedback(null), 2000);

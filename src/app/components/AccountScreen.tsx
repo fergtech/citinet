@@ -410,7 +410,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const roleBadgeClass = isAdmin
     ? 'cn-surface-3 cn-text-1'
-    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400';
+    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400';
 
   const roleLabel = isAdmin ? '★ Hub Admin' : role.charAt(0).toUpperCase() + role.slice(1);
 
@@ -465,14 +465,14 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         {showBannerEditor && (
           <div className="p-4 space-y-3 border-t border-slate-100 dark:border-zinc-800">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Banner Style</p>
+              <p className="text-xs font-semibold text-slate-700 dark:text-zinc-300">Banner Style</p>
               <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={savingBanner}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors disabled:opacity-60">
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-xs font-semibold text-slate-700 dark:text-zinc-200 transition-colors disabled:opacity-60">
                 {savingBanner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Upload Image
               </button>
             </div>
             <div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Solid Colors</p>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Solid Colors</p>
               <div className="flex flex-wrap gap-2">
                 {BANNER_SOLID_COLORS.map(color => (
                   <button key={color} type="button" onClick={() => saveBannerFields({ bannerMode: 'solid', bannerColor: color })}
@@ -482,7 +482,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
               </div>
             </div>
             <div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1.5">Gradients</p>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Gradients</p>
               <div className="flex flex-wrap gap-2">
                 {BANNER_GRADIENTS.map((g, i) => (
                   <button key={i} type="button" onClick={() => saveBannerFields({ bannerMode: 'gradient', bannerGradientFrom: g.from, bannerGradientTo: g.to })}
@@ -514,10 +514,10 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-mono text-slate-500 dark:text-slate-400">@{currentUser?.username || 'neighbor'}</span>
+              <span className="text-sm font-mono text-slate-500 dark:text-zinc-400">@{currentUser?.username || 'neighbor'}</span>
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${roleBadgeClass}`}>{roleLabel}</span>
             </div>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{currentHub?.name}</p>
+            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">{currentHub?.name}</p>
             <button onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}
               className="text-xs cn-text-3 hover:cn-text-1 mt-1 hover:underline disabled:opacity-50">
               {avatarUploading ? 'Uploading…' : 'Change photo'}
@@ -527,39 +527,39 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         {avatarError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{avatarError}</p>}
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Display Name</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Display Name</label>
             <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setIsDirty(true); }}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="Your display name" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Email</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="your@email.com" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Headline</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Headline</label>
             <input type="text" value={profileHeadline} onChange={e => { setProfileHeadline(e.target.value); setIsDirty(true); }} maxLength={100}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="e.g. Local food advocate & urban gardener" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Bio</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Bio</label>
             <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={2600} rows={2}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
               placeholder="A short intro about you (2600 chars)" />
-            <p className="text-right text-xs text-slate-400 dark:text-slate-500 mt-0.5">{bio.length}/2600</p>
+            <p className="text-right text-xs text-slate-400 dark:text-zinc-500 mt-0.5">{bio.length}/2600</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Website</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Website</label>
             <input type="url" value={website} onChange={e => { setWebsite(e.target.value); setIsDirty(true); }}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
               placeholder="https://yoursite.com" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
-              Interests <span className="font-normal text-slate-400 dark:text-slate-500">({tags.length}/10)</span>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">
+              Interests <span className="font-normal text-slate-400 dark:text-zinc-500">({tags.length}/10)</span>
             </label>
             <div onClick={() => tagInputRef.current?.focus()}
               className="min-h-[42px] flex flex-wrap gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 cursor-text focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-shadow">
@@ -576,21 +576,21 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                 <input ref={tagInputRef} value={tagInput} onChange={e => setTagInput(e.target.value)}
                   onKeyDown={handleTagKeyDown} onBlur={commitTag}
                   placeholder={tags.length === 0 ? 'gardening, repair, music… (Enter to add)' : ''}
-                  className="flex-1 min-w-[120px] bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
+                  className="flex-1 min-w-[120px] bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 outline-none" />
               )}
             </div>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Press Enter or comma to add · tap × to remove</p>
+            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">Press Enter or comma to add · tap × to remove</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Location</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Location</label>
             <LocationPicker defaultValue={currentUser?.location || ''} onSelect={r => { setLocationResult(r); setIsDirty(true); }}
               placeholder="Your neighborhood or city…"
               inputClassName="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow" />
           </div>
           <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-zinc-700">
             <div className="min-w-0 pr-2">
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-200">Show my location</p>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
+              <p className="text-xs font-medium text-slate-700 dark:text-zinc-200">Show my location</p>
+              <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5 leading-relaxed">
                 {locationVisible
                   ? 'Visible on the network map and in your profile.'
                   : 'Hidden — you’ll show as “Somewhere in the community” instead. You can still be found by name, messaged, and interacted with.'}
@@ -599,7 +599,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
             <Switch checked={locationVisible} onCheckedChange={v => { setLocationVisible(v); setIsDirty(true); }} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Profile visibility</label>
+            <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-2">Profile visibility</label>
             <div className="grid grid-cols-3 gap-2">
               {([
                 { value: 'public',  label: 'Public',      desc: 'Anyone on the internet', icon: '🌐' },
@@ -617,8 +617,8 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
                   }`}
                 >
                   <span className="text-lg">{opt.icon}</span>
-                  <span className={`text-xs font-medium ${profileVisibility === opt.value ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-300'}`}>{opt.label}</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">{opt.desc}</span>
+                  <span className={`text-xs font-medium ${profileVisibility === opt.value ? 'text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-zinc-300'}`}>{opt.label}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-zinc-500 leading-tight">{opt.desc}</span>
                 </button>
               ))}
             </div>
@@ -688,13 +688,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const appearanceSection = (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-5">
-        <Palette className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <Palette className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Appearance</h3>
         {bgSaved && <span className="ml-auto text-xs text-green-500 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" />Saved</span>}
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Choose your personal background. Only you see this — it follows you across all hub screens.</p>
+      <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4">Choose your personal background. Only you see this — it follows you across all hub screens.</p>
       <div className="mb-4">
-        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Solid Color</p>
+        <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-2">Solid Color</p>
         <div className="flex flex-wrap gap-2">
           {[
             { color: '#18181b', label: 'Deep Navy' }, { color: '#052e16', label: 'Forest' },
@@ -722,7 +722,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-medium transition-colors shrink-0">Apply</button>
       </div>
       <div className="mb-4">
-        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Classic</p>
+        <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-2">Classic</p>
         <button
           onClick={handleSetClassic}
           className={`relative w-full rounded-xl overflow-hidden aspect-[3/1] border-2 transition-all hover:scale-[1.01] active:scale-95 focus:outline-none ${
@@ -744,7 +744,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </button>
       </div>
       <div className="mb-4">
-        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Default Backgrounds</p>
+        <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-2">Default Backgrounds</p>
         <div className="grid grid-cols-3 gap-2">
           {[
             { file: 'placidplace-space-7273891_1920.jpg', label: 'Space' },
@@ -778,26 +778,26 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </div>
       </div>
       <div className="mb-4">
-        <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Custom Image</p>
+        <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-2">Custom Image</p>
         <input ref={bgFileRef} type="file" accept="image/*" className="hidden" onChange={handleBgImageUpload} />
         <button onClick={() => bgFileRef.current?.click()} disabled={bgUploading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-colors disabled:opacity-50">
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600 text-slate-500 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-colors disabled:opacity-50">
           {bgUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
           {bgUploading ? 'Uploading…' : userPreferences.background_type === 'image' ? 'Replace image' : 'Upload image'}
         </button>
         {userPreferences.background_type === 'image' && userPreferences.background_value && (
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 truncate font-mono">{userPreferences.background_value}</p>
+          <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1.5 truncate font-mono">{userPreferences.background_value}</p>
         )}
       </div>
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Image Brightness</p>
-          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{Math.round(bgBrightness * 100)}%</span>
+          <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">Image Brightness</p>
+          <span className="text-xs font-mono text-slate-500 dark:text-zinc-400">{Math.round(bgBrightness * 100)}%</span>
         </div>
         <input type="range" min="35" max="100" step="1" value={Math.round(bgBrightness * 100)}
           onChange={e => setBgBrightness(Number(e.target.value) / 100)} className="w-full accent-blue-600" />
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">Lower is dimmer and improves readability.</p>
+          <p className="text-[11px] text-slate-400 dark:text-zinc-500">Lower is dimmer and improves readability.</p>
           <button onClick={handleSaveBgBrightness} disabled={bgBrightnessSaving}
             className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium transition-colors shrink-0">
             {bgBrightnessSaving ? 'Saving…' : 'Save Brightness'}
@@ -806,7 +806,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </div>
       {bgError && <p className="text-xs text-red-500 dark:text-red-400 mb-3">{bgError}</p>}
       {userPreferences.background_type && userPreferences.background_type !== 'default' && (
-        <button onClick={handleResetBg} className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+        <button onClick={handleResetBg} className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 transition-colors">
           <RotateCcw className="w-3.5 h-3.5" /> Reset to default (dot grid)
         </button>
       )}
@@ -818,11 +818,11 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const notificationsSection = (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-5">
-        <Bell className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <Bell className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Notifications</h3>
       </div>
       {!currentUser?.email && (
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+        <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4">
           Add an email address in the <button onClick={() => setActiveSection('profile')} className="cn-text-2 hover:cn-text-1 hover:underline font-medium">Profile</button> tab to receive email notifications.
         </p>
       )}
@@ -832,7 +832,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       >
         <div className="flex-1">
           <p className="text-sm font-medium text-slate-900 dark:text-white">Email notifications</p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Get an email for new messages, replies to your posts, and Space invites — the same things you get notified about in-app.</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Get an email for new messages, replies to your posts, and Space invites — the same things you get notified about in-app.</p>
         </div>
         <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${emailNotificationsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${emailNotificationsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -845,24 +845,24 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     <div className="space-y-5">
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-5">
-        <Lock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <Lock className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Change Password</h3>
       </div>
       <div className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Current Password</label>
+          <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Current Password</label>
           <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)}
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
             placeholder="Your current password" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">New Password</label>
+          <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">New Password</label>
           <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow"
             placeholder="At least 4 characters" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Confirm New Password</label>
+          <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Confirm New Password</label>
           <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
             className={`w-full px-3.5 py-2.5 rounded-xl border bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow ${
               confirmPassword && confirmPassword !== newPassword ? 'border-red-400 dark:border-red-600' : 'border-slate-200 dark:border-zinc-700'
@@ -881,7 +881,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     {/* Recovery phrase */}
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-1">
-        <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+        <KeyRound className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
         <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Recovery Phrase</h3>
         {hasBackup !== null && (
           <span className={`ml-auto text-xs font-medium ${hasBackup ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
@@ -889,7 +889,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+      <p className="text-xs text-slate-500 dark:text-zinc-400 mb-5 leading-relaxed">
         Your notes are encrypted on this device. This phrase — separate from your login password — is what unlocks them on a new device. It's generated by the app, not chosen by you, so it can't be a weak or guessable password.
       </p>
 
@@ -930,10 +930,10 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     {hasBackup && (
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
         <div className="flex items-center gap-2 mb-1">
-          <KeyRound className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <KeyRound className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Restore Keys From Backup</h3>
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 leading-relaxed">
+        <p className="text-xs text-slate-500 dark:text-zinc-400 mb-5 leading-relaxed">
           If this device is showing your notes or messages as still encrypted, enter your recovery phrase — or, for an account set up before recovery phrases existed, the login password that was active when your backup was created — to overwrite this device's keys with the ones from your backup.
         </p>
         <input
@@ -977,20 +977,20 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     <div className="space-y-4">
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
         <div className="flex items-center gap-2 mb-4">
-          <Server className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <Server className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Connected Hub</h3>
         </div>
         <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+          <div className="flex items-center gap-2 text-slate-600 dark:text-zinc-400">
             <Users className="w-4 h-4 shrink-0" /><span>{currentHub?.name}</span>
           </div>
           {currentHub?.location && (
-            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-slate-600 dark:text-zinc-400">
               <MapPin className="w-4 h-4 shrink-0" /><span>{currentHub.location}</span>
             </div>
           )}
           {currentHub?.joinedAt && (
-            <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">Joined {new Date(currentHub.joinedAt).toLocaleDateString()}</p>
+            <p className="text-xs text-slate-400 dark:text-zinc-500 font-mono">Joined {new Date(currentHub.joinedAt).toLocaleDateString()}</p>
           )}
         </div>
       </div>
@@ -1028,7 +1028,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
       </button>
       {deleteConfirm && (
         <div className="mt-4 space-y-3">
-          <p className="text-xs text-slate-600 dark:text-slate-400">This permanently deletes your account and all your data from this hub. This cannot be undone.</p>
+          <p className="text-xs text-slate-600 dark:text-zinc-400">This permanently deletes your account and all your data from this hub. This cannot be undone.</p>
           <input type="password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)}
             placeholder="Enter your password to confirm"
             className="w-full px-3.5 py-2.5 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/10 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-red-500 focus:outline-none" />
@@ -1089,7 +1089,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
               className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left border-b border-slate-100 dark:border-zinc-800 last:border-0 ${
                 activeSection === id
                   ? danger ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                  : danger ? 'text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                  : danger ? 'text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10' : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
               }`}>
               <Icon className="w-4 h-4 shrink-0" />
               {label}
@@ -1110,7 +1110,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                 activeSection === id
                   ? danger ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                  : danger ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                  : danger ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700 dark:hover:text-zinc-200'
               }`}>
               <Icon className="w-3.5 h-3.5 shrink-0" />{label}
             </button>

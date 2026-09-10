@@ -429,19 +429,19 @@ export function PostDetailModal({
                     <div className="space-y-4">
                       {/* Caption */}
                       <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 block">Caption</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1 block">Caption</label>
                         <textarea
                           value={editBody}
                           onChange={e => setEditBody(e.target.value)}
                           rows={4}
-                          className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                           placeholder="Caption (optional)"
                         />
                       </div>
 
                       {/* Media — replace/add/remove */}
                       <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 block">Media</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1 block">Media</label>
                         {(() => {
                           const showCurrent = mediaUrl && !editRemoveMedia && !editMediaPreview;
                           const showNew = !!editMediaPreview;
@@ -473,7 +473,7 @@ export function PostDetailModal({
                             );
                           }
                           return (
-                            <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all text-sm text-slate-500 dark:text-slate-400">
+                            <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all text-sm text-slate-500 dark:text-zinc-400">
                               <Image className="w-4 h-4" /><Film className="w-4 h-4" />
                               <span>Add an image or video</span>
                               <input type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleEditFileChange(e.target.files[0]); }} />
@@ -513,7 +513,7 @@ export function PostDetailModal({
 
                       {/* Visibility picker */}
                       <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5 block">Visibility</label>
+                        <label className="text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5 block">Visibility</label>
                         <div className="relative inline-block">
                           <button
                             type="button"
@@ -521,7 +521,7 @@ export function PostDetailModal({
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ring-1 transition-all ${
                               editVisibility !== 'inherit'
                                 ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-indigo-200 dark:ring-indigo-500/20'
-                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 ring-slate-200 dark:ring-zinc-700'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 ring-slate-200 dark:ring-zinc-700'
                             }`}
                           >
                             {VISIBILITY_OPTIONS.find(o => o.value === editVisibility)?.icon}
@@ -538,13 +538,13 @@ export function PostDetailModal({
                                   className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
                                     editVisibility === opt.value
                                       ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
-                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+                                      : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
                                   }`}
                                 >
                                   <span className="mt-0.5 shrink-0">{opt.icon}</span>
                                   <span>
                                     <span className="block text-xs font-medium">{opt.label}</span>
-                                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</span>
+                                    <span className="block text-[10px] text-slate-500 dark:text-zinc-400 mt-0.5">{opt.desc}</span>
                                   </span>
                                 </button>
                               ))}
@@ -554,7 +554,7 @@ export function PostDetailModal({
                       </div>
 
                       <div className="flex items-center gap-2 justify-end">
-                        <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
+                        <button onClick={handleCancelEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">
                           Cancel
                         </button>
                         <button onClick={handleSaveEdit} disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex items-center gap-2">
@@ -577,7 +577,7 @@ export function PostDetailModal({
                               ? <img src={sourceBrand.logoUrl} className="w-3.5 h-3.5 rounded-sm object-cover" alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                               : <div className="w-3.5 h-3.5 rounded-sm bg-slate-300 dark:bg-zinc-700 text-[8px] font-bold text-slate-700 dark:text-zinc-200 flex items-center justify-center">SP</div>
                             }
-                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Shared from</span>
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Shared from</span>
                             <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200 leading-none">{sourceBrand.name}</span>
                           </a>
                         ) : (
@@ -626,7 +626,7 @@ export function PostDetailModal({
                                   aria-label="Post actions"
                                   className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
                                 >
-                                  <MoreVertical className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                                  <MoreVertical className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
                                 </button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-40">
@@ -651,7 +651,7 @@ export function PostDetailModal({
                             aria-label="Close"
                             className="w-8 h-8 rounded-lg bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
                           >
-                            <X className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                            <X className="w-4 h-4 text-slate-600 dark:text-zinc-400" />
                           </button>
                         </div>
                       </div>
@@ -682,7 +682,7 @@ export function PostDetailModal({
                       )}
 
                       {post.body && (
-                        <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm whitespace-pre-wrap">
+                        <p className="text-slate-700 dark:text-zinc-300 leading-relaxed text-sm whitespace-pre-wrap">
                           {linkifyText(post.body)}
                         </p>
                       )}
@@ -696,7 +696,7 @@ export function PostDetailModal({
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium ring-1 transition-all ${
                               (post.visibility ?? 'inherit') !== 'inherit'
                                 ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-indigo-200 dark:ring-indigo-500/20'
-                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-slate-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
+                                : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 ring-transparent hover:bg-slate-200 dark:hover:bg-zinc-700'
                             }`}
                           >
                             {VISIBILITY_OPTIONS.find(o => o.value === (post.visibility ?? 'inherit'))?.icon}
@@ -721,13 +721,13 @@ export function PostDetailModal({
                                   className={`flex items-start gap-2.5 px-3 py-2 rounded-lg text-left transition-colors ${
                                     (post.visibility ?? 'inherit') === opt.value
                                       ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
-                                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+                                      : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
                                   }`}
                                 >
                                   <span className="mt-0.5 shrink-0">{opt.icon}</span>
                                   <span>
                                     <span className="block text-xs font-medium">{opt.label}</span>
-                                    <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{opt.desc}</span>
+                                    <span className="block text-[10px] text-slate-500 dark:text-zinc-400 mt-0.5">{opt.desc}</span>
                                   </span>
                                 </button>
                               ))}
@@ -782,7 +782,7 @@ export function PostDetailModal({
 
                 {/* Replies */}
                 <div className="p-6">
-                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 mb-4">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300 mb-4">
                     <MessageCircle className="w-4 h-4" />
                     <span className="text-sm font-medium">
                       {replies.length === 0 ? 'No replies yet' : `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
@@ -811,7 +811,7 @@ export function PostDetailModal({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2 mb-1">
                           <span className="text-sm font-medium text-slate-900 dark:text-white">{reply.author_username}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">{formatTimestamp(reply.created_at)}</span>
+                          <span className="text-xs text-slate-400 dark:text-zinc-500">{formatTimestamp(reply.created_at)}</span>
                         </div>
                         {/* @mention reference — click to jump to that reply */}
                         {reply.reply_to_username && reply.reply_to_reply_id && (
@@ -824,12 +824,12 @@ export function PostDetailModal({
                             @{reply.reply_to_username}
                           </button>
                         )}
-                        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
+                        <p className="text-sm text-slate-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">{reply.body}</p>
                         {/* Reply button */}
                         <button
                           type="button"
                           onClick={() => handleClickReply(reply)}
-                          className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                          className="mt-1.5 flex items-center gap-1 text-xs text-slate-400 dark:text-zinc-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
                         >
                           <CornerDownRight className="w-3 h-3" /> Reply
                         </button>
@@ -853,7 +853,7 @@ export function PostDetailModal({
                     <button
                       type="button"
                       onClick={() => setReplyingTo(null)}
-                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 transition-colors"
                       aria-label="Cancel reply"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -876,7 +876,7 @@ export function PostDetailModal({
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                     placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Write a reply… (Enter to send)'}
                     rows={1}
-                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                   <button
                     type="submit"

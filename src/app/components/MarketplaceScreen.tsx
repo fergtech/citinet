@@ -31,7 +31,7 @@ const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string 
   'Electronics':   { Icon: Cpu,          gradient: 'from-cyan-500 to-sky-600' },
   'Events':        { Icon: CalendarDays, gradient: 'from-amber-500 to-orange-600' },
   'Arts & Crafts': { Icon: Palette,      gradient: 'from-fuchsia-500 to-pink-600' },
-  'Other':         { Icon: Sparkles,     gradient: 'from-slate-500 to-zinc-600' },
+  'Other':         { Icon: Sparkles,     gradient: 'from-slate-500 to-slate-600' },
 };
 
 export const KIND_META: Record<HubListing['price_type'], { label: string; classes: string }> = {
@@ -39,7 +39,7 @@ export const KIND_META: Record<HubListing['price_type'], { label: string; classe
   negotiable: { label: 'Negotiable', classes: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30' },
   free:       { label: 'Free',       classes: 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-500/30' },
   hourly:     { label: 'Hourly',     classes: 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/30' },
-  contact:    { label: 'Contact',    classes: 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30' },
+  contact:    { label: 'Contact',    classes: 'bg-slate-100 dark:bg-zinc-500/20 text-slate-700 dark:text-zinc-300 border-slate-300 dark:border-zinc-500/30' },
 };
 
 const TABS: { key: 'all' | HubListing['price_type']; label: string }[] = [
@@ -413,7 +413,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
             {/* Back */}
             <button
               onClick={onBack}
-              className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-slate-200 transition-colors self-start"
+              className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-slate-700 dark:hover:text-zinc-200 transition-colors self-start"
             >
               <ChevronLeft className="w-3.5 h-3.5" /> Back
             </button>
@@ -604,7 +604,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                 className="flex-1 bg-transparent outline-none text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500"
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="cn-text-4 hover:text-slate-700 dark:hover:text-slate-300">
+                <button onClick={() => setSearchQuery('')} className="cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300">
                   <X className="w-4 h-4" />
                 </button>
               )}
@@ -649,7 +649,7 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
                     key={t.key}
                     onClick={() => setActiveTab(t.key)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                      activeTab === t.key ? 'bg-blue-600 text-white' : 'cn-text-3 hover:text-slate-700 dark:hover:text-slate-200'
+                      activeTab === t.key ? 'bg-blue-600 text-white' : 'cn-text-3 hover:text-slate-700 dark:hover:text-zinc-200'
                     }`}
                   >
                     {t.label}

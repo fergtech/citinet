@@ -4,6 +4,7 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { registryService } from '../services/registryService';
 import { hubService } from '../services/hubService';
 import { VendorProfileScreen } from './VendorProfileScreen';
+import { ShareWallpaper } from './ShareWallpaper';
 import type { HubVendor, HubListing } from '../types/hub';
 
 interface PublicVendorData {
@@ -56,7 +57,8 @@ export function ShareVendorPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
+        <ShareWallpaper />
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
           <p className="text-sm text-zinc-400">Loading…</p>
@@ -67,9 +69,10 @@ export function ShareVendorPage() {
 
   if (error || !data) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col">
-        <header className="border-b border-zinc-900 px-6 py-4 flex items-baseline gap-1.5">
-          <span className="text-lg font-bold tracking-tight text-white">citinet</span>
+      <div className="min-h-screen flex flex-col">
+        <ShareWallpaper />
+        <header className="border-b border-slate-900 px-6 py-4 flex items-baseline gap-1.5">
+          <span className="text-lg font-bold tracking-tight cn-wordmark">citinet</span>
           <span className="text-xs text-zinc-500 font-medium">community network</span>
         </header>
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center max-w-sm mx-auto px-4">
@@ -81,13 +84,25 @@ export function ShareVendorPage() {
   }
 
   return (
-    <VendorProfileScreen
-      vendor={data.vendor}
-      listings={data.listings}
-      hubSlug={hubSlug!}
-      hubBaseUrl={hubBaseUrl}
-      onBack={() => navigate('/')}
-      onItemClick={() => {}}
-    />
+    <div className="min-h-screen flex flex-col">
+      {/* VendorProfileScreen's own root has no background of its own — in the
+          authenticated app it relies on HubLayout mounting HubBackground
+          behind it. Standalone here (no HubLayout), it needs its own header
+          + wallpaper like the other public share pages, or it's just flat
+          black with no chrome at all. */}
+      <ShareWallpaper />
+      <header className="border-b border-zinc-900 px-6 py-4 flex items-baseline gap-1.5">
+        <span className="text-lg font-bold tracking-tight cn-wordmark">citinet</span>
+        <span className="text-xs text-zinc-500 font-medium">community network</span>
+      </header>
+      <VendorProfileScreen
+        vendor={data.vendor}
+        listings={data.listings}
+        hubSlug={hubSlug!}
+        hubBaseUrl={hubBaseUrl}
+        onBack={() => navigate('/')}
+        onItemClick={() => {}}
+      />
+    </div>
   );
 }

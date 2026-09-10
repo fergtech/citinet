@@ -52,7 +52,7 @@ function ReviewModal({
             <h3 className="font-bold text-slate-900 dark:text-white mb-2">
               {submission.name}
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
+            <p className="text-sm text-slate-600 dark:text-zinc-400">
               {submission.shortDescription}
             </p>
           </div>
@@ -60,7 +60,7 @@ function ReviewModal({
           {action === 'reject' && (
             <div>
               <Label htmlFor="notes">Rejection Notes (Optional)</Label>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">
+              <p className="text-xs text-slate-600 dark:text-zinc-400 mb-2">
                 Provide feedback to help the submitter improve their recommendation
               </p>
               <Textarea
@@ -150,7 +150,7 @@ function SubmissionReviewCard({ submission, onReview }: {
         </div>
 
         {/* Description */}
-        <p className="text-sm text-slate-700 dark:text-slate-300 mb-3">
+        <p className="text-sm text-slate-700 dark:text-zinc-300 mb-3">
           {submission.shortDescription}
         </p>
 
@@ -171,17 +171,17 @@ function SubmissionReviewCard({ submission, onReview }: {
         {/* Rationale */}
         {submission.rationale && (
           <div className="mb-3 p-3 bg-slate-50 dark:bg-zinc-800/50 rounded-lg">
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-1">
               Why they recommended it:
             </p>
-            <p className="text-sm text-slate-700 dark:text-slate-300 italic">
+            <p className="text-sm text-slate-700 dark:text-zinc-300 italic">
               "{submission.rationale}"
             </p>
           </div>
         )}
 
         {/* Submission metadata */}
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-4 pb-3 border-b border-slate-200 dark:border-zinc-800">
+        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400 mb-4 pb-3 border-b border-slate-200 dark:border-zinc-800">
           <span>
             Submitted by <strong>{submission.submittedByName}</strong>
           </span>
@@ -262,7 +262,7 @@ export function ModerationQueueScreen({ onBack }: ModerationQueueScreenProps) {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
             Access Denied
           </h1>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">
+          <p className="text-slate-600 dark:text-zinc-400 mb-6">
             You don't have permission to access the moderation queue.
           </p>
           <Button onClick={onBack}>Go Back</Button>
@@ -282,7 +282,7 @@ export function ModerationQueueScreen({ onBack }: ModerationQueueScreenProps) {
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
                 Moderation Queue
               </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
+              <p className="text-sm text-slate-600 dark:text-zinc-400">
                 Review and approve community tool submissions
               </p>
             </div>
@@ -304,7 +304,7 @@ export function ModerationQueueScreen({ onBack }: ModerationQueueScreenProps) {
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
               All caught up!
             </h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">
+            <p className="text-slate-600 dark:text-zinc-400 mb-6">
               There are no pending tool submissions to review.
             </p>
             <Button onClick={onBack}>Back to Discover</Button>

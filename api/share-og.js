@@ -28,6 +28,12 @@ const SHARE_PATH_BY_TYPE = {
   vendor: (hubSlug, id) => `/v/${hubSlug}/${id}`,
   profile: (hubSlug, id) => `/u/${hubSlug}/${id}`,
   file: (hubSlug, id) => `/share/${hubSlug}/${id}`,
+  post: (hubSlug, id) => `/share-post/${hubSlug}/${id}`,
+};
+
+const CATEGORY_LABEL = {
+  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Project',
+  REQUEST: 'Request', EVENT: 'Event', POLL: 'Poll',
 };
 
 function escapeHtml(str) {
@@ -184,6 +190,29 @@ async function loadMeta(type, hubSlug, id, base, hubName, origin, src) {
         description: `Shared from ${hubName} on citinet.`,
         image: isImage ? `${base}/api/public/files/${encodeURIComponent(id)}` : DEFAULT_IMAGE,
         ogType: 'website',
+      };
+    }
+
+    if (type === 'post') {
+      const r = await fetchWithTimeout(`${base}/api/public/posts/${encodeURIComponent(id)}`);
+      if (!r.ok) return fallback;
+      const post = await r.json();
+      const categoryLabel = CATEGORY_LABEL[post.category] || 'Post';
+      const title = post.title || truncate(post.body, 70) || `${categoryLabel} from ${hubName}`;
+      let description;
+      if (post.category === 'EVENT' && (post.event_date || post.event_location)) {
+        const when = post.event_date ? new Date(post.event_date).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+        description = [when, post.event_location].filter(Boolean).join(' · ') || truncate(post.body);
+      } else if (post.category === 'POLL' && post.poll) {
+        description = `${post.poll.options.length} options · ${post.poll.total_votes} vote${post.poll.total_votes === 1 ? '' : 's'}`;
+      } else {
+        description = truncate(post.body) || `${categoryLabel} shared from ${hubName}.`;
+      }
+      return {
+        title,
+        description,
+        image: post.media_file_name ? `${base}/api/public/files/${encodeURIComponent(post.media_file_name)}` : genericCard,
+        ogType: 'article',
       };
     }
   } catch {

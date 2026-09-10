@@ -128,7 +128,7 @@ export function SupportLauncher({ variant = 'sidebar', align = 'start' }: Suppor
                   : view === 'error'   ? 'Something went wrong'
                   : activeKindCfg?.label}
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
                   {view === 'menu'
                     ? `Context: ${featureName}`
                     : view === 'success' || view === 'error'
@@ -137,7 +137,7 @@ export function SupportLauncher({ variant = 'sidebar', align = 'start' }: Suppor
                 </p>
               </div>
               <button onClick={close} className="w-7 h-7 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center justify-center" aria-label="Close">
-                <X className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <X className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
               </button>
             </div>
 
@@ -149,7 +149,7 @@ export function SupportLauncher({ variant = 'sidebar', align = 'start' }: Suppor
                     {icon}
                     <div>
                       <p className="text-sm font-medium text-slate-900 dark:text-white">{label}</p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{desc}</p>
+                      <p className="text-[11px] text-slate-500 dark:text-zinc-400">{desc}</p>
                     </div>
                   </button>
                 ))}

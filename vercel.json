@@ -12,6 +12,7 @@
     { "source": "/v/:hubSlug/:vendorSlug", "destination": "/api/share-og?type=vendor&hubSlug=:hubSlug&id=:vendorSlug" },
     { "source": "/u/:hubSlug/:username", "destination": "/api/share-og?type=profile&hubSlug=:hubSlug&id=:username" },
     { "source": "/share/:hubSlug/:fileName", "destination": "/api/share-og?type=file&hubSlug=:hubSlug&id=:fileName" },
+    { "source": "/share-post/:hubSlug/:postId", "destination": "/api/share-og?type=post&hubSlug=:hubSlug&id=:postId" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

@@ -2802,6 +2802,21 @@ class HubService {
     return `${base}/share-note/${hubSlug}/${noteId}`;
   }
 
+  /** Same pattern as getPublicNoteLink, for an individual post (any category —
+   *  discussion/announcement/project/request/event/poll). Only actually
+   *  resolves publicly if the post is visible per GET /api/public/posts/:id
+   *  (author's profile is public, or the post lives in a web_public space). */
+  getPublicPostLink(hubSlug: string, postId: string): string {
+    const conn = this.getHubConnection(hubSlug);
+    const publicUrl = conn?.hub?.publicTunnelUrl;
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+
+    if (publicUrl) {
+      return `${base}/share-post/${hubSlug}/${postId}?src=${encodeURIComponent(publicUrl)}`;
+    }
+    return `${base}/share-post/${hubSlug}/${postId}`;
+  }
+
   async getPublicNotes(hubSlug: string, userId: string): Promise<HubNote[]> {
     const conn = this.getHubConnection(hubSlug);
     if (!conn) throw new Error('Not connected');

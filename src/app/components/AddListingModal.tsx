@@ -131,7 +131,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
 
                 {/* Image upload */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Photo (optional)</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Photo (optional)</label>
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className="relative w-full aspect-video rounded-xl bg-slate-100 dark:bg-zinc-800 border-2 border-dashed border-slate-300 dark:border-zinc-600 flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors overflow-hidden"
@@ -156,7 +156,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">
                     Title <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -171,14 +171,14 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Category</label>
                     <select value={category} onChange={e => setCategory(e.target.value)} className={inputCls}>
                       {LISTING_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   {!isService && (
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Condition</label>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Condition</label>
                       <select value={condition} onChange={e => setCondition(e.target.value)} className={inputCls}>
                         <option value="">Not applicable</option>
                         {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
@@ -188,7 +188,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Pricing</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Pricing</label>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {PRICE_TYPES.map(pt => (
                       <button
@@ -198,7 +198,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                         className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors text-left ${
                           priceType === pt.value
                             ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-700 hover:border-blue-400'
+                            : 'bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:border-blue-400'
                         }`}
                       >
                         {pt.label}
@@ -222,7 +222,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-zinc-300 mb-1.5">Description</label>
                   <textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
@@ -241,7 +241,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
 
               <div className="px-5 py-4 border-t border-slate-200 dark:border-zinc-800 shrink-0">
                 <div className="flex gap-3">
-                  <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
+                  <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 text-sm font-semibold text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors">
                     Cancel
                   </button>
                   <button

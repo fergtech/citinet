@@ -75,7 +75,7 @@ function SubmissionCard({ submission }: { submission: ToolSubmission }) {
       </div>
 
       {/* Description */}
-      <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+      <p className="text-sm text-slate-600 dark:text-zinc-400 mb-3">
         {submission.shortDescription}
       </p>
 
@@ -101,10 +101,10 @@ function SubmissionCard({ submission }: { submission: ToolSubmission }) {
       {/* Rationale */}
       {submission.rationale && (
         <div className="mb-3 p-3 bg-slate-50 dark:bg-zinc-800/50 rounded-lg">
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mb-1">
             Why you recommended it:
           </p>
-          <p className="text-sm text-slate-700 dark:text-slate-300">{submission.rationale}</p>
+          <p className="text-sm text-slate-700 dark:text-zinc-300">{submission.rationale}</p>
         </div>
       )}
 
@@ -117,7 +117,7 @@ function SubmissionCard({ submission }: { submission: ToolSubmission }) {
       )}
 
       {/* Footer with dates */}
-      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-3 border-t border-slate-200 dark:border-zinc-800">
+      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-zinc-400 pt-3 border-t border-slate-200 dark:border-zinc-800">
         <span>Submitted {formatDate(submission.createdAt)}</span>
         {submission.reviewedAt && (
           <span>Reviewed {formatDate(submission.reviewedAt)}</span>
@@ -165,7 +165,7 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
                 My Submissions
               </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-400">
+              <p className="text-sm text-slate-600 dark:text-zinc-400">
                 Track the status of your tool submissions
               </p>
             </div>
@@ -183,7 +183,7 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
               <div className="text-2xl font-bold text-slate-900 dark:text-white">
                 {stats.total}
               </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400">Total</div>
+              <div className="text-xs text-slate-600 dark:text-zinc-400">Total</div>
             </div>
             <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 p-4">
               <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">
@@ -215,7 +215,7 @@ export function MySubmissionsScreen({ onBack }: MySubmissionsScreenProps) {
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
               No submissions yet
             </h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-6">
+            <p className="text-slate-600 dark:text-zinc-400 mb-6">
               Recommend tools to help your community discover people-first alternatives.
             </p>
             <Button onClick={onBack}>

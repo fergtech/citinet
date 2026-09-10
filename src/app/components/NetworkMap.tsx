@@ -247,7 +247,7 @@ export function NetworkMap({ members }: NetworkMapProps) {
 
         {/* Map legend */}
         <div className="absolute bottom-7 left-3 z-[1000] bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-lg px-3 py-2 border border-slate-200 dark:border-zinc-700 pointer-events-none">
-          <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-3 text-[10px] text-slate-500 dark:text-zinc-400">
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-sm bg-violet-600" />
               <span>Hub</span>
@@ -266,7 +266,7 @@ export function NetworkMap({ members }: NetworkMapProps) {
         {/* Loading state before geocoding */}
         {!geocoded && currentHub?.location && (
           <div className="absolute inset-0 z-[999] flex items-center justify-center bg-white/40 dark:bg-zinc-900/40 backdrop-blur-sm pointer-events-none">
-            <div className="text-xs text-slate-500 dark:text-slate-400">Locating hub…</div>
+            <div className="text-xs text-slate-500 dark:text-zinc-400">Locating hub…</div>
           </div>
         )}
 
@@ -274,8 +274,8 @@ export function NetworkMap({ members }: NetworkMapProps) {
         {!currentHub?.location && (
           <div className="absolute inset-0 z-[999] flex items-center justify-center pointer-events-none">
             <div className="text-center px-4">
-              <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">No location set</div>
-              <div className="text-xs text-slate-400 dark:text-slate-500">Set a hub location to see it on the map</div>
+              <div className="text-sm text-slate-500 dark:text-zinc-400 mb-1">No location set</div>
+              <div className="text-xs text-slate-400 dark:text-zinc-500">Set a hub location to see it on the map</div>
             </div>
           </div>
         )}

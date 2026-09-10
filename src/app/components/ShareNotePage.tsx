@@ -11,6 +11,7 @@ import { Video } from './editor/VideoExtension';
 import { LinkPreview } from './editor/LinkPreviewExtension';
 import { Loader2, AlertCircle, NotebookPen, Copy, Check, LogIn } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { ShareWallpaper } from './ShareWallpaper';
 
 export const PENDING_FORK_KEY = 'citinet-pending-fork';
 
@@ -185,9 +186,10 @@ export function ShareNotePage() {
   }, [hubSlug, noteId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col">
-      <header className="border-b border-zinc-900 px-6 py-4 flex items-baseline gap-1.5">
-        <span className="text-lg font-bold tracking-tight text-white">citinet</span>
+    <div className="min-h-screen flex flex-col">
+      <ShareWallpaper />
+      <header className="border-b border-slate-900 px-6 py-4 flex items-baseline gap-1.5">
+        <span className="text-lg font-bold tracking-tight cn-wordmark">citinet</span>
         <span className="text-xs text-zinc-500 font-medium">community network</span>
       </header>
 
@@ -208,8 +210,8 @@ export function ShareNotePage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-2xl">
               <div className="flex items-center gap-2 mb-6 text-amber-400">
                 <NotebookPen className="w-4 h-4" />
-                <span className="text-xs font-medium text-zinc-500">
-                  Shared from <span className="text-zinc-400">{hubSlug}</span>
+                <span className="text-xs font-medium text-slate-500">
+                  Shared from <span className="text-slate-400">{hubSlug}</span>
                 </span>
               </div>
               <NoteViewer note={note} />

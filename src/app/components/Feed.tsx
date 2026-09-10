@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
+import { nativeShare } from '../utils/share';
 import { useHub } from '../context/HubContext';
 import { notificationsService } from '../services/notificationsService';
 import { openLocationInAtlas } from '../utils/geocoding';
@@ -1800,8 +1801,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setPollDeleting(null);
   }
 
-  function handleCopyPostLink(postId: string) {
-    const link = `${window.location.origin}${hubPath(`/feed/${postId}`)}`;
+  async function handleCopyPostLink(postId: string) {
+    const link = hubService.getPublicPostLink(hubSlug, postId);
+    const result = await nativeShare({ url: link });
+    if (result !== 'unsupported') return;
     navigator.clipboard.writeText(link).then(() => {
       setCopyLinkFeedback(postId);
       setTimeout(() => setCopyLinkFeedback(null), 2000);
