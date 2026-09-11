@@ -4063,7 +4063,10 @@ async function attachPollData(rows, userId) {
 
 // List posts — chronological, newest first, optional category filter
 app.get('/api/posts', authenticate, async (req, res) => {
-  const lim = Math.min(parseInt(req.query.limit) || 50, 100);
+  // 20 by default now (was 50) — this is a page size for infinite scroll,
+  // not "fetch the whole feed" anymore; a caller wanting a bigger one-shot
+  // batch (Home's dashboard preview, Discover) can still ask via ?limit=.
+  const lim = Math.min(parseInt(req.query.limit) || 20, 100);
   const cat = (req.query.category || '').toUpperCase();
 
   try {
@@ -4080,9 +4083,44 @@ app.get('/api/posts', authenticate, async (req, res) => {
     params.push(req.user.id);
     const myUserIdParam = params.length;
     const blockClause = blockedPairClause('p.author_id', myUserIdParam);
+
+    // Sorted unseen-first, newest-first within each group — EXISTS against
+    // hub_post_views (the same per-viewer table view_count already counts)
+    // is the authoritative "has this user seen this post" signal; a client-
+    // side approximation can't know about a post it hasn't paginated into
+    // yet, which was exactly the gap this replaces (see the "does this make
+    // logical sense" conversation this came out of — unseen-first only
+    // worked within whatever page was already fetched, not the whole hub).
+    const myViewedExpr = `EXISTS(SELECT 1 FROM hub_post_views v WHERE v.post_id = p.id AND v.user_id = $${myUserIdParam})`;
+
+    // Keyset ("seek") pagination on (my_viewed, created_at, id), not OFFSET —
+    // a client passes back the last post it already has (?before_viewed=&
+    // before_created_at=&before_id=) and gets whatever comes after it in the
+    // same ORDER BY. Stays correct under concurrent inserts (OFFSET N can
+    // skip or duplicate a row across two page fetches when a new post lands
+    // in between) and doesn't get slower paging deep into a hub's history
+    // the way OFFSET does. my_viewed is ASC (unseen/false first) while
+    // created_at/id are DESC, so "comes after" in this 3-key order means:
+    // strictly more-viewed, OR equally-viewed with an older created_at, OR
+    // equally-viewed and same created_at with a smaller id (id is the
+    // tiebreaker for posts sharing a created_at timestamp — bulk-imported/
+    // seeded data, or same-millisecond posts).
+    let cursorClause = '';
+    if (req.query.before_viewed !== undefined && req.query.before_created_at && req.query.before_id) {
+      params.push(req.query.before_viewed === 'true', req.query.before_created_at, req.query.before_id);
+      const viewedParam = params.length - 2;
+      const createdAtParam = params.length - 1;
+      const idParam = params.length;
+      cursorClause = ` AND (
+        ${myViewedExpr} > $${viewedParam}
+        OR (${myViewedExpr} = $${viewedParam} AND p.created_at < $${createdAtParam})
+        OR (${myViewedExpr} = $${viewedParam} AND p.created_at = $${createdAtParam} AND p.id < $${idParam})
+      )`;
+    }
+
     const combinedWhere = where
-      ? `${where} AND ${spaceClause} AND ${visClause} AND ${blockClause}`
-      : `WHERE ${spaceClause} AND ${visClause} AND ${blockClause}`;
+      ? `${where} AND ${spaceClause} AND ${visClause} AND ${blockClause}${cursorClause}`
+      : `WHERE ${spaceClause} AND ${visClause} AND ${blockClause}${cursorClause}`;
 
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.created_at, p.updated_at,
@@ -4096,6 +4134,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
               (SELECT COUNT(*) FROM hub_post_likes l WHERE l.post_id = p.id)::int AS like_count,
               EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked,
               (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count,
+              ${myViewedExpr} AS my_viewed,
               pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
               pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
               rq.problem AS poll_request_problem
@@ -4106,11 +4145,17 @@ app.get('/api/posts', authenticate, async (req, res) => {
        LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
        LEFT JOIN hub_requests rq ON rq.id = pp.request_id
        ${combinedWhere}
-       ORDER BY p.created_at DESC
+       ORDER BY ${myViewedExpr} ASC, p.created_at DESC, p.id DESC
        LIMIT $${params.length + 1}`,
       [...params, lim],
     );
-    res.json({ posts: await attachPollData(rows, req.user.id) });
+    res.json({
+      posts: await attachPollData(rows, req.user.id),
+      // A cheap heuristic (a full page came back), not an extra COUNT query —
+      // matches the limit the client asked for, so the client stops paging
+      // one request early rather than firing a guaranteed-empty last page.
+      hasMore: rows.length === lim,
+    });
   } catch (err) {
     console.error('List posts error:', err);
     res.status(500).json({ error: 'Failed to list posts' });
