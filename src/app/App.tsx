@@ -7,7 +7,6 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
 import { NodeEntryFlow } from './components/NodeEntryFlow';
-import { Dashboard } from './components/Dashboard';
 import { Feed } from './components/Feed';
 import { NetworkScreen } from './components/NetworkScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
@@ -179,7 +178,7 @@ function HubOnboardRoute() {
 
 function HubDashboardRoute() {
   const navigate = useNavigate();
-  const { currentHub, currentUser, loading } = useHub();
+  const { currentHub, loading } = useHub();
   const hubSlug = getSubdomain() ?? '';
 
   // Redirect to onboard if user hasn't completed registration for this hub
@@ -194,14 +193,13 @@ function HubDashboardRoute() {
     navigate(hubPath(`/${screen}`));
   };
 
-  const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
   const nodeName = currentHub?.name || hubSlug || 'Community Hub';
 
   if (typeof window !== 'undefined') {
     sessionStorage.setItem('citinet-node-name', nodeName);
   }
 
-  return <Dashboard userName={userName} onNavigate={handleNavigate} />;
+  return <AtlasScreen onNavigate={handleNavigate} />;
 }
 
 function HubPendingApprovalRoute() {

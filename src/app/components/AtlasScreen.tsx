@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useHub } from '../context/HubContext';
+import { useHub, useHubStatus } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
 import { AvatarFallback } from './icons';
@@ -19,6 +19,12 @@ import { getAtlasMapStyle } from '../utils/atlasMapStyle';
 import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
 import { findNearestPanoramaxImage, panoramaxWebViewerUrl, type PanoramaxImage } from '../utils/panoramax';
 import { AtlasGlyph } from './icons';
+import { EventDetailModal } from './EventDetailModal';
+import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
+import { featuredService } from '../services/featuredService';
+import type { FeaturedItem } from '../types/featured';
+import type { HubPost } from '../types/hub';
+import { Bell, Calendar } from 'lucide-react';
 
 // ── Pin marker HTML (cached) ─────────────────────────────────────────────
 // Teardrop-from-rotated-square marker matching the design system: a category-
@@ -55,6 +61,14 @@ const MY_LOCATION_HTML = `
   </div>
 `;
 
+// Same teardrop treatment as getPinHtml() above, but a fixed indigo gradient —
+// a color no ATLAS_CATEGORIES entry uses — so EVENT-post markers read as a
+// distinct, non-AtlasPin layer at a glance rather than looking like an
+// additional pin category.
+const EVENT_PIN_SVG = renderToStaticMarkup(<Calendar size={13} color="#fff" strokeWidth={2.5} />);
+const EVENT_PIN_HTML = `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:linear-gradient(135deg, #6366f1, #4338ca);transform:rotate(45deg);box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.55);display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
+  `<span style="transform:rotate(-45deg);display:flex">${EVENT_PIN_SVG}</span></div>`;
+
 // ── Map (MapLibre GL, vector) ────────────────────────────────────────────
 // Atlas used to be Leaflet + a raster OSM tile layer whose pixels got
 // recolored client-side (see the removed atlasTileRecolor.ts) — that could
@@ -79,6 +93,8 @@ interface AtlasMapProps {
   createCategory: AtlasPinCategory;
   myLocation: [number, number] | null;
   onDropHereCenterChange: (c: [number, number]) => void;
+  eventPins: HubPost[];
+  onEventPinSelect: (event: HubPost) => void;
 }
 
 // Imperative escape hatch for one-shot camera moves ("recenter on me",
@@ -93,10 +109,12 @@ export interface AtlasMapHandle {
 const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   center, zoom, fitPoints, dark, placingPin, pins, selectedPinId, onPinSelect,
   pendingPosition, createCategory, myLocation, onDropHereCenterChange,
+  eventPins, onEventPinSelect,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const pinMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; sig: string }>>(new Map());
+  const eventMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   // Refs for values read inside event handlers registered once at map-init
   // time, so those handlers always see the latest prop without needing to
@@ -107,6 +125,8 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   onDropHereCenterChangeRef.current = onDropHereCenterChange;
   const onPinSelectRef = useRef(onPinSelect);
   onPinSelectRef.current = onPinSelect;
+  const onEventPinSelectRef = useRef(onEventPinSelect);
+  onEventPinSelectRef.current = onEventPinSelect;
 
   useImperativeHandle(ref, () => ({
     flyTo: (c, z) => { mapRef.current?.flyTo({ center: [c[1], c[0]], zoom: z }); },
@@ -281,6 +301,36 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
       .addTo(map);
     return () => { marker.remove(); };
   }, [myLocation]);
+
+  // EVENT-post markers — a layer independent of AtlasPin (own ref, own diffing,
+  // own HTML template), same shape as the myLocation effect above. Not mixed
+  // into the `pins` array/category-filter system since events aren't AtlasPins.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const existing = eventMarkersRef.current;
+    const seen = new Set<string>();
+    for (const ev of eventPins) {
+      if (ev.event_lat == null || ev.event_lng == null) continue;
+      seen.add(ev.id);
+      const marker = existing.get(ev.id);
+      if (!marker) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = EVENT_PIN_HTML;
+        const el = wrapper.firstElementChild as HTMLElement;
+        el.addEventListener('click', e => { e.stopPropagation(); onEventPinSelectRef.current(ev); });
+        const newMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([ev.event_lng, ev.event_lat])
+          .addTo(map);
+        existing.set(ev.id, newMarker);
+      } else {
+        marker.setLngLat([ev.event_lng, ev.event_lat]);
+      }
+    }
+    for (const [id, marker] of existing) {
+      if (!seen.has(id)) { marker.remove(); existing.delete(id); }
+    }
+  }, [eventPins]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 });
@@ -886,11 +936,18 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
 // ── Main screen ────────────────────────────────────────────────────────────
 
 interface AtlasScreenProps {
-  onBack: () => void;
+  // Present when reached via a deep link (e.g. "Open in Atlas" from a post
+  // location) — renders the mobile back button. Absent in home mode, where
+  // AtlasScreen is mounted at `/` with no "back" destination.
+  onBack?: () => void;
+  // Home mode only — powers the event-pin click-through into Feed and the
+  // Featured bell popover's post links. Neither renders without it.
+  onNavigate?: (screen: string) => void;
 }
 
-export function AtlasScreen({ onBack }: AtlasScreenProps) {
+export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   const { currentHub, currentUser } = useHub();
+  const { status: connectionStatus } = useHubStatus();
   const hubSlug = currentHub?.slug ?? '';
 
   const [pins, setPins] = useState<AtlasPin[]>([]);
@@ -898,6 +955,21 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
   const [geocoded, setGeocoded] = useState(false);
   const [hubGeoCenter, setHubGeoCenter] = useState<[number, number] | null>(null);
+
+  // Event pins (home mode) — EVENT-category posts with coordinates, rendered
+  // as their own marker layer (see AtlasMap's eventPins prop). Featured is
+  // fetched alongside for the bell popover, replacing Dashboard's hero carousel.
+  const [eventPins, setEventPins] = useState<HubPost[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<HubPost | null>(null);
+  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
+
+  useEffect(() => {
+    if (!hubSlug || connectionStatus !== 'connected') return;
+    hubService.getUpcomingEvents(hubSlug, 200)
+      .then(events => setEventPins(events.filter(e => e.event_lat != null && e.event_lng != null)))
+      .catch(() => {});
+    featuredService.getFeatured(hubSlug).then(setFeaturedItems).catch(() => {});
+  }, [hubSlug, connectionStatus]);
 
   // Drop-here placement mode
   const [placingPin, setPlacingPin] = useState(false);
@@ -1314,12 +1386,14 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
               on a small laptop screen instead of the old behavior of just
               letting the whole outer page grow/scroll to fit it. */}
           <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto' : 'flex flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto'}>
-            <button
-              onClick={onBack}
-              className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" /> Back
-            </button>
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Back
+              </button>
+            )}
 
             <div className="flex items-center gap-3">
               <span
@@ -1332,6 +1406,38 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                 <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
                 <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
               </div>
+              {onNavigate && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="relative hidden sm:flex w-10 h-10 rounded-xl items-center justify-center cn-surface-2 border cn-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
+                      aria-label="Featured"
+                    >
+                      <Bell className="w-4.5 h-4.5 cn-text-2" />
+                      {featuredItems.length > 0 && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 p-2 max-h-96 overflow-y-auto">
+                    <p className="text-xs font-semibold cn-text-3 uppercase tracking-wide px-2 py-1.5">Featured</p>
+                    {featuredItems.length === 0 ? (
+                      <p className="text-sm cn-text-4 px-2 py-4 text-center">Nothing featured right now</p>
+                    ) : featuredItems.map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => { if (item.type === 'post' && item.refId) onNavigate(`feed/${item.refId}`); }}
+                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors"
+                      >
+                        {item.mediaFileName && (
+                          <img src={hubService.getPublicFileUrl(hubSlug, item.mediaFileName) ?? ''} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                        )}
+                        <span className="flex-1 min-w-0 text-sm font-medium cn-text-1 truncate">{item.title}</span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
               <button
                 onClick={placingPin ? cancelPlacement : enterPlacingMode}
                 className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
@@ -1342,15 +1448,49 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                 {placingPin ? 'Placing…' : 'Drop a pin'}
               </button>
             </div>
-            <button
-              onClick={placingPin ? cancelPlacement : enterPlacingMode}
-              className={`sm:hidden w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              <Plus className="w-4 h-4" />
-              {placingPin ? 'Placing…' : 'Drop a pin'}
-            </button>
+            <div className="flex items-center gap-2 sm:hidden">
+              <button
+                onClick={placingPin ? cancelPlacement : enterPlacingMode}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                {placingPin ? 'Placing…' : 'Drop a pin'}
+              </button>
+              {onNavigate && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="relative w-11 h-11 rounded-xl flex items-center justify-center cn-surface-2 border cn-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
+                      aria-label="Featured"
+                    >
+                      <Bell className="w-4.5 h-4.5 cn-text-2" />
+                      {featuredItems.length > 0 && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-2 max-h-96 overflow-y-auto">
+                    <p className="text-xs font-semibold cn-text-3 uppercase tracking-wide px-2 py-1.5">Featured</p>
+                    {featuredItems.length === 0 ? (
+                      <p className="text-sm cn-text-4 px-2 py-4 text-center">Nothing featured right now</p>
+                    ) : featuredItems.map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => { if (item.type === 'post' && item.refId) onNavigate(`feed/${item.refId}`); }}
+                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors"
+                      >
+                        {item.mediaFileName && (
+                          <img src={hubService.getPublicFileUrl(hubSlug, item.mediaFileName) ?? ''} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                        )}
+                        <span className="flex-1 min-w-0 text-sm font-medium cn-text-1 truncate">{item.title}</span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
 
             {/* Location search */}
             <LocationSearchInput
@@ -1379,6 +1519,8 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                   createCategory={createCategory}
                   myLocation={myLocation}
                   onDropHereCenterChange={handleDropHereCenterChange}
+                  eventPins={eventPins}
+                  onEventPinSelect={setSelectedEvent}
                 />
               </div>
 
@@ -1683,6 +1825,15 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
           </div>
         </div>
       </div>
+
+      {selectedEvent && (
+        <EventDetailModal
+          event={selectedEvent}
+          hubSlug={hubSlug}
+          onClose={() => setSelectedEvent(null)}
+          onNavigate={onNavigate ?? (() => {})}
+        />
+      )}
     </div>
   );
 }

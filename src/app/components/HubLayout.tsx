@@ -41,7 +41,9 @@ import type { HubVendor } from '../types/hub';
 // Screens pinned to the desktop sidebar/dock out of the box — users can repin
 // and reorder from the "More" overlay's Edit mode, synced to the account via
 // updateUserPreferences (see the reconciliation effect in HubLayout below).
-const DEFAULT_PINNED_NAV = ['feed', 'messages', 'atlas', 'marketplace', 'toolkit'];
+// 'atlas' dropped from the default — Home (`/`) now IS Atlas, so a separate
+// pinned nav slot for it would just duplicate the Home icon's destination.
+const DEFAULT_PINNED_NAV = ['feed', 'messages', 'marketplace', 'toolkit'];
 
 type NavTile = { Icon: React.ElementType; label: string; screen: string; gradient: string };
 

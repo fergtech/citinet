@@ -948,6 +948,12 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_location     VARCHAR(300)`,
     );
+    await client.query(
+      `ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_lat          DOUBLE PRECISION`,
+    );
+    await client.query(
+      `ALTER TABLE hub_posts  ADD COLUMN IF NOT EXISTS event_lng          DOUBLE PRECISION`,
+    );
     // Superseded by hub_post_views below (one row per post+viewer, same
     // shape as hub_post_likes/hub_event_rsvps) — a bare counter can't answer
     // "has this specific person already viewed it," which per-user
@@ -4383,7 +4389,7 @@ app.post(
   authenticate,
   upload.single('media'),
   async (req, res) => {
-    const { category, title, body, event_date, event_location, visibility, options, closes_at, request_id, quorum_pct, pass_pct, space_slug } =
+    const { category, title, body, event_date, event_location, event_lat, event_lng, visibility, options, closes_at, request_id, quorum_pct, pass_pct, space_slug } =
       req.body || {};
     const cat = (category || '').toUpperCase();
     const VALID_VIS = ['inherit', 'hub', 'private'];
@@ -4498,11 +4504,19 @@ app.post(
         cat === 'EVENT' && event_location?.trim()
           ? event_location.trim()
           : null;
+      const eventLatVal =
+        cat === 'EVENT' && event_lat != null && event_lat !== '' && !isNaN(Number(event_lat))
+          ? Number(event_lat)
+          : null;
+      const eventLngVal =
+        cat === 'EVENT' && event_lng != null && event_lng !== '' && !isNaN(Number(event_lng))
+          ? Number(event_lng)
+          : null;
 
       const result = await pool.query(
-        `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, visibility, space_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, visibility, space_id`,
+        `INSERT INTO hub_posts (category, title, body, author_id, media_file_id, event_date, event_location, event_lat, event_lng, visibility, space_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, category, title, body, created_at, updated_at, event_date, event_location, event_lat, event_lng, visibility, space_id`,
         [
           cat,
           title?.trim() || null,
@@ -4511,6 +4525,8 @@ app.post(
           mediaFileId,
           eventDateVal,
           eventLocVal,
+          eventLatVal,
+          eventLngVal,
           vis,
           spaceId,
         ],
@@ -4596,6 +4612,8 @@ app.patch(
       body,
       event_date,
       event_location,
+      event_lat,
+      event_lng,
       remove_media,
       visibility,
     } = req.body || {};
@@ -4675,6 +4693,19 @@ app.patch(
         sets.push(`event_date = $${params.length}`);
         params.push(event_location?.trim() || null);
         sets.push(`event_location = $${params.length}`);
+        // Unlike event_date/event_location above, coordinates are only touched
+        // when the client actually sends them — none of the current edit UIs
+        // (Feed.tsx, PostDetailModal.tsx) capture/resend lat/lng yet, and
+        // unconditionally overwriting on every edit would silently wipe
+        // coordinates set at creation time.
+        if (event_lat !== undefined) {
+          params.push(event_lat !== '' && !isNaN(Number(event_lat)) ? Number(event_lat) : null);
+          sets.push(`event_lat = $${params.length}`);
+        }
+        if (event_lng !== undefined) {
+          params.push(event_lng !== '' && !isNaN(Number(event_lng)) ? Number(event_lng) : null);
+          sets.push(`event_lng = $${params.length}`);
+        }
       }
       if (visibility && VALID_VIS.includes(visibility)) {
         params.push(visibility);
@@ -4684,7 +4715,7 @@ app.patch(
 
       const result = await pool.query(
         `UPDATE hub_posts SET ${sets.join(', ')} WHERE id = $${params.length}
-       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, created_at, updated_at, visibility,
+       RETURNING id, author_id, category, title, body, media_file_id, event_date, event_location, event_lat, event_lng, created_at, updated_at, visibility,
                  (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = hub_posts.id)::int AS view_count`,
         params,
       );
@@ -4761,7 +4792,7 @@ app.delete('/api/posts/:id', authenticate, async (req, res) => {
 
 // GET /api/events/upcoming — future EVENT posts sorted by event_date asc
 app.get('/api/events/upcoming', authenticate, async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+  const limit = Math.min(parseInt(req.query.limit) || 5, 200);
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.category, p.title, p.body, p.event_date, p.event_location, p.event_lat, p.event_lng,
