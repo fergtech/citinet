@@ -488,7 +488,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
   // drag-and-drop
   const [isDragging, setIsDragging] = useState(false);
-  const [droppedFile, setDroppedFile] = useState<File | null>(null);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const dragCounterRef = useRef(0);
 
   // delete + visibility
@@ -601,14 +601,16 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !slug) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || !slug) return;
     setUploading(true); setUploadProgress(0); setUploadError('');
     try {
-      const uploaded = await hubService.uploadFile(slug, file, uploadIsPublicRef.current, setUploadProgress, currentFolderId);
-      setAllFiles(prev => [uploaded, ...prev]);
+      const uploaded = await hubService.uploadFiles(slug, files, uploadIsPublicRef.current, setUploadProgress, currentFolderId);
+      setAllFiles(prev => [...uploaded, ...prev]);
       fetchFolders(); // refresh this folder's file_count
     } catch (err) {
+      const uploaded = (err as Error & { uploaded?: HubFile[] })?.uploaded;
+      if (uploaded?.length) setAllFiles(prev => [...uploaded, ...prev]);
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false); setUploadProgress(0);
@@ -630,19 +632,21 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     dragCounterRef.current = 0; setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && slug) setDroppedFile(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0 && slug) setDroppedFiles(files);
   };
 
-  const uploadDroppedFile = async (isPublic: boolean) => {
-    if (!droppedFile || !slug) return;
-    const file = droppedFile;
-    setDroppedFile(null); setUploading(true); setUploadProgress(0); setUploadError('');
+  const uploadDroppedFiles = async (isPublic: boolean) => {
+    if (droppedFiles.length === 0 || !slug) return;
+    const files = droppedFiles;
+    setDroppedFiles([]); setUploading(true); setUploadProgress(0); setUploadError('');
     try {
-      const uploaded = await hubService.uploadFile(slug, file, isPublic, setUploadProgress, currentFolderId);
-      setAllFiles(prev => [uploaded, ...prev]);
+      const uploaded = await hubService.uploadFiles(slug, files, isPublic, setUploadProgress, currentFolderId);
+      setAllFiles(prev => [...uploaded, ...prev]);
       fetchFolders(); // refresh this folder's file_count
     } catch (err) {
+      const uploaded = (err as Error & { uploaded?: HubFile[] })?.uploaded;
+      if (uploaded?.length) setAllFiles(prev => [...uploaded, ...prev]);
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally { setUploading(false); setUploadProgress(0); }
   };
@@ -804,7 +808,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} title="Select file" />
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelected} title="Select files" />
 
       {/* Click-away overlays */}
       {showUploadMenu && <div className="fixed inset-0 z-20" onClick={() => setShowUploadMenu(false)} />}
@@ -1366,30 +1370,46 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
 
       {/* ── Post-drop visibility prompt ── */}
       <AnimatePresence>
-        {droppedFile && (
+        {droppedFiles.length > 0 && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 dark:bg-black/70 backdrop-blur-sm"
-            onClick={() => setDroppedFile(null)}
+            onClick={() => setDroppedFiles([])}
           >
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
               className="cn-surface border cn-border rounded-2xl shadow-2xl p-6 w-80 mx-4"
               onClick={e => e.stopPropagation()}
             >
-              <p className="text-sm font-semibold cn-text-1 mb-1 truncate">{droppedFile.name}</p>
-              <p className="text-xs cn-text-3 mb-5">{formatFileSize(droppedFile.size)} · Who can see this?</p>
+              {droppedFiles.length === 1 ? (
+                <>
+                  <p className="text-sm font-semibold cn-text-1 mb-1 truncate">{droppedFiles[0].name}</p>
+                  <p className="text-xs cn-text-3 mb-5">{formatFileSize(droppedFiles[0].size)} · Who can see this?</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold cn-text-1 mb-1">{droppedFiles.length} files</p>
+                  <div className="max-h-24 overflow-y-auto mb-2 space-y-0.5">
+                    {droppedFiles.map((f, i) => (
+                      <p key={i} className="text-xs cn-text-4 truncate">{f.name}</p>
+                    ))}
+                  </div>
+                  <p className="text-xs cn-text-3 mb-5">
+                    {formatFileSize(droppedFiles.reduce((s, f) => s + f.size, 0))} total · Who can see these?
+                  </p>
+                </>
+              )}
               <div className="space-y-2">
-                <button onClick={() => uploadDroppedFile(false)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-blue-500/50 hover:bg-blue-900/20 transition-colors text-left">
+                <button onClick={() => uploadDroppedFiles(false)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-blue-500/50 hover:bg-blue-900/20 transition-colors text-left">
                   <Lock className="w-5 h-5 text-blue-400 shrink-0" />
                   <div><p className="text-sm font-medium cn-text-1">Private</p><p className="text-xs cn-text-3">Only you</p></div>
                 </button>
-                <button onClick={() => uploadDroppedFile(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-amber-500/50 hover:bg-amber-900/20 transition-colors text-left">
+                <button onClick={() => uploadDroppedFiles(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border cn-border hover:border-amber-500/50 hover:bg-amber-900/20 transition-colors text-left">
                   <Users className="w-5 h-5 text-amber-400 shrink-0" />
                   <div><p className="text-sm font-medium cn-text-1">Hub members</p><p className="text-xs cn-text-3">Requires a hub account</p></div>
                 </button>
               </div>
-              <button onClick={() => setDroppedFile(null)} className="mt-4 w-full text-xs cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">Cancel</button>
+              <button onClick={() => setDroppedFiles([])} className="mt-4 w-full text-xs cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">Cancel</button>
             </motion.div>
           </motion.div>
         )}

@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
 import type { KeyBackupPayload } from '../utils/crypto';
 import { clearIndexForHub } from './messageSearchIndex';
@@ -1541,28 +1541,52 @@ class HubService {
     onProgress?: (percent: number) => void,
     folderId?: string | null,
   ): Promise<HubFile> {
+    return (await this.uploadFiles(hubSlug, [file], isPublic, onProgress, folderId))[0];
+  }
+
+  /**
+   * Upload multiple files to the hub in a single request (one multipart/form-data
+   * POST /api/files?is_public=<bool> carrying several `file` parts).
+   * Private files ≤ 100 MB are transparently client-side encrypted before upload.
+   * onProgress receives 0–100 percent of the overall (combined) upload.
+   * A single-file call still hits the same endpoint the same way — the server
+   * replies with its original single-object shape in that case (other callers,
+   * e.g. the mobile app, rely on that), and this method transparently accepts
+   * either shape.
+   */
+  async uploadFiles(
+    hubSlug: string,
+    files: File[],
+    isPublic: boolean,
+    onProgress?: (percent: number) => void,
+    folderId?: string | null,
+  ): Promise<HubFile[]> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
     if (!connection.user?.authToken) throw new Error('Session expired — please log in again.');
-
-    let uploadFile = file;
+    if (files.length === 0) throw new Error('No files to upload');
 
     // Encrypt private files client-side — skip for large files to avoid
     // loading gigabytes into the JS heap. Streaming encryption is a future task.
     const ENCRYPTION_SIZE_LIMIT = 100 * 1024 * 1024; // 100 MB
-    if (!isPublic && uploadFile.size <= ENCRYPTION_SIZE_LIMIT) {
-      try {
-        const buf = await uploadFile.arrayBuffer();
-        const encBuf = await encryptFileBuffer(this.keyScope(hubSlug), buf);
-        if (encBuf) {
-          uploadFile = new File([encBuf], uploadFile.name, { type: uploadFile.type });
-        }
-      } catch { /* fall back to unencrypted upload */ }
+    const uploadFiles: File[] = [];
+    for (const file of files) {
+      let uploadFile = file;
+      if (!isPublic && uploadFile.size <= ENCRYPTION_SIZE_LIMIT) {
+        try {
+          const buf = await uploadFile.arrayBuffer();
+          const encBuf = await encryptFileBuffer(this.keyScope(hubSlug), buf);
+          if (encBuf) {
+            uploadFile = new File([encBuf], uploadFile.name, { type: uploadFile.type });
+          }
+        } catch { /* fall back to unencrypted upload */ }
+      }
+      uploadFiles.push(uploadFile);
     }
 
     const formData = new FormData();
-    formData.append('file', uploadFile);
+    for (const uploadFile of uploadFiles) formData.append('file', uploadFile);
 
     // Use XHR instead of fetch so we get upload progress events.
     return new Promise((resolve, reject) => {
@@ -1584,17 +1608,30 @@ class HubService {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText);
-            resolve({
-              id: String(data.file_id || data.id || ''),
-              name: data.file_name || uploadFile.name,
-              size: Number(data.size_bytes || uploadFile.size || 0),
-              mime_type: uploadFile.type || undefined,
+            const rawFiles: any[] = Array.isArray(data.files) ? data.files : [data];
+            const results: HubFile[] = rawFiles.map((d, i) => ({
+              id: String(d.file_id || d.id || ''),
+              name: d.file_name || uploadFiles[i]?.name || 'Unnamed file',
+              size: Number(d.size_bytes ?? uploadFiles[i]?.size ?? 0),
+              mime_type: uploadFiles[i]?.type || undefined,
               is_public: isPublic,
               web_public: false,
               owner_id: connection.user?.hubUserId || undefined,
               uploaded_at: new Date().toISOString(),
               folder_id: folderId ?? null,
-            });
+            }));
+            if (data.failures?.length) {
+              const names = data.failures.map((f: any) => f.file_name).filter(Boolean).join(', ');
+              const err = new Error(
+                results.length > 0
+                  ? `${data.failures.length} of ${files.length} file(s) failed to upload${names ? ` (${names})` : ''}`
+                  : (data.failures[0]?.error || 'Upload failed')
+              ) as Error & { uploaded?: HubFile[] };
+              err.uploaded = results; // files that did succeed, so the caller can still show them
+              reject(err);
+              return;
+            }
+            resolve(results);
           } catch {
             reject(new Error('Invalid response from server'));
           }
@@ -2843,6 +2880,51 @@ class HubService {
       throw new Error((data as { error?: string }).error || 'Failed to fork note');
     }
     return res.json() as Promise<HubNote>;
+  }
+
+  // ──────────────────────────────────────────────
+  // Stack admin (citinet-admin, internal-only sidecar)
+  // ──────────────────────────────────────────────
+
+  /**
+   * Live Docker status for this hub's own containers, proxied through
+   * citinet-api -> citinet-admin (never reachable directly). `available:
+   * false` means this hub doesn't have citinet-admin running yet (predates
+   * the feature, or it's simply not up) -- not an error to surface as one.
+   * GET /api/admin/stack/status
+   */
+  async getStackStatus(hubSlug: string): Promise<{ available: boolean; services: StackServiceStatus[] }> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/admin/stack/status`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return { available: !!data.available, services: data.services || [] };
+  }
+
+  /**
+   * Restart one service in this hub's own stack. Only succeeds for the small
+   * allowlist citinet-admin itself enforces (currently citinet-backup,
+   * citinet-livekit) -- rejected server-side even if called with anything else.
+   * POST /api/admin/stack/restart/:service
+   */
+  async restartStackService(hubSlug: string, service: string): Promise<void> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(
+      `${connection.hub.tunnelUrl}/api/admin/stack/restart/${encodeURIComponent(service)}`,
+      { method: 'POST', headers },
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: 'Restart failed' }));
+      throw new Error((data as { error?: string }).error || 'Restart failed');
+    }
   }
 
   private saveHub(hub: Hub): void {

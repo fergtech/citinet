@@ -594,6 +594,19 @@ export interface HubNote {
   decryptFailed?: boolean;
 }
 
+/** One service's live Docker status, reported by citinet-admin (the internal-only
+ *  Docker status/restart sidecar) via GET /api/admin/stack/status. */
+export interface StackServiceStatus {
+  service: string;
+  present: boolean;
+  /** "running" | "exited" | "restarting" | "paused" | "created" -- only set when present. */
+  state?: string;
+  /** Human string, e.g. "Up 3 hours (healthy)" -- only set when present. */
+  status?: string;
+  restartable?: boolean;
+  recentLogs?: string;
+}
+
 /** A product or service listed on the hub marketplace */
 export interface HubListing {
   id: string;

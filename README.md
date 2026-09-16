@@ -64,10 +64,16 @@ citinet-api       (127.0.0.1:9090) — Node.js/Express: auth, posts, messages, f
 citinet-db        (internal)       — PostgreSQL 16: all structured data
 citinet-storage   (internal)       — MinIO: file and media object storage (S3-compatible)
 citinet-caddy     (port 443/80)    — automatic HTTPS termination + reverse proxy (the actual LAN/public entry point)
-citinet-backup    (internal)       — nightly database + file backups, rotated
+citinet-backup    (internal)       — nightly database + file backups, rotated; optional off-site push (restic)
+citinet-admin     (not published)  — internal-only Docker status/restart API for Hub Management's System tab
 citinet-ollama    (internal)       — local AI assistant, if enabled
 citinet-livekit   (7880/7881/50000-50100 UDP) — self-hosted WebRTC SFU for Messages' calls/broadcasts, if enabled
 ```
+
+`citinet-admin` has no `ports:` entry at all — it is never reachable from outside the
+Docker network, only from `citinet-api` (which does its own admin-auth check first) over
+the internal bridge, gated by a second shared-secret check. See `admin-sidecar/server.js`
+and the "What citinet-admin gives a hub admin" note in `SECURITY.md`.
 
 Every container name is actually suffixed with the hub's own slug (`citinet-api-riverside`,
 not plain `citinet-api`), and the install directory/host ports are likewise unique per hub
@@ -122,6 +128,11 @@ OLLAMA_DIR=./data/ollama   # local AI model cache, if enabled
 ```
 
 **To move data to a new drive:** stop the hub, copy the relevant subfolder(s) to the new location, update the matching `*_DIR` variable(s) in `.env`, then start the hub again. No script regeneration, no Docker volume fiddling — each path is a plain bind mount.
+
+**None of the above protects against losing the machine itself** (fire, theft, a dead
+drive) — a `BACKUP_DIR` on the same machine dies with it. For that, `citinet-backup` can
+optionally push nightly encrypted backups to a remote you control (Backblaze B2, S3,
+SFTP, ...) — opt-in, off by default. See [Off-site backup](./docs/hub-setup.md#off-site-backup-optional-protects-against-losing-the-machine-itself) in `docs/hub-setup.md`.
 
 ```bash
 docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml down

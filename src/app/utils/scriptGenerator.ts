@@ -22,6 +22,10 @@ export interface HubSecrets {
    *  generation recipe (16 bytes for the key, 32 for the secret). */
   livekitApiKey: string;
   livekitApiSecret: string;
+  /** Shared secret between citinet-api and citinet-admin (the internal-only Docker
+   *  status/restart sidecar, never exposed to the network) -- so even another
+   *  container on the same Docker network can't call it without this. */
+  adminSidecarToken: string;
 }
 
 export interface HubScriptConfig {
@@ -109,6 +113,7 @@ export function generateSecrets(): HubSecrets {
     storageSecretKey: generateSecret(32), // 64-char hex
     livekitApiKey: generateSecret(16),    // 32-char hex
     livekitApiSecret: generateSecret(32), // 64-char hex
+    adminSidecarToken: generateSecret(32), // 64-char hex
   };
 }
 
@@ -172,6 +177,11 @@ function generateEnvContent(config: HubScriptConfig): string {
     '',
     '# Security',
     'JWT_SECRET=' + config.secrets.jwtSecret,
+    '',
+    '# Admin sidecar -- internal-only shared secret between citinet-api and',
+    '# citinet-admin (Docker status/restart, never exposed to the network).',
+    '# Treat like any other secret here; never share it.',
+    'ADMIN_SIDECAR_TOKEN=' + config.secrets.adminSidecarToken,
     '',
     '# CORS — comma-separated allowed origins (citinet.cloud is the main web app)',
     'CORS_ORIGIN=https://citinet.cloud,http://localhost:3001',
@@ -242,6 +252,32 @@ function generateEnvContent(config: HubScriptConfig): string {
     '# drive or external volume for real protection against this machine\'s disk failing.',
     'BACKUP_DIR=' + (config.dataDir ?? './data') + '/backups',
     'BACKUP_RETENTION_DAYS=7',
+    '',
+    '# Off-site backup (optional, opt-in) — protects against the whole machine',
+    '# being lost/destroyed/stolen, which BACKUP_DIR above cannot: if it lives on',
+    '# this same machine, a dead disk or a fire takes the live data AND every',
+    '# backup with it. Uncomment and fill in RESTIC_REPOSITORY + RESTIC_PASSWORD',
+    '# to enable citinet-backup-offsite, which pushes nightly encrypted,',
+    '# incremental backups to any restic-supported remote you control (a',
+    '# Backblaze B2 bucket, AWS S3, another server over SFTP, ...) — restic',
+    '# encrypts client-side before upload, so the remote never sees plaintext.',
+    '# See "Off-site backup" in docs/hub-setup.md for setup + restore steps.',
+    '#',
+    '# RESTIC_PASSWORD encrypts every backup — losing it makes them permanently',
+    '# unreadable. Save it somewhere other than this machine (a password manager),',
+    '# never just in this file.',
+    '#',
+    '# Example (Backblaze B2, native restic backend — cheap and simple):',
+    '#   RESTIC_REPOSITORY=b2:your-bucket-name:' + config.hubSlug,
+    '#   RESTIC_PASSWORD=choose-a-strong-passphrase',
+    '#   B2_ACCOUNT_ID=your-b2-key-id',
+    '#   B2_ACCOUNT_KEY=your-b2-application-key',
+    '# Any other restic backend works too (s3:, sftp:, azure:, gs:, rest:) — set',
+    '# RESTIC_REPOSITORY plus whatever credential variables that backend needs;',
+    '# they pass straight through to the container.',
+    '# RESTIC_REPOSITORY=',
+    '# RESTIC_PASSWORD=',
+    'OFFSITE_BACKUP_RETENTION_DAYS=30',
     '',
     ...(config.enableAi ? [
       '# Ollama Directory — downloaded local AI models are stored here. These can be',
@@ -331,6 +367,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - STORAGE_SECRET_KEY=' + v('STORAGE_SECRET_KEY'),
     '      - STORAGE_BUCKET=' + vd('STORAGE_BUCKET', 'hub-files'),
     '      - JWT_SECRET=' + v('JWT_SECRET'),
+    '      - ADMIN_SIDECAR_TOKEN=' + v('ADMIN_SIDECAR_TOKEN'),
     '      - CORS_ORIGIN=' + vd('CORS_ORIGIN', '*'),
     '      - REGISTRY_URL=' + vd('REGISTRY_URL', ''),
     '      - TUNNEL_URL=' + vd('TUNNEL_URL', ''),
@@ -410,9 +447,17 @@ function getComposeYaml(config: HubScriptConfig): string {
     '    image: postgres:16-alpine',
     '    container_name: citinet-backup-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
+    // env_file lets an operator enable off-site backup purely by editing .env --
+    // whatever credential variables their chosen restic backend needs (B2_*,
+    // AWS_*, ...) reach the container without this file needing to know every
+    // possible backend's variable names in advance.
+    '    env_file:',
+    '      - .env',
     '    environment:',
     '      - PGPASSWORD=' + v('DB_PASSWORD'),
+    '      - HUB_SLUG=' + v('HUB_SLUG'),
     '      - BACKUP_RETENTION_DAYS=' + vd('BACKUP_RETENTION_DAYS', '7'),
+    '      - OFFSITE_BACKUP_RETENTION_DAYS=' + vd('OFFSITE_BACKUP_RETENTION_DAYS', '30'),
     '    volumes:',
     '      - ' + backupVol + ':/backups',
     '      - ' + storageVol + ':/storage:ro',
@@ -429,10 +474,30 @@ function getComposeYaml(config: HubScriptConfig): string {
     // on a failed dump, since a pipeline's exit status is its last command's (gzip)
     // in plain /bin/sh -- no pipefail here -- so pg_dump is checked on its own first).
     '        apk add --no-cache tar gzip >/dev/null 2>&1 || true',
+    // Off-site push is entirely opt-in: RESTIC_REPOSITORY/RESTIC_PASSWORD are
+    // commented out in .env by default, so this whole block (including the apk
+    // install) is skipped and the container behaves exactly as before for
+    // anyone who hasn't configured it. restic is only installed, and `restic
+    // init` only attempted once at startup (not every day), when both are set.
+    '        OFFSITE=0',
+    '        if [ -n "$$RESTIC_REPOSITORY" ] && [ -n "$$RESTIC_PASSWORD" ]; then',
+    '          if apk add --no-cache restic >/dev/null 2>&1; then',
+    '            OFFSITE=1',
+    '            restic snapshots --host "$${HUB_SLUG:-hub}" >/dev/null 2>&1 || restic init >/dev/null 2>&1 || echo "[backup] restic init failed -- check RESTIC_REPOSITORY/credentials"',
+    '          else',
+    '            echo "[backup] could not install restic -- off-site backup disabled this run"',
+    '          fi',
+    '        fi',
     '        while true; do',
     '          ts=$$(date +%Y%m%d-%H%M%S)',
     '          echo "[backup] starting $$ts"',
     '          if pg_dump -h citinet-db -U citinet citinet > /backups/db-$$ts.sql 2>/backups/db-$$ts.err; then',
+    // Kept uncompressed at a fixed path (overwritten, not timestamped) so restic
+    // can dedup it against yesterday's content -- the gzip'd copy below is great
+    // for a same-machine restore but its compressed bytes look totally different
+    // day to day even when the underlying data barely changed, which would
+    // defeat restic's incremental chunking if fed the .gz instead.
+    '            cp /backups/db-$$ts.sql /tmp/db-latest.sql',
     '            gzip -f /backups/db-$$ts.sql && rm -f /backups/db-$$ts.err && echo "[backup] db ok"',
     '          else',
     '            echo "[backup] db FAILED:"; cat /backups/db-$$ts.err',
@@ -444,8 +509,49 @@ function getComposeYaml(config: HubScriptConfig): string {
     '          fi',
     '          find /backups -name \'db-*.sql.gz\' -mtime +$$BACKUP_RETENTION_DAYS -delete',
     '          find /backups -name \'storage-*.tar.gz\' -mtime +$$BACKUP_RETENTION_DAYS -delete',
+    '          if [ "$$OFFSITE" = "1" ]; then',
+    // Snapshots /storage directly (not the .tar.gz) for the same incremental-dedup
+    // reason as the DB dump above -- restic does its own chunking/compression/
+    // encryption over the real files, so day-to-day pushes only move what changed.
+    '            if [ -f /tmp/db-latest.sql ] && restic backup /tmp/db-latest.sql /storage --host "$${HUB_SLUG:-hub}" --tag citinet >/dev/null 2>&1; then',
+    '              echo "[backup] off-site (restic) ok"',
+    '              restic forget --host "$${HUB_SLUG:-hub}" --keep-daily $${OFFSITE_BACKUP_RETENTION_DAYS:-30} --prune >/dev/null 2>&1 || true',
+    '            else',
+    '              echo "[backup] off-site (restic) FAILED -- will retry tomorrow"',
+    '            fi',
+    '          fi',
     '          sleep 86400',
     '        done',
+    '    networks:',
+    '      - citinet-network',
+    '',
+    '  citinet-admin:',
+    '    image: ghcr.io/fergtech/citinet-admin:latest',
+    '    container_name: citinet-admin-' + v('HUB_SLUG'),
+    '    restart: unless-stopped',
+    // No `ports:` entry, deliberately -- this container is never reachable from
+    // outside the Docker network at all, only from citinet-api over the internal
+    // citinet-network bridge (by service name). Docker-status/restart access is
+    // real power; the safety here is "unreachable except from one already-
+    // authenticated caller", not the ADMIN_SIDECAR_TOKEN check alone.
+    '    environment:',
+    '      - HUB_SLUG=' + v('HUB_SLUG'),
+    '      - ADMIN_SIDECAR_TOKEN=' + v('ADMIN_SIDECAR_TOKEN'),
+    // Explicit, not left to the sidecar's own default -- matches every other
+    // container_name in this file exactly (citinet-backup-${HUB_SLUG}, etc.).
+    // A hub retrofitted from an older, unsuffixed-container-name layout (see
+    // hub1) must override this to an empty string when wiring citinet-admin
+    // in by hand -- see admin-sidecar/server.js's CONTAINER_SUFFIX comment
+    // for why there is deliberately no automatic fallback between the two.
+    '      - CONTAINER_SUFFIX=-' + v('HUB_SLUG'),
+    '    volumes:',
+    // Mounting the Docker socket is always effectively full daemon access
+    // regardless of the bind mount's ro/rw flag -- ro only stops something
+    // from replacing the socket file itself, not the API calls sent through
+    // it. The real boundary is network isolation (no ports:) + the shared
+    // token above + this service's own restart-only, service-name-allowlisted
+    // routes (see admin-sidecar/server.js) -- not this mount flag.
+    '      - /var/run/docker.sock:/var/run/docker.sock',
     '    networks:',
     '      - citinet-network',
     '',

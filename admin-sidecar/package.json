@@ -1,0 +1,13 @@
+{
+  "name": "citinet-admin",
+  "version": "0.1.0",
+  "description": "Citinet hub admin sidecar -- internal-only Docker status/restart API, never exposed to the network",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "express": "^4.19.2"
+  }
+}
