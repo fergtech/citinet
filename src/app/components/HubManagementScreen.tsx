@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw, CloudUpload, Server } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -14,6 +14,8 @@ import { registryService } from '../services/registryService';
 import { JoinQrCard } from './JoinQrCard';
 import { HubIcon, hubIconRegistryFields, HUB_ICON_SYMBOLS, HUB_ICON_SOLID_COLORS, HUB_ICON_GRADIENTS } from './HubIcon';
 import { NetworkReachTab } from './NetworkReachTab';
+import { OffsiteBackupTab } from './OffsiteBackupTab';
+import { SystemTab } from './SystemTab';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -21,7 +23,7 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription, updateHubIcon, refreshStatus } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach' | 'backup' | 'system'>('info');
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -838,6 +840,8 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
               { id: 'requests' as const, icon: <ClipboardList className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Requests' },
               ...(aiTabAvailable ? [{ id: 'ai' as const, icon: <Bot className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'AI' }] : []),
               ...(isLocalHub ? [{ id: 'reach' as const, icon: <Wifi className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Network Reach' }] : []),
+              { id: 'backup' as const, icon: <CloudUpload className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'Off-site Backup' },
+              { id: 'system' as const, icon: <Server className="w-[15px] h-[15px] md:w-4 md:h-4" />, label: 'System' },
             ]).map(tab => (
               <button
                 key={tab.id}
@@ -2471,6 +2475,16 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {/* ─── Network Reach Tab ─── */}
         {activeTab === 'reach' && (
           <NetworkReachTab hubSlug={hubSlug} hubName={currentHub?.name ?? ''} />
+        )}
+
+        {/* ─── Off-site Backup Tab ─── */}
+        {activeTab === 'backup' && (
+          <OffsiteBackupTab hubSlug={hubSlug} />
+        )}
+
+        {/* ─── System Tab ─── */}
+        {activeTab === 'system' && (
+          <SystemTab hubSlug={hubSlug} />
         )}
         </div>
       </div>

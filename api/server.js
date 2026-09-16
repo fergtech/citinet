@@ -51,6 +51,13 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '9090', 10);
 const START_TIME = Date.now();
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://citinet-ollama:11434';
+// citinet-admin is never published to the host (no `ports:` in
+// docker-compose.yml) -- this internal service-name URL is the only path to
+// it, and ADMIN_SIDECAR_TOKEN is a second layer so even another compromised
+// container on the same Docker network can't call it without this app's own
+// copy of the shared secret.
+const ADMIN_SIDECAR_URL = process.env.ADMIN_SIDECAR_URL || 'http://citinet-admin:7070';
+const ADMIN_SIDECAR_TOKEN = process.env.ADMIN_SIDECAR_TOKEN || '';
 
 // In-memory cache for public file metadata (avoids DB hit on every Range request)
 const publicFileCache = new Map(); // fileName → { row, cachedAt }
@@ -3212,9 +3219,15 @@ app.get('/api/files', authenticate, async (req, res) => {
   }
 });
 
-// Upload file — streams directly to MinIO, no memory buffer, no size cap.
-// is_public is passed as a query param (?is_public=true) so it is available
-// before the file stream starts (FormData field ordering is not guaranteed).
+// Upload one or more files — streams directly to MinIO, no memory buffer, no
+// size cap. is_public is passed as a query param (?is_public=true) so it is
+// available before the file stream starts (FormData field ordering is not
+// guaranteed). A request may carry several `file` parts (multi-file upload);
+// each is uploaded independently and, once every part has been handled,
+// a single response is sent covering all of them. A request with exactly one
+// part still gets the original single-object response shape — other callers
+// (the mobile app, avatar/message-attachment uploads elsewhere in this file)
+// depend on that — while 2+ parts get `{ files: [...], failures?: [...] }`.
 app.post('/api/files', authenticate, (req, res) => {
   if (!minioClient)
     return res.status(503).json({ error: 'Storage not available' });
@@ -3227,6 +3240,7 @@ app.post('/api/files', authenticate, (req, res) => {
   res.setTimeout(0);
 
   const bb = busboy({ headers: req.headers });
+  const filePromises = [];
   let fileHandled = false;
 
   bb.on('file', (fieldName, fileStream, info) => {
@@ -3236,13 +3250,13 @@ app.post('/api/files', authenticate, (req, res) => {
 
     if (hasBlockedExtension(filename)) {
       fileStream.resume(); // drain so busboy can finish and release the request
-      if (!res.headersSent) res.status(400).json({ error: 'File type not allowed' });
+      filePromises.push(Promise.resolve({ error: 'File type not allowed', file_name: filename }));
       return;
     }
 
     const fileKey = `${req.user.id}/${crypto.randomUUID()}`;
 
-    const putToStorage = (body, size) => {
+    const putToStorage = (body, size) =>
       minioClient
         .putObject(STORAGE_BUCKET, fileKey, body, size, {
           'Content-Type': mimeType,
@@ -3272,14 +3286,12 @@ app.post('/api/files', authenticate, (req, res) => {
               folderId,
             ],
           );
-          if (!res.headersSent) res.json(result.rows[0]);
+          return result.rows[0];
         })
         .catch((err) => {
           console.error('Upload error:', err);
-          if (!res.headersSent)
-            res.status(500).json({ error: 'Upload failed' });
+          return { error: 'Upload failed', file_name: filename };
         });
-    };
 
     // iPhone photos often arrive as HEIC/HEIF — no browser can render that
     // natively. Buffer the (typically few-MB) file fully and re-encode to
@@ -3294,19 +3306,21 @@ app.post('/api/files', authenticate, (req, res) => {
 
     if (isHeic) {
       const heicChunks = [];
-      fileStream.on('data', (chunk) => heicChunks.push(chunk));
-      fileStream.on('end', async () => {
-        const heicBuffer = Buffer.concat(heicChunks);
-        try {
-          const jpegBuffer = await decodeHeicBufferToJpeg(heicBuffer);
-          filename = filename.replace(/\.(heic|heif)$/i, '') + '.jpg';
-          mimeType = 'image/jpeg';
-          putToStorage(jpegBuffer, jpegBuffer.length);
-        } catch (err) {
-          console.error(`HEIC Conversion Error Details: failed to convert "${filename}" (${mimeType}, ${heicBuffer.length} bytes) — ${err.message}`);
-          if (!res.headersSent) res.status(422).json({ error: 'Could not process this HEIC/HEIF image' });
-        }
-      });
+      filePromises.push(new Promise((resolve) => {
+        fileStream.on('data', (chunk) => heicChunks.push(chunk));
+        fileStream.on('end', async () => {
+          const heicBuffer = Buffer.concat(heicChunks);
+          try {
+            const jpegBuffer = await decodeHeicBufferToJpeg(heicBuffer);
+            filename = filename.replace(/\.(heic|heif)$/i, '') + '.jpg';
+            mimeType = 'image/jpeg';
+            resolve(await putToStorage(jpegBuffer, jpegBuffer.length));
+          } catch (err) {
+            console.error(`HEIC Conversion Error Details: failed to convert "${filename}" (${mimeType}, ${heicBuffer.length} bytes) — ${err.message}`);
+            resolve({ error: 'Could not process this HEIC/HEIF image', file_name: filename });
+          }
+        });
+      }));
       return;
     }
 
@@ -3320,34 +3334,50 @@ app.post('/api/files', authenticate, (req, res) => {
     let buffered = 0;
     let pass = null;
 
-    fileStream.on('data', (chunk) => {
-      if (pass) {
-        pass.write(chunk);
-        return;
-      }
-      chunks.push(chunk);
-      buffered += chunk.length;
-      if (buffered > SMALL_FILE_THRESHOLD) {
-        pass = new PassThrough();
-        for (const c of chunks) pass.write(c);
-        chunks.length = 0;
-        putToStorage(pass, undefined);
-      }
-    });
+    filePromises.push(new Promise((resolve) => {
+      fileStream.on('data', (chunk) => {
+        if (pass) {
+          pass.write(chunk);
+          return;
+        }
+        chunks.push(chunk);
+        buffered += chunk.length;
+        if (buffered > SMALL_FILE_THRESHOLD) {
+          pass = new PassThrough();
+          for (const c of chunks) pass.write(c);
+          chunks.length = 0;
+          putToStorage(pass, undefined).then(resolve);
+        }
+      });
 
-    fileStream.on('end', () => {
-      if (pass) {
-        pass.end();
-      } else {
-        putToStorage(Buffer.concat(chunks), buffered);
-      }
-    });
+      fileStream.on('end', () => {
+        if (pass) {
+          pass.end();
+        } else {
+          putToStorage(Buffer.concat(chunks), buffered).then(resolve);
+        }
+      });
+    }));
   });
 
-  bb.on('finish', () => {
-    if (!fileHandled && !res.headersSent) {
-      res.status(400).json({ error: 'No file provided' });
+  bb.on('finish', async () => {
+    if (!fileHandled) {
+      if (!res.headersSent) res.status(400).json({ error: 'No file provided' });
+      return;
     }
+    const results = await Promise.all(filePromises);
+    if (res.headersSent) return;
+    const successes = results.filter((r) => !r.error);
+    const failures = results.filter((r) => r.error);
+    if (results.length === 1) {
+      // Single-part request: keep the original single-object response shape.
+      if (successes.length === 1) return res.json(successes[0]);
+      return res.status(500).json({ error: failures[0].error });
+    }
+    if (successes.length === 0) {
+      return res.status(500).json({ error: failures[0]?.error || 'Upload failed', failures });
+    }
+    res.json({ files: successes, failures: failures.length ? failures : undefined });
   });
 
   bb.on('error', (err) => {
@@ -10280,6 +10310,48 @@ app.get('/api/ai/status', authenticate, async (_req, res) => {
     });
   } catch {
     res.status(500).json({ error: 'Failed to get AI status' });
+  }
+});
+
+// GET /api/admin/stack/status
+// Admin-only proxy to citinet-admin, the internal-only Docker status/restart
+// sidecar (see admin-sidecar/server.js) -- never reachable from outside the
+// Docker network itself, so this route is the only path to it. Hubs created
+// before this feature existed (or where citinet-admin isn't running for any
+// other reason) get `available: false` rather than an error -- the System
+// tab treats that as "not set up yet", not a failure to explain.
+app.get('/api/admin/stack/status', authenticate, async (req, res) => {
+  if (!req.user.is_admin)
+    return res.status(403).json({ error: 'Admin access required' });
+  if (!ADMIN_SIDECAR_TOKEN) return res.json({ available: false });
+  try {
+    const sidecarRes = await fetch(`${ADMIN_SIDECAR_URL}/status`, {
+      headers: { 'x-admin-token': ADMIN_SIDECAR_TOKEN },
+    });
+    if (!sidecarRes.ok) return res.json({ available: false });
+    const data = await sidecarRes.json();
+    res.json({ available: true, ...data });
+  } catch {
+    // citinet-admin not running / not reachable -- treat as "not set up".
+    res.json({ available: false });
+  }
+});
+
+// POST /api/admin/stack/restart/:service
+app.post('/api/admin/stack/restart/:service', authenticate, async (req, res) => {
+  if (!req.user.is_admin)
+    return res.status(403).json({ error: 'Admin access required' });
+  if (!ADMIN_SIDECAR_TOKEN)
+    return res.status(503).json({ error: 'Stack admin sidecar is not configured for this hub' });
+  try {
+    const sidecarRes = await fetch(`${ADMIN_SIDECAR_URL}/restart/${encodeURIComponent(req.params.service)}`, {
+      method: 'POST',
+      headers: { 'x-admin-token': ADMIN_SIDECAR_TOKEN },
+    });
+    const data = await sidecarRes.json().catch(() => ({}));
+    res.status(sidecarRes.status).json(data);
+  } catch {
+    res.status(502).json({ error: 'Could not reach the stack admin sidecar' });
   }
 });
 

@@ -246,7 +246,22 @@ access, which implies broader compromise anyway.
 | `citinet-db` | All plaintext data (posts, file names, user metadata, session tokens); ciphertext for messages/notes/files |
 | `citinet-storage` | UUID-named encrypted blobs — unreadable without user key |
 | `citinet-api` | Source code (already public on GitHub); cannot intercept E2E data |
-| `citinet-backup` | Same data as `citinet-db`/`citinet-storage`, just a point-in-time copy |
+| `citinet-backup` | Same data as `citinet-db`/`citinet-storage`, just a point-in-time copy; if off-site push is configured (opt-in — see `docs/hub-setup.md`), that copy is also restic-encrypted (AES-256, client-side, keyed by `RESTIC_PASSWORD`) before it ever leaves the machine, so the remote storage provider never sees plaintext either |
+| `citinet-admin` | Full Docker daemon control (mounts `/var/run/docker.sock` — see the comment on that mount in `scriptGenerator.ts`'s `getComposeYaml`), same as anyone with Docker access already has. Never exposed to the network (no `ports:`) — the only path to it is `citinet-api`'s own admin-only, admin-auth-checked proxy routes. |
+
+### What `citinet-admin` gives a **web** hub admin (not the same as machine/Docker access)
+
+Before this, reading container status/logs or restarting a service required SSH/RDP
+access to the actual hub machine — a web hub-admin account alone couldn't do it. The
+System tab (`/api/admin/stack/status`, `/api/admin/stack/restart/:service`) narrows that
+gap on purpose: any authenticated hub admin can now read live container state + the last
+~12 log lines for every known service, and restart exactly two of them
+(`citinet-backup`, `citinet-livekit` — chosen deliberately conservative;
+`citinet-db`/`citinet-storage`/`citinet-caddy`/`citinet-api`/`citinet-admin` itself are
+excluded because a bad remote restart of any of those is far more disruptive). This is a
+real, disclosed capability increase for a compromised admin *web* session, not just a
+compromised admin *machine* — the mitigation is the narrow, hardcoded (not
+request-controlled) allowlist in `admin-sidecar/server.js`, not obscurity.
 
 ---
 

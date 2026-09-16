@@ -302,11 +302,13 @@ set in `.env`, defaulting to `$DATA_DIR/backups` and 7 days).
 **This protects against**: accidental or malicious mass-deletion, a bad update, a
 corrupted migration — anything that damages the *data*, not the *machine*.
 
-**This does not protect against**: the machine itself dying, being lost, or its disk
-failing — `BACKUP_DIR` defaults to a subfolder of the same `DATA_DIR` the live database
-lives in, so a dead disk takes both down together. For real protection against losing
-the machine entirely, point `BACKUP_DIR` at a different physical drive or a mounted
-external/network volume in `.env`, then restart:
+**This does not fully protect against**: the machine itself dying, being lost, stolen,
+or its disk failing — `BACKUP_DIR` defaults to a subfolder of the same `DATA_DIR` the
+live database lives in, so a dead disk takes both down together. Pointing `BACKUP_DIR`
+at a different physical drive or a mounted external/network volume in `.env` (then
+restart) helps, but a drive on the same machine still dies with it in a fire/theft/
+total-machine-loss scenario — for real protection against *losing the machine itself*,
+see **Off-site backup** below.
 
 ```bash
 docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml up -d citinet-backup
@@ -316,6 +318,99 @@ Because it re-packages the entire storage directory every run (not incrementally
 hub with a large amount of uploaded file content will see backups that take
 proportionally longer and use real CPU/disk I/O while running — expected, not a bug,
 and why this runs once a day rather than more often.
+
+### Off-site backup (optional, protects against losing the machine itself)
+
+The local backup above (and even a `BACKUP_DIR` on a second local drive) is still on
+the same machine — it protects against bad data, not a lost/destroyed/stolen machine.
+`citinet-backup` can also push nightly, client-side-*encrypted*, *incremental* backups
+to any remote you control, using [restic](https://restic.net). This is opt-in and off
+by default; nothing changes for hubs that don't configure it.
+
+**Easiest path**: in the web portal, go to **Hub Management → Off-site Backup**. Pick a
+provider, fill in the bucket/keys (or generate a passphrase for you), and it hands you a
+small script to download and run once — it only ever touches the off-site-backup lines
+in `.env` (never `DB_PASSWORD`, `JWT_SECRET`, or anything else in that file) and
+restarts `citinet-backup` for you. Nothing here routes through Citinet's own servers —
+the script runs entirely in your browser and on your own machine. The rest of this
+section is the manual/advanced path, for anyone who'd rather edit `.env` by hand.
+
+**Setup** — pick any restic-supported destination, then add to `.env`. Two ready-made
+examples (either works with the in-app form above too):
+
+```env
+# Backblaze B2 -- cheap, simple
+RESTIC_REPOSITORY=b2:your-bucket-name:<hub-slug>
+RESTIC_PASSWORD=choose-a-strong-passphrase-and-store-it-elsewhere
+B2_ACCOUNT_ID=your-b2-key-id
+B2_ACCOUNT_KEY=your-b2-application-key
+```
+
+```env
+# Cloudflare R2 -- free egress, cheaper to restore from. Create a bucket and an
+# API token at dash.cloudflare.com -> R2; your account ID is shown on the same page.
+# Uses restic's s3 backend under the hood (R2's API is S3-compatible), so the
+# credential variable names are the standard AWS_* ones, not R2-specific.
+RESTIC_REPOSITORY=s3:<account-id>.r2.cloudflarestorage.com/your-bucket-name/<hub-slug>
+RESTIC_PASSWORD=choose-a-strong-passphrase-and-store-it-elsewhere
+AWS_ACCESS_KEY_ID=your-r2-access-key-id
+AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
+AWS_DEFAULT_REGION=auto
+```
+
+S3, Wasabi, SFTP to another machine, Azure, and Google Cloud Storage all work too —
+see [restic's backend docs](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html)
+for repository string formats.
+
+Then restart the container so it picks up the new variables:
+
+```bash
+docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml up -d --force-recreate citinet-backup
+```
+
+Watch the first run's logs to confirm it connected:
+
+```bash
+docker logs -f citinet-backup-<hub-slug>
+```
+
+**`RESTIC_PASSWORD` encrypts every backup — restic itself never uploads plaintext, and
+your remote (B2, S3, whoever) never sees the actual content.** If you lose this
+password, the backups become permanently unreadable — save it in a password manager or
+similar, never only in this `.env` file on the same machine you're trying to protect
+against losing.
+
+Any other restic backend works the same way — just set `RESTIC_REPOSITORY` to that
+backend's URL and whatever credential variables it needs (`AWS_ACCESS_KEY_ID`/
+`AWS_SECRET_ACCESS_KEY` for S3, etc.); they reach the container automatically since it
+reads the whole `.env` file. See restic's own docs for the full list of backends.
+
+### Restoring from an off-site (restic) backup
+
+Useful when the original machine is gone entirely — run this from any machine with
+Docker:
+
+```bash
+# Restore the latest snapshot's DB dump + files to a local folder
+docker run --rm -it \
+  -e RESTIC_REPOSITORY=b2:your-bucket-name:<hub-slug> \
+  -e RESTIC_PASSWORD=your-passphrase \
+  -e B2_ACCOUNT_ID=your-b2-key-id \
+  -e B2_ACCOUNT_KEY=your-b2-application-key \
+  -v "$(pwd)/restored:/restored" \
+  restic/restic restore latest --target /restored
+
+# Database: /restored/tmp/db-latest.sql
+gunzip -c /restored/tmp/db-latest.sql 2>/dev/null || cat /restored/tmp/db-latest.sql | \
+  docker exec -i citinet-db-<hub-slug> psql -U citinet citinet
+
+# Files: copy the restored /restored/storage tree into a fresh hub's FILES_DIR
+cp -a /restored/storage/. "$FILES_DIR/"
+```
+
+Run a fresh `citinet-setup.sh`/`citinet-setup.ps1` on the new machine first (same
+hub slug) to get a working stack, stop it, restore into `DATA_DIR`/`FILES_DIR` as
+above, then start it back up.
 
 ### Restoring from a backup
 
