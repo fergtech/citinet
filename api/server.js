@@ -535,6 +535,13 @@ async function initDb() {
       `ALTER TABLE hub_atlas_pins ADD COLUMN IF NOT EXISTS image_file_name TEXT`,
     );
     await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_atlas_pin_attachments (
+        pin_id  UUID REFERENCES hub_atlas_pins(id) ON DELETE CASCADE,
+        file_id UUID REFERENCES hub_files(id) ON DELETE CASCADE,
+        PRIMARY KEY (pin_id, file_id)
+      )
+    `);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS hub_config (
         key   VARCHAR(100) PRIMARY KEY,
         value TEXT         NOT NULL DEFAULT ''
@@ -6586,15 +6593,42 @@ app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
 
 const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 'aid', 'green'];
 
+const PIN_ATTACH_AGG = `
+  COALESCE(
+    JSON_AGG(JSON_BUILD_OBJECT(
+      'file_id', hf.id, 'file_name', hf.file_name,
+      'mime_type', hf.mime_type, 'size', hf.size_bytes
+    )) FILTER (WHERE hf.id IS NOT NULL),
+    '[]'
+  ) AS attachments
+`;
+
+// Replaces a pin's linked attachments with exactly `fileIds` (ignoring any
+// unknown/foreign file ids rather than failing the whole request).
+async function setPinAttachments(pinId, fileIds) {
+  await pool.query('DELETE FROM hub_atlas_pin_attachments WHERE pin_id = $1', [pinId]);
+  for (const fileId of fileIds) {
+    await pool
+      .query(
+        `INSERT INTO hub_atlas_pin_attachments (pin_id, file_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [pinId, fileId],
+      )
+      .catch(() => {});
+  }
+}
+
 // List all pins
 app.get('/api/atlas/pins', authenticate, async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
               p.image_file_name, p.created_at,
-              u.username AS author_username
+              u.username AS author_username, ${PIN_ATTACH_AGG}
        FROM hub_atlas_pins p
        LEFT JOIN hub_users u ON p.author_id = u.id
+       LEFT JOIN hub_atlas_pin_attachments hpa ON hpa.pin_id = p.id
+       LEFT JOIN hub_files hf ON hf.id = hpa.file_id
+       GROUP BY p.id, u.username
        ORDER BY p.created_at DESC`,
     );
     res.json({ pins: rows });
@@ -6606,7 +6640,7 @@ app.get('/api/atlas/pins', authenticate, async (_req, res) => {
 
 // Create a pin
 app.post('/api/atlas/pins', authenticate, async (req, res) => {
-  const { latitude, longitude, title, description, category, image_file_name } = req.body || {};
+  const { latitude, longitude, title, description, category, image_file_name, attachment_ids } = req.body || {};
 
   if (!title?.trim())
     return res.status(400).json({ error: 'Title is required' });
@@ -6636,7 +6670,18 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
         image_file_name || null,
       ],
     );
-    res.json({ ...rows[0], author_username: req.user.username });
+
+    let attachments = [];
+    if (Array.isArray(attachment_ids) && attachment_ids.length > 0) {
+      await setPinAttachments(rows[0].id, attachment_ids);
+      const { rows: fileRows } = await pool.query(
+        `SELECT id AS file_id, file_name, mime_type, size_bytes AS size FROM hub_files WHERE id = ANY($1)`,
+        [attachment_ids],
+      );
+      attachments = fileRows;
+    }
+
+    res.json({ ...rows[0], author_username: req.user.username, attachments });
   } catch (err) {
     console.error('Create atlas pin error:', err);
     res.status(500).json({ error: 'Failed to create pin' });
@@ -6645,7 +6690,7 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
 
 // Edit a pin (author only — moderators/admins can delete a pin but not rewrite its content)
 app.patch('/api/atlas/pins/:id', authenticate, async (req, res) => {
-  const { title, description, category, image_file_name } = req.body || {};
+  const { title, description, category, image_file_name, attachment_ids } = req.body || {};
 
   if (!title?.trim())
     return res.status(400).json({ error: 'Title is required' });
@@ -6673,12 +6718,18 @@ app.patch('/api/atlas/pins/:id', authenticate, async (req, res) => {
     if (!updated[0])
       return res.status(404).json({ error: 'Pin not found or not authorized' });
 
+    if (Array.isArray(attachment_ids))
+      await setPinAttachments(updated[0].id, attachment_ids);
+
     const { rows } = await pool.query(
       `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
-              p.image_file_name, p.created_at, u.username AS author_username
+              p.image_file_name, p.created_at, u.username AS author_username, ${PIN_ATTACH_AGG}
        FROM hub_atlas_pins p
        LEFT JOIN hub_users u ON p.author_id = u.id
-       WHERE p.id = $1`,
+       LEFT JOIN hub_atlas_pin_attachments hpa ON hpa.pin_id = p.id
+       LEFT JOIN hub_files hf ON hf.id = hpa.file_id
+       WHERE p.id = $1
+       GROUP BY p.id, u.username`,
       [updated[0].id],
     );
     res.json(rows[0]);

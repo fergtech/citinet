@@ -23,7 +23,15 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription, updateHubIcon, refreshStatus } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach' | 'backup' | 'system'>('info');
+  type Tab = 'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach' | 'backup' | 'system';
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    // Set by NotificationsScreen for a join_request notification (see
+    // utils/notificationMeta.ts's notificationTarget) — read once and clear
+    // so a later, non-deep-linked visit doesn't keep jumping to Requests.
+    const deepLinkTab = sessionStorage.getItem('citinet-deeplink-hub-tab');
+    if (deepLinkTab) sessionStorage.removeItem('citinet-deeplink-hub-tab');
+    return (deepLinkTab as Tab) || 'info';
+  });
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');

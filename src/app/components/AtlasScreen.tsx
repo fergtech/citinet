@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, X, Trash2, MapPin,
-  Navigation, Bookmark, Share2, Check, ImagePlus, Pencil,
+  Navigation, Bookmark, Share2, Check, Pencil,
+  Paperclip, File as FileIcon, Play,
 } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'motion/react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -11,8 +14,9 @@ import { useHub, useHubStatus } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
 import { AvatarFallback } from './icons';
+import { AutoplayVideo } from './AutoplayVideo';
 import { atlasService } from '../services/atlasService';
-import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinCategory } from '../types/atlas';
+import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinAttachment, type AtlasPinCategory } from '../types/atlas';
 import { LocationSearchInput } from './LocationSearchInput';
 import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
 import { getAtlasMapStyle } from '../utils/atlasMapStyle';
@@ -20,11 +24,8 @@ import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
 import { findNearestPanoramaxImage, panoramaxWebViewerUrl, type PanoramaxImage } from '../utils/panoramax';
 import { AtlasGlyph } from './icons';
 import { EventDetailModal } from './EventDetailModal';
-import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
-import { featuredService } from '../services/featuredService';
-import type { FeaturedItem } from '../types/featured';
 import type { HubPost } from '../types/hub';
-import { Bell, Calendar } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 
 // ── Pin marker HTML (cached) ─────────────────────────────────────────────
 // Teardrop-from-rotated-square marker matching the design system: a category-
@@ -377,79 +378,193 @@ const SAVED_PINS_KEY = 'citinet-saved-atlas-pins';
 
 // ── Place row (list) ────────────────────────────────────────────────────────
 
-function PlaceRow({ pin, distanceLabel, canDelete, onSelect, onDelete }: {
-  pin: AtlasPin;
-  distanceLabel: string | null;
-  canDelete: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
+/** Full-bleed, horizontally-scrollable strip of a pin's image/video attachments —
+ * tiles `grow` to fill the row when there's only 1-2, and fall back to a scroll
+ * (plus desktop-only chevrons, same "only show the side(s) there's still more to
+ * scroll toward" pattern as Feed's category tab row) once there are too many to
+ * fit. Shared by the pin list row and the pin detail view so both preview a
+ * pin's media identically — pass `rounded` to clip the corners when the caller
+ * doesn't already provide an overflow-hidden container (the list card does).
+ * Video tiles never carry native `controls` here (so a click always reaches
+ * either the list card's own onClick or `onTileClick` below, instead of being
+ * eaten by the scrubber/play button) — a static muted frame with a play badge
+ * stands in for it. Without `onTileClick`, a tile click simply bubbles up (the
+ * list row uses this so tapping a thumbnail opens the pin like tapping
+ * anywhere else on the card); with it (the detail view), the click is
+ * intercepted to open the lightbox instead. Only the scroll chevrons always
+ * stop propagation, since scrolling the strip should never trigger either. */
+function MediaScrollRow({ attachments, hubSlug, altText, rounded, onTileClick }: {
+  attachments: { att: AtlasPinAttachment; kind: 'image' | 'video' | 'file' }[];
+  hubSlug: string;
+  altText: string;
+  rounded?: boolean;
+  onTileClick?: (kind: 'image' | 'video', url: string) => void;
 }) {
-  const cat = ATLAS_CATEGORIES[pin.category];
+  const mediaRowElRef = useRef<HTMLDivElement | null>(null);
+  const mediaContentRef = useRef<HTMLDivElement | null>(null);
+  const mediaRowCleanupRef = useRef<() => void>(() => {});
+  const [mediaScroll, setMediaScroll] = useState({ canLeft: false, canRight: false });
+
+  const updateMediaScroll = useCallback(() => {
+    const el = mediaRowElRef.current;
+    if (!el) return;
+    const scrollLeft = Math.round(el.scrollLeft);
+    setMediaScroll({
+      canLeft: scrollLeft > 1,
+      canRight: scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    });
+  }, []);
+
+  const mediaRowRef = useCallback((el: HTMLDivElement | null) => {
+    mediaRowCleanupRef.current();
+    mediaRowCleanupRef.current = () => {};
+    mediaRowElRef.current = el;
+    if (!el) return;
+    const raf = requestAnimationFrame(updateMediaScroll);
+    el.addEventListener('scroll', updateMediaScroll, { passive: true });
+    const ro = new ResizeObserver(updateMediaScroll);
+    ro.observe(el);
+    if (mediaContentRef.current) ro.observe(mediaContentRef.current);
+    mediaRowCleanupRef.current = () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', updateMediaScroll);
+      ro.disconnect();
+    };
+  }, [updateMediaScroll]);
+
+  const scrollMedia = (dir: 'left' | 'right') => {
+    mediaRowElRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
+  };
+
+  if (attachments.length === 0) return null;
+
+  // Only the first video in the strip actually autoplays — AutoplayVideo has no
+  // built-in cross-instance coordination, so with 2+ videos side by side (easy
+  // to hit here, unlike FilesScreen's sparser grid) every visible one would
+  // otherwise loop at once. The rest sit on their first frame (still muted,
+  // still clickable into the lightbox) until picked.
+  const firstVideoFileId = attachments.find(a => a.kind === 'video')?.att.fileId;
+
   return (
-    <div
-      onClick={onSelect}
-      className="group flex items-center gap-3 p-3 rounded-xl border cn-border cn-glass hover:border-black/15 dark:hover:border-white/15 cursor-pointer transition-all"
-    >
-      <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${cat.gradient} flex items-center justify-center shrink-0`}>
-        <cat.Icon className="w-4 h-4 text-white" />
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold cn-text-1 truncate">{pin.title}</div>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-black/5 dark:bg-white/8 cn-text-2">{cat.label}</span>
-          {distanceLabel && <span className="cn-mono text-[11px] cn-text-4">{distanceLabel}</span>}
-        </div>
-      </div>
-      {canDelete && (
+    <div className={`relative ${rounded ? 'rounded-2xl overflow-hidden shadow-md' : ''}`}>
+      {mediaScroll.canLeft && (
         <button
-          onClick={e => { e.stopPropagation(); onDelete(); }}
-          aria-label="Delete pin"
-          className="opacity-0 group-hover:opacity-100 w-7 h-7 rounded-lg flex items-center justify-center cn-text-4 hover:text-red-400 hover:bg-red-500/10 transition-all shrink-0"
+          onClick={event => { event.stopPropagation(); scrollMedia('left'); }}
+          aria-label="Scroll media left"
+          className="hidden md:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full cn-surface border cn-border items-center justify-center shadow-sm"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
         </button>
       )}
-      <ChevronRight className="w-4 h-4 cn-text-4 shrink-0" />
+      {mediaScroll.canRight && (
+        <button
+          onClick={event => { event.stopPropagation(); scrollMedia('right'); }}
+          aria-label="Scroll media right"
+          className="hidden md:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full cn-surface border cn-border items-center justify-center shadow-sm"
+        >
+          <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
+        </button>
+      )}
+      <div
+        ref={mediaRowRef}
+        className="flex flex-nowrap gap-0.5 overflow-x-auto no-scrollbar scroll-smooth"
+      >
+        {/* min-w-full (rather than the default shrink-to-fit) makes this row claim
+            the full available width even when there's only 1-2 attachments — each
+            tile below then `grow`s to split that space instead of leaving it blank.
+            Once enough tiles are added that their basis no longer fits, they stop
+            growing and this wrapper naturally exceeds the outer scroll container's
+            width, which is exactly what makes the horizontal scroll (and chevrons)
+            kick in. */}
+        <div ref={mediaContentRef} className="flex flex-nowrap gap-0.5 min-w-full">
+          {attachments.map(({ att, kind }) => {
+            const url = hubService.getPublicFileUrl(hubSlug, att.fileName);
+            if (!url || (kind !== 'image' && kind !== 'video')) return null;
+            return (
+              <div
+                key={att.fileId}
+                onClick={onTileClick ? event => { event.stopPropagation(); onTileClick(kind, url); } : undefined}
+                className={`relative grow shrink-0 basis-[160px] max-w-full h-40 ${onTileClick ? 'cursor-pointer' : ''}`}
+              >
+                {kind === 'video' ? (
+                  <>
+                    {att.fileId === firstVideoFileId ? (
+                      <AutoplayVideo src={url} preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                    ) : (
+                      <video src={url} preload="metadata" muted playsInline className="w-full h-full object-cover pointer-events-none" />
+                    )}
+                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="w-9 h-9 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                        <Play className="w-4 h-4 text-white fill-white ml-0.5" />
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <img src={url} alt={altText} className="w-full h-full object-cover" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
 
-// A small non-interactive map centered+zoomed on one pin — the final fallback
-// in PlaceDetailPanel's photo tier, replacing what used to be a flat category
-// gradient+icon. Mirrors citinet-mobile's own PinDetailScreen, whose banner
-// falls back to exactly this ("a real map centered here" is more useful to
-// someone who just tapped a pin than a generic icon, even without a real
-// photo). Deliberately a separate, minimal component rather than reusing the
-// full <AtlasMap> above — that one carries pin-click handlers, drop-here
-// placement, my-location, and marker-diffing machinery this thumbnail has no
-// use for; `interactive: false` here disables all of MapLibre's own
-// pan/zoom/click handlers in one step, so there's no risk of this thumbnail
-// fighting the page's own scroll/hover the way an interactive embed would.
-function MiniPinMap({ pin }: { pin: AtlasPin }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === 'dark';
+function PlaceRow({ pin, hubSlug, distanceLabel, onSelect }: {
+  pin: AtlasPin;
+  hubSlug: string;
+  distanceLabel: string | null;
+  onSelect: () => void;
+}) {
+  const cat = ATLAS_CATEGORIES[pin.category];
+  const mediaAttachments = (pin.attachments ?? [])
+    .map(att => ({ att, kind: classifyAttachment(att.mimeType, att.fileName) }))
+    .filter(m => m.kind === 'image' || m.kind === 'video');
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: getAtlasMapStyle(dark),
-      center: [pin.longitude, pin.latitude],
-      zoom: 17,
-      interactive: false,
-      attributionControl: false,
-    });
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = getPinHtml(pin.category, true);
-    const el = wrapper.firstElementChild as HTMLElement;
-    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-      .setLngLat([pin.longitude, pin.latitude])
-      .addTo(map);
-    return () => { marker.remove(); map.remove(); };
-  }, [pin.id, pin.category, pin.latitude, pin.longitude, dark]);
+  return (
+    <div
+      onClick={onSelect}
+      className="group rounded-xl border cn-border cn-glass hover:border-black/15 dark:hover:border-white/15 cursor-pointer transition-all overflow-hidden"
+    >
+      {/* Author row — avatar + username lead the card, same as a Feed post; the
+          pin type is folded into the small metadata line under the username
+          (icon shrunk down) instead of standing alone as a big leading badge. */}
+      <div className="flex items-center gap-2.5 p-3 pb-2">
+        <AvatarFallback className="w-7 h-7 rounded-full shrink-0" name={pin.authorUsername} />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold cn-text-1 truncate">@{pin.authorUsername}</div>
+          <div className="flex items-center gap-1 text-[11px] cn-text-4 mt-0.5 min-w-0">
+            <cat.Icon className="w-3 h-3 shrink-0" />
+            <span className="truncate">{cat.label}</span>
+            {distanceLabel && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="cn-mono shrink-0">{distanceLabel}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <ChevronRight className="w-4 h-4 cn-text-4 shrink-0" />
+      </div>
 
-  return <div ref={containerRef} className="w-full h-full" />;
+      <div className="px-3 pb-2.5">
+        <div className="text-sm font-semibold cn-text-1 truncate">{pin.title}</div>
+        {pin.description && (
+          <p className="text-xs leading-relaxed cn-text-3 mt-1 line-clamp-2">{pin.description}</p>
+        )}
+      </div>
+
+      {/* Full-bleed media strip — same idea as Feed's post cards, whose media
+          spans the card's true edge-to-edge width instead of living inside the
+          padded text column (which is what was leaving it starved for room). */}
+      {mediaAttachments.length > 0 && (
+        <div className="mb-3">
+          <MediaScrollRow attachments={mediaAttachments} hubSlug={hubSlug} altText={pin.title} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Place detail panel ───────────────────────────────────────────────────────
@@ -473,6 +588,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
   const [userPhotoFailed, setUserPhotoFailed] = useState(false);
   const [panoramax, setPanoramax] = useState<PanoramaxImage | null>(null);
   const [panoramaxFailed, setPanoramaxFailed] = useState(false);
+  const [lightbox, setLightbox] = useState<{ kind: 'image' | 'video'; url: string } | null>(null);
 
   // A user-uploaded photo (set at pin creation) is authoritative — only fall back
   // to the Wikidata/Wikimedia lookup when the pin has none of its own.
@@ -506,6 +622,10 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
     });
     return () => { cancelled = true; };
   }, [pin.latitude, pin.longitude, userPhotoUrl]);
+
+  const classifiedAttachments = (pin.attachments ?? []).map(att => ({ att, kind: classifyAttachment(att.mimeType, att.fileName) }));
+  const detailMediaAttachments = classifiedAttachments.filter(m => m.kind === 'image' || m.kind === 'video');
+  const detailFileAttachments = classifiedAttachments.filter(m => m.kind === 'file');
 
   const handleShare = () => {
     const url = new URL(window.location.href);
@@ -573,13 +693,7 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
             Street view via Panoramax
           </div>
         </a>
-      ) : (
-        // No real photo anywhere — a map centered on the exact pin is more
-        // useful than a flat category icon (see MiniPinMap above).
-        <div className="relative h-32 sm:h-36 rounded-2xl overflow-hidden shadow-md isolate">
-          <MiniPinMap pin={pin} />
-        </div>
-      )}
+      ) : null}
 
       <div>
         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-black/5 dark:bg-white/8 cn-text-2 mb-2">
@@ -593,6 +707,32 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
 
       {pin.description && (
         <p className="text-sm leading-relaxed cn-text-2">{pin.description}</p>
+      )}
+
+      {/* Image/video attachments preview exactly like the pin list row — same
+          full-bleed grow-to-fill/scroll strip, just rounded here since this
+          panel (unlike the list card) has no enclosing overflow-hidden card
+          of its own to clip it. Non-media files (PDFs, docs, …) still fall
+          back to plain download chips below, same as before. */}
+      <MediaScrollRow
+        attachments={detailMediaAttachments}
+        hubSlug={hubSlug}
+        altText={pin.title}
+        rounded
+        onTileClick={(kind, url) => setLightbox({ kind, url })}
+      />
+
+      {detailFileAttachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {detailFileAttachments.map(({ att, kind }) => (
+            <AttachmentChip
+              key={att.fileId}
+              src={hubService.getPublicFileUrl(hubSlug, att.fileName) ?? ''}
+              kind={kind}
+              fileName={att.fileName}
+            />
+          ))}
+        </div>
       )}
 
       <div className="cn-glass rounded-xl p-3 flex items-center gap-3">
@@ -644,6 +784,50 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
           </button>
         )}
       </div>
+
+      {/* Lightbox — same full-screen preview pattern as clicking an image in a
+          Messages chat bubble (portaled to <body> so it can outrank HubLayout's
+          chrome, which starts its own z-10 stacking context), extended to cover
+          video too since attachments here aren't blob-fetched auth-gated files —
+          they're already public URLs, so there's nothing to await before opening. */}
+      {createPortal(
+        <AnimatePresence>
+          {lightbox && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 dark:bg-black/80 backdrop-blur-sm p-4"
+              onClick={() => setLightbox(null)}
+            >
+              {lightbox.kind === 'video' ? (
+                <video
+                  src={lightbox.url}
+                  controls
+                  autoPlay
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <img
+                  src={lightbox.url}
+                  alt={pin.title}
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                  onClick={e => e.stopPropagation()}
+                />
+              )}
+              <button
+                onClick={() => setLightbox(null)}
+                className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 rounded-full p-2 transition-colors"
+                title="Close preview"
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
@@ -672,6 +856,68 @@ function suggestCategory(title: string): AtlasPinCategory | null {
   return null;
 }
 
+// ── Pin attachments (media/files beyond the single cover photo) ────────────
+// Mirrors Messages' attachment conventions (same size cap, same combined
+// image/video/document accept string) rather than inventing new limits.
+
+const PIN_ATTACHMENT_ACCEPT = 'image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx';
+const MAX_PIN_ATTACHMENTS = 10;
+const MAX_PIN_ATTACHMENT_SIZE = 50 * 1024 * 1024; // 50 MB
+
+const ATTACHMENT_VIDEO_EXTS = new Set(['mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', 'ogv', '3gp']);
+const ATTACHMENT_IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+
+function classifyAttachment(mimeType: string | undefined, fileName: string): 'image' | 'video' | 'file' {
+  if (mimeType?.startsWith('image/')) return 'image';
+  if (mimeType?.startsWith('video/')) return 'video';
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (ext && ATTACHMENT_IMAGE_EXTS.has(ext)) return 'image';
+  if (ext && ATTACHMENT_VIDEO_EXTS.has(ext)) return 'video';
+  return 'file';
+}
+
+/** A single attachment thumbnail/chip — used both while composing (with a
+ * remove button) and read-only in the pin detail view. */
+function AttachmentChip({ src, kind, fileName, onRemove, large = false }: {
+  src: string;
+  kind: 'image' | 'video' | 'file';
+  fileName: string;
+  onRemove?: () => void;
+  large?: boolean;
+}) {
+  const sizeClass = large ? 'w-[120px] h-[120px]' : 'w-16 h-16';
+  return (
+    <div className="relative">
+      {kind === 'image' ? (
+        <img src={src} alt="" className={`${sizeClass} rounded-lg object-cover cn-glass`} />
+      ) : kind === 'video' ? (
+        <video src={src} controls playsInline className={`${sizeClass} rounded-lg object-cover cn-glass`} />
+      ) : (
+        <a
+          href={src}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={fileName}
+          className={`${sizeClass} rounded-lg cn-glass flex flex-col items-center justify-center gap-1 px-1`}
+        >
+          <FileIcon className="w-4 h-4 cn-text-4" />
+          <span className="text-[9px] cn-text-4 truncate max-w-full">{fileName}</span>
+        </a>
+      )}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          title={`Remove ${fileName}`}
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 type CreateStep = 'details' | 'review' | 'success';
 
 /** Handles both "drop a new pin" and "edit an existing pin" — pass `editingPin`
@@ -684,7 +930,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
   suggestedTitle: string | null;
   category: AtlasPinCategory;
   onCategoryChange: (c: AtlasPinCategory) => void;
-  onPublish: (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string }) => Promise<AtlasPin>;
+  onPublish: (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string; attachmentIds?: string[] }) => Promise<AtlasPin>;
   onCancel: () => void;
   onDone: (pin: AtlasPin) => void;
 }) {
@@ -692,31 +938,52 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
   const [step, setStep] = useState<CreateStep>('details');
   const [title, setTitle] = useState(editingPin?.title ?? suggestedTitle ?? '');
   const [description, setDescription] = useState(editingPin?.description ?? '');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(
-    editingPin?.imageFileName ? hubService.getPublicFileUrl(hubSlug, editingPin.imageFileName) : null
-  );
-  const [imageRemoved, setImageRemoved] = useState(false);
+  const imagePreview = editingPin?.imageFileName ? hubService.getPublicFileUrl(hubSlug, editingPin.imageFileName) : null;
+  const [keptAttachments, setKeptAttachments] = useState<AtlasPinAttachment[]>(editingPin?.attachments ?? []);
+  const [pendingAttachments, setPendingAttachments] = useState<{ file: File; url: string; kind: 'image' | 'video' | 'file' }[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishedPin, setPublishedPin] = useState<AtlasPin | null>(null);
 
-  const imagePreviewRef = useRef<string | null>(null);
-  imagePreviewRef.current = imagePreview;
-  useEffect(() => () => { if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current); }, []);
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  pendingAttachmentsRef.current = pendingAttachments;
+  useEffect(() => () => { pendingAttachmentsRef.current.forEach(a => URL.revokeObjectURL(a.url)); }, []);
 
-  const handleImageSelect = (file: File) => {
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-    setImageRemoved(false);
+  const attachmentCount = keptAttachments.length + pendingAttachments.length;
+
+  const handleAttachmentsSelect = (files: FileList) => {
+    setAttachmentError(null);
+    const room = MAX_PIN_ATTACHMENTS - attachmentCount;
+    if (room <= 0) {
+      setAttachmentError(`Up to ${MAX_PIN_ATTACHMENTS} files per pin`);
+      return;
+    }
+    const accepted: { file: File; url: string; kind: 'image' | 'video' | 'file' }[] = [];
+    for (const file of Array.from(files)) {
+      if (accepted.length >= room) {
+        setAttachmentError(`Up to ${MAX_PIN_ATTACHMENTS} files per pin`);
+        break;
+      }
+      if (file.size > MAX_PIN_ATTACHMENT_SIZE) {
+        setAttachmentError(`${file.name} is over the 50MB limit`);
+        continue;
+      }
+      accepted.push({ file, url: URL.createObjectURL(file), kind: classifyAttachment(file.type, file.name) });
+    }
+    if (accepted.length) setPendingAttachments(prev => [...prev, ...accepted]);
   };
 
-  const clearImage = () => {
-    if (imagePreview) URL.revokeObjectURL(imagePreview);
-    setImageFile(null);
-    setImagePreview(null);
-    setImageRemoved(true);
+  const removePendingAttachment = (url: string) => {
+    setPendingAttachments(prev => {
+      const found = prev.find(a => a.url === url);
+      if (found) URL.revokeObjectURL(found.url);
+      return prev.filter(a => a.url !== url);
+    });
+  };
+
+  const removeKeptAttachment = (fileId: string) => {
+    setKeptAttachments(prev => prev.filter(a => a.fileId !== fileId));
   };
 
   const cat = ATLAS_CATEGORIES[category];
@@ -726,14 +993,13 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
     setPublishing(true);
     setError(null);
     try {
-      let imageFileName = editingPin?.imageFileName;
-      if (imageFile) {
-        const uploaded = await hubService.uploadFile(hubSlug, imageFile, true);
-        imageFileName = uploaded.name;
-      } else if (imageRemoved) {
-        imageFileName = undefined;
+      const imageFileName = editingPin?.imageFileName;
+      let attachmentIds = keptAttachments.map(a => a.fileId);
+      if (pendingAttachments.length) {
+        const uploaded = await hubService.uploadFiles(hubSlug, pendingAttachments.map(a => a.file), true);
+        attachmentIds = [...attachmentIds, ...uploaded.map(u => u.id)];
       }
-      const pin = await onPublish({ title: title.trim(), description: description.trim() || undefined, category, imageFileName });
+      const pin = await onPublish({ title: title.trim(), description: description.trim() || undefined, category, imageFileName, attachmentIds });
       if (isEditing) {
         onDone(pin);
       } else {
@@ -827,31 +1093,46 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
           </div>
           <div>
             <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
-              Photo <span className="font-normal cn-text-4">(optional)</span>
+              Attachments <span className="font-normal cn-text-4">(optional)</span>
             </label>
-            {imagePreview ? (
-              <div className="relative h-20 rounded-lg overflow-hidden">
-                <img src={imagePreview} alt="" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+            {attachmentCount > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {keptAttachments.map(att => (
+                  <AttachmentChip
+                    key={att.fileId}
+                    src={hubService.getPublicFileUrl(hubSlug, att.fileName) ?? ''}
+                    kind={classifyAttachment(att.mimeType, att.fileName)}
+                    fileName={att.fileName}
+                    onRemove={() => removeKeptAttachment(att.fileId)}
+                    large
+                  />
+                ))}
+                {pendingAttachments.map(att => (
+                  <AttachmentChip
+                    key={att.url}
+                    src={att.url}
+                    kind={att.kind}
+                    fileName={att.file.name}
+                    onRemove={() => removePendingAttachment(att.url)}
+                    large
+                  />
+                ))}
               </div>
-            ) : (
+            )}
+            {attachmentCount < MAX_PIN_ATTACHMENTS && (
               <label className="flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-colors">
-                <ImagePlus className="w-3.5 h-3.5 cn-text-4" />
-                <span className="text-xs cn-text-4">Add a photo</span>
+                <Paperclip className="w-3.5 h-3.5 cn-text-4" />
+                <span className="text-xs cn-text-4">Add photos, videos, or files</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  multiple
+                  accept={PIN_ATTACHMENT_ACCEPT}
                   className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); }}
+                  onChange={e => { if (e.target.files?.length) handleAttachmentsSelect(e.target.files); e.target.value = ''; }}
                 />
               </label>
             )}
+            {attachmentError && <p className="text-[11px] text-red-400 mt-1.5">{attachmentError}</p>}
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <button
@@ -882,6 +1163,9 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
               </div>
             </div>
             {description.trim() && <p className="text-xs leading-relaxed cn-text-3">{description.trim()}</p>}
+            {attachmentCount > 0 && (
+              <p className="text-[11px] cn-text-4">{attachmentCount} attachment{attachmentCount === 1 ? '' : 's'}</p>
+            )}
             <p className="cn-mono text-[10px] cn-text-4">{position[0].toFixed(4)}, {position[1].toFixed(4)}</p>
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
@@ -941,7 +1225,7 @@ interface AtlasScreenProps {
   // AtlasScreen is mounted at `/` with no "back" destination.
   onBack?: () => void;
   // Home mode only — powers the event-pin click-through into Feed and the
-  // Featured bell popover's post links. Neither renders without it.
+  // compose/profile deep links used by EventDetailModal.
   onNavigate?: (screen: string) => void;
 }
 
@@ -957,18 +1241,17 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   const [hubGeoCenter, setHubGeoCenter] = useState<[number, number] | null>(null);
 
   // Event pins (home mode) — EVENT-category posts with coordinates, rendered
-  // as their own marker layer (see AtlasMap's eventPins prop). Featured is
-  // fetched alongside for the bell popover, replacing Dashboard's hero carousel.
+  // as their own marker layer (see AtlasMap's eventPins prop). Featured
+  // content moved to the Notifications screen — see notificationMeta/
+  // NotificationsScreen.tsx — so it's no longer fetched here.
   const [eventPins, setEventPins] = useState<HubPost[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<HubPost | null>(null);
-  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
 
   useEffect(() => {
     if (!hubSlug || connectionStatus !== 'connected') return;
     hubService.getUpcomingEvents(hubSlug, 200)
       .then(events => setEventPins(events.filter(e => e.event_lat != null && e.event_lng != null)))
       .catch(() => {});
-    featuredService.getFeatured(hubSlug).then(setFeaturedItems).catch(() => {});
   }, [hubSlug, connectionStatus]);
 
   // Drop-here placement mode
@@ -1019,38 +1302,7 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   // the same box).
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
   const [savedOnly, setSavedOnly] = useState(false);
-
-  // Category-chip row horizontal scroll — chevrons show only on the side(s)
-  // there's still more to scroll toward, recomputed on scroll and on resize
-  // (a narrower column can suddenly make the row overflow).
-  const chipRowRef = useRef<HTMLDivElement>(null);
-  const [chipScroll, setChipScroll] = useState({ canLeft: false, canRight: false });
-
-  const updateChipScroll = useCallback(() => {
-    const el = chipRowRef.current;
-    if (!el) return;
-    setChipScroll({
-      canLeft: el.scrollLeft > 4,
-      canRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 4,
-    });
-  }, []);
-
-  useEffect(() => {
-    const el = chipRowRef.current;
-    if (!el) return;
-    updateChipScroll();
-    el.addEventListener('scroll', updateChipScroll, { passive: true });
-    const ro = new ResizeObserver(updateChipScroll);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener('scroll', updateChipScroll);
-      ro.disconnect();
-    };
-  }, [updateChipScroll]);
-
-  const scrollChips = (dir: 'left' | 'right') => {
-    chipRowRef.current?.scrollBy({ left: dir === 'left' ? -160 : 160, behavior: 'smooth' });
-  };
+  const [listScrolled, setListScrolled] = useState(false);
 
   // Saved/bookmarked pins — account-level (hub_user_preferences), shared
   // between the detail panel's bookmark toggle and the "Saved" filter chip
@@ -1272,7 +1524,7 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
    * own step logic in charge of what happens next — for creation it advances to a
    * 'success' step and calls `finishCreate` once the user is done there; edits skip
    * straight to `finishCreate` themselves. */
-  const handleFormSubmit = async (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string }): Promise<AtlasPin> => {
+  const handleFormSubmit = async (data: { title: string; description?: string; category: AtlasPinCategory; imageFileName?: string; attachmentIds?: string[] }): Promise<AtlasPin> => {
     if (!hubSlug) throw new Error('Not ready');
     if (editingPinId) {
       const pin = await atlasService.updatePin(hubSlug, editingPinId, data);
@@ -1375,135 +1627,11 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
     // HubLayout, no matter what changes there.
     <div className="lg:h-full lg:flex lg:flex-col">
       <div className="w-full max-w-6xl mx-auto px-4 sm:px-8 py-7 lg:flex-1 lg:min-h-0">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-7 items-start lg:items-stretch lg:h-full">
+        <div className="grid grid-cols-1 lg:grid-cols-[500px_1fr] gap-7 items-start lg:items-stretch lg:h-full">
 
-          {/* ── Left: back + header + search + map ── */}
-          {/* lg:min-h-0 lg:overflow-y-auto: now that the grid row is bounded
-              to real available height (not content), this column needs to be
-              able to shrink below its own natural content size and scroll
-              internally on a short lg+ window — otherwise its content (the
-              map alone is up to 560px) could visually spill past its cell
-              on a small laptop screen instead of the old behavior of just
-              letting the whole outer page grow/scroll to fit it. */}
-          <div className={rightPanelActive ? 'hidden lg:flex lg:flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto' : 'flex flex-col gap-5 min-w-0 lg:min-h-0 lg:overflow-y-auto'}>
-            {onBack && (
-              <button
-                onClick={onBack}
-                className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" /> Back
-              </button>
-            )}
-
-            <div className="flex items-center gap-3">
-              <span
-                className="w-11 h-11 cn-action flex items-center justify-center shadow-md shrink-0"
-                style={{ background: 'var(--cn-grad-atlas)' }}
-              >
-                <AtlasGlyph className="w-6 h-6 text-white" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
-                <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
-              </div>
-              {onNavigate && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className="relative hidden sm:flex w-10 h-10 rounded-xl items-center justify-center cn-surface-2 border cn-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
-                      aria-label="Featured"
-                    >
-                      <Bell className="w-4.5 h-4.5 cn-text-2" />
-                      {featuredItems.length > 0 && (
-                        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500" />
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-80 p-2 max-h-96 overflow-y-auto">
-                    <p className="text-xs font-semibold cn-text-3 uppercase tracking-wide px-2 py-1.5">Featured</p>
-                    {featuredItems.length === 0 ? (
-                      <p className="text-sm cn-text-4 px-2 py-4 text-center">Nothing featured right now</p>
-                    ) : featuredItems.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { if (item.type === 'post' && item.refId) onNavigate(`feed/${item.refId}`); }}
-                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors"
-                      >
-                        {item.mediaFileName && (
-                          <img src={hubService.getPublicFileUrl(hubSlug, item.mediaFileName) ?? ''} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
-                        )}
-                        <span className="flex-1 min-w-0 text-sm font-medium cn-text-1 truncate">{item.title}</span>
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              )}
-              <button
-                onClick={placingPin ? cancelPlacement : enterPlacingMode}
-                className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
-                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                <Plus className="w-4 h-4" />
-                {placingPin ? 'Placing…' : 'Drop a pin'}
-              </button>
-            </div>
-            <div className="flex items-center gap-2 sm:hidden">
-              <button
-                onClick={placingPin ? cancelPlacement : enterPlacingMode}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                <Plus className="w-4 h-4" />
-                {placingPin ? 'Placing…' : 'Drop a pin'}
-              </button>
-              {onNavigate && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      className="relative w-11 h-11 rounded-xl flex items-center justify-center cn-surface-2 border cn-border hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0"
-                      aria-label="Featured"
-                    >
-                      <Bell className="w-4.5 h-4.5 cn-text-2" />
-                      {featuredItems.length > 0 && (
-                        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-500" />
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-72 p-2 max-h-96 overflow-y-auto">
-                    <p className="text-xs font-semibold cn-text-3 uppercase tracking-wide px-2 py-1.5">Featured</p>
-                    {featuredItems.length === 0 ? (
-                      <p className="text-sm cn-text-4 px-2 py-4 text-center">Nothing featured right now</p>
-                    ) : featuredItems.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { if (item.type === 'post' && item.refId) onNavigate(`feed/${item.refId}`); }}
-                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-left transition-colors"
-                      >
-                        {item.mediaFileName && (
-                          <img src={hubService.getPublicFileUrl(hubSlug, item.mediaFileName) ?? ''} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
-                        )}
-                        <span className="flex-1 min-w-0 text-sm font-medium cn-text-1 truncate">{item.title}</span>
-                      </button>
-                    ))}
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-
-            {/* Location search */}
-            <LocationSearchInput
-              value={locationQuery}
-              onChange={setLocationQuery}
-              onSelect={handleLocationSelect}
-              hubCenter={hubGeoCenter}
-              historyKey={SEARCH_HISTORY_KEY}
-              inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-            {/* Map */}
-            <div className="relative rounded-2xl overflow-hidden border cn-border h-[260px] lg:h-[560px]">
+          {/* ── Right: map ── */}
+          <div className={rightPanelActive ? 'hidden lg:block min-w-0 lg:min-h-0 lg:order-2' : 'min-w-0 lg:min-h-0 lg:order-2'}>
+            <div className="relative aspect-square rounded-2xl overflow-hidden border cn-border">
               <div className="w-full h-full isolate cn-atlas-map">
                 <AtlasMap
                   ref={atlasMapRef}
@@ -1657,21 +1785,112 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
             </div>
           </div>
 
-          {/* ── Right: pin list or place detail ── */}
-          {/* lg:h-full (not sticky + a calc(100vh - Nrem) max-height): the
-              grid row above is now bounded to the real available height via
-              flex layout, so this column's cell is already exactly the
-              right size — it just needs to fill it and scroll its own
-              content, the same way the left column now does. Position:
-              sticky served a real purpose against the *old* layout (letting
-              this column "catch up" while an overflowing left column pushed
-              the whole page taller) but has nothing left to stick against
-              now that the page itself never grows past the viewport —
-              dropped rather than left in as dead/misleading code. Mobile
-              keeps normal flow (lg:-scoped, untouched). */}
-          <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-1 no-scrollbar">
-            {pendingPosition ? (
-              <PinFormPanel
+          {/* ── Left: back + header + search + pin list or place detail ── */}
+          {/* The column owns its scroll on lg+; the header stays pinned while
+              the pin list or detail content moves underneath it. */}
+          <div className="flex flex-col gap-5 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-1 no-scrollbar lg:order-1">
+            <div className="py-1 shrink-0">
+              <div className="flex flex-col gap-5">
+                {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="md:hidden inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> Back
+                  </button>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <span
+                    className="w-11 h-11 cn-action flex items-center justify-center shadow-md shrink-0"
+                    style={{ background: 'var(--cn-grad-atlas)' }}
+                  >
+                    <AtlasGlyph className="w-6 h-6 text-white" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
+                    <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
+                  </div>
+                  <button
+                    onClick={placingPin ? cancelPlacement : enterPlacingMode}
+                    className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
+                      placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    {placingPin ? 'Placing…' : 'Drop a pin'}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 sm:hidden">
+                  <button
+                    onClick={placingPin ? cancelPlacement : enterPlacingMode}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                      placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    {placingPin ? 'Placing…' : 'Drop a pin'}
+                  </button>
+                </div>
+
+                <LocationSearchInput
+                  value={locationQuery}
+                  onChange={setLocationQuery}
+                  onSelect={handleLocationSelect}
+                  hubCenter={hubGeoCenter}
+                  historyKey={SEARCH_HISTORY_KEY}
+                  inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setSavedOnly(s => !s)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                      savedOnly
+                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
+                        : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                    }`}
+                  >
+                    <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-current' : ''}`} />
+                    Saved
+                    {savedPinIds.length > 0 && <span className="text-[10px] opacity-70">{savedPinIds.length}</span>}
+                  </button>
+                  {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => {
+                    const selected = categoryFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setCategoryFilter(selected ? 'all' : key)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                          selected
+                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
+                            : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="text-xs cn-text-3">
+                  <b className="cn-mono cn-text-1">{filteredPins.length}</b> {filteredPins.length === 1 ? 'place' : 'places'} pinned
+                </span>
+              </div>
+            </div>
+
+            <div
+              className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto no-scrollbar pb-6 transform-gpu"
+              onScroll={event => setListScrolled(event.currentTarget.scrollTop > 0)}
+              style={{
+                maskImage: listScrolled
+                  ? 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
+                  : 'linear-gradient(to bottom, black 0%, black calc(100% - 24px), transparent 100%)',
+                WebkitMaskImage: listScrolled
+                  ? 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
+                  : 'linear-gradient(to bottom, black 0%, black calc(100% - 24px), transparent 100%)',
+              }}
+            >
+              {pendingPosition ? (
+                <PinFormPanel
                 position={pendingPosition}
                 hubSlug={hubSlug}
                 editingPin={editingPinId ? pins.find(p => p.id === editingPinId) : undefined}
@@ -1682,8 +1901,8 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 onCancel={cancelCreate}
                 onDone={finishCreate}
               />
-            ) : selectedPin ? (
-              <PlaceDetailPanel
+              ) : selectedPin ? (
+                <PlaceDetailPanel
                 pin={selectedPin}
                 hubSlug={hubSlug}
                 distanceLabel={distanceTo(selectedPin)}
@@ -1695,70 +1914,8 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 onToggleSave={() => toggleSavedPin(selectedPin.id)}
                 onEdit={() => startEditPin(selectedPin)}
               />
-            ) : (
-              <div className="flex flex-col gap-4">
-                {/* Category chips */}
-                {/* lg:sticky lg:top-0: pinned to the top of this column's own
-                    scroll container (the pin list scrolls underneath) so the
-                    row stays reachable without scrolling back up; still
-                    horizontally scrollable via the existing overflow-x-auto.
-                    No background — sits directly on the page, same as
-                    before. Mobile is untouched (no separate list-scroll
-                    container to stick within there). */}
-                <div className="lg:sticky lg:top-0 lg:z-10 relative">
-                  {chipScroll.canLeft && (
-                    <button
-                      onClick={() => scrollChips('left')}
-                      aria-label="Scroll categories left"
-                      className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
-                    </button>
-                  )}
-                  {chipScroll.canRight && (
-                    <button
-                      onClick={() => scrollChips('right')}
-                      aria-label="Scroll categories right"
-                      className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm"
-                    >
-                      <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
-                    </button>
-                  )}
-                  <div
-                    ref={chipRowRef}
-                    className={`flex gap-2 overflow-x-auto no-scrollbar scroll-smooth ${chipScroll.canLeft ? 'pl-7' : ''} ${chipScroll.canRight ? 'pr-7' : ''}`}
-                  >
-                  <button
-                    onClick={() => setSavedOnly(s => !s)}
-                    className={`flex-none flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                      savedOnly
-                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
-                        : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
-                    }`}
-                  >
-                    <Bookmark className={`w-3 h-3 ${savedOnly ? 'fill-blue-300' : ''}`} />
-                    Saved{savedPinIds.length > 0 ? ` (${savedPinIds.length})` : ''}
-                  </button>
-                  {(Object.entries(ATLAS_CATEGORIES) as [AtlasPinCategory, typeof ATLAS_CATEGORIES[AtlasPinCategory]][]).map(([key, cat]) => (
-                    <button
-                      key={key}
-                      onClick={() => setCategoryFilter(prev => prev === key ? 'all' : key)}
-                      className={`flex-none px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                        categoryFilter === key
-                          ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 border-blue-300 dark:border-blue-700'
-                          : 'cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15'
-                      }`}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                  </div>
-                </div>
-
-                <span className="text-xs cn-text-3">
-                  <b className="cn-mono cn-text-1">{filteredPins.length}</b> {filteredPins.length === 1 ? 'place' : 'places'} pinned
-                </span>
-
+              ) : (
+                <div className="flex flex-col gap-4">
                 {/* Place cards */}
                 <div className="flex flex-col gap-2">
                   {filteredPins.length === 0 ? (
@@ -1812,16 +1969,16 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                       <PlaceRow
                         key={pin.id}
                         pin={pin}
+                        hubSlug={hubSlug}
                         distanceLabel={distanceTo(pin)}
-                        canDelete={canDeletePin(pin)}
                         onSelect={() => handlePinSelect(pin)}
-                        onDelete={() => handleDeletePin(pin.id)}
                       />
                     ))
                   )}
                 </div>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

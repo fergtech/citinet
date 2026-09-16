@@ -26,6 +26,7 @@ import { HubManagementScreen } from './components/HubManagementScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
 import { ModLogScreen } from './components/ModLogScreen';
+import { NotificationsScreen } from './components/NotificationsScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
 import { AssistantScreen } from './components/AssistantScreen';
@@ -296,6 +297,11 @@ function HubModLogRoute() {
   return <ModLogScreen onBack={useSmartBack()} />;
 }
 
+function HubNotificationsRoute() {
+  const navigate = useNavigate();
+  return <NotificationsScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+}
+
 function HubSpacesRoute() {
   return <SpacesScreen onBack={useSmartBack()} />;
 }
@@ -371,7 +377,8 @@ function HubMySubmissionsRoute() {
 }
 
 function HubAtlasRoute() {
-  return <AtlasScreen onBack={useSmartBack()} />;
+  const navigate = useNavigate();
+  return <AtlasScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubInitiativesRoute() {
@@ -527,6 +534,7 @@ function HubModeRoutes() {
       <Route path="/hub-management" element={<HubGuard><HubLayout><HubManagementRoute /></HubLayout></HubGuard>} />
       <Route path="/discover" element={<HubGuard><HubLayout><HubDiscoverRoute /></HubLayout></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubLayout><HubModLogRoute /></HubLayout></HubGuard>} />
+      <Route path="/notifications" element={<HubGuard><HubLayout><HubNotificationsRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces/:spaceSlug" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
       <Route path="/notes" element={<HubGuard><HubLayout><HubNotesRoute /></HubLayout></HubGuard>} />

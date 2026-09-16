@@ -2,6 +2,13 @@ import { MapPin, AlertTriangle, Ban, Building2, Star, HandHeart, Sprout, type Lu
 
 export type AtlasPinCategory = 'meetup' | 'safety' | 'avoid' | 'infrastructure' | 'poi' | 'aid' | 'green';
 
+export interface AtlasPinAttachment {
+  fileId: string;
+  fileName: string;
+  mimeType?: string;
+  size: number;
+}
+
 export interface AtlasPin {
   id: string;
   hubSlug: string;
@@ -12,6 +19,9 @@ export interface AtlasPin {
   description?: string;
   category: AtlasPinCategory;
   imageFileName?: string;
+  /** Extra media/files attached at creation or edit time — photos, videos, or
+   * other documents beyond the single cover photo in `imageFileName`. */
+  attachments?: AtlasPinAttachment[];
   createdAt: string;
 }
 

@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import {
-  Home, Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
+  Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, ArrowRightLeft, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
-  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, GripVertical,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, GripVertical, Bell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -16,10 +16,11 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, s
 import { CSS } from '@dnd-kit/utilities';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { hubService } from '../services/hubService';
-import { AvatarFallback, VendorAvatarFallback, MoreGlyph } from './icons';
+import { AvatarFallback, VendorAvatarFallback, MoreGlyph, AtlasGlyph } from './icons';
 import { marketplaceService } from '../services/marketplaceService';
 import { aiService } from '../services/aiService';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
+import { useUnreadNotificationsCount } from '../hooks/useUnreadNotificationsCount';
 import { notificationsService } from '../services/notificationsService';
 import type { NotificationFeature } from '../services/notificationsService';
 import { registryService } from '../services/registryService';
@@ -41,8 +42,9 @@ import type { HubVendor } from '../types/hub';
 // Screens pinned to the desktop sidebar/dock out of the box — users can repin
 // and reorder from the "More" overlay's Edit mode, synced to the account via
 // updateUserPreferences (see the reconciliation effect in HubLayout below).
-// 'atlas' dropped from the default — Home (`/`) now IS Atlas, so a separate
-// pinned nav slot for it would just duplicate the Home icon's destination.
+// 'atlas' dropped from the default — the fixed Atlas/home icon (Home's old
+// slot, now relabeled) already covers `/`, so a separate pinned nav slot for
+// it would just be a duplicate destination.
 const DEFAULT_PINNED_NAV = ['feed', 'messages', 'marketplace', 'toolkit'];
 
 type NavTile = { Icon: React.ElementType; label: string; screen: string; gradient: string };
@@ -146,6 +148,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
 
   const hubSlug = currentHub?.slug ?? '';
   const { counts: notifCounts, clearBadge } = useNotificationCounts(hubSlug);
+  const { count: unreadNotifCount } = useUnreadNotificationsCount(hubSlug);
 
   const showNav = pathname !== '/onboard';
 
@@ -634,6 +637,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           </>
         )}
         <button
+          onClick={() => navigate(hubPath('/notifications'))}
+          className="relative p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
+          title="Notifications"
+        >
+          <Bell className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
+          {unreadNotifCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+          )}
+        </button>
+        <button
           onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
           className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
           title="Update tunnel URL"
@@ -744,6 +757,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               <div className="p-2 space-y-0.5">
+                <button
+                  onClick={() => { setShowAccountMenu(false); navigate(hubPath('/notifications')); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                >
+                  <Bell className="w-4 h-4 text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span className="text-sm text-slate-700 dark:text-zinc-300 flex-1">Notifications</span>
+                  {unreadNotifCount > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </span>
+                  )}
+                </button>
                 {currentUser?.hubUserId && (
                   <button
                     onClick={() => { setShowAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}
@@ -807,10 +832,10 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
         <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-white/85 dark:bg-black/62 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60 items-center px-4 gap-1">
           <button
             onClick={() => navigate(hubPath('/'))}
-            title="Home"
+            title="Atlas"
             className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
-            <Home className="w-5 h-5" />
+            <AtlasGlyph className="w-5 h-5" />
           </button>
           {desktopNavItems.map(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
@@ -898,13 +923,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
         <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-white/85 dark:bg-black/62 backdrop-blur-xl border-r border-slate-200/70 dark:border-zinc-800/60 group">
           <button
             onClick={() => navigate(hubPath('/'))}
-            title="Home"
+            title="Atlas"
             className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
-              <Home className="w-5 h-5" />
+              <AtlasGlyph className="w-5 h-5" />
             </span>
-            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Home</span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Atlas</span>
           </button>
           {desktopNavItems.map(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
@@ -1022,6 +1047,16 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 <div className={`w-1.5 h-1.5 rounded-full ${dotColor} ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
                 <span className="text-[9px] font-medium text-slate-600 dark:text-zinc-300 whitespace-nowrap">{statusLabel}</span>
               </div>
+              <button
+                onClick={() => navigate(hubPath('/notifications'))}
+                className="relative p-1 rounded-lg hover:bg-slate-100/80 dark:hover:bg-zinc-800/80 transition-colors shrink-0"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+                )}
+              </button>
             </div>
             {connectionStatus === 'unreachable' && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
@@ -1107,13 +1142,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       {/* ═══ MOBILE BOTTOM DOCK ═══ */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/85 dark:bg-black/64 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60">
         <div className="flex items-stretch h-16 px-1">
-          {/* Home */}
+          {/* Atlas — the app's home screen */}
           <button
             onClick={() => navigate(hubPath('/'))}
             className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
-            <Home className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-none">Home</span>
+            <AtlasGlyph className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Atlas</span>
           </button>
           {/* Feed · Search (from DOCK_PRIORITY_SCREENS, Search inserted after Feed) */}
           {dockItems.flatMap(app => {
@@ -1223,6 +1258,18 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               <div className="p-3 space-y-1">
+                <button
+                  onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath('/notifications')); }}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800 text-left"
+                >
+                  <Bell className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                  <span className="text-sm text-slate-800 dark:text-zinc-200 flex-1">Notifications</span>
+                  {unreadNotifCount > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                    </span>
+                  )}
+                </button>
                 {currentUser?.hubUserId && (
                   <button
                     onClick={() => { setShowMobileAccountMenu(false); navigate(hubPath(`/profile/${currentUser.hubUserId}`)); }}

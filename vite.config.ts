@@ -142,7 +142,7 @@ export default defineConfig({
         './src/app/App.tsx',
         './src/app/context/HubContext.tsx',
         './src/app/services/hubService.ts',
-        './src/app/components/Dashboard.tsx',
+        './src/app/components/AtlasScreen.tsx',
         './src/app/components/WelcomeScreen.tsx',
       ],
     },
