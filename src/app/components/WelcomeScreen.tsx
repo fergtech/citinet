@@ -48,15 +48,15 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
         {/* Headline */}
         <h1 className="text-white mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
-          Your community.
+          The Worl-Wide-Web.
           <br />
-          <span className="text-white/90 font-medium">Your internet.</span>
+          <span className="text-white/90 font-medium">Made local (again).</span>
         </h1>
 
         {/* Subtext */}
         <p className="text-white/90 mb-10 font-light leading-relaxed text-base max-w-md">
-          Votes, announcements, and shared files — actually kept somewhere,<br />
-          not buried in a group chat.
+          Store files. Chat. Connect with others on your locally-owned and operated network.<br />
+          No Big Tech platforms. No middleman.
         </p>
 
         {/* Two Path Options */}
