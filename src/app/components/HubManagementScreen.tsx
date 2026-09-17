@@ -23,7 +23,15 @@ interface HubManagementScreenProps {
 
 export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const { currentHub, currentUser, updateLocation, updateDescription, updateHubIcon, refreshStatus } = useHub();
-  const [activeTab, setActiveTab] = useState<'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach' | 'backup' | 'system'>('info');
+  type Tab = 'info' | 'members' | 'featured' | 'apps' | 'requests' | 'ai' | 'reach' | 'backup' | 'system';
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    // Set by NotificationsScreen for a join_request notification (see
+    // utils/notificationMeta.ts's notificationTarget) — read once and clear
+    // so a later, non-deep-linked visit doesn't keep jumping to Requests.
+    const deepLinkTab = sessionStorage.getItem('citinet-deeplink-hub-tab');
+    if (deepLinkTab) sessionStorage.removeItem('citinet-deeplink-hub-tab');
+    return (deepLinkTab as Tab) || 'info';
+  });
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -965,7 +973,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       onChange={e => setDescriptionValue(e.target.value)}
                       rows={3}
                       placeholder="Describe your hub…"
-                      className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-lg
+                      className="w-full p-2.5 border-2 border-slate-200 dark:border-zinc-700 rounded-field
                         text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-sm
                         focus:border-blue-500 focus:outline-none transition-colors resize-none"
                     />
@@ -2135,7 +2143,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                               onChange={e => setRequestNote(prev => ({ ...prev, [req.id]: e.target.value }))}
                               rows={2}
                               placeholder="Add a note for the requester…"
-                              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-zinc-200 placeholder-slate-300 dark:placeholder-zinc-600 focus:outline-none focus:border-indigo-400 resize-none"
+                              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field px-3 py-2 text-sm text-slate-800 dark:text-zinc-200 placeholder-slate-300 dark:placeholder-zinc-600 focus:outline-none focus:border-indigo-400 resize-none"
                             />
                           </div>
 

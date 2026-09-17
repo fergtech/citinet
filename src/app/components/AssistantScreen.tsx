@@ -588,7 +588,7 @@ export function AssistantScreen({ onBack }: AssistantScreenProps) {
                 onKeyDown={handleKey}
                 placeholder="Ask anything about your community…"
                 rows={1}
-                className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400 dark:focus:border-violet-600 transition-all overflow-hidden"
+                className="flex-1 resize-none rounded-field border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-400 dark:focus:border-violet-600 transition-all overflow-hidden"
                 disabled={thinking || streaming}
               />
               {thinking || streaming ? (

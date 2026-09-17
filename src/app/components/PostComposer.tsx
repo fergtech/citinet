@@ -291,7 +291,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
           onChange={e => setBody(e.target.value)}
           rows={2}
           placeholder="Ask your neighbors something…"
-          className={`${fieldCls} resize-none`}
+          className={`${fieldCls} resize-none !rounded-field`}
         />
         <div className="flex flex-col gap-2">
           {options.map((opt, i) => (
@@ -402,7 +402,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
           onChange={e => setBody(e.target.value)}
           rows={2}
           placeholder="What's the event? Add details for your neighbors…"
-          className={`${fieldCls} resize-none`}
+          className={`${fieldCls} resize-none !rounded-field`}
         />
         <input
           type="datetime-local"

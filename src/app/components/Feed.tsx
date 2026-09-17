@@ -729,7 +729,7 @@ export function PostDetailView({
                     value={editBody}
                     onChange={e => setEditBody(e.target.value)}
                     rows={4}
-                    className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    className="w-full cn-surface-2 border cn-border rounded-field px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     placeholder="Caption (optional)"
                   />
                 </div>
@@ -994,7 +994,7 @@ export function PostDetailView({
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                 placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment… (Enter to send)'}
                 rows={1}
-                className="flex-1 cn-surface-2 border cn-border rounded-xl px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                className="flex-1 cn-surface-2 border cn-border rounded-field px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               />
               <button type="submit" disabled={sending || !replyText.trim()}
                 className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
@@ -1195,7 +1195,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
               value={body}
               onChange={e => setBody(e.target.value)}
               rows={5}
-              className="w-full cn-surface-2 border cn-border rounded-xl px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              className="w-full cn-surface-2 border cn-border rounded-field px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
 
             {mediaPreview ? (
@@ -1432,7 +1432,7 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
               <label className="block text-xs font-medium cn-text-3 mb-1.5">Question <span className="text-indigo-500 dark:text-indigo-400">*</span></label>
               <textarea value={question} onChange={e => setQuestion(e.target.value)} rows={2}
                 placeholder="What should the community decide?"
-                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-indigo-400 resize-none" />
+                className="w-full cn-surface-2 border cn-border rounded-field px-3 py-2.5 text-sm cn-text-1 placeholder-zinc-500 focus:outline-none focus:border-indigo-400 resize-none" />
             </div>
 
             <div>

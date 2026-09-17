@@ -2,9 +2,17 @@ import { hubService } from './hubService';
 
 export type NotificationFeature = 'feed' | 'messages' | 'hub_management';
 export interface NotificationCounts { feed: number; messages: number; hub_management: number }
+
+// hub_notifications.type is a plain VARCHAR(50), not a DB-enforced enum, so a
+// value outside these 6 is a real possibility (not just a type-checker
+// formality) — every consumer must fall back gracefully, never assume one of
+// these. Mirrors citinet-mobile's own NotificationType (lib/api/types.ts) —
+// same shared backend, same 6 types.
+export type NotificationType = 'message' | 'reply' | 'space_invite' | 'initiative_invite' | 'account_approved' | 'join_request';
+
 export interface UnreadNotification {
   id: number;
-  type: string;
+  type: NotificationType;
   actor_id: string | null;
   actor_username: string | null;
   ref_id: string | null;
@@ -46,6 +54,19 @@ class NotificationsService {
       method: 'POST',
       headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ feature }),
+    }).catch(() => {});
+  }
+
+  /** Marks a single notification row read by id — used by the Notifications
+   * screen, where each row is dismissible on its own tap rather than only in
+   * bulk per feature (unlike markRead above). Same endpoint citinet-mobile's
+   * notifications screen already calls. */
+  async markById(hubSlug: string, id: number): Promise<void> {
+    const auth = this.getAuth(hubSlug);
+    if (!auth?.token) return;
+    await fetch(`${auth.baseUrl}/api/notifications/${id}/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${auth.token}` },
     }).catch(() => {});
   }
 

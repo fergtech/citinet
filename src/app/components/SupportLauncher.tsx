@@ -164,7 +164,7 @@ export function SupportLauncher({ variant = 'sidebar', align = 'start' }: Suppor
                   value={text}
                   onChange={e => setText(e.target.value)}
                   placeholder={activeKindCfg.placeholder}
-                  className="w-full text-sm text-slate-800 dark:text-zinc-200 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-400 dark:placeholder:text-zinc-500"
+                  className="w-full text-sm text-slate-800 dark:text-zinc-200 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-400 dark:placeholder:text-zinc-500"
                 />
                 <div className="flex gap-2">
                   <button
