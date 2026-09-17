@@ -12,7 +12,10 @@ interface SearchHistoryItem {
 interface LocationSearchInputProps {
   value: string;
   onChange: (v: string) => void;
-  onSelect: (result: { lat: number; lng: number; label: string }) => void;
+  /** `pinId` is set only when the picked result came from `localMatches` below
+   * — an unambiguous "this is that exact, already-pinned spot" signal, as
+   * opposed to a live geocode result that merely happens to land nearby. */
+  onSelect: (result: { lat: number; lng: number; label: string; pinId?: string }) => void;
   hubCenter?: [number, number] | null;
   historyKey: string;
   placeholder?: string;
@@ -20,6 +23,13 @@ interface LocationSearchInputProps {
   /** Override the input's own surface styling to match the caller's context
    * (defaults to Atlas's light/dark-dual style). */
   inputClassName?: string;
+  /** Already-known locations (typically this hub's whole shared Atlas pin
+   * list — anyone's, not just the current user's own) surfaced as their own
+   * "Already on Atlas" section above the live geocode results, filtered by
+   * the same typed query — lets someone reuse an exact existing spot with one
+   * click instead of re-geocoding a nearby point that then has to be matched
+   * up after the fact. */
+  localMatches?: { id: string; label: string; sublabel?: string; lat: number; lng: number }[];
 }
 
 const DEFAULT_INPUT_CLASSES = 'w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -27,7 +37,7 @@ const DEFAULT_INPUT_CLASSES = 'w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-zinc-
 /** Reusable Nominatim-backed location search — the same search bar Atlas uses
  * to place pins, shared here so any composer can capture a real, precise
  * coordinate the same way. */
-export function LocationSearchInput({ value, onChange, onSelect, hubCenter, historyKey, placeholder, className, inputClassName }: LocationSearchInputProps) {
+export function LocationSearchInput({ value, onChange, onSelect, hubCenter, historyKey, placeholder, className, inputClassName, localMatches }: LocationSearchInputProps) {
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -119,6 +129,17 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
     onSelect({ lat: item.lat, lng: item.lng, label: item.displayName });
   };
 
+  const filteredLocalMatches = value.trim() && localMatches
+    ? localMatches.filter(m => m.label.toLowerCase().includes(value.trim().toLowerCase())).slice(0, 5)
+    : [];
+
+  const handleLocalMatchClick = (item: { id: string; label: string; lat: number; lng: number }) => {
+    setShowDropdown(false);
+    setResults([]);
+    onChange(item.label);
+    onSelect({ lat: item.lat, lng: item.lng, label: item.label, pinId: item.id });
+  };
+
   return (
     <div ref={containerRef} className={`relative ${className ?? ''}`}>
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -139,7 +160,7 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
         type="text"
         value={value}
         onChange={e => handleInput(e.target.value)}
-        onFocus={() => { if (history.length > 0 || results.length > 0) setShowDropdown(true); }}
+        onFocus={() => { if (history.length > 0 || results.length > 0 || filteredLocalMatches.length > 0) setShowDropdown(true); }}
         placeholder={placeholder ?? 'Search for a place, address, or landmark…'}
         className={inputClassName ?? DEFAULT_INPUT_CLASSES}
       />
@@ -171,6 +192,30 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
             </>
           )}
 
+          {value && filteredLocalMatches.length > 0 && (
+            <>
+              <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wide">
+                <MapPin className="w-3 h-3" /> Already on Atlas
+              </div>
+              {filteredLocalMatches.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleLocalMatchClick(item)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-zinc-800 text-left transition-colors border-b border-slate-100 dark:border-zinc-800/50 last:border-0"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.label}</p>
+                    {item.sublabel && <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">{item.sublabel}</p>}
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+
           {value && results.length > 0 && results.map(result => (
             <button
               key={result.place_id}
@@ -192,7 +237,7 @@ export function LocationSearchInput({ value, onChange, onSelect, hubCenter, hist
             </button>
           ))}
 
-          {value && !loading && results.length === 0 && (
+          {value && !loading && results.length === 0 && filteredLocalMatches.length === 0 && (
             <div className="px-3 py-6 text-center text-sm text-slate-400 dark:text-zinc-500">
               No places found
             </div>

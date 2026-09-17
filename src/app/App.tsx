@@ -7,7 +7,6 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { NodeDiscoveryScreen } from './components/NodeDiscoveryScreen';
 import { NodeCreationWizard } from './components/NodeCreationWizard';
 import { NodeEntryFlow } from './components/NodeEntryFlow';
-import { Dashboard } from './components/Dashboard';
 import { Feed } from './components/Feed';
 import { NetworkScreen } from './components/NetworkScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
@@ -27,6 +26,7 @@ import { HubManagementScreen } from './components/HubManagementScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { DiscoverScreen } from './components/DiscoverScreen';
 import { ModLogScreen } from './components/ModLogScreen';
+import { NotificationsScreen } from './components/NotificationsScreen';
 import { SpacesScreen } from './components/SpacesScreen';
 import { NotesScreen } from './components/NotesScreen';
 import { AssistantScreen } from './components/AssistantScreen';
@@ -179,7 +179,7 @@ function HubOnboardRoute() {
 
 function HubDashboardRoute() {
   const navigate = useNavigate();
-  const { currentHub, currentUser, loading } = useHub();
+  const { currentHub, loading } = useHub();
   const hubSlug = getSubdomain() ?? '';
 
   // Redirect to onboard if user hasn't completed registration for this hub
@@ -194,14 +194,13 @@ function HubDashboardRoute() {
     navigate(hubPath(`/${screen}`));
   };
 
-  const userName = currentUser?.displayName || currentUser?.username || 'Neighbor';
   const nodeName = currentHub?.name || hubSlug || 'Community Hub';
 
   if (typeof window !== 'undefined') {
     sessionStorage.setItem('citinet-node-name', nodeName);
   }
 
-  return <Dashboard userName={userName} onNavigate={handleNavigate} />;
+  return <AtlasScreen onNavigate={handleNavigate} />;
 }
 
 function HubPendingApprovalRoute() {
@@ -298,6 +297,11 @@ function HubModLogRoute() {
   return <ModLogScreen onBack={useSmartBack()} />;
 }
 
+function HubNotificationsRoute() {
+  const navigate = useNavigate();
+  return <NotificationsScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+}
+
 function HubSpacesRoute() {
   return <SpacesScreen onBack={useSmartBack()} />;
 }
@@ -373,7 +377,8 @@ function HubMySubmissionsRoute() {
 }
 
 function HubAtlasRoute() {
-  return <AtlasScreen onBack={useSmartBack()} />;
+  const navigate = useNavigate();
+  return <AtlasScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
 function HubInitiativesRoute() {
@@ -529,6 +534,7 @@ function HubModeRoutes() {
       <Route path="/hub-management" element={<HubGuard><HubLayout><HubManagementRoute /></HubLayout></HubGuard>} />
       <Route path="/discover" element={<HubGuard><HubLayout><HubDiscoverRoute /></HubLayout></HubGuard>} />
       <Route path="/mod-log" element={<HubGuard><HubLayout><HubModLogRoute /></HubLayout></HubGuard>} />
+      <Route path="/notifications" element={<HubGuard><HubLayout><HubNotificationsRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
       <Route path="/spaces/:spaceSlug" element={<HubGuard><HubLayout><HubSpacesRoute /></HubLayout></HubGuard>} />
       <Route path="/notes" element={<HubGuard><HubLayout><HubNotesRoute /></HubLayout></HubGuard>} />

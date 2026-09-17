@@ -683,7 +683,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                         onChange={e => set({ hubDescription: e.target.value })}
                         placeholder="Tell neighbors what this hub is for…"
                         rows={3}
-                        className="w-full p-3 border border-slate-200 dark:border-white/10 rounded-lg
+                        className="w-full p-3 border border-slate-200 dark:border-white/10 rounded-field
                           text-slate-900 dark:text-white bg-white dark:bg-zinc-800 text-[13.5px]
                           focus:border-blue-500 focus:outline-none transition-colors resize-none"
                       />

@@ -99,6 +99,11 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* Cards/buttons/pills lean into --radius's large, "mega rounded" corners on
+     purpose, but a multiline text field reads as an input, not a card —
+     rounded-field halves it for every <textarea> in the app instead of each
+     one reaching for its own one-off radius value. */
+  --radius-field: calc(var(--radius) / 2);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

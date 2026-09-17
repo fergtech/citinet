@@ -2,7 +2,7 @@ import {
   Store, Newspaper,
   Package, Radio, ScrollText, NotebookPen,
 } from 'lucide-react';
-import { AtlasGlyph, FilesGlyph, MessagesGlyph, InitiativesGlyph, SpacesGlyph, SearchGlyph } from '../components/icons';
+import { FilesGlyph, MessagesGlyph, InitiativesGlyph, SpacesGlyph, SearchGlyph } from '../components/icons';
 import type { NotificationFeature } from '../services/notificationsService';
 
 // Tile colors are a small, coordinated palette in the brand's blue/indigo/teal
@@ -20,7 +20,10 @@ export const APP_TILES: { Icon: React.ElementType; label: string; screen: string
   { Icon: SpacesGlyph,   label: 'Spaces',      screen: 'spaces',      gradient: CN_TILE_INDIGO },
   { Icon: Newspaper,     label: 'Feed',        screen: 'feed',        gradient: CN_TILE_BLUE,     notifyFeature: 'feed' },
   { Icon: SearchGlyph,   label: 'Discover',    screen: 'discover',    gradient: CN_TILE_SKY },
-  { Icon: AtlasGlyph,    label: 'Atlas',       screen: 'atlas',       gradient: CN_TILE_TEAL },
+  // No separate 'Atlas' tile — Home (`/`) already IS Atlas, so a second nav
+  // entry pointing at the same screen would just be a duplicate. The /atlas
+  // route itself still exists for deep links (event locations, "Open in
+  // Atlas" buttons, etc.), just not as its own nav icon.
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: CN_TILE_INDIGO },
   { Icon: FilesGlyph,    label: 'Files',       screen: 'files',       gradient: CN_TILE_SLATE },
   { Icon: InitiativesGlyph, label: 'Initiatives', screen: 'initiatives', gradient: CN_TILE_BLUE },

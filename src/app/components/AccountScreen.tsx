@@ -547,7 +547,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
           <div>
             <label className="block text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1.5">Bio</label>
             <textarea value={bio} onChange={e => { setBio(e.target.value); setIsDirty(true); }} maxLength={2600} rows={2}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
+              className="w-full px-3.5 py-2.5 rounded-field border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:outline-none transition-shadow resize-none"
               placeholder="A short intro about you (2600 chars)" />
             <p className="text-right text-xs text-slate-400 dark:text-zinc-500 mt-0.5">{bio.length}/2600</p>
           </div>

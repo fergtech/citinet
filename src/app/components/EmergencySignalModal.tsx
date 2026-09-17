@@ -71,7 +71,7 @@ export function EmergencySignalModal({ isOpen, onClose }: EmergencySignalModalPr
               rows={2}
               maxLength={280}
               placeholder="Add a message (optional)…"
-              className="w-full px-3.5 py-2.5 rounded-xl cn-surface-2 border cn-border cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:border-red-400 focus:outline-none transition-colors resize-none"
+              className="w-full px-3.5 py-2.5 rounded-field cn-surface-2 border cn-border cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 text-sm focus:border-red-400 focus:outline-none transition-colors resize-none"
             />
 
             {error && <p className="text-sm text-red-500 dark:text-red-400 text-center">{error}</p>}

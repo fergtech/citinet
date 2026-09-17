@@ -216,7 +216,7 @@ function CreateSpaceModal({ hubSlug, onCreated, onClose }: { hubSlug: string; on
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">Description <span className="text-slate-400 dark:text-zinc-600">(optional)</span></label>
             <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="What is this space about?"
-              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
+              className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-2">Visibility</label>
@@ -468,7 +468,7 @@ function ComposePost({ hubSlug, spaceSlug, onPosted }: { hubSlug: string; spaceS
   return (
     <form onSubmit={submit} className="w-full max-w-2xl mx-auto cn-surface-2 border cn-border rounded-2xl p-4 space-y-3">
       <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Share something with this space…" rows={3}
-        className="w-full cn-surface border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
+        className="w-full cn-surface border cn-border rounded-field px-3 py-2.5 text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder-zinc-500 focus:outline-none focus:border-blue-500 resize-none" />
       {mediaPreview && (
         <div className="relative rounded-xl overflow-hidden">
           {isVid ? <video src={mediaPreview} controls className="w-full max-h-48 object-contain bg-black" /> : <img src={mediaPreview} alt="Preview" className="w-full max-h-48 object-cover" />}
@@ -1624,7 +1624,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             <div>
               <label className="block text-xs font-medium cn-text-3 mb-1">Description</label>
               <textarea value={settingsDesc} onChange={e => setSettingsDesc(e.target.value)} rows={3}
-                className="w-full cn-surface-2 border cn-border rounded-xl px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-blue-500 resize-none" />
+                className="w-full cn-surface-2 border cn-border rounded-field px-3 py-2.5 text-sm cn-text-1 focus:outline-none focus:border-blue-500 resize-none" />
             </div>
             <div>
               <label className="block text-xs font-medium cn-text-3 mb-2">Visibility</label>

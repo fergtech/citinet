@@ -669,7 +669,7 @@ export function PostDetailModal({
                           value={editBody}
                           onChange={e => setEditBody(e.target.value)}
                           rows={4}
-                          className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                          className="w-full bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                           placeholder="Caption (optional)"
                         />
                       </div>
@@ -1004,7 +1004,7 @@ export function PostDetailModal({
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
                     placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Write a reply… (Enter to send)'}
                     rows={1}
-                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="flex-1 bg-slate-50 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                   />
                   <button
                     type="submit"

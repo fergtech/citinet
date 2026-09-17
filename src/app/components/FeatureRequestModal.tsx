@@ -99,7 +99,7 @@ export function FeatureRequestModal({ hubSlug, onClose }: FeatureRequestModalPro
                   onChange={e => setProblem(e.target.value)}
                   rows={3}
                   placeholder="Describe the friction or gap you're running into..."
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-indigo-500/60 resize-none transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-field px-3 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-indigo-500/60 resize-none transition-colors"
                 />
               </div>
 
@@ -127,7 +127,7 @@ export function FeatureRequestModal({ hubSlug, onClose }: FeatureRequestModalPro
                   onChange={e => setExpectedOutcome(e.target.value)}
                   rows={2}
                   placeholder="Describe the outcome if this feature existed..."
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-indigo-500/60 resize-none transition-colors"
+                  className="w-full bg-white/5 border border-white/10 rounded-field px-3 py-2.5 text-sm text-white placeholder-white/25 focus:outline-none focus:border-indigo-500/60 resize-none transition-colors"
                 />
               </div>
 
