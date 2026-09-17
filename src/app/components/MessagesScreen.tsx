@@ -2258,7 +2258,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                     placeholder="Type a message…"
                     title="Message input"
                     rows={1}
-                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
+                    className="block w-full pl-3 pr-16 py-2 bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-field text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all resize-none max-h-[100px] min-h-[38px] leading-tight"
                   />
                   {/* Inline icon cluster, paired together on a shared 24x24 grid — emoji
                       is functional, mic is visible-but-disabled. GIF lives in the "+"

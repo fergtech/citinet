@@ -135,7 +135,7 @@ function NewInitiativeModal({ onClose, onSubmit, mySpaces, initialSpaceId }: {
       </div>
       <div>
         <label className={fieldLabelClass}>What is this project about?</label>
-        <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={3} placeholder="Describe the goal…" className={`${fieldClass} resize-none`} />
+        <textarea value={goal} onChange={e => setGoal(e.target.value)} rows={3} placeholder="Describe the goal…" className={`${fieldClass} resize-none !rounded-field`} />
       </div>
       {mySpaces.length > 0 && (
         <div>
@@ -947,7 +947,7 @@ function TaskTrackerView({
           onChange={e => setDraft(e.target.value)}
           placeholder="What's the latest?"
           rows={2}
-          className="w-full px-3 py-2 rounded-lg cn-surface-2 text-sm cn-text-1 placeholder:cn-text-4 outline-none resize-none"
+          className="w-full px-3 py-2 rounded-field cn-surface-2 text-sm cn-text-1 placeholder:cn-text-4 outline-none resize-none"
         />
         <button
           onClick={postNote}

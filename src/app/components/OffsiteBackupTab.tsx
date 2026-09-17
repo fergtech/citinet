@@ -304,7 +304,7 @@ export function OffsiteBackupTab({ hubSlug }: OffsiteBackupTabProps) {
                 onChange={e => setCustomEnvText(e.target.value)}
                 rows={3}
                 placeholder={'AZURE_ACCOUNT_NAME=...\nAZURE_ACCOUNT_KEY=...'}
-                className={`${inputClass} font-mono`}
+                className={`${inputClass} font-mono !rounded-field`}
               />
             </div>
           </div>

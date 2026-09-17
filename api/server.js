@@ -534,11 +534,25 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_atlas_pins ADD COLUMN IF NOT EXISTS image_file_name TEXT`,
     );
+    await client.query(
+      `ALTER TABLE hub_atlas_pins ADD COLUMN IF NOT EXISTS event_post_id UUID REFERENCES hub_posts(id) ON DELETE SET NULL`,
+    );
     await client.query(`
       CREATE TABLE IF NOT EXISTS hub_atlas_pin_attachments (
         pin_id  UUID REFERENCES hub_atlas_pins(id) ON DELETE CASCADE,
         file_id UUID REFERENCES hub_files(id) ON DELETE CASCADE,
         PRIMARY KEY (pin_id, file_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hub_atlas_pin_replies (
+        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        pin_id            UUID REFERENCES hub_atlas_pins(id) ON DELETE CASCADE,
+        author_id         UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        body              TEXT NOT NULL,
+        reply_to_reply_id UUID REFERENCES hub_atlas_pin_replies(id) ON DELETE SET NULL,
+        reply_to_user_id  UUID REFERENCES hub_users(id) ON DELETE SET NULL,
+        created_at        TIMESTAMPTZ DEFAULT NOW()
       )
     `);
     await client.query(`
@@ -3261,6 +3275,27 @@ app.post('/api/files', authenticate, (req, res) => {
     let filename = info.filename || 'upload';
     let mimeType = info.mimeType || 'application/octet-stream';
 
+    // React Native's own FormData polyfill (Libraries/Network/FormData.js,
+    // encodeFilename()) percent-encodes the filename per RFC 2183 before
+    // sending it, so a name with a space or other special character from
+    // the mobile app arrives here still percent-encoded (e.g.
+    // "415%20Halyard%20Ct%204.m4a"). busboy correctly does NOT decode a
+    // plain `filename=` parameter (only `filename*=` is percent-encoded by
+    // spec), so left as-is this got stored verbatim — permanently
+    // mismatching every other route below, which look the file up by this
+    // exact stored name after Express's own (single) decode of the URL. A
+    // browser's FormData does not do this, so only accept the decode when
+    // re-encoding it recovers the exact original string — that both rules
+    // out a decode failure (a literal '%' not followed by two hex digits)
+    // and avoids "fixing" a name a browser sent raw that merely looks
+    // percent-encoded. Fixed 2026-09-16.
+    try {
+      const decoded = decodeURIComponent(filename);
+      if (encodeURIComponent(decoded) === filename) filename = decoded;
+    } catch {
+      // not percent-encoded — keep as-is
+    }
+
     if (hasBlockedExtension(filename)) {
       fileStream.resume(); // drain so busboy can finish and release the request
       filePromises.push(Promise.resolve({ error: 'File type not allowed', file_name: filename }));
@@ -3403,7 +3438,15 @@ app.post('/api/files', authenticate, (req, res) => {
 
 // Download file
 app.get('/api/files/:filename', authenticate, async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
 
   try {
     const result = await pool.query(
@@ -3471,7 +3514,15 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
 // The token can be embedded in a plain URL so the browser can download natively
 // (no JS arrayBuffer, no memory limit, browser shows its own download progress).
 app.post('/api/files/:filename/token', authenticate, async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
   try {
     const result = await pool.query(
       `SELECT file_key FROM hub_files
@@ -3498,7 +3549,15 @@ app.post('/api/files/:filename/token', authenticate, async (req, res) => {
 // Stream a file using a short-lived token — no Authorization header required.
 // Used by the frontend to trigger native browser downloads for any file size.
 app.get('/api/files/:filename/download', async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
   const rawToken = req.query.token;
 
   if (!rawToken) return res.status(401).json({ error: 'Token required' });
@@ -3576,7 +3635,15 @@ app.get('/api/files/:filename/download', async (req, res) => {
 
 // Delete file
 app.delete('/api/files/:filename', authenticate, async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
 
   try {
     const result = await pool.query(
@@ -3614,7 +3681,15 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
 // file route in this file — a UUID-keyed route would collide with this same
 // path pattern, and the frontend already addresses files by name everywhere.
 app.patch('/api/files/:filename', authenticate, async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
   const { visibility, folder_id } = req.body;
 
   if (visibility === undefined && folder_id === undefined) {
@@ -3880,7 +3955,15 @@ app.get('/api/public/og', async (req, res) => {
 // Serves files marked is_public=true without auth — needed so <img> tags work in the feed.
 // Supports HTTP Range requests so browsers can stream video without downloading the whole file.
 app.get('/api/public/files/:filename', async (req, res) => {
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
   try {
     let file;
     const cached = publicFileCache.get(fileName);
@@ -3982,7 +4065,15 @@ app.get('/api/spaces/:slug/files/:filename', async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired token' });
   const userId = authRows[0].id;
 
-  const fileName = decodeURIComponent(req.params.filename);
+  // req.params.filename is already URL-decoded by Express's router before
+  // handlers ever see it — decoding it again here corrupts any name
+  // containing a literal '%' or a real space/etc. (a %XX sequence gets
+  // unescaped a second time). That double-decode is what made an upload
+  // whose name needed percent-encoding at the multipart layer (e.g. one
+  // with a space, as produced by React Native's FormData) permanently
+  // 404 on every route keyed by file_name, including delete — the row's
+  // stored name never matched the re-decoded lookup value. Fixed 2026-09-16.
+  const fileName = req.params.filename;
   try {
     const { rows: spaceRows } = await pool.query(
       `SELECT id FROM hub_spaces WHERE slug = $1`,
@@ -6557,7 +6648,9 @@ app.get('/api/public/spaces/:slug', async (req, res) => {
 // Public space file — no auth, only if space is web_public
 app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
   try {
-    const fileName = decodeURIComponent(req.params.filename);
+    // req.params.filename is already URL-decoded by Express — see the note
+    // on the other file routes' identical fix (2026-09-16).
+    const fileName = req.params.filename;
     const { rows: spaceRows } = await pool.query(
       `SELECT id FROM hub_spaces WHERE slug = $1 AND web_public = TRUE`,
       [req.params.slug],
@@ -6591,7 +6684,7 @@ app.get('/api/public/spaces/:slug/files/:filename', async (req, res) => {
 
 // ── Atlas pin routes ───────────────────────────────────────
 
-const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 'aid', 'green'];
+const ATLAS_CATEGORIES = ['meetup', 'safety', 'avoid', 'infrastructure', 'poi', 'aid', 'green', 'event'];
 
 const PIN_ATTACH_AGG = `
   COALESCE(
@@ -6622,13 +6715,14 @@ app.get('/api/atlas/pins', authenticate, async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
-              p.image_file_name, p.created_at,
-              u.username AS author_username, ${PIN_ATTACH_AGG}
+              p.image_file_name, p.event_post_id, p.created_at,
+              (SELECT COUNT(*) FROM hub_atlas_pin_replies r WHERE r.pin_id = p.id)::int AS reply_count,
+              u.id AS author_id, u.username AS author_username, ${PIN_ATTACH_AGG}
        FROM hub_atlas_pins p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_atlas_pin_attachments hpa ON hpa.pin_id = p.id
        LEFT JOIN hub_files hf ON hf.id = hpa.file_id
-       GROUP BY p.id, u.username
+       GROUP BY p.id, u.id, u.username
        ORDER BY p.created_at DESC`,
     );
     res.json({ pins: rows });
@@ -6640,7 +6734,7 @@ app.get('/api/atlas/pins', authenticate, async (_req, res) => {
 
 // Create a pin
 app.post('/api/atlas/pins', authenticate, async (req, res) => {
-  const { latitude, longitude, title, description, category, image_file_name, attachment_ids } = req.body || {};
+  const { latitude, longitude, title, description, category, image_file_name, attachment_ids, event_post_id } = req.body || {};
 
   if (!title?.trim())
     return res.status(400).json({ error: 'Title is required' });
@@ -6657,9 +6751,9 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO hub_atlas_pins (author_id, latitude, longitude, title, description, category, image_file_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, latitude, longitude, title, description, category, image_file_name, created_at`,
+      `INSERT INTO hub_atlas_pins (author_id, latitude, longitude, title, description, category, image_file_name, event_post_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, latitude, longitude, title, description, category, image_file_name, event_post_id, created_at`,
       [
         req.user.id,
         latitude,
@@ -6668,6 +6762,7 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
         description?.trim() || null,
         category,
         image_file_name || null,
+        event_post_id || null,
       ],
     );
 
@@ -6681,7 +6776,7 @@ app.post('/api/atlas/pins', authenticate, async (req, res) => {
       attachments = fileRows;
     }
 
-    res.json({ ...rows[0], author_username: req.user.username, attachments });
+    res.json({ ...rows[0], author_id: req.user.id, author_username: req.user.username, attachments });
   } catch (err) {
     console.error('Create atlas pin error:', err);
     res.status(500).json({ error: 'Failed to create pin' });
@@ -6723,13 +6818,13 @@ app.patch('/api/atlas/pins/:id', authenticate, async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT p.id, p.latitude, p.longitude, p.title, p.description, p.category,
-              p.image_file_name, p.created_at, u.username AS author_username, ${PIN_ATTACH_AGG}
+              p.image_file_name, p.event_post_id, p.created_at, u.id AS author_id, u.username AS author_username, ${PIN_ATTACH_AGG}
        FROM hub_atlas_pins p
        LEFT JOIN hub_users u ON p.author_id = u.id
        LEFT JOIN hub_atlas_pin_attachments hpa ON hpa.pin_id = p.id
        LEFT JOIN hub_files hf ON hf.id = hpa.file_id
        WHERE p.id = $1
-       GROUP BY p.id, u.username`,
+       GROUP BY p.id, u.id, u.username`,
       [updated[0].id],
     );
     res.json(rows[0]);
@@ -6752,6 +6847,70 @@ app.delete('/api/atlas/pins/:id', authenticate, async (req, res) => {
   } catch (err) {
     console.error('Delete atlas pin error:', err);
     res.status(500).json({ error: 'Failed to delete pin' });
+  }
+});
+
+// List comments (with threading) for a pin — same shape/behavior as a post's
+// hub_post_replies (see GET /api/posts/:id/replies), just scoped to a pin.
+app.get('/api/atlas/pins/:id/replies', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.pin_id, r.body, r.created_at,
+              u.id   AS author_id,       u.username  AS author_username,
+              r.reply_to_reply_id,       r.reply_to_user_id,
+              ru.username AS reply_to_username
+       FROM hub_atlas_pin_replies r
+       LEFT JOIN hub_users u  ON r.author_id        = u.id
+       LEFT JOIN hub_users ru ON r.reply_to_user_id = ru.id
+       WHERE r.pin_id = $1 AND ${blockedPairClause('r.author_id', 2)}
+       ORDER BY r.created_at ASC`,
+      [req.params.id, req.user.id],
+    );
+    res.json({ replies: rows });
+  } catch (err) {
+    console.error('List pin replies error:', err);
+    res.status(500).json({ error: 'Failed to load comments' });
+  }
+});
+
+// Post a comment (or a threaded reply to one) on a pin
+app.post('/api/atlas/pins/:id/replies', authenticate, async (req, res) => {
+  const { body, reply_to_reply_id, reply_to_user_id } = req.body || {};
+  if (!body?.trim())
+    return res.status(400).json({ error: 'Comment cannot be empty' });
+
+  try {
+    const pin = await pool.query('SELECT id FROM hub_atlas_pins WHERE id = $1', [req.params.id]);
+    if (!pin.rows[0]) return res.status(404).json({ error: 'Pin not found' });
+
+    const result = await pool.query(
+      `INSERT INTO hub_atlas_pin_replies (pin_id, author_id, body, reply_to_reply_id, reply_to_user_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, pin_id, body, created_at, reply_to_reply_id, reply_to_user_id`,
+      [
+        req.params.id,
+        req.user.id,
+        body.trim(),
+        reply_to_reply_id || null,
+        reply_to_user_id || null,
+      ],
+    );
+
+    let reply_to_username = null;
+    if (reply_to_user_id) {
+      const u = await pool.query('SELECT username FROM hub_users WHERE id = $1', [reply_to_user_id]);
+      reply_to_username = u.rows[0]?.username ?? null;
+    }
+
+    res.json({
+      ...result.rows[0],
+      author_id: req.user.id,
+      author_username: req.user.username,
+      reply_to_username,
+    });
+  } catch (err) {
+    console.error('Post pin reply error:', err);
+    res.status(500).json({ error: 'Failed to post comment' });
   }
 });
 

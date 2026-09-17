@@ -136,7 +136,7 @@ export function CreateVendorModal({ isOpen, hubSlug, onClose, onCreated, existin
                     placeholder="What do you offer? Tell your neighbors about your business or organization."
                     rows={3}
                     maxLength={500}
-                    className={inputCls + ' resize-none'}
+                    className={inputCls + ' resize-none !rounded-field'}
                   />
                   <p className="text-[10px] text-slate-400 mt-1 text-right">{description.length}/500</p>
                 </div>

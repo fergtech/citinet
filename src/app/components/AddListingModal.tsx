@@ -229,7 +229,7 @@ export function AddListingModal({ isOpen, hubSlug, onClose, onCreated, existingL
                     placeholder="Describe what you're offering, condition, pickup/delivery info, etc."
                     rows={3}
                     maxLength={1000}
-                    className={inputCls + ' resize-none'}
+                    className={inputCls + ' resize-none !rounded-field'}
                   />
                   <p className="text-[10px] text-slate-400 mt-1 text-right">{description.length}/1000</p>
                 </div>

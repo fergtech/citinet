@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import {
-  ChevronLeft, ChevronRight, Plus, X, Trash2, MapPin,
+  ChevronLeft, ChevronRight, ChevronDown, Plus, X, Trash2, MapPin,
   Navigation, Bookmark, Share2, Check, Pencil,
   Paperclip, File as FileIcon, Play,
+  PanelRightClose, PanelRightOpen, ArrowUp,
+  ImagePlus, Film, MessageCircle, Send, Loader2, CornerDownRight,
 } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createPortal } from 'react-dom';
@@ -10,22 +12,30 @@ import { motion, AnimatePresence } from 'motion/react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useHub, useHubStatus } from '../context/HubContext';
+import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
 import { hubService } from '../services/hubService';
-import { AvatarFallback } from './icons';
+import { AvatarCircle } from './AvatarCircle';
 import { AutoplayVideo } from './AutoplayVideo';
 import { atlasService } from '../services/atlasService';
-import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinAttachment, type AtlasPinCategory } from '../types/atlas';
+import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinAttachment, type AtlasPinCategory, type AtlasPinReply } from '../types/atlas';
+import { buildReplyTree, countDescendants, AUTO_COLLAPSE_DEPTH, type ReplyNode } from '../utils/replyTree';
 import { LocationSearchInput } from './LocationSearchInput';
 import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
 import { getAtlasMapStyle } from '../utils/atlasMapStyle';
 import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
 import { findNearestPanoramaxImage, panoramaxWebViewerUrl, type PanoramaxImage } from '../utils/panoramax';
 import { AtlasGlyph } from './icons';
-import { EventDetailModal } from './EventDetailModal';
+import { MemberPreviewPopover, type MemberPreviewSummary } from './MemberPreview';
 import type { HubPost } from '../types/hub';
 import { Calendar } from 'lucide-react';
+import { createPostOrQueue } from '../services/writeQueueService';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 // ── Pin marker HTML (cached) ─────────────────────────────────────────────
 // Teardrop-from-rotated-square marker matching the design system: a category-
@@ -62,14 +72,6 @@ const MY_LOCATION_HTML = `
   </div>
 `;
 
-// Same teardrop treatment as getPinHtml() above, but a fixed indigo gradient —
-// a color no ATLAS_CATEGORIES entry uses — so EVENT-post markers read as a
-// distinct, non-AtlasPin layer at a glance rather than looking like an
-// additional pin category.
-const EVENT_PIN_SVG = renderToStaticMarkup(<Calendar size={13} color="#fff" strokeWidth={2.5} />);
-const EVENT_PIN_HTML = `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:linear-gradient(135deg, #6366f1, #4338ca);transform:rotate(45deg);box-shadow:0 2px 8px rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.55);display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
-  `<span style="transform:rotate(-45deg);display:flex">${EVENT_PIN_SVG}</span></div>`;
-
 // ── Map (MapLibre GL, vector) ────────────────────────────────────────────
 // Atlas used to be Leaflet + a raster OSM tile layer whose pixels got
 // recolored client-side (see the removed atlasTileRecolor.ts) — that could
@@ -94,8 +96,6 @@ interface AtlasMapProps {
   createCategory: AtlasPinCategory;
   myLocation: [number, number] | null;
   onDropHereCenterChange: (c: [number, number]) => void;
-  eventPins: HubPost[];
-  onEventPinSelect: (event: HubPost) => void;
 }
 
 // Imperative escape hatch for one-shot camera moves ("recenter on me",
@@ -110,12 +110,10 @@ export interface AtlasMapHandle {
 const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   center, zoom, fitPoints, dark, placingPin, pins, selectedPinId, onPinSelect,
   pendingPosition, createCategory, myLocation, onDropHereCenterChange,
-  eventPins, onEventPinSelect,
 }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const pinMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; sig: string }>>(new Map());
-  const eventMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
   // Refs for values read inside event handlers registered once at map-init
   // time, so those handlers always see the latest prop without needing to
@@ -126,8 +124,6 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   onDropHereCenterChangeRef.current = onDropHereCenterChange;
   const onPinSelectRef = useRef(onPinSelect);
   onPinSelectRef.current = onPinSelect;
-  const onEventPinSelectRef = useRef(onEventPinSelect);
-  onEventPinSelectRef.current = onEventPinSelect;
 
   useImperativeHandle(ref, () => ({
     flyTo: (c, z) => { mapRef.current?.flyTo({ center: [c[1], c[0]], zoom: z }); },
@@ -196,6 +192,21 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   // effects below so this doesn't tear down and rebuild the whole map
   // instance (and every marker on it) on every prop change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // MapLibre sizes its internal WebGL canvas once, from the container's box
+  // at construction time, and only re-measures on the window's own resize
+  // event — a *CSS-driven* container resize (our own show/hide-map toggle
+  // changes its width at different breakpoints, or the list's push-padding
+  // animation reflowing things) never reaches it on its own, leaving the
+  // canvas stuck rendering at its old size inside a now-larger/smaller box.
+  // This keeps it in sync with whatever size the container actually is.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => mapRef.current?.resize());
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // Theme swap — setStyle only touches the vector layers/paint; markers are
@@ -302,36 +313,6 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
       .addTo(map);
     return () => { marker.remove(); };
   }, [myLocation]);
-
-  // EVENT-post markers — a layer independent of AtlasPin (own ref, own diffing,
-  // own HTML template), same shape as the myLocation effect above. Not mixed
-  // into the `pins` array/category-filter system since events aren't AtlasPins.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const existing = eventMarkersRef.current;
-    const seen = new Set<string>();
-    for (const ev of eventPins) {
-      if (ev.event_lat == null || ev.event_lng == null) continue;
-      seen.add(ev.id);
-      const marker = existing.get(ev.id);
-      if (!marker) {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = EVENT_PIN_HTML;
-        const el = wrapper.firstElementChild as HTMLElement;
-        el.addEventListener('click', e => { e.stopPropagation(); onEventPinSelectRef.current(ev); });
-        const newMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-          .setLngLat([ev.event_lng, ev.event_lat])
-          .addTo(map);
-        existing.set(ev.id, newMarker);
-      } else {
-        marker.setLngLat([ev.event_lng, ev.event_lat]);
-      }
-    }
-    for (const [id, marker] of existing) {
-      if (!seen.has(id)) { marker.remove(); existing.delete(id); }
-    }
-  }, [eventPins]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 });
@@ -511,11 +492,13 @@ function MediaScrollRow({ attachments, hubSlug, altText, rounded, onTileClick }:
   );
 }
 
-function PlaceRow({ pin, hubSlug, distanceLabel, onSelect }: {
+function PlaceRow({ pin, hubSlug, distanceLabel, onSelect, currentUserId, currentUserAvatarUrl }: {
   pin: AtlasPin;
   hubSlug: string;
   distanceLabel: string | null;
   onSelect: () => void;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
 }) {
   const cat = ATLAS_CATEGORIES[pin.category];
   const mediaAttachments = (pin.attachments ?? [])
@@ -531,7 +514,14 @@ function PlaceRow({ pin, hubSlug, distanceLabel, onSelect }: {
           pin type is folded into the small metadata line under the username
           (icon shrunk down) instead of standing alone as a big leading badge. */}
       <div className="flex items-center gap-2.5 p-3 pb-2">
-        <AvatarFallback className="w-7 h-7 rounded-full shrink-0" name={pin.authorUsername} />
+        <AvatarCircle
+          authorId={pin.authorId}
+          authorUsername={pin.authorUsername}
+          authorAvatarUrl={hubService.getAvatarUrl(hubSlug, pin.authorId) ?? undefined}
+          currentUserId={currentUserId}
+          currentUserAvatarUrl={currentUserAvatarUrl}
+          size="sm"
+        />
         <div className="flex-1 min-w-0">
           <div className="text-xs font-semibold cn-text-1 truncate">@{pin.authorUsername}</div>
           <div className="flex items-center gap-1 text-[11px] cn-text-4 mt-0.5 min-w-0">
@@ -567,9 +557,216 @@ function PlaceRow({ pin, hubSlug, distanceLabel, onSelect }: {
   );
 }
 
+// ── Pin comments (threaded) ─────────────────────────────────────────────────
+// Same nested-thread pattern as Feed's own post comments (see Feed.tsx's
+// CommentThreadNode/PostDetailView) — pins just aren't tied to a hub_posts
+// row, so they get their own hub_atlas_pin_replies table/endpoints instead
+// of reusing hub_post_replies. buildReplyTree/ReplyNode/AUTO_COLLAPSE_DEPTH
+// are shared (see utils/replyTree.ts).
+
+function PinCommentThreadNode({
+  node, depth, hubSlug, currentUserId, currentUserAvatarUrl,
+  highlightedReplyId, onReply, onJumpTo,
+}: {
+  node: ReplyNode<AtlasPinReply>;
+  depth: number;
+  hubSlug: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+  highlightedReplyId: string | null;
+  onReply: (reply: AtlasPinReply) => void;
+  onJumpTo: (replyId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(depth + 1 < AUTO_COLLAPSE_DEPTH);
+  const hasChildren = node.children.length > 0;
+  const descendantCount = hasChildren ? countDescendants(node) : 0;
+  const memberSummary: MemberPreviewSummary = { user_id: node.author_id, username: node.author_username };
+
+  return (
+    <div>
+      <div
+        id={`pin-comment-${node.id}`}
+        className={`flex gap-3 rounded-xl px-2 py-1 -mx-2 transition-colors duration-300 ${highlightedReplyId === node.id ? 'bg-blue-500/10' : ''}`}
+      >
+        <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+          <button type="button" className="shrink-0">
+            <AvatarCircle
+              authorId={node.author_id}
+              authorUsername={node.author_username}
+              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, node.author_id) ?? undefined}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size={depth === 0 ? 'md' : 'sm'}
+            />
+          </button>
+        </MemberPreviewPopover>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-1">
+            <MemberPreviewPopover member={memberSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+              <button type="button" className="text-sm font-semibold cn-text-1 hover:underline">
+                {node.author_username}
+              </button>
+            </MemberPreviewPopover>
+            <span className="text-xs cn-text-4">{formatRelativeTime(node.created_at)}</span>
+          </div>
+          {node.reply_to_username && node.reply_to_reply_id && (
+            <button type="button" onClick={() => onJumpTo(node.reply_to_reply_id!)}
+              className="flex items-center gap-1 mb-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              <CornerDownRight className="w-3 h-3 shrink-0" />
+              @{node.reply_to_username}
+            </button>
+          )}
+          <p className="text-sm cn-text-2 leading-relaxed whitespace-pre-wrap">{node.body}</p>
+          <button type="button" onClick={() => onReply(node)}
+            className="mt-1.5 flex items-center gap-1 text-xs cn-text-4 hover:text-blue-400 transition-colors">
+            <CornerDownRight className="w-3 h-3" /> Reply
+          </button>
+        </div>
+      </div>
+      {hasChildren && (
+        <div className="ml-4 pl-4 border-l-2 cn-border mb-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            className="flex items-center gap-1 py-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {expanded ? 'Hide' : 'Show'} {descendantCount} {descendantCount === 1 ? 'reply' : 'replies'}
+          </button>
+          {expanded && node.children.map(child => (
+            <PinCommentThreadNode
+              key={child.id} node={child} depth={depth + 1} hubSlug={hubSlug}
+              currentUserId={currentUserId} currentUserAvatarUrl={currentUserAvatarUrl}
+              highlightedReplyId={highlightedReplyId} onReply={onReply} onJumpTo={onJumpTo}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PinCommentsSection({ pinId, hubSlug, currentUserId, currentUserAvatarUrl }: {
+  pinId: string;
+  hubSlug: string;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
+}) {
+  const [replies, setReplies] = useState<AtlasPinReply[]>([]);
+  const replyTree = useMemo(() => buildReplyTree(replies), [replies]);
+  const [loading, setLoading] = useState(true);
+  const [replyText, setReplyText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const [replyingTo, setReplyingTo] = useState<{ replyId: string; userId: string; username: string } | null>(null);
+  const [highlightedReplyId, setHighlightedReplyId] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    atlasService.listReplies(hubSlug, pinId)
+      .then(data => { if (!cancelled) setReplies(data); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [hubSlug, pinId]);
+
+  function scrollToReply(replyId: string) {
+    const el = document.getElementById(`pin-comment-${replyId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedReplyId(replyId);
+    setTimeout(() => setHighlightedReplyId(null), 1500);
+  }
+
+  function handleClickReply(reply: AtlasPinReply) {
+    setReplyingTo({ replyId: reply.id, userId: reply.author_id, username: reply.author_username });
+    setReplyText('');
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }
+
+  async function handleSendReply(e: React.FormEvent) {
+    e.preventDefault();
+    if (!replyText.trim() || sending) return;
+    setSendError('');
+    setSending(true);
+    try {
+      const reply = await atlasService.addReply(hubSlug, pinId, replyText.trim(), replyingTo?.replyId, replyingTo?.userId);
+      setReplies(prev => [...prev, reply]);
+      setReplyText('');
+      setReplyingTo(null);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Failed to post comment');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="cn-glass rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b cn-border">
+        <MessageCircle className="w-4 h-4 cn-text-4" />
+        <span className="text-sm font-semibold cn-text-1">
+          {loading ? 'Comments' : replies.length === 0 ? 'No comments yet' : `${replies.length} Comment${replies.length === 1 ? '' : 's'}`}
+        </span>
+      </div>
+
+      <div className="px-5 py-4 border-b cn-border">
+        {replyingTo && (
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-500/20 text-xs text-blue-400">
+              <CornerDownRight className="w-3 h-3 shrink-0" />
+              <span>Replying to <span className="font-semibold">@{replyingTo.username}</span></span>
+            </div>
+            <button type="button" onClick={() => setReplyingTo(null)} className="cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        {sendError && <p className="text-xs text-rose-400 mb-2">{sendError}</p>}
+        <form onSubmit={handleSendReply} className="flex items-center gap-3">
+          <textarea
+            ref={textareaRef}
+            value={replyText}
+            onChange={e => setReplyText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e); } }}
+            placeholder={replyingTo ? `Reply to @${replyingTo.username}…` : 'Add a comment… (Enter to send)'}
+            rows={1}
+            className="flex-1 cn-surface-2 border cn-border rounded-field px-4 py-2.5 text-sm cn-text-1 placeholder-zinc-500 resize-none min-h-[40px] max-h-[100px] leading-tight overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+          />
+          <button type="submit" disabled={sending || !replyText.trim()}
+            className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0">
+            {sending ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Send className="w-4 h-4 text-white" />}
+          </button>
+        </form>
+      </div>
+
+      <div className="px-5 py-4 flex flex-col gap-4 max-h-[420px] overflow-y-auto">
+        {loading && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin cn-text-4" /></div>}
+        {!loading && replies.length === 0 && (
+          <p className="text-center text-sm cn-text-4 py-4">Be the first to comment!</p>
+        )}
+        {!loading && replyTree.map(node => (
+          <PinCommentThreadNode
+            key={node.id}
+            node={node}
+            depth={0}
+            hubSlug={hubSlug}
+            currentUserId={currentUserId}
+            currentUserAvatarUrl={currentUserAvatarUrl}
+            highlightedReplyId={highlightedReplyId}
+            onReply={handleClickReply}
+            onJumpTo={scrollToReply}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Place detail panel ───────────────────────────────────────────────────────
 
-function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, saved, onBack, onDelete, onToggleSave, onEdit }: {
+function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, saved, onBack, onDelete, onToggleSave, onEdit, currentUserId, currentUserAvatarUrl }: {
   pin: AtlasPin;
   hubSlug: string;
   distanceLabel: string | null;
@@ -580,8 +777,11 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
   onDelete: () => void;
   onToggleSave: () => void;
   onEdit: () => void;
+  currentUserId?: string;
+  currentUserAvatarUrl?: string;
 }) {
   const cat = ATLAS_CATEGORIES[pin.category];
+  const authorSummary: MemberPreviewSummary = { user_id: pin.authorId, username: pin.authorUsername };
   const [copied, setCopied] = useState(false);
   const [photo, setPhoto] = useState<PlacePhoto | null>(null);
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -589,6 +789,45 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
   const [panoramax, setPanoramax] = useState<PanoramaxImage | null>(null);
   const [panoramaxFailed, setPanoramaxFailed] = useState(false);
   const [lightbox, setLightbox] = useState<{ kind: 'image' | 'video'; url: string } | null>(null);
+
+  // Event pins carry a real, shared hub_posts row behind them (see
+  // EventFormPanel) — RSVP here talks to that same post, mirroring
+  // EventDetailModal's "I'm going" toggle, so it stays in sync with Feed.
+  const eventPostId = pin.category === 'event' ? pin.eventPostId : undefined;
+  const [rsvpGoing, setRsvpGoing] = useState(false);
+  const [rsvpCount, setRsvpCount] = useState(0);
+  const [rsvpToggling, setRsvpToggling] = useState(false);
+
+  useEffect(() => {
+    if (!eventPostId) return;
+    let cancelled = false;
+    hubService.listRsvps(hubSlug, eventPostId)
+      .then(data => {
+        if (cancelled) return;
+        setRsvpGoing(data.going);
+        setRsvpCount(data.count);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [hubSlug, eventPostId]);
+
+  const toggleGoing = async () => {
+    if (!eventPostId || rsvpToggling) return;
+    setRsvpToggling(true);
+    const wasGoing = rsvpGoing;
+    setRsvpGoing(!wasGoing);
+    setRsvpCount(c => wasGoing ? Math.max(0, c - 1) : c + 1);
+    try {
+      const result = await hubService.toggleRsvp(hubSlug, eventPostId);
+      setRsvpGoing(result.going);
+      setRsvpCount(result.count);
+    } catch {
+      setRsvpGoing(wasGoing);
+      setRsvpCount(c => wasGoing ? c + 1 : Math.max(0, c - 1));
+    } finally {
+      setRsvpToggling(false);
+    }
+  };
 
   // A user-uploaded photo (set at pin creation) is authoritative — only fall back
   // to the Wikidata/Wikimedia lookup when the pin has none of its own.
@@ -735,10 +974,25 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
         </div>
       )}
 
-      <div className="cn-glass rounded-xl p-3 flex items-center gap-3">
-        <AvatarFallback className="w-8 h-8 rounded-full shrink-0" name={pin.authorUsername} />
+      <div className="flex items-center gap-3">
+        <MemberPreviewPopover member={authorSummary} hubSlug={hubSlug} myUserId={currentUserId}>
+          <button type="button" className="shrink-0">
+            <AvatarCircle
+              authorId={pin.authorId}
+              authorUsername={pin.authorUsername}
+              authorAvatarUrl={hubService.getAvatarUrl(hubSlug, pin.authorId) ?? undefined}
+              currentUserId={currentUserId}
+              currentUserAvatarUrl={currentUserAvatarUrl}
+              size="md"
+            />
+          </button>
+        </MemberPreviewPopover>
         <div className="min-w-0">
-          <div className="text-xs font-semibold cn-text-1 truncate">@{pin.authorUsername}</div>
+          <MemberPreviewPopover member={authorSummary} hubSlug={hubSlug} myUserId={currentUserId} align="start">
+            <button type="button" className="text-xs font-semibold cn-text-1 truncate hover:underline">
+              @{pin.authorUsername}
+            </button>
+          </MemberPreviewPopover>
           <div className="text-[11px] cn-text-4">Added this pin</div>
         </div>
       </div>
@@ -751,6 +1005,21 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
           <Navigation className="w-3.5 h-3.5" />
           Directions
         </button>
+        {eventPostId && (
+          <button
+            onClick={toggleGoing}
+            disabled={rsvpToggling}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 cn-action text-sm font-semibold transition-colors disabled:opacity-60 ${rsvpGoing ? 'cn-surface-2 cn-text-1 border cn-border' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+          >
+            
+            {rsvpGoing ? "You're going" : "Going"}
+            {rsvpCount > 0 && (
+              <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${rsvpGoing ? 'bg-black/10 dark:bg-white/10' : 'bg-white/20'}`}>
+                {rsvpCount}
+              </span>
+            )}
+          </button>
+        )}
         <button
           onClick={onToggleSave}
           title={saved ? 'Remove from saved' : 'Save'}
@@ -784,6 +1053,13 @@ function PlaceDetailPanel({ pin, hubSlug, distanceLabel, canDelete, canEdit, sav
           </button>
         )}
       </div>
+
+      <PinCommentsSection
+        pinId={pin.id}
+        hubSlug={hubSlug}
+        currentUserId={currentUserId}
+        currentUserAvatarUrl={currentUserAvatarUrl}
+      />
 
       {/* Lightbox — same full-screen preview pattern as clicking an image in a
           Messages chat bubble (portaled to <body> so it can outrank HubLayout's
@@ -845,6 +1121,11 @@ const CATEGORY_KEYWORDS: Record<AtlasPinCategory, string[]> = {
                    'trail', 'fountain', 'museum', 'gallery', 'starbucks', 'landmark', 'monument'],
   aid:            ['fridge', 'pantry', 'food bank', 'free food', 'mutual aid', 'donation', 'giveaway', 'tool library', 'clothing swap'],
   green:          ['garden', 'park', 'green space', 'community garden', 'orchard', 'planter', 'meadow', 'trees'],
+  // Rarely hit in practice — EventFormPanel always sets 'event' explicitly
+  // rather than going through this suggestion — but drop-a-pin's own title
+  // field still runs through here too, so someone manually pinning "Block
+  // Party" or "Farmers Market" this way gets the right category guessed too.
+  event:          ['event', 'festival', 'concert', 'block party', 'farmers market', 'parade', 'fundraiser', 'fair', 'rsvp'],
 };
 
 function suggestCategory(title: string): AtlasPinCategory | null {
@@ -1088,7 +1369,7 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
               onChange={e => setDescription(e.target.value)}
               rows={4}
               placeholder="What should neighbors know about this place?"
-              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2.5 cn-surface border cn-border rounded-field text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
           </div>
           <div>
@@ -1217,6 +1498,282 @@ function PinFormPanel({ position, hubSlug, editingPin, suggestedTitle, category,
   );
 }
 
+// ── Create-event flow ────────────────────────────────────────────────────────
+// Creates a real hub_posts row (category 'EVENT' — same createPost API Feed's
+// own PostComposer uses) so it's still RSVP-able and shows up in Feed. But
+// Atlas itself is pins-only — it no longer renders a separate "event pin"
+// marker layer — so whenever the event has a location, this *also* creates a
+// genuine Atlas pin there, its own filterable category ('event', right next
+// to Community Space etc. in ATLAS_CATEGORIES — a small, additive backend
+// change, just one more accepted value in server.js's own category list, no
+// schema change) so events can be toggled on/off on the map like anything
+// else. Title = the event's own title, description = its details plus date.
+// A pin at an already-pinned spot is a deliberate, expected duplicate — each
+// event is its own occurrence, even at a recurring venue — think of it as a
+// fresh iteration of that location rather than a reference back to one
+// shared pin. When several pins land on the exact same spot, the map's
+// overview only surfaces the newest one (see mapMarkerPins below) so it
+// doesn't look like a cluttered stack; the sidebar list still shows all of
+// them, newest first.
+
+/** Handles creating a new event from Atlas — same "Add details" form styling
+ * as PinFormPanel, but a different, simpler schema underneath (no category
+ * picker, single media file, posts to hub_posts — the resulting pin, if any,
+ * is created separately afterward). `onLocationPick` recenters the shared map
+ * the same way the main search bar already does, so picking a location here
+ * behaves identically to searching one up top. */
+function EventFormPanel({ hubSlug, hubCenter, pins, currentUsername, onLocationPick, onCreated, onCancel }: {
+  hubSlug: string;
+  hubCenter: [number, number] | null;
+  /** For surfacing already-pinned spots as autocomplete suggestions (see
+   * "Already on Atlas" below) — picking one just autofills that pin's exact
+   * title/coordinates, it doesn't prevent a new pin from being created. */
+  pins: AtlasPin[];
+  currentUsername: string;
+  onLocationPick: (lat: number, lng: number) => void;
+  onCreated: (post: HubPost, newPin: AtlasPin | null) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [details, setDetails] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventCoords, setEventCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // Set when the picked location lands within 100m of an existing Atlas pin —
+  // the event's own new pin then snaps to that pin's exact stored coordinates
+  // (rather than whatever slightly-off point the geocoder returned) so the
+  // two markers stack precisely instead of sitting a few meters apart, and
+  // the confirmation copy below can name the place it's stacking on.
+  const [matchedPin, setMatchedPin] = useState<AtlasPin | null>(null);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const mediaPreviewRef = useRef<string | null>(null);
+  mediaPreviewRef.current = mediaPreview;
+  useEffect(() => () => { if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current); }, []);
+
+  const handleMediaFile = (file: File) => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(file);
+    setMediaPreview(URL.createObjectURL(file));
+  };
+
+  const clearMedia = () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(null);
+    setMediaPreview(null);
+  };
+
+  const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
+  const canSubmit = !!title.trim() && !!eventDate;
+
+  const handleSubmit = async () => {
+    if (!canSubmit || posting) return;
+    setPosting(true);
+    setError(null);
+    try {
+      const post = await createPostOrQueue(hubSlug, {
+        category: 'EVENT',
+        title: title.trim(),
+        body: details.trim(),
+        mediaFile: mediaFile ?? undefined,
+        eventDate: new Date(eventDate).toISOString(),
+        eventLocation: eventLocation.trim() || undefined,
+        eventLat: eventCoords?.lat,
+        eventLng: eventCoords?.lng,
+      });
+      if (!post) {
+        setError("Hub's unreachable — this'll post once it's back.");
+        return;
+      }
+
+      // The event itself is already safely posted at this point — a pin is
+      // a nice-to-have on top of that, not something worth surfacing as a
+      // hard failure (or losing the successful post over) if it errors.
+      let newPin: AtlasPin | null = null;
+      if (eventCoords) {
+        try {
+          let attachmentIds: string[] | undefined;
+          if (mediaFile) {
+            const uploaded = await hubService.uploadFiles(hubSlug, [mediaFile], true);
+            attachmentIds = uploaded.map(u => u.id);
+          }
+          const dateLabel = new Date(eventDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+            + ' · ' + new Date(eventDate).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+          const description = [details.trim(), `📅 ${dateLabel}`].filter(Boolean).join('\n\n');
+          newPin = await atlasService.addPin(hubSlug, currentUsername, {
+            latitude: eventCoords.lat,
+            longitude: eventCoords.lng,
+            title: title.trim(),
+            description,
+            category: 'event',
+            attachmentIds,
+            eventPostId: post.id,
+          });
+        } catch (pinErr) {
+          console.error('Failed to pin the event location:', pinErr);
+        }
+      }
+
+      onCreated(post, newPin);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create event');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <button
+        onClick={onCancel}
+        className="inline-flex items-center gap-1 text-xs font-semibold cn-text-3 hover:text-zinc-200 transition-colors self-start"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" /> Cancel
+      </button>
+
+      <div>
+        <h2 className="text-lg font-bold cn-text-1">Create an event</h2>
+        <p className="text-xs cn-text-3 mt-1">Let neighbors know what's happening and when.</p>
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">Title</label>
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. Block Party"
+          autoFocus
+          className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
+          Details <span className="font-normal cn-text-4">(optional)</span>
+        </label>
+        <textarea
+          value={details}
+          onChange={e => setDetails(e.target.value)}
+          rows={4}
+          placeholder="What should neighbors know?"
+          className="w-full px-3 py-2.5 cn-surface border cn-border rounded-field text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">Date &amp; time</label>
+        <input
+          type="datetime-local"
+          value={eventDate}
+          onChange={e => setEventDate(e.target.value)}
+          min={new Date().toISOString().slice(0, 16)}
+          className="w-full px-3 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
+          Location <span className="font-normal cn-text-4">(optional)</span>
+        </label>
+        <LocationSearchInput
+          value={eventLocation}
+          onChange={v => { setEventLocation(v); setEventCoords(null); setMatchedPin(null); }}
+          onSelect={r => {
+            setEventLocation(r.label);
+            // Picking straight from "Already on Atlas" below already names
+            // the exact pin — no need to guess. Otherwise (a live geocode result that
+            // wasn't explicitly chosen as a pin) fall back to the same 100m
+            // proximity check the main search bar uses, so an address that
+            // just happens to land on a pin still gets linked up.
+            const explicit = r.pinId ? pins.find(p => p.id === r.pinId) : undefined;
+            const nearby = explicit ?? pins.find(p => distanceMeters(r.lat, r.lng, p.latitude, p.longitude) <= 100);
+            if (nearby) {
+              setEventCoords({ lat: nearby.latitude, lng: nearby.longitude });
+              setMatchedPin(nearby);
+              onLocationPick(nearby.latitude, nearby.longitude);
+            } else {
+              setEventCoords({ lat: r.lat, lng: r.lng });
+              setMatchedPin(null);
+              onLocationPick(r.lat, r.lng);
+            }
+          }}
+          hubCenter={hubCenter ?? undefined}
+          historyKey="citinet-atlas-event-location-history"
+          inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-lg text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          localMatches={pins.map(p => ({ id: p.id, label: p.title, sublabel: ATLAS_CATEGORIES[p.category].label, lat: p.latitude, lng: p.longitude }))}
+        />
+        {matchedPin ? (
+          <p className="text-[11px] text-emerald-500 mt-1.5 flex items-center gap-1">
+            <MapPin className="w-3 h-3 shrink-0" />
+            Also pinned right where "{matchedPin.title}" already is — this event gets its own fresh pin at that exact spot.
+          </p>
+        ) : eventCoords && (
+          <p className="text-[11px] text-emerald-500 mt-1.5">A new pin for this event will be added to Atlas once it's posted.</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold cn-text-3 mb-1.5">
+          Photo or video <span className="font-normal cn-text-4">(optional)</span>
+        </label>
+        {mediaPreview ? (
+          <div className="relative h-20 rounded-lg overflow-hidden bg-black">
+            {isVideoFile ? (
+              <video src={mediaPreview} controls className="w-full h-full object-contain" />
+            ) : (
+              <img src={mediaPreview} alt="" className="w-full h-full object-cover" />
+            )}
+            <button
+              type="button"
+              onClick={clearMedia}
+              className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center text-white transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-colors"
+            >
+              <ImagePlus className="w-3.5 h-3.5 cn-text-4" />
+              <span className="text-xs cn-text-4">Photo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-2 h-11 rounded-lg border border-dashed cn-border hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-colors"
+            >
+              <Film className="w-3.5 h-3.5 cn-text-4" />
+              <span className="text-xs cn-text-4">Video</span>
+            </button>
+          </div>
+        )}
+        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleMediaFile(f); e.target.value = ''; }} />
+        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleMediaFile(f); e.target.value = ''; }} />
+      </div>
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      <button
+        onClick={handleSubmit}
+        disabled={!canSubmit || posting}
+        className="w-full px-4 py-2.5 cn-action bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+      >
+        {posting ? 'Creating…' : 'Create event'}
+      </button>
+    </div>
+  );
+}
+
 // ── Main screen ────────────────────────────────────────────────────────────
 
 interface AtlasScreenProps {
@@ -1224,14 +1781,14 @@ interface AtlasScreenProps {
   // location) — renders the mobile back button. Absent in home mode, where
   // AtlasScreen is mounted at `/` with no "back" destination.
   onBack?: () => void;
-  // Home mode only — powers the event-pin click-through into Feed and the
-  // compose/profile deep links used by EventDetailModal.
+  // Standard cross-screen navigation prop every top-level screen accepts —
+  // currently unused here (Atlas has no deep-link-elsewhere affordance of
+  // its own), kept only for interface consistency with its callers in App.tsx.
   onNavigate?: (screen: string) => void;
 }
 
-export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
+export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const { currentHub, currentUser } = useHub();
-  const { status: connectionStatus } = useHubStatus();
   const hubSlug = currentHub?.slug ?? '';
 
   const [pins, setPins] = useState<AtlasPin[]>([]);
@@ -1240,19 +1797,7 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   const [geocoded, setGeocoded] = useState(false);
   const [hubGeoCenter, setHubGeoCenter] = useState<[number, number] | null>(null);
 
-  // Event pins (home mode) — EVENT-category posts with coordinates, rendered
-  // as their own marker layer (see AtlasMap's eventPins prop). Featured
-  // content moved to the Notifications screen — see notificationMeta/
-  // NotificationsScreen.tsx — so it's no longer fetched here.
-  const [eventPins, setEventPins] = useState<HubPost[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<HubPost | null>(null);
-
-  useEffect(() => {
-    if (!hubSlug || connectionStatus !== 'connected') return;
-    hubService.getUpcomingEvents(hubSlug, 200)
-      .then(events => setEventPins(events.filter(e => e.event_lat != null && e.event_lng != null)))
-      .catch(() => {});
-  }, [hubSlug, connectionStatus]);
+  const [creatingEvent, setCreatingEvent] = useState(false);
 
   // Drop-here placement mode
   const [placingPin, setPlacingPin] = useState(false);
@@ -1303,6 +1848,16 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   const [categoryFilter, setCategoryFilter] = useState<AtlasPinCategory | 'all'>('all');
   const [savedOnly, setSavedOnly] = useState(false);
   const [listScrolled, setListScrolled] = useState(false);
+  // Separate from listScrolled above (which fades the list's top edge on any
+  // scroll at all, however tiny) — the header morph needs a bit of a runway
+  // so it doesn't flicker collapsed/expanded on a 1-2px scroll wobble.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const scrollListToTop = () => listScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  // Desktop-only show/hide toggle for the floating map panel (lg:) — shown by
+  // default. The map itself stays mounted and just slides off via transform
+  // when hidden, so toggling never re-inits the MapLibre instance.
+  const [mapVisible, setMapVisible] = useState(true);
 
   // Saved/bookmarked pins — account-level (hub_user_preferences), shared
   // between the detail panel's bookmark toggle and the "Saved" filter chip
@@ -1460,10 +2015,31 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
 
   const enterPlacingMode = () => {
     cancelPlacement();
+    setCreatingEvent(false);
     setUnregisteredLocation(null);
     setPlacingPin(true);
     setDropHereCenter(mapCenter);
     reverseGeocode(mapCenter[0], mapCenter[1]).then(n => setNearbyPlace(n));
+  };
+
+  // ── Create-event flow ────────────────────────────────────────────────────
+
+  const startCreatingEvent = () => {
+    cancelPlacement();
+    setSelectedPinId(null);
+    setCreatingEvent(true);
+  };
+
+  // The event post itself already lives in hub_posts regardless (Feed/RSVP
+  // don't need anything further here) — what Atlas cares about is the pin:
+  // when there's one, select it and recenter on it, the exact same "show me
+  // what I just made" pattern finishCreate uses for a regular dropped pin.
+  const handleEventCreated = (_post: HubPost, newPin: AtlasPin | null) => {
+    setCreatingEvent(false);
+    if (!newPin) return;
+    loadPins();
+    setSelectedPinId(newPin.id);
+    setMapCenter([newPin.latitude, newPin.longitude]);
   };
 
   const handleDropHereCenterChange = useCallback((center: [number, number]) => {
@@ -1574,12 +2150,28 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
   const mapZoom = selectedPinId ? PIN_ZOOM : DEFAULT_ZOOM;
   // Genuine "just browsing" overview — not while a pin's focused, nor while
   // previewing/placing a new one (drop-here, a searched location, an
-  // unresolved deep-link coordinate), all of which have their own explicit
-  // "travel to this exact spot" center that fitting-to-all-pins would
-  // otherwise fight. Recentering on "me" deliberately does NOT participate
-  // here — it's a one-shot imperative camera move (see recenterOnMe), not a
-  // mode this declarative effect needs to know about or defend.
-  const isOverviewMode = !selectedPinId && !pendingPosition && !placingPin && !unregisteredLocation;
+  // unresolved deep-link coordinate), nor while creating an event (picking
+  // its location recenters the map the same way, via setMapCenter — without
+  // this it'd fight EventFormPanel's onLocationPick, snapping straight back
+  // to the all-pins fit on the very next render). All of these have their
+  // own explicit "travel to this exact spot" center that fitting-to-all-pins
+  // would otherwise fight. Recentering on "me" deliberately does NOT
+  // participate here — it's a one-shot imperative camera move (see
+  // recenterOnMe), not a mode this declarative effect needs to know about.
+  const isOverviewMode = !selectedPinId && !pendingPosition && !placingPin && !unregisteredLocation && !creatingEvent;
+  // The header morph and scroll-to-top FAB only make sense while actually
+  // browsing the pin list — PinFormPanel/EventFormPanel/PlaceDetailPanel all
+  // share this same scroll container, but they're short, single-purpose forms
+  // (or a detail page), not something you scroll through the way the list is.
+  // Without this gate, scrolling one of those to reach a submit button at the
+  // bottom collapses the header and pops the FAB in over it instead.
+  const isListView = !selectedPinId && !pendingPosition && !creatingEvent;
+  useEffect(() => {
+    if (isListView) return;
+    setHeaderCollapsed(false);
+    setListScrolled(false);
+    listScrollRef.current?.scrollTo({ top: 0 });
+  }, [isListView]);
   // Every pin currently on the map (the map itself renders from the full
   // `pins` list, not the sidebar's filtered subset — fitting matches what's
   // actually plotted). Memoized so MapCenterController's effect only re-runs
@@ -1589,6 +2181,30 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
     () => (pins.length > 0 ? pins.map(p => [p.latitude, p.longitude] as [number, number]) : null),
     [pins]
   );
+  // Pins genuinely can (and now, with event-created pins, routinely will)
+  // stack exactly on top of one another — several "iterations" of the same
+  // real-world spot rather than duplicate garbage. The full list still shows
+  // every one of them (newest first, unfiltered), but the MAP only draws the
+  // newest per exact coordinate, so an overview doesn't look like a pile of
+  // identical markers. Selecting an older one from the list still needs to
+  // show *that* pin's own marker, though — see PlaceDetailPanel-driven
+  // selectedPinId below, added back in even if it lost the dedup above.
+  const mapMarkerPins = useMemo(() => {
+    const newestByCoord = new Map<string, AtlasPin>();
+    for (const pin of pins) {
+      const key = `${pin.latitude.toFixed(6)},${pin.longitude.toFixed(6)}`;
+      const existing = newestByCoord.get(key);
+      if (!existing || new Date(pin.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+        newestByCoord.set(key, pin);
+      }
+    }
+    const deduped = Array.from(newestByCoord.values());
+    if (selectedPinId && !deduped.some(p => p.id === selectedPinId)) {
+      const selected = pins.find(p => p.id === selectedPinId);
+      if (selected) deduped.push(selected);
+    }
+    return deduped;
+  }, [pins, selectedPinId]);
 
   const filteredPins = pins
     .filter(p => !savedOnly || savedPinIds.includes(p.id))
@@ -1620,17 +2236,38 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
     // chrome changes again) or measure it in JS, this makes height flow
     // through real CSS layout instead: h-full here resolves against
     // HubLayout's scroll zone (confirmed live — a flex item's flexed size
-    // counts as "definite" for percentage resolution), flex-1/min-h-0
-    // carries that real, always-correct height down to the two-column grid,
-    // and the grid's own two children each get exactly their share of it
-    // and manage their own internal scrolling — no vh math anywhere below
-    // HubLayout, no matter what changes there.
+    // counts as "definite" for percentage resolution), and flex-1/min-h-0
+    // carries that real, always-correct height down through the single
+    // centered content container below to the pin list's own internal
+    // scroll region — no vh math anywhere below HubLayout, no matter what
+    // changes there.
     <div className="lg:h-full lg:flex lg:flex-col">
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-8 py-7 lg:flex-1 lg:min-h-0">
-        <div className="grid grid-cols-1 lg:grid-cols-[500px_1fr] gap-7 items-start lg:items-stretch lg:h-full">
+      {/* No more two-column grid: this is one wide, `relative` container so the
+          map below can be pulled out of the flow entirely (lg:absolute) and
+          float off to the right, instead of sharing a grid track that would
+          otherwise force the centered list column off-center to make room for
+          it. The list gets its own centered max-w-2xl sub-wrapper right below. */}
+      <div className="relative w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-7 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col lg:overflow-x-hidden">
+
+          {/* Map show/hide toggle — its own fixed spot in the outer gutter past the
+              map's own right edge (right-16 below leaves exactly this lane free),
+              so it never moves and is never hidden the way something riding along
+              on the map's own sliding panel would be. */}
+          <button
+            onClick={() => setMapVisible(v => !v)}
+            title={mapVisible ? 'Hide map' : 'Show map'}
+            aria-label={mapVisible ? 'Hide map' : 'Show map'}
+            className="hidden lg:flex lg:absolute lg:top-7 lg:right-3 z-10 w-9 h-9 rounded-xl cn-glass items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            {mapVisible ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          </button>
 
           {/* ── Right: map ── */}
-          <div className={rightPanelActive ? 'hidden lg:block min-w-0 lg:min-h-0 lg:order-2' : 'min-w-0 lg:min-h-0 lg:order-2'}>
+          <motion.div
+            animate={{ x: mapVisible ? 0 : 640 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className={rightPanelActive ? 'hidden lg:block lg:absolute lg:top-7 lg:right-16 lg:w-[560px]' : 'lg:absolute lg:top-7 lg:right-16 lg:w-[560px]'}
+          >
             <div className="relative aspect-square rounded-2xl overflow-hidden border cn-border">
               <div className="w-full h-full isolate cn-atlas-map">
                 <AtlasMap
@@ -1640,15 +2277,13 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                   fitPoints={isOverviewMode ? pinFitPoints : null}
                   dark={isDarkMode}
                   placingPin={placingPin}
-                  pins={pins}
+                  pins={mapMarkerPins}
                   selectedPinId={selectedPinId}
                   onPinSelect={handlePinSelect}
                   pendingPosition={pendingPosition}
                   createCategory={createCategory}
                   myLocation={myLocation}
                   onDropHereCenterChange={handleDropHereCenterChange}
-                  eventPins={eventPins}
-                  onEventPinSelect={setSelectedEvent}
                 />
               </div>
 
@@ -1783,12 +2418,18 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
 
-          {/* ── Left: back + header + search + pin list or place detail ── */}
-          {/* The column owns its scroll on lg+; the header stays pinned while
-              the pin list or detail content moves underneath it. */}
-          <div className="flex flex-col gap-5 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-1 no-scrollbar lg:order-1">
+          {/* ── Header + search + pin list or place detail — the one centered main
+              container, now that the map (above) floats independently instead of
+              sharing a column with it. Owns its own scroll on lg+; the header
+              stays pinned while the pin list or detail content moves underneath.
+              The outer wrapper's animated lg:pr reserves the map's width once
+              it's shown, so the inner max-w-xl mx-auto column visibly shifts
+              left — a real "push", not just an overlay — in sync with the map's
+              own slide. */}
+          <div className={`lg:flex-1 lg:min-h-0 lg:flex lg:flex-col transition-[padding-right] duration-300 ease-out ${mapVisible ? 'lg:pr-[550px]' : 'lg:pr-0'}`}>
+          <div className="relative w-full max-w-[600px] mx-auto flex flex-col gap-5 lg:flex-1 lg:min-h-0 lg:overflow-hidden lg:pr-1 no-scrollbar">
             <div className="py-1 shrink-0">
               <div className="flex flex-col gap-5">
                 {onBack && (
@@ -1800,47 +2441,118 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                   </button>
                 )}
 
-                <div className="flex items-center gap-3">
-                  <span
-                    className="w-11 h-11 cn-action flex items-center justify-center shadow-md shrink-0"
-                    style={{ background: 'var(--cn-grad-atlas)' }}
-                  >
-                    <AtlasGlyph className="w-6 h-6 text-white" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
-                    <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
+                {/* Morphs away once the list scrolls past ~20px — title/subtitle,
+                    both "Drop a pin" buttons, filter pills and the count label
+                    all collapse to height 0 together, leaving just the search
+                    row (which gains its own compact "+" button below) as the
+                    condensed header. */}
+                <motion.div
+                  initial={false}
+                  animate={{ height: headerCollapsed ? 0 : 'auto', opacity: headerCollapsed ? 0 : 1 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="overflow-hidden shrink-0"
+                >
+                  <div className="flex flex-col gap-5 pb-5">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="w-11 h-11 cn-action flex items-center justify-center shadow-md shrink-0"
+                        style={{ background: 'var(--cn-grad-atlas)' }}
+                      >
+                        <AtlasGlyph className="w-6 h-6 text-white" />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <h1 className="text-2xl font-bold tracking-tight cn-text-1 leading-none">Atlas</h1>
+                        <p className="text-sm cn-text-3 mt-0.5">{pins.length} {pins.length === 1 ? 'pin' : 'pins'} on the map</p>
+                      </div>
+                      {placingPin || creatingEvent ? (
+                        <button
+                          onClick={placingPin ? cancelPlacement : () => setCreatingEvent(false)}
+                          title="Cancel"
+                          aria-label="Cancel"
+                          className="w-10 h-10 rounded-xl bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center shrink-0 transition-all"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              title="Add to Atlas"
+                              aria-label="Add to Atlas"
+                              className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shrink-0 transition-all"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={enterPlacingMode}>
+                              <MapPin className="w-4 h-4" /> Drop a pin
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={startCreatingEvent}>
+                              <Calendar className="w-4 h-4" /> Create an event
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </div>
-                  <button
-                    onClick={placingPin ? cancelPlacement : enterPlacingMode}
-                    className={`hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shrink-0 ${
-                      placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    <Plus className="w-4 h-4" />
-                    {placingPin ? 'Placing…' : 'Drop a pin'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 sm:hidden">
-                  <button
-                    onClick={placingPin ? cancelPlacement : enterPlacingMode}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                      placingPin ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    <Plus className="w-4 h-4" />
-                    {placingPin ? 'Placing…' : 'Drop a pin'}
-                  </button>
+                </motion.div>
+
+                {/* Always visible — the compact "+" picks up pin-dropping once the
+                    row above has collapsed away, so that action stays reachable. */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <LocationSearchInput
+                      value={locationQuery}
+                      onChange={setLocationQuery}
+                      onSelect={handleLocationSelect}
+                      hubCenter={hubGeoCenter}
+                      historyKey={SEARCH_HISTORY_KEY}
+                      inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {headerCollapsed && (
+                    placingPin || creatingEvent ? (
+                      <button
+                        onClick={placingPin ? cancelPlacement : () => setCreatingEvent(false)}
+                        title="Cancel"
+                        aria-label="Cancel"
+                        className="shrink-0 w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            title="Add to Atlas"
+                            aria-label="Add to Atlas"
+                            className="shrink-0 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-all"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={enterPlacingMode}>
+                            <MapPin className="w-4 h-4" /> Drop a pin
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={startCreatingEvent}>
+                            <Calendar className="w-4 h-4" /> Create an event
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )
+                  )}
                 </div>
 
-                <LocationSearchInput
-                  value={locationQuery}
-                  onChange={setLocationQuery}
-                  onSelect={handleLocationSelect}
-                  hubCenter={hubGeoCenter}
-                  historyKey={SEARCH_HISTORY_KEY}
-                  inputClassName="w-full pl-9 pr-8 py-2.5 cn-surface border cn-border rounded-xl text-sm cn-text-1 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                {!selectedPinId && (
+                <motion.div
+                  initial={false}
+                  animate={{ height: headerCollapsed ? 0 : 'auto', opacity: headerCollapsed ? 0 : 1 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="overflow-hidden shrink-0"
+                >
+                  <div className="flex flex-col gap-5 pt-5">
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     onClick={() => setSavedOnly(s => !s)}
@@ -1874,12 +2586,20 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 <span className="text-xs cn-text-3">
                   <b className="cn-mono cn-text-1">{filteredPins.length}</b> {filteredPins.length === 1 ? 'place' : 'places'} pinned
                 </span>
+                  </div>
+                </motion.div>
+                )}
               </div>
             </div>
 
             <div
+              ref={listScrollRef}
               className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto no-scrollbar pb-6 transform-gpu"
-              onScroll={event => setListScrolled(event.currentTarget.scrollTop > 0)}
+              onScroll={event => {
+                if (!isListView) return;
+                setListScrolled(event.currentTarget.scrollTop > 0);
+                setHeaderCollapsed(event.currentTarget.scrollTop > 20);
+              }}
               style={{
                 maskImage: listScrolled
                   ? 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
@@ -1889,7 +2609,17 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                   : 'linear-gradient(to bottom, black 0%, black calc(100% - 24px), transparent 100%)',
               }}
             >
-              {pendingPosition ? (
+              {creatingEvent ? (
+                <EventFormPanel
+                hubSlug={hubSlug}
+                hubCenter={hubGeoCenter}
+                pins={pins}
+                currentUsername={currentUser?.username ?? ''}
+                onLocationPick={(lat, lng) => setMapCenter([lat, lng])}
+                onCreated={handleEventCreated}
+                onCancel={() => setCreatingEvent(false)}
+              />
+              ) : pendingPosition ? (
                 <PinFormPanel
                 position={pendingPosition}
                 hubSlug={hubSlug}
@@ -1913,6 +2643,8 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 onDelete={() => handleDeletePin(selectedPin.id)}
                 onToggleSave={() => toggleSavedPin(selectedPin.id)}
                 onEdit={() => startEditPin(selectedPin)}
+                currentUserId={currentUser?.hubUserId}
+                currentUserAvatarUrl={currentUser?.avatarUrl}
               />
               ) : (
                 <div className="flex flex-col gap-4">
@@ -1972,6 +2704,8 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                         hubSlug={hubSlug}
                         distanceLabel={distanceTo(pin)}
                         onSelect={() => handlePinSelect(pin)}
+                        currentUserId={currentUser?.hubUserId}
+                        currentUserAvatarUrl={currentUser?.avatarUrl}
                       />
                     ))
                   )}
@@ -1979,18 +2713,31 @@ export function AtlasScreen({ onBack, onNavigate }: AtlasScreenProps) {
                 </div>
               )}
             </div>
+
+            {/* Scroll-to-top FAB — lives inside this centered column (not
+                off-canvas like the map toggle), floating over the list's own
+                bottom-right corner. Positioned against this relative wrapper
+                rather than the scrolling div itself so it stays put instead
+                of scrolling away with the content. */}
+            <AnimatePresence>
+              {listScrolled && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={scrollListToTop}
+                  title="Scroll to top"
+                  aria-label="Scroll to top"
+                  className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-colors"
+                >
+                  <ArrowUp className="w-4 h-4" />
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
           </div>
         </div>
-      </div>
-
-      {selectedEvent && (
-        <EventDetailModal
-          event={selectedEvent}
-          hubSlug={hubSlug}
-          onClose={() => setSelectedEvent(null)}
-          onNavigate={onNavigate ?? (() => {})}
-        />
-      )}
     </div>
   );
 }
