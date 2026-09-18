@@ -305,7 +305,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <button
               key={card.key}
               onClick={() => navigateToActivity(card.item, nav)}
-              className="text-left p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+              className="text-left p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/70 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
             >
               <card.icon className="w-4 h-4 text-blue-500 mb-2" />
               <p className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 uppercase tracking-wide">{card.label}</p>
@@ -331,11 +331,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   authorId={item.id}
                   authorUsername={item.actor}
                   authorAvatarUrl={item.actorAvatarUrl}
-                  currentUserId={currentUser?.id}
+                  currentUserId={currentUser?.hubUserId}
                   currentUserAvatarUrl={currentUser?.avatarUrl}
                   size="md"
                 />
-                </div>
                 <p className="text-sm text-slate-600 dark:text-zinc-300 truncate">
                   <span className="font-medium text-slate-900 dark:text-white">{item.actor}</span>{' '}
                   {item.summary}{' '}
