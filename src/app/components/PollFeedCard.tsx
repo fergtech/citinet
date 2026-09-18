@@ -60,6 +60,7 @@ interface PollFeedCardProps {
   onToggleSave?: () => void;
   /** Removes the standalone card surface when rendered inside a detail modal. */
   embedded?: boolean;
+  copyLinkActive?: boolean;
 }
 
 export function PollFeedCard({ post, canManage, voting, closing, reopening, onVote, onClose, onReopen, onEdit, onDelete, deleting, onCopyLink, copyLinkActive, onNavigateToProfile, onLike, onCommentClick, likeCount, myLiked, replyCount, authorAvatarUrl, currentUserId, currentUserAvatarUrl, saved, onToggleSave, embedded }: PollFeedCardProps) {
