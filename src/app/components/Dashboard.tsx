@@ -326,10 +326,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 onClick={() => navigateToActivity(item, nav)}
                 className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors"
               >
-                <div className="w-6 h-6 rounded-full overflow-hidden shrink-0">
+                <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0">
                   {item.actorAvatarUrl
-                    ? <img src={item.actorAvatarUrl} alt={item.actor} className="w-full h-full object-cover" />
-                    : <AvatarFallback className="w-full h-full" name={item.actor} />
+                    ? <img src={item.actorAvatarUrl} alt={item.actor} className="w-full h-full object-cover" onError={(e) => {(e.target as HTMLImageElement).style.display = 'none'}} />
+                    : <AvatarFallback className="absolute inset-0 w-full h-full" name={item.actor} />
                   }
                 </div>
                 <p className="text-sm text-slate-600 dark:text-zinc-300 truncate">
