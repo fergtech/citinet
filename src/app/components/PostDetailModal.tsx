@@ -646,7 +646,7 @@ export function PostDetailModal({
                       onEdit={() => {}}
                       onDelete={() => {}}
                       onCopyLink={() => onShare?.()}
-                      copyLinkActive={shareCopied}
+                      copyLinkActive={shareCopied ?? false}
                       onNavigateToProfile={onNavigateToProfile && post.author_id ? () => onNavigateToProfile(post.author_id) : undefined}
                       onLike={onLike}
                       onCommentClick={() => textareaRef.current?.focus()}
