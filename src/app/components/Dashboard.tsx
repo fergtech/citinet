@@ -350,7 +350,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
       >
-        Help shape CitiNet <ArrowRight className="w-3.5 h-3.5" />
+        Help shape Citinet <ArrowRight className="w-3.5 h-3.5" />
       </a>
     </div>
   );
