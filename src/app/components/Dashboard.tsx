@@ -305,7 +305,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <button
               key={card.key}
               onClick={() => navigateToActivity(card.item, nav)}
-              className="text-left p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/70 transition-colors"
+              className="text-left p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/70 transition-colors hover:bg-white/90 hover:dark:bg-zinc-900/90"
             >
               <card.icon className="w-4 h-4 text-blue-500 mb-2" />
               <p className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 uppercase tracking-wide">{card.label}</p>
