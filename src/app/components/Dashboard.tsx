@@ -6,6 +6,7 @@ import {
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService } from '../services/aiService';
+import { AvatarCircle } from './AvatarCircle';
 import { AvatarFallback } from './icons';
 import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
 import type { SearchResults } from '../types/hub';
@@ -326,11 +327,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 onClick={() => navigateToActivity(item, nav)}
                 className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors"
               >
-                <div className="relative w-6 h-6 rounded-full overflow-hidden shrink-0">
-                  {item.actorAvatarUrl
-                    ? <img src={item.actorAvatarUrl} alt={item.actor} className="w-full h-full object-cover" onError={(e) => {(e.target as HTMLImageElement).style.display = 'none'}} />
-                    : <AvatarFallback className="absolute inset-0 w-full h-full" name={item.actor} />
-                  }
+                <AvatarCircle
+                  authorId={item.id}
+                  authorUsername={item.actor}
+                  authorAvatarUrl={item.actorAvatarUrl}
+                  currentUserId={currentUser?.id}
+                  currentUserAvatarUrl={currentUser?.avatarUrl}
+                  size="md"
+                />
                 </div>
                 <p className="text-sm text-slate-600 dark:text-zinc-300 truncate">
                   <span className="font-medium text-slate-900 dark:text-white">{item.actor}</span>{' '}
