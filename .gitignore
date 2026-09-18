@@ -58,3 +58,4 @@ CLAUDE_CONTEXT.md
 # never pushed — see sandbox.html and src/sandbox/.
 /sandbox.html
 /src/sandbox/
+.aider*

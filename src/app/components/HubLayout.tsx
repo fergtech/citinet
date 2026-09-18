@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import {
   Search, Link2, Grid3x3, Shield, CircleAlert, PanelLeft, PanelBottom,
   LogOut, ArrowRightLeft, User, UserCircle, HelpCircle, WifiOff, Loader2, RefreshCw, X,
-  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, GripVertical, Bell,
+  Sparkles, Store, Bug, Lightbulb, MapPin, Users, Sun, Moon, GripVertical, Bell, Home,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -16,7 +16,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, s
 import { CSS } from '@dnd-kit/utilities';
 import { useHub, useHubStatus } from '../context/HubContext';
 import { hubService } from '../services/hubService';
-import { AvatarFallback, VendorAvatarFallback, MoreGlyph, AtlasGlyph } from './icons';
+import { AvatarFallback, VendorAvatarFallback, MoreGlyph } from './icons';
 import { marketplaceService } from '../services/marketplaceService';
 import { aiService } from '../services/aiService';
 import { useNotificationCounts } from '../hooks/useNotificationCounts';
@@ -42,10 +42,10 @@ import type { HubVendor } from '../types/hub';
 // Screens pinned to the desktop sidebar/dock out of the box — users can repin
 // and reorder from the "More" overlay's Edit mode, synced to the account via
 // updateUserPreferences (see the reconciliation effect in HubLayout below).
-// 'atlas' dropped from the default — the fixed Atlas/home icon (Home's old
-// slot, now relabeled) already covers `/`, so a separate pinned nav slot for
-// it would just be a duplicate destination.
-const DEFAULT_PINNED_NAV = ['feed', 'messages', 'marketplace', 'toolkit'];
+// Home (`/`) is the Dashboard, a fixed nav slot of its own (not an app tile),
+// so 'atlas' is pinned here like any other destination rather than being
+// folded into Home.
+const DEFAULT_PINNED_NAV = ['feed', 'atlas', 'messages', 'marketplace', 'toolkit'];
 
 type NavTile = { Icon: React.ElementType; label: string; screen: string; gradient: string };
 
@@ -607,17 +607,17 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
     <div className="h-[100dvh]">
 
       {/* ═══ DESKTOP TOP MENUBAR ═══ */}
-      <div className="hidden md:flex fixed top-0 inset-x-0 h-9 z-30 bg-white/85 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200/70 dark:border-zinc-800/70 items-center px-4 gap-3 select-none">
+      <div className="hidden md:grid fixed top-0 inset-x-0 h-9 z-30 bg-white/85 dark:bg-black/80 backdrop-blur-xl border-b border-slate-200/70 dark:border-zinc-800/70 grid-cols-[1fr_auto_1fr] items-center px-4 gap-3 select-none">
         <button
           onClick={() => setShowHubInfoModal(true)}
-          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0"
+          className="flex items-center gap-1.5 -mx-1.5 px-1.5 h-6 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors justify-self-start min-w-0"
           title="About this hub"
         >
           <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
-          <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100">{nodeName}</span>
+          <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">{nodeName}</span>
         </button>
-        <form onSubmit={handleSearchSubmit} className="flex-1 flex justify-center min-w-0 px-2">
-          <div className="relative w-full max-w-sm">
+        <form onSubmit={handleSearchSubmit} className="flex justify-self-center">
+          <div className="relative w-[clamp(320px,40vw,700px)] max-w-full">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
             <input
               type="text"
@@ -628,31 +628,33 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
             />
           </div>
         </form>
-        <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
-        <span className="text-xs text-slate-700 dark:text-zinc-300">{statusLabel}</span>
-        {nodeStatus.onlineNow > 0 && (
-          <>
-            <span className="text-xs cn-text-4">·</span>
-            <span className="text-xs text-slate-700 dark:text-zinc-300">{nodeStatus.onlineNow} online</span>
-          </>
-        )}
-        <button
-          onClick={() => navigate(hubPath('/notifications'))}
-          className="relative p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
-          title="Notifications"
-        >
-          <Bell className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
-          {unreadNotifCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+        <div className="flex items-center gap-3 justify-self-end min-w-0">
+          <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
+          <span className="text-xs text-slate-700 dark:text-zinc-300 whitespace-nowrap">{statusLabel}</span>
+          {nodeStatus.onlineNow > 0 && (
+            <>
+              <span className="text-xs cn-text-4">·</span>
+              <span className="text-xs text-slate-700 dark:text-zinc-300 whitespace-nowrap">{nodeStatus.onlineNow} online</span>
+            </>
           )}
-        </button>
-        <button
-          onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
-          className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
-          title="Update tunnel URL"
-        >
-          <Link2 className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
-        </button>
+          <button
+            onClick={() => navigate(hubPath('/notifications'))}
+            className="relative p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
+            title="Notifications"
+          >
+            <Bell className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
+            {unreadNotifCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" />
+            )}
+          </button>
+          <button
+            onClick={() => { setShowTunnelInput(v => !v); setTunnelError(''); setTunnelSuccess(false); }}
+            className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-zinc-800 transition-colors"
+            title="Update tunnel URL"
+          >
+            <Link2 className="w-3 h-3 text-slate-500 dark:text-zinc-500" />
+          </button>
+        </div>
       </div>
 
       {/* ═══ DESKTOP RECONNECT PANEL ═══ */}
@@ -832,10 +834,10 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
         <div className="hidden md:flex fixed bottom-0 inset-x-0 h-14 z-30 bg-white/85 dark:bg-black/62 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60 items-center px-4 gap-1">
           <button
             onClick={() => navigate(hubPath('/'))}
-            title="Atlas"
+            title="Home"
             className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-all active:scale-95 shrink-0"
           >
-            <AtlasGlyph className="w-5 h-5" />
+            <Home className="w-5 h-5" />
           </button>
           {desktopNavItems.map(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
@@ -923,13 +925,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
         <div className="hidden md:flex flex-col fixed left-0 top-9 bottom-0 z-30 w-16 hover:w-60 overflow-hidden transition-[width] duration-200 ease-out bg-white/85 dark:bg-black/62 backdrop-blur-xl border-r border-slate-200/70 dark:border-zinc-800/60 group">
           <button
             onClick={() => navigate(hubPath('/'))}
-            title="Atlas"
+            title="Home"
             className="flex items-center h-12 shrink-0 overflow-hidden text-slate-500 dark:text-zinc-300 hover:bg-blue-500/15 dark:hover:bg-blue-400/15 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
           >
             <span className="w-16 h-12 flex items-center justify-center shrink-0">
-              <AtlasGlyph className="w-5 h-5" />
+              <Home className="w-5 h-5" />
             </span>
-            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Atlas</span>
+            <span className="pr-4 whitespace-nowrap text-sm font-medium opacity-0 group-hover:opacity-100 transition-opacity duration-150">Home</span>
           </button>
           {desktopNavItems.map(app => {
             const badge = app.notifyFeature ? notifCounts[app.notifyFeature] : 0;
@@ -1142,13 +1144,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       {/* ═══ MOBILE BOTTOM DOCK ═══ */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/85 dark:bg-black/64 backdrop-blur-xl border-t border-slate-200/70 dark:border-zinc-800/60">
         <div className="flex items-stretch h-16 px-1">
-          {/* Atlas — the app's home screen */}
+          {/* Home — the Dashboard */}
           <button
             onClick={() => navigate(hubPath('/'))}
             className="flex-1 flex flex-col items-center justify-center gap-1 text-slate-500 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-300 active:scale-95 transition-transform"
           >
-            <AtlasGlyph className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-none">Atlas</span>
+            <Home className="w-5 h-5" />
+            <span className="text-[10px] font-medium leading-none">Home</span>
           </button>
           {/* Feed · Search (from DOCK_PRIORITY_SCREENS, Search inserted after Feed) */}
           {dockItems.flatMap(app => {

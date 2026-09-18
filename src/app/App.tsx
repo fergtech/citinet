@@ -20,6 +20,7 @@ import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
 import { ModerationQueueScreen } from './components/ModerationQueueScreen';
 import { AtlasScreen } from './components/AtlasScreen';
+import { Dashboard } from './components/Dashboard';
 import { InitiativesScreen } from './components/InitiativesScreen';
 import { AccountScreen } from './components/AccountScreen';
 import { HubManagementScreen } from './components/HubManagementScreen';
@@ -200,7 +201,7 @@ function HubDashboardRoute() {
     sessionStorage.setItem('citinet-node-name', nodeName);
   }
 
-  return <AtlasScreen onNavigate={handleNavigate} />;
+  return <Dashboard onNavigate={handleNavigate} />;
 }
 
 function HubPendingApprovalRoute() {

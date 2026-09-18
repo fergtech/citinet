@@ -3436,6 +3436,28 @@ app.post('/api/files', authenticate, (req, res) => {
   req.pipe(bb);
 });
 
+// A file is viewable by: its owner, anyone when it's is_public, OR any member
+// of a conversation where a message carries it as an attachment. That last
+// clause is what actually makes a DM/group attachment work for the
+// *recipient* — file_name = $1 and req.user.id = $2 are already bound by
+// every caller below, so this only ever needs those same two params.
+// Without it, a message attachment (uploaded is_public: false, same as any
+// other private file) 404s for everyone except whoever sent it — the file
+// existed and was correctly linked via hub_message_attachments, but neither
+// this route nor the token route below had any notion of "shared via a
+// conversation" to check against. Fixed 2026-09-18.
+const FILE_ACCESS_CONDITION = `(
+  hub_files.owner_id = $2
+  OR hub_files.is_public = true
+  OR EXISTS (
+    SELECT 1
+    FROM hub_message_attachments hma
+    JOIN hub_messages hm ON hm.id = hma.message_id
+    JOIN hub_conversation_members hcm ON hcm.conversation_id = hm.conversation_id
+    WHERE hma.file_id = hub_files.id AND hcm.user_id = $2
+  )
+)`;
+
 // Download file
 app.get('/api/files/:filename', authenticate, async (req, res) => {
   // req.params.filename is already URL-decoded by Express's router before
@@ -3451,7 +3473,7 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM hub_files
-       WHERE file_name = $1 AND (owner_id = $2 OR is_public = true)
+       WHERE file_name = $1 AND ${FILE_ACCESS_CONDITION}
        LIMIT 1`,
       [fileName, req.user.id],
     );
@@ -3526,7 +3548,7 @@ app.post('/api/files/:filename/token', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT file_key FROM hub_files
-       WHERE file_name = $1 AND (owner_id = $2 OR is_public = true) LIMIT 1`,
+       WHERE file_name = $1 AND ${FILE_ACCESS_CONDITION} LIMIT 1`,
       [fileName, req.user.id],
     );
     if (!result.rows[0])
@@ -3575,7 +3597,7 @@ app.get('/api/files/:filename/download', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT * FROM hub_files WHERE file_name = $1 AND (owner_id = $2 OR is_public = true) LIMIT 1`,
+      `SELECT * FROM hub_files WHERE file_name = $1 AND ${FILE_ACCESS_CONDITION} LIMIT 1`,
       [fileName, tokenData.userId],
     );
     if (!result.rows[0])
