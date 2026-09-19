@@ -41,7 +41,6 @@ interface PollFeedCardProps {
   onDelete: () => void;
   deleting?: boolean;
   onCopyLink: () => void;
-  copyLinkActive: boolean;
   /** Absent when the poll has no author on record (e.g. legacy/system polls) — nothing to navigate to. */
   onNavigateToProfile?: () => void;
   /** Toggles the caller's like on this post — same engagement row as PostCard. */

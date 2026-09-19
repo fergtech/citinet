@@ -58,13 +58,6 @@ function formatTimestamp(iso: string): string {
   } catch { return ''; }
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  DISCUSSION:   'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 ring-blue-200 dark:ring-blue-500/20',
-  ANNOUNCEMENT: 'bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-200 dark:ring-amber-500/20',
-  PROJECT:      'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-200 dark:ring-emerald-500/20',
-  REQUEST:      'bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 ring-rose-200 dark:ring-rose-500/20',
-};
-
 const BANNER_SOLID_COLORS = ['#0f766e','#0369a1','#1d4ed8','#6d28d9','#be123c','#b45309','#374151'];
 const BANNER_GRADIENTS = [
   { from: '#2563eb', to: '#7c3aed' }, { from: '#0f766e', to: '#2563eb' },
