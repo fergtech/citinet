@@ -1854,7 +1854,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const listScrollRef = useRef<HTMLDivElement>(null);
   const scrollListToTop = () => listScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  // Desktop-only show/hide toggle for the floating map panel (lg:) — shown by
+  // Desktop-only show/hide toggle for the floating map panel (md:) — shown by
   // default. The map itself stays mounted and just slides off via transform
   // when hidden, so toggling never re-inits the MapLibre instance.
   const [mapVisible, setMapVisible] = useState(true);
@@ -2224,7 +2224,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   const isDarkMode = resolvedTheme === 'dark';
 
   return (
-    // lg:h-full lg:flex lg:flex-col (mobile untouched — display:block/auto,
+    // md:h-full md:flex md:flex-col (mobile untouched — display:block/auto,
     // exactly as before): this used to be min-h-screen, which forced this
     // div to be 100vh tall even though it renders inside HubLayout's own
     // scrollable content zone — a zone that's already shorter than the full
@@ -2241,13 +2241,22 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     // centered content container below to the pin list's own internal
     // scroll region — no vh math anywhere below HubLayout, no matter what
     // changes there.
-    <div className="lg:h-full lg:flex lg:flex-col">
+    <div className="md:h-full md:flex md:flex-col">
       {/* No more two-column grid: this is one wide, `relative` container so the
-          map below can be pulled out of the flow entirely (lg:absolute) and
+          map below can be pulled out of the flow entirely (md:absolute) and
           float off to the right, instead of sharing a grid track that would
           otherwise force the centered list column off-center to make room for
-          it. The list gets its own centered max-w-2xl sub-wrapper right below. */}
-      <div className="relative w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-7 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col lg:overflow-x-hidden">
+          it. The list gets its own centered max-w-2xl sub-wrapper right below.
+          Breakpoint is md (768px), matching HubLayout's own shell switch to
+          desktop chrome — this used to be lg (1024px), leaving a broken
+          768-1024px gap where the sidebar was already "desktop" but the map
+          panel below had none of its floating/sizing classes active yet, so
+          it fell back to an unconstrained aspect-square block that took over
+          the full width and pushed the header/list hundreds of px down the
+          page. See cn-atlas-map-panel/cn-atlas-content-pushed in
+          citinet-tokens.css for the fluid (not fixed-560px) width that makes
+          the narrow end of this range (768-1024px) usable too. */}
+      <div className="relative w-full max-w-[1440px] mx-auto px-4 sm:px-8 py-7 md:flex-1 md:min-h-0 md:flex md:flex-col md:overflow-x-hidden">
 
           {/* Map show/hide toggle — its own fixed spot in the outer gutter past the
               map's own right edge (right-16 below leaves exactly this lane free),
@@ -2257,16 +2266,42 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
             onClick={() => setMapVisible(v => !v)}
             title={mapVisible ? 'Hide map' : 'Show map'}
             aria-label={mapVisible ? 'Hide map' : 'Show map'}
-            className="hidden lg:flex lg:absolute lg:top-7 lg:right-3 z-10 w-9 h-9 rounded-xl cn-glass items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors"
+            className="hidden md:flex md:absolute md:top-7 md:right-3 z-10 w-9 h-9 rounded-xl cn-glass items-center justify-center cn-text-2 hover:text-slate-900 dark:hover:text-white transition-colors"
           >
             {mapVisible ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
           </button>
 
+          {/* Mobile equivalent of the toggle above — fixed to the viewport
+              (not this scrolling column) so it's reachable from the pin list
+              OR a place detail view, above the bottom dock (h-16) and above
+              the map/backdrop's own z-index, exactly like the desktop toggle
+              is always reachable regardless of where the floating panel is. */}
+          <button
+            onClick={() => setMapVisible(v => !v)}
+            title={mapVisible ? 'Hide map' : 'Show map'}
+            aria-label={mapVisible ? 'Hide map' : 'Show map'}
+            className="md:hidden fixed bottom-20 right-4 z-50 w-12 h-12 rounded-full cn-glass shadow-lg flex items-center justify-center cn-text-1 active:scale-95 transition-transform"
+          >
+            {mapVisible ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+          </button>
+
+          {/* Backdrop for the mobile map overlay only — tapping it dismisses
+              the map the same as the toggle button, standard sheet/modal
+              behavior. cn-atlas-map-mobile-backdrop only has rules below the
+              md breakpoint (see citinet-tokens.css), so this is inert at
+              desktop widths regardless of mapVisible. */}
+          {mapVisible && (
+            <div
+              onClick={() => setMapVisible(false)}
+              className="cn-atlas-map-mobile-backdrop md:hidden bg-black/40 backdrop-blur-sm"
+            />
+          )}
+
           {/* ── Right: map ── */}
           <motion.div
-            animate={{ x: mapVisible ? 0 : 640 }}
+            animate={{ x: mapVisible ? 0 : 1000 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
-            className={rightPanelActive ? 'hidden lg:block lg:absolute lg:top-7 lg:right-16 lg:w-[560px]' : 'lg:absolute lg:top-7 lg:right-16 lg:w-[560px]'}
+            className={`cn-atlas-map-mobile ${rightPanelActive ? 'md:block md:absolute md:top-7 md:right-16 cn-atlas-map-panel' : 'md:absolute md:top-7 md:right-16 cn-atlas-map-panel'}`}
           >
             <div className="relative aspect-square rounded-2xl overflow-hidden border cn-border">
               <div className="w-full h-full isolate cn-atlas-map">
@@ -2422,14 +2457,15 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
           {/* ── Header + search + pin list or place detail — the one centered main
               container, now that the map (above) floats independently instead of
-              sharing a column with it. Owns its own scroll on lg+; the header
+              sharing a column with it. Owns its own scroll on md+; the header
               stays pinned while the pin list or detail content moves underneath.
-              The outer wrapper's animated lg:pr reserves the map's width once
+              The outer wrapper's animated cn-atlas-content-pushed padding
+              (see citinet-tokens.css) reserves the map's width once
               it's shown, so the inner max-w-xl mx-auto column visibly shifts
               left — a real "push", not just an overlay — in sync with the map's
               own slide. */}
-          <div className={`lg:flex-1 lg:min-h-0 lg:flex lg:flex-col transition-[padding-right] duration-300 ease-out ${mapVisible ? 'lg:pr-[550px]' : 'lg:pr-0'}`}>
-          <div className="relative w-full max-w-[600px] mx-auto flex flex-col gap-5 lg:flex-1 lg:min-h-0 lg:overflow-hidden lg:pr-1 no-scrollbar">
+          <div className={`md:flex-1 md:min-h-0 md:flex md:flex-col transition-[padding-right] duration-300 ease-out ${mapVisible ? 'cn-atlas-content-pushed' : ''}`}>
+          <div className="relative w-full max-w-[600px] mx-auto flex flex-col gap-5 md:flex-1 md:min-h-0 md:overflow-hidden md:pr-1 no-scrollbar">
             <div className="py-1 shrink-0">
               <div className="flex flex-col gap-5">
                 {onBack && (
@@ -2594,7 +2630,7 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
 
             <div
               ref={listScrollRef}
-              className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto no-scrollbar pb-6 transform-gpu"
+              className="md:flex-1 md:min-h-0 md:overflow-y-auto no-scrollbar pb-6 transform-gpu"
               onScroll={event => {
                 if (!isListView) return;
                 setListScrolled(event.currentTarget.scrollTop > 0);

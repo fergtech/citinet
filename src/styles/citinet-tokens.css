@@ -41,6 +41,7 @@
   --cn-border:         rgba(15, 23, 42, 0.08);
   --cn-border-strong:  rgba(15, 23, 42, 0.14);
   --cn-glass-bg:       rgba(255, 255, 255, 0.65);
+  --cn-glass-bg-hover: rgba(255, 255, 255, 0.45);
   --cn-glass-border:   rgba(15, 23, 42, 0.06);
 
   /* Motion */
@@ -66,6 +67,7 @@
   --cn-border:         rgba(255, 255, 255, 0.08);
   --cn-border-strong:  rgba(255, 255, 255, 0.14);
   --cn-glass-bg:       rgba(9, 9, 11, 0.50);
+  --cn-glass-bg-hover: rgba(9, 9, 11, 0.32);
   --cn-glass-border:   rgba(255, 255, 255, 0.08);
 }
 
@@ -111,6 +113,73 @@
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border: 1px solid var(--cn-glass-border);
+}
+
+/* Opt-in: lightens (more see-through) on hover, e.g. Dashboard's featured cards */
+.cn-glass-hover:hover {
+  background: var(--cn-glass-bg-hover);
+}
+
+/* Pill hover — same coloring as Discover's active filter chip. Written as a
+   plain rule (not a Tailwind hover: utility) because this stylesheet is
+   imported unlayered, so it always outranks Tailwind's own @layer utilities
+   for the same declarations regardless of specificity — a bare hover: class
+   here would have been silently beaten by cn-surface-2/cn-text-2/cn-border. */
+.cn-pill-hover:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: transparent;
+}
+.dark .cn-pill-hover:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border-color: transparent;
+}
+
+/* AtlasScreen's floating map panel — a fluid width (not the old fixed
+   560px) so the map+list split degrades gracefully at "tablet" widths
+   (768-1024px, between HubLayout's own md: chrome breakpoint and where a
+   fixed 560px map would leave enough room for the list) instead of jumping
+   straight from a broken full-width block to a full 560px panel. Reaches
+   the old fixed 560px around ~1220px viewport width and holds there. */
+.cn-atlas-content-pushed {
+  padding-right: 0;
+}
+@media (min-width: 768px) {
+  /* Scoped here (not a bare .cn-atlas-map-panel rule) because this class is
+     also present in the map's className below md, where cn-atlas-map-mobile
+     needs left/right to compute the overlay's width itself — an unscoped
+     width here would fight that and pin the mobile card to a fixed width
+     instead of filling the space between its 1rem insets. */
+  .cn-atlas-map-panel {
+    width: clamp(300px, 46vw, 560px);
+  }
+  .cn-atlas-content-pushed {
+    padding-right: calc(clamp(300px, 46vw, 560px) + 40px);
+  }
+}
+
+/* Atlas mobile: below md, the floating map becomes a dismissible overlay
+   (backdrop + card) instead of a static block wedged at the top of the
+   page that pushed the pin list/detail view far down — the actual "weak
+   UX" this replaces. Reuses the exact same mapVisible toggle + framer-motion
+   x-transform slide the desktop floating panel already has; `position:
+   fixed` here just gives that slide something to move relative to (so
+   hiding it doesn't leave a reserved gap in the page like the old static
+   block did), rather than needing a second animation scheme. */
+@media (max-width: 767px) {
+  .cn-atlas-map-mobile {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    top: 4.5rem;
+    z-index: 40;
+  }
+  .cn-atlas-map-mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+  }
 }
 
 /* ============================================================

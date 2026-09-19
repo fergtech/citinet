@@ -24,7 +24,12 @@ WORKDIR /app
 # photo, and building sharp from source against Alpine's system libvips
 # isn't viable either -- sharp 0.34.x needs libvips >= 8.17.3, Alpine's
 # repos only have 8.15.3. See convertHeicUpload's comment in server.js.
-RUN apk add --no-cache libheif-tools
+# imagemagick generates the small preview thumbnails server.js serves for
+# ?thumb=1 requests (getOrCreateThumbnailKey) -- npm `sharp` was already
+# rejected above for HEIC, and reusing it here would hit the exact same
+# libvips-version wall, so this shells out to `convert` the same way HEIC
+# conversion shells out to `heif-convert`.
+RUN apk add --no-cache libheif-tools imagemagick
 COPY api/package.json ./
 RUN npm install --omit=dev --ignore-scripts
 # Every top-level api/*.js file gets copied in -- including the Vercel-only

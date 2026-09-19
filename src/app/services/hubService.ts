@@ -1495,14 +1495,25 @@ class HubService {
    * List files on a hub (both personal and shared).
    * Calls GET /api/files with auth token.
    */
-  async listFiles(hubSlug: string): Promise<HubFile[]> {
+  async listFiles(hubSlug: string, opts?: { limit?: number; offset?: number }): Promise<HubFile[]> {
+    const { files } = await this.listFilesPage(hubSlug, opts);
+    return files;
+  }
+
+  /** Same as listFiles, but also reports whether another page is available. */
+  async listFilesPage(hubSlug: string, opts?: { limit?: number; offset?: number }): Promise<{ files: HubFile[]; hasMore: boolean }> {
     const connection = this.getHubConnection(hubSlug);
     if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
     if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
 
     const { headers } = this.getAuthHeaders(hubSlug);
 
-    const response = await fetch(`${connection.hub.tunnelUrl}/api/files`, { headers });
+    const params = new URLSearchParams();
+    if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
+    if (opts?.offset !== undefined) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/files${qs ? `?${qs}` : ''}`, { headers });
 
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
 
@@ -1511,7 +1522,7 @@ class HubService {
     const rawFiles: any[] = Array.isArray(data) ? data : (data.files || []);
 
     // Normalize field names to match HubFile interface
-    return rawFiles.map((f: any, index: number) => ({
+    const files = rawFiles.map((f: any, index: number) => ({
       id: String(f.file_id ?? f.id ?? f.uuid ?? index),
       name: f.file_name || f.name || f.filename || f.original_name || f.title || 'Unnamed file',
       size: Number(f.size_bytes || f.size || f.file_size || f.content_length || f.bytes || 0),
@@ -1525,6 +1536,7 @@ class HubService {
       web_public: f.web_public ?? false,
       folder_id: f.folder_id ?? null,
     }));
+    return { files, hasMore: !!(Array.isArray(data) ? false : data.hasMore) };
   }
 
   /**
@@ -1987,14 +1999,14 @@ class HubService {
    * entire file into browser memory and will crash for large files.
    * Caller is responsible for revoking the URL when done.
    */
-  async fetchFileBlob(hubSlug: string, fileName: string, mimeType?: string): Promise<string> {
+  async fetchFileBlob(hubSlug: string, fileName: string, mimeType?: string, opts?: { thumb?: boolean }): Promise<string> {
     const url = this.getFileDownloadUrl(hubSlug, fileName);
     if (!url) throw new Error('No download URL available');
 
     const connection = this.getHubConnection(hubSlug);
     const token = connection?.user?.authToken;
 
-    const res = await fetch(url, {
+    const res = await fetch(opts?.thumb ? `${url}?thumb=1` : url, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
@@ -2011,7 +2023,12 @@ class HubService {
       // Decryption failed (different device / no key) — return as-is, it will look garbled
     }
 
-    const blob = new Blob([buf], { type: mimeType || res.headers.get('Content-Type') || 'application/octet-stream' });
+    // A ?thumb=1 response that wasn't ciphertext is the server's resized
+    // JPEG, not the original mime type — trust its own Content-Type instead
+    // of the caller-supplied original mimeType in that case.
+    const blobType = (opts?.thumb ? res.headers.get('Content-Type') : mimeType)
+      || mimeType || res.headers.get('Content-Type') || 'application/octet-stream';
+    const blob = new Blob([buf], { type: blobType });
     return URL.createObjectURL(blob);
   }
 
@@ -2020,9 +2037,13 @@ class HubService {
   // ──────────────────────────────────────────────
 
   /** List posts on the hub, newest first. Optionally filter by category. */
-  async listPosts(hubSlug: string, category?: string): Promise<HubPost[]> {
+  async listPosts(hubSlug: string, category?: string, opts?: { limit?: number }): Promise<HubPost[]> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
-    const params = category ? `?category=${encodeURIComponent(category)}` : '';
+    const query = new URLSearchParams();
+    if (category) query.set('category', category);
+    if (opts?.limit !== undefined) query.set('limit', String(opts.limit));
+    const qs = query.toString();
+    const params = qs ? `?${qs}` : '';
     const response = await fetch(`${tunnelUrl}/api/posts${params}`, { headers });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     const data = await response.json();
@@ -2214,10 +2235,11 @@ class HubService {
   }
 
   /** Get the URL for a public post image (no auth needed). */
-  getPublicFileUrl(hubSlug: string, fileName: string): string | null {
+  getPublicFileUrl(hubSlug: string, fileName: string, opts?: { thumb?: boolean }): string | null {
     const connection = this.getHubConnection(hubSlug);
     if (!connection?.hub.tunnelUrl) return null;
-    return `${connection.hub.tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}`;
+    const base = `${connection.hub.tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}`;
+    return opts?.thumb ? `${base}?thumb=1` : base;
   }
 
   /** List replies for a post, oldest first. */

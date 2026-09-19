@@ -158,8 +158,11 @@ export function useActivityFeed(hubSlug: string) {
     if (!silent) setLoading(true);
 
     const settled = await Promise.allSettled([
-      hubService.listPosts(hubSlug),
-      hubService.listFiles(hubSlug),
+      // Only the freshest few of each ever get displayed below (.slice —
+      // see the trimming further down) — ask the server for a small page
+      // instead of its full history on every Dashboard mount.
+      hubService.listPosts(hubSlug, undefined, { limit: 10 }),
+      hubService.listFiles(hubSlug, { limit: 10 }),
       hubService.listMembers(hubSlug),
       atlasService.getPins(hubSlug),
       spacesService.listAll(hubSlug),

@@ -143,7 +143,7 @@ function useFileThumbnail(slug: string, file: HubFile, elRef: React.RefObject<El
     let objectUrl: string | null = null;
     const load = kind === 'video'
       ? hubService.getFileStreamUrl(slug, file.name)
-      : hubService.fetchFileBlob(slug, file.name, file.mime_type).then(blobUrl => { objectUrl = blobUrl; return blobUrl; });
+      : hubService.fetchFileBlob(slug, file.name, file.mime_type, { thumb: true }).then(blobUrl => { objectUrl = blobUrl; return blobUrl; });
     load
       .then(loadedUrl => {
         if (cancelled) { if (objectUrl) URL.revokeObjectURL(objectUrl); return; }

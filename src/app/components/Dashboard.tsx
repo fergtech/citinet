@@ -194,7 +194,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   }, [activity]);
 
   return (
-    <div className="min-h-full px-4 md:px-8 pt-6 md:pt-12 pb-24 max-w-3xl mx-auto">
+    <div className="px-4 md:px-8 pt-6 md:pt-12 pb-24 max-w-3xl mx-auto">
       {/* Welcome header */}
       <div className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">{greetingForHour(now.getHours())}, {displayName}</h1>
@@ -209,15 +209,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
       {/* Universal intent search / command palette */}
       <div className="relative mb-3">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 cn-text-4 pointer-events-none" />
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder='Search CitiNet, or type a command… ("create event", "john", "coffee")'
-          className="w-full h-12 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-shadow"
+          placeholder='Search Citinet, or type a command… ("create event", "john", "coffee")'
+          className="w-full h-[46px] pl-10 pr-4 rounded-xl cn-glass cn-text-1 text-sm placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         />
 
         {hasDropdown && (
@@ -285,12 +285,12 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Suggested actions */}
-      <div className="flex flex-wrap gap-2 mb-10">
+      <div className="flex flex-wrap gap-1.5 mb-10">
         {quickActions.map(cmd => (
           <button
             key={cmd.id}
             onClick={() => runCommand(cmd)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+            className="cn-pill-hover shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border cn-surface-2 cn-text-2 cn-border transition-colors"
           >
             <cmd.icon className="w-3.5 h-3.5" />
             {cmd.label}
@@ -305,12 +305,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <button
               key={card.key}
               onClick={() => navigateToActivity(card.item, nav)}
-              className="text-left p-4 rounded-2xl border border-slate-200 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/70 transition-colors hover:bg-white/90 hover:dark:bg-zinc-900/90"
+              className="text-left p-4 cn-glass cn-glass-hover rounded-2xl hover:border-black/15 dark:hover:border-white/15 transition-all duration-200"
             >
-              <card.icon className="w-4 h-4 text-blue-500 mb-2" />
-              <p className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 uppercase tracking-wide">{card.label}</p>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white mt-0.5 truncate">{card.item.title}</p>
-              <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">{timeAgo(card.item.timestamp)} · View →</p>
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-2.5">
+                <card.icon className="w-4 h-4 text-white" />
+              </span>
+              <p className="cn-eyebrow">{card.label}</p>
+              <p className="text-sm font-semibold cn-text-1 mt-0.5 truncate">{card.item.title}</p>
+              <p className="text-xs cn-text-4 mt-1">{timeAgo(card.item.timestamp)} · View →</p>
             </button>
           ))}
         </div>
@@ -325,7 +327,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <button
                 key={item.id}
                 onClick={() => navigateToActivity(item, nav)}
-                className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-zinc-800/60 transition-colors"
+                className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 hover:backdrop-blur-md transition-all duration-200"
               >
                 <AvatarCircle
                   authorId={item.id}

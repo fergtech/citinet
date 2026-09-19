@@ -45,6 +45,10 @@ export const DOCK_PRIORITY_SCREENS = ['feed'];
 
 // Apps enabled on a fresh hub with no admin configuration yet.
 // null enabledApps on the Hub object means "all apps" (backward compat).
+// This is also the single source of truth for the default pinned nav
+// (HubLayout.tsx) and the wizard's initial app selection
+// (NodeCreationWizard.tsx) — keep it here, don't duplicate it, so "what's
+// enabled by default" and "what's pinned by default" can't drift apart.
 export const DEFAULT_ENABLED_APPS: string[] = [
-  'feed', 'messages', 'atlas', 'notes',
+  'feed', 'atlas', 'messages', 'notes', 'files',
 ];

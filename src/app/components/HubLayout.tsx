@@ -35,7 +35,7 @@ import { BroadcastOverlay } from './comms/BroadcastOverlay';
 import { MinimizedBroadcastBar } from './comms/MinimizedBroadcastBar';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache, beginHubBrowsing } from '../utils/subdomain';
-import { APP_TILES, DOCK_PRIORITY_SCREENS, CN_TILE_AI, CN_TILE_VENDOR, CN_TILE_SUGGEST } from '../data/appTiles';
+import { APP_TILES, DOCK_PRIORITY_SCREENS, DEFAULT_ENABLED_APPS, CN_TILE_AI, CN_TILE_VENDOR, CN_TILE_SUGGEST } from '../data/appTiles';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
 
@@ -45,7 +45,15 @@ import type { HubVendor } from '../types/hub';
 // Home (`/`) is the Dashboard, a fixed nav slot of its own (not an app tile),
 // so 'atlas' is pinned here like any other destination rather than being
 // folded into Home.
-const DEFAULT_PINNED_NAV = ['feed', 'atlas', 'messages', 'marketplace', 'toolkit'];
+// Intentionally the same list as DEFAULT_ENABLED_APPS (not a separate
+// literal) — a pinned default that points at a disabled app renders an
+// empty nav slot, so these two can never be allowed to drift apart again.
+const DEFAULT_PINNED_NAV = DEFAULT_ENABLED_APPS;
+
+// Temporarily hidden per product request — the desktop top menubar's own
+// search box overlapped with the Dashboard's search bar. Flip back on once
+// their roles are reconciled.
+const SHOW_TOP_MENUBAR_SEARCH = false;
 
 type NavTile = { Icon: React.ElementType; label: string; screen: string; gradient: string };
 
@@ -616,18 +624,20 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           <HubIcon hub={currentHub} baseUrl={currentHub?.tunnelUrl ?? ''} size={16} variant="inline" />
           <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">{nodeName}</span>
         </button>
-        <form onSubmit={handleSearchSubmit} className="flex justify-self-center">
-          <div className="relative w-[clamp(320px,40vw,700px)] max-w-full">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search posts, people, files…"
-              className="w-full h-6 pl-7 pr-2 rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs text-slate-900 dark:text-zinc-200 placeholder:text-slate-500 hover:bg-black/10 dark:hover:bg-white/10 focus:bg-black/10 dark:focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-blue-400/40 transition-colors"
-            />
-          </div>
-        </form>
+        {SHOW_TOP_MENUBAR_SEARCH ? (
+          <form onSubmit={handleSearchSubmit} className="flex justify-self-center">
+            <div className="relative w-[clamp(320px,40vw,700px)] max-w-full">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search posts, people, files…"
+                className="w-full h-6 pl-7 pr-2 rounded-md bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 text-xs text-slate-900 dark:text-zinc-200 placeholder:text-slate-500 hover:bg-black/10 dark:hover:bg-white/10 focus:bg-black/10 dark:focus:bg-white/10 focus:outline-none focus:ring-1 focus:ring-blue-400/40 transition-colors"
+              />
+            </div>
+          </form>
+        ) : <div />}
         <div className="flex items-center gap-3 justify-self-end min-w-0">
           <div className={`w-1.5 h-1.5 rounded-full ${dotColor} shrink-0 ${connectionStatus === 'connected' ? 'animate-pulse' : ''}`} />
           <span className="text-xs text-slate-700 dark:text-zinc-300 whitespace-nowrap">{statusLabel}</span>
@@ -1553,9 +1563,19 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 >
                 <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto no-scrollbar">
                   <div>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide mb-2">
-                      Pinned in navigation
-                    </p>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">
+                        Pinned in navigation
+                      </p>
+                      {JSON.stringify(pinnedNavScreens) !== JSON.stringify(defaultPinnedNav) && (
+                        <button
+                          onClick={() => updatePinnedNav(defaultPinnedNav)}
+                          className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
+                        >
+                          Reset to default
+                        </button>
+                      )}
+                    </div>
                     <SortableContext items={pinnedNavScreens} strategy={verticalListSortingStrategy}>
                       <div className="flex flex-col gap-1.5 min-h-[2.75rem]">
                         {desktopNavItems.length === 0 && (

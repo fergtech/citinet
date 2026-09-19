@@ -2183,8 +2183,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                     </div>
                   );
                 }
+                // Card view only ever needs a small preview — full
+                // resolution loads once the post is actually opened (see the
+                // detail view's own getPublicFileUrl calls below, unchanged).
+                // Harmless no-op server-side for non-image media (videos).
                 const mediaUrl = post.media_file_name
-                  ? hubService.getPublicFileUrl(hubSlug, post.media_file_name) ?? undefined
+                  ? hubService.getPublicFileUrl(hubSlug, post.media_file_name, { thumb: true }) ?? undefined
                   : undefined;
                 return (
                   <div

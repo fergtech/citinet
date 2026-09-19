@@ -276,6 +276,68 @@ async function convertHeicUpload(file) {
   }
 }
 
+/**
+ * Resizes an image buffer to a small preview JPEG via ImageMagick's `convert`
+ * CLI (Alpine package `imagemagick`) — same shell-out-via-temp-files pattern
+ * as decodeHeicBufferToJpeg above, and for the same reason: sharp's prebuilt
+ * binary/libvips version story doesn't work out on this base image (see the
+ * comment in api/Dockerfile), so image processing here goes through a system
+ * CLI tool instead of an npm image library. `[0]` takes just the first frame
+ * of any multi-frame input; `480x480>` means "shrink to fit, never enlarge."
+ * Throws on failure — callers decide the fallback (serve the original).
+ */
+async function resizeImageBufferToThumbnail(buffer) {
+  const base = path.join(os.tmpdir(), crypto.randomUUID());
+  const inputPath = `${base}-in`;
+  const outputPath = `${base}-out.jpg`;
+  try {
+    await fs.promises.writeFile(inputPath, buffer);
+    await new Promise((resolve, reject) => {
+      execFile(
+        'magick',
+        [`${inputPath}[0]`, '-auto-orient', '-resize', '480x480>', '-quality', '72', outputPath],
+        { timeout: 20_000 },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(stderr?.toString().trim() || err.message));
+          resolve();
+        },
+      );
+    });
+    return await fs.promises.readFile(outputPath);
+  } finally {
+    await fs.promises.unlink(inputPath).catch(() => {});
+    await fs.promises.unlink(outputPath).catch(() => {});
+  }
+}
+
+/**
+ * Returns the MinIO key of a cached thumbnail for `fileKey`, generating and
+ * caching it on first call. Thumbnails are derived deterministically
+ * (`${fileKey}-thumb.jpg`) rather than tracked in a new DB column, so this
+ * needs no migration and self-heals every already-uploaded file the first
+ * time it's viewed after this ships — no separate backfill job. Only ever
+ * called for plaintext (non-encrypted) images; a private file's bytes are
+ * ciphertext and can't be thumbnailed server-side (see hub_files privacy
+ * design — this must not be called for those).
+ */
+async function getOrCreateThumbnailKey(fileKey) {
+  const thumbKey = `${fileKey}-thumb.jpg`;
+  try {
+    await minioClient.statObject(STORAGE_BUCKET, thumbKey);
+    return thumbKey; // already cached
+  } catch {
+    // not cached yet — fall through and generate it
+  }
+  const chunks = [];
+  const stream = await minioClient.getObject(STORAGE_BUCKET, fileKey);
+  for await (const chunk of stream) chunks.push(chunk);
+  const thumbBuffer = await resizeImageBufferToThumbnail(Buffer.concat(chunks));
+  await minioClient.putObject(STORAGE_BUCKET, thumbKey, thumbBuffer, thumbBuffer.length, {
+    'Content-Type': 'image/jpeg',
+  });
+  return thumbKey;
+}
+
 // ── Middleware ────────────────────────────────────────────
 
 app.use(express.json());
@@ -1387,6 +1449,14 @@ async function initDb() {
     );
     await client.query(
       `CREATE INDEX IF NOT EXISTS idx_hub_files_public_library ON hub_files(is_public, shared_to_library) WHERE is_public = true AND shared_to_library = true`,
+    );
+    // GET /api/posts computes reply_count via a correlated subquery against
+    // hub_post_replies per row (once per post in the page) — post_id had no
+    // supporting index at all (only the table's own PRIMARY KEY on id), so
+    // every one of those subqueries was a full sequential scan that gets
+    // slower as replies accumulate hub-wide, not just for the post in hand.
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_hub_post_replies_post_id ON hub_post_replies(post_id)`,
     );
     // E2E Encryption — key registry
     await client.query(`
@@ -3220,7 +3290,23 @@ app.get('/api/conversations/:id/typing', authenticate, async (req, res) => {
 // List files — own files + public files from others
 // Excludes system-managed files (hub backgrounds, etc.) from all listings
 app.get('/api/files', authenticate, async (req, res) => {
+  // Unbounded unless a caller opts in via ?limit= — FilesScreen still needs
+  // the complete list in one shot (it does its own client-side folder
+  // filtering over the full set, with no folder_id-aware server query to
+  // page against yet), so this can't default to a page size the way
+  // /api/posts does without breaking folder browsing. Callers that only
+  // ever show a handful either way (Dashboard's activity feed) opt in
+  // explicitly instead.
+  const hasLimit = req.query.limit !== undefined;
+  const lim = hasLimit ? Math.min(parseInt(req.query.limit, 10) || 60, 100) : null;
+  const off = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   try {
+    const params = [req.user.id];
+    let limitClause = '';
+    if (hasLimit) {
+      params.push(lim, off);
+      limitClause = ` LIMIT $${params.length - 1} OFFSET $${params.length}`;
+    }
     const result = await pool.query(
       // is_public is reported here as "actually shared to the hub library"
       // (is_public AND shared_to_library), not the raw column — a file can be
@@ -3236,10 +3322,16 @@ app.get('/api/files', authenticate, async (req, res) => {
        WHERE (owner_id = $1 OR (is_public = true AND shared_to_library = true))
          AND file_name NOT LIKE 'bg-%'
          AND space_id IS NULL
-       ORDER BY uploaded_at DESC`,
-      [req.user.id],
+       ORDER BY uploaded_at DESC${limitClause}`,
+      params,
     );
-    res.json({ files: result.rows });
+    res.json({
+      files: result.rows,
+      // Cheap heuristic (a full page came back), not an extra COUNT query —
+      // matches /api/posts' own hasMore convention. Always false when the
+      // caller didn't ask for a page (the full set was returned).
+      hasMore: hasLimit ? result.rows.length === lim : false,
+    });
   } catch (err) {
     console.error('List files error:', err);
     res.status(500).json({ error: 'Failed to list files' });
@@ -3485,8 +3577,30 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
-    const { contentType, disposition } = getSafeInlineContentType(file.mime_type);
-    const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
+    // A private file's bytes are client-side ciphertext (see hub_files
+    // privacy design) — the server can't generate a meaningful thumbnail
+    // from that, so ?thumb=1 is a silent no-op for those and the original
+    // streams exactly as it does today. Only plaintext (public) images
+    // qualify.
+    let fileKey = file.file_key;
+    let mimeType = file.mime_type;
+    let sizeBytes = file.size_bytes;
+    const wantsThumb = req.query.thumb === '1' && file.is_public && String(file.mime_type || '').startsWith('image/');
+    if (wantsThumb) {
+      try {
+        fileKey = await getOrCreateThumbnailKey(file.file_key);
+        mimeType = 'image/jpeg';
+        sizeBytes = (await minioClient.statObject(STORAGE_BUCKET, fileKey)).size;
+      } catch (err) {
+        console.error('Thumbnail generation failed, serving original:', err);
+        fileKey = file.file_key;
+        mimeType = file.mime_type;
+        sizeBytes = file.size_bytes;
+      }
+    }
+
+    const { contentType, disposition } = getSafeInlineContentType(mimeType);
+    const totalSize = sizeBytes ? parseInt(sizeBytes, 10) : null;
 
     res.setHeader('Content-Type', contentType);
     res.setHeader(
@@ -3516,14 +3630,14 @@ app.get('/api/files/:filename', authenticate, async (req, res) => {
       res.setHeader('Content-Length', chunkSize);
       const stream = await minioClient.getPartialObject(
         STORAGE_BUCKET,
-        file.file_key,
+        fileKey,
         start,
         chunkSize,
       );
       stream.pipe(res);
     } else {
       if (totalSize) res.setHeader('Content-Length', totalSize);
-      const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+      const stream = await minioClient.getObject(STORAGE_BUCKET, fileKey);
       stream.pipe(res);
     }
   } catch (err) {
@@ -4004,8 +4118,28 @@ app.get('/api/public/files/:filename', async (req, res) => {
     if (!minioClient)
       return res.status(503).json({ error: 'Storage not available' });
 
-    const { contentType, disposition } = getSafeInlineContentType(file.mime_type);
-    const totalSize = file.size_bytes ? parseInt(file.size_bytes, 10) : null;
+    // This route only ever serves plaintext content (is_public/web_public
+    // rows are never client-side encrypted, see hub_files privacy design),
+    // so a thumbnail request needs no encryption check, just a mime check.
+    let fileKey = file.file_key;
+    let mimeType = file.mime_type;
+    let sizeBytes = file.size_bytes;
+    const wantsThumb = req.query.thumb === '1' && String(file.mime_type || '').startsWith('image/');
+    if (wantsThumb) {
+      try {
+        fileKey = await getOrCreateThumbnailKey(file.file_key);
+        mimeType = 'image/jpeg';
+        sizeBytes = (await minioClient.statObject(STORAGE_BUCKET, fileKey)).size;
+      } catch (err) {
+        console.error('Thumbnail generation failed, serving original:', err);
+        fileKey = file.file_key;
+        mimeType = file.mime_type;
+        sizeBytes = file.size_bytes;
+      }
+    }
+
+    const { contentType, disposition } = getSafeInlineContentType(mimeType);
+    const totalSize = sizeBytes ? parseInt(sizeBytes, 10) : null;
 
     res.setHeader('Content-Type', contentType);
     res.setHeader(
@@ -4053,14 +4187,14 @@ app.get('/api/public/files/:filename', async (req, res) => {
       res.setHeader('Content-Length', chunkSize);
       const stream = await minioClient.getPartialObject(
         STORAGE_BUCKET,
-        file.file_key,
+        fileKey,
         start,
         chunkSize,
       );
       stream.pipe(res);
     } else {
       if (totalSize) res.setHeader('Content-Length', totalSize);
-      const stream = await minioClient.getObject(STORAGE_BUCKET, file.file_key);
+      const stream = await minioClient.getObject(STORAGE_BUCKET, fileKey);
       stream.pipe(res);
     }
   } catch (err) {

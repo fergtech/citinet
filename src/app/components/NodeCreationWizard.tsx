@@ -36,6 +36,7 @@ import {
 import { registryService } from '../services/registryService';
 import { OnboardingBackground } from './OnboardingBackground';
 import { HUB_CATEGORIES } from '../data/hubCategories';
+import { DEFAULT_ENABLED_APPS } from '../data/appTiles';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -216,7 +217,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
     hubName: '', hubLocation: '', hubZip: '', hubDescription: '', dataDir: '',
     visibility: 'local', tailscaleAuthKey: '',
     adminUsername: '', adminPassword: '', adminPasswordConfirm: '',
-    enabledApps: ['feed', 'messages', 'atlas', 'notes'],
+    enabledApps: [...DEFAULT_ENABLED_APPS],
     hubFocus: undefined,
     enableAi: false, aiGpu: false,
     enableComms: false,
