@@ -300,7 +300,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
       {/* Featured cards */}
       {cards.length > 0 && (
-        <div style={{ border: '0.5px solid #ddd' }} className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
           {cards.map(card => (
             <button
               key={card.key}
