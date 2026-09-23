@@ -706,7 +706,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   };
 
   // ── download ──────────────────────────────────────────────────────────────────
-  const handleDownload = (file: HubFile) => hubService.downloadFile(slug, file.name || 'download');
+  const handleDownload = (file: HubFile) =>
+    hubService.downloadFile(slug, file.name || 'download', !file.is_public && !file.web_public);
 
   // ── preview ───────────────────────────────────────────────────────────────────
   const openPreview = async (file: HubFile) => {

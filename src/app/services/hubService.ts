@@ -1936,10 +1936,19 @@ class HubService {
    *   GET /api/files/:name/download?token=xxx
    * directly in the browser so native HTTP streaming handles the transfer —
    * no JS memory buffering, works for files of any size.
-   * Falls back to blob download only for encrypted small files (≤ 100 MB)
-   * where client-side decryption is needed.
+   *
+   * For a private (client-side encrypted) file, `isPrivate` routes through a
+   * fetch + decrypt + Blob download instead: the plain token/download URL
+   * only ever serves ciphertext server-side, and a raw anchor-tag download
+   * navigates the browser directly at that URL with no way for JS to
+   * intercept and decrypt the bytes first. Confirmed bug this fixes: Download
+   * silently saved ciphertext for any private file — same name, same size,
+   * unopenable — while this same file's own in-browser preview (which
+   * already goes through fetchFileBlob's decrypt step) played/displayed it
+   * correctly. Caller passes `isPrivate` from the file's own is_public/
+   * web_public flags (see FilesScreen's handleDownload).
    */
-  downloadFile(hubSlug: string, fileName: string): void {
+  async downloadFile(hubSlug: string, fileName: string, isPrivate = false): Promise<void> {
     const connection = this.getHubConnection(hubSlug);
     const authToken = connection?.user?.authToken;
     const baseUrl = connection?.hub.tunnelUrl;
@@ -1951,25 +1960,56 @@ class HubService {
       return;
     }
 
-    // Request a short-lived download token, then let the browser stream natively.
-    fetch(`${baseUrl}/api/files/${encodeURIComponent(fileName)}/token`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${authToken}` },
-    })
-      .then(res => {
-        if (!res.ok) throw new Error(`Token request failed (${res.status})`);
-        return res.json();
-      })
-      .then(({ token: dlToken }) => {
-        const dlUrl = `${baseUrl}/api/files/${encodeURIComponent(fileName)}/download?token=${dlToken}`;
+    try {
+      // Request a short-lived download token either way.
+      const tokRes = await fetch(`${baseUrl}/api/files/${encodeURIComponent(fileName)}/token`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` },
+      });
+      if (!tokRes.ok) throw new Error(`Token request failed (${tokRes.status})`);
+      const { token: dlToken } = await tokRes.json();
+      const dlUrl = `${baseUrl}/api/files/${encodeURIComponent(fileName)}/download?token=${dlToken}`;
+
+      if (!isPrivate) {
+        // Public/hub file: let the browser stream the download natively, no
+        // JS buffering, works for a file of any size — unchanged from before.
         const a = document.createElement('a');
         a.href = dlUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-      })
-      .catch(err => console.error('Download error:', err));
+        return;
+      }
+
+      // Private file: fetch the ciphertext, decrypt it, then download the
+      // real bytes. Same 100 MB practical ceiling fetchFileBlob has, since
+      // this buffers the whole file into memory to decrypt it.
+      const res = await fetch(dlUrl);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const buf = await res.arrayBuffer();
+      let blob: Blob;
+      if (isFileEncrypted(buf)) {
+        const plainBuf = await decryptFileBuffer(this.keyScope(hubSlug), buf);
+        if (!plainBuf) throw new Error("Couldn't decrypt this file on this device.");
+        blob = new Blob([plainBuf]);
+      } else {
+        // Private but not actually encrypted (predates client-side file
+        // encryption, or came from a client that doesn't do it) — same
+        // bytes, no decrypt needed.
+        blob = new Blob([buf]);
+      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.error('Download error:', err);
+    }
   }
 
   /**
