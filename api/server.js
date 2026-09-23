@@ -11629,6 +11629,18 @@ async function start() {
     6 * 60 * 60 * 1000,
   );
 
+  // Node 18+ defaults http.Server's own requestTimeout to 300_000ms (5 min) —
+  // a slow-loris mitigation that's separate from, and not overridden by, the
+  // per-route `req.socket.setTimeout(0)` the upload/download routes already
+  // use. It fires regardless of which route is being served, on the whole
+  // request (not just headers), and responds with a bare empty-body 408 —
+  // confirmed against a real 288 MB video upload over this hub's Funnel
+  // connection: the client finished sending all bytes at ~338s, past the
+  // 300s default, and got exactly this (status 408, no body). Raised well
+  // past what even a large file needs at this connection's real throughput,
+  // rather than disabled outright, to keep some bound against a connection
+  // held open indefinitely on an unrelated route.
+  const REQUEST_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
   const httpServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Citinet API listening on port ${PORT}`);
     console.log(`  Hub:        ${process.env.HUB_NAME || '(unnamed)'}`);
@@ -11641,6 +11653,7 @@ async function start() {
     }
     console.log(`  Comms:      ${livekitConfigured ? 'LiveKit configured' : 'not configured (calls disabled)'}`);
   });
+  httpServer.requestTimeout = REQUEST_TIMEOUT_MS;
   // Same http.Server Express is already using — a second server/port would
   // need its own tunnel exposure, which nothing in this stack sets up.
   attachCommsSignaling(httpServer, pool);
