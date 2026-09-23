@@ -556,6 +556,15 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFiles]);
 
+  // deep-link: "Upload a File" from the Dashboard's intent search — lands
+  // here with the same visibility-choice menu the Upload button itself
+  // opens, rather than guessing public/private on the user's behalf.
+  useEffect(() => {
+    if (!sessionStorage.getItem('citinet-deeplink-upload')) return;
+    sessionStorage.removeItem('citinet-deeplink-upload');
+    setShowUploadMenu(true);
+  }, []);
+
   // ── derived lists ─────────────────────────────────────────────────────────────
   const folderScopedFiles = useMemo(
     () => allFiles.filter(f => (f.folder_id || null) === currentFolderId),

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentType } from 'react';
 import {
   Search, Plus, Calendar, MapPin, Store, Users, Sparkles, ArrowRight,
-  MessageSquare, Layers, NotebookPen, Radio, FileText, Newspaper,
+  MessageSquare, Layers, NotebookPen, Radio, FileText, Newspaper, Upload,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
@@ -94,9 +94,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const commands: Command[] = useMemo(() => {
     const list: Command[] = [
       { id: 'create-post', icon: Plus, label: 'Create Post', keywords: 'create post new write share update', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); n('feed'); } },
-      { id: 'create-event', icon: Calendar, label: 'Create Event', keywords: 'create event new meetup schedule calendar', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); sessionStorage.setItem('citinet-deeplink-feed-category', 'EVENT'); n('feed'); } },
-      { id: 'add-pin', icon: MapPin, label: 'Add Atlas Pin', keywords: 'add pin atlas map location place new', run: n => n('atlas') },
-      { id: 'new-listing', icon: Store, label: 'New Marketplace Listing', keywords: 'sell listing marketplace exchange vendor new', run: n => n('marketplace') },
+      { id: 'create-event', icon: Calendar, label: 'Create Event', keywords: 'create event new meetup schedule calendar', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); sessionStorage.setItem('citinet-deeplink-feed-category', 'EVENT'); sessionStorage.setItem('citinet-deeplink-compose-mode', 'event'); n('feed'); } },
+      { id: 'add-pin', icon: MapPin, label: 'Add Atlas Pin', keywords: 'add pin atlas map location place new', run: n => { sessionStorage.setItem('citinet-deeplink-atlas-add-pin', '1'); n('atlas'); } },
+      { id: 'new-listing', icon: Store, label: 'New Marketplace Listing', keywords: 'sell listing marketplace exchange vendor new', run: n => { sessionStorage.setItem('citinet-deeplink-marketplace-post', '1'); n('marketplace'); } },
+      { id: 'upload-file', icon: Upload, label: 'Upload a File', keywords: 'upload file files share attach document photo picture pdf', run: n => { sessionStorage.setItem('citinet-deeplink-upload', '1'); n('files'); } },
       { id: 'find-people', icon: Users, label: 'Find People', keywords: 'find people neighbors members discover', run: n => n('discover') },
       { id: 'open-messages', icon: MessageSquare, label: 'Open Messages', keywords: 'messages chat comms', run: n => n('messages') },
       { id: 'open-spaces', icon: Layers, label: 'Open Spaces', keywords: 'spaces groups', run: n => n('spaces') },

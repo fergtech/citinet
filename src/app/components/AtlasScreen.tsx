@@ -1951,6 +1951,19 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
     setLocationQuery(q);
   }, []);
 
+  // Deep-link: "Add Atlas Pin" from the Dashboard's intent search — starts
+  // the same drop-a-pin placement flow the toolbar's own "Drop a pin" button
+  // opens, centered on the hub, instead of landing on a bare map waiting for
+  // a manual click. Gated on `geocoded` so it centers on the hub's real
+  // location, not the still-default fallback center.
+  useEffect(() => {
+    if (!geocoded) return;
+    if (!sessionStorage.getItem('citinet-deeplink-atlas-add-pin')) return;
+    sessionStorage.removeItem('citinet-deeplink-atlas-add-pin');
+    enterPlacingMode();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geocoded]);
+
   useEffect(() => {
     if (!currentHub) return;
     if (currentHub.lat && currentHub.lng) {

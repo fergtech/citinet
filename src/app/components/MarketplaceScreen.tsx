@@ -228,6 +228,18 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
     if (found) setSelectedListing(found);
   }, [loading, listings, selectedListing]);
 
+  // Deep-link: "New Marketplace Listing" from the Dashboard's intent search
+  // — opens the same modal the "Post a listing"/"Start selling" button does
+  // (Add Listing if a vendor page already exists, otherwise Create Vendor
+  // first) instead of landing on the Exchange still needing that click.
+  useEffect(() => {
+    if (loading) return;
+    if (!sessionStorage.getItem('citinet-deeplink-marketplace-post')) return;
+    sessionStorage.removeItem('citinet-deeplink-marketplace-post');
+    handlePostListing();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   // ── Banner edit handlers ─────────────────────────────────
   const handleOpenBannerEdit = () => {
     setEditTitle(bannerConfig.marketplace_banner_title || '');

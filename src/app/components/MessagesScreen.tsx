@@ -23,7 +23,8 @@ import { LiveThumbnail } from './comms/LiveThumbnail';
 import { ensureBackfill, ingestMessages, initForHub, searchMessages } from '../services/messageSearchIndex';
 import { notificationsService } from '../services/notificationsService';
 import { isOnline } from '../utils/presence';
-import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem, LiveCommsItem } from '../types/hub';
+import { formatCallDuration } from '../lib/comms/use-elapsed';
+import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem, LiveCommsItem, HubCallEvent } from '../types/hub';
 
 interface MessagesScreenProps {
   onBack: () => void;
@@ -312,6 +313,37 @@ function AuthMedia({ slug, fileName, mimeType, alt, className, onClick }: {
   return <img src={blobUrl} alt={alt || fileName} className={className || ''} onClick={onClick} />;
 }
 
+/** Inline call-history chip in the thread timeline — "Audio call · 0:16" /
+ * "Video call · not answered", same format as citinet-mobile's transcript.
+ * Duration is derived once from the row's own started_at/ended_at (a closed
+ * record by the time it's fetched), not a live elapsed-seconds ticker. */
+function CallEventChip({ event, selfId }: { event: HubCallEvent; selfId: string }) {
+  const modeLabel = event.mode === 'video' ? 'Video call' : 'Audio call';
+  let detail: string;
+  if (event.outcome === 'connected' && event.started_at && event.ended_at) {
+    const seconds = Math.max(0, Math.round((new Date(event.ended_at).getTime() - new Date(event.started_at).getTime()) / 1000));
+    detail = formatCallDuration(seconds);
+  } else if (event.outcome === 'declined') {
+    detail = event.callee_id === selfId ? 'declined' : 'not answered';
+  } else {
+    detail = 'not answered';
+  }
+  return (
+    <div className="flex items-center justify-center my-1 select-none">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700">
+        {event.mode === 'video' ? (
+          <Video className="w-3 h-3 text-slate-400 dark:text-zinc-500" />
+        ) : (
+          <Phone className="w-3 h-3 text-slate-400 dark:text-zinc-500" />
+        )}
+        <span className="text-xs text-slate-500 dark:text-zinc-400">
+          {modeLabel} · {detail}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── component ────────────────────────────────────────────
 
 export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
@@ -340,6 +372,10 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   const [conversations, setConversations] = useState<HubConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<HubMessage[]>([]);
+  // Call history for the open thread — merged into the message timeline
+  // below as inline "Audio call · 0:16" / "not answered" chips, same as
+  // citinet-mobile's conversation screen.
+  const [callEvents, setCallEvents] = useState<HubCallEvent[]>([]);
   const [messageText, setMessageText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -659,6 +695,16 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     }
   }, [slug]);
 
+  // ── load call history for selected conversation ───────
+  const loadCallEvents = useCallback(async (convoId: string) => {
+    if (!slug || !convoId) return;
+    try {
+      setCallEvents(await hubService.getCallEvents(slug, convoId));
+    } catch (err) {
+      console.error('Failed to load call events:', err);
+    }
+  }, [slug]);
+
   // Keeps messagesRef in lockstep with `messages` for the scrollback/jump
   // code below, which drives several sequential fetches faster than React
   // re-renders and can't afford to read a stale closure.
@@ -673,10 +719,24 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     setLoadedConvoId(null);
     if (selectedId && !selectedId.startsWith('draft')) {
       loadMessages(selectedId);
+      loadCallEvents(selectedId);
     } else {
       setMessages([]);
+      setCallEvents([]);
     }
-  }, [selectedId, loadMessages]);
+  }, [selectedId, loadMessages, loadCallEvents]);
+
+  // A call in this exact thread just resolved — refetch so its transcript
+  // chip ("Audio call · 0:16") shows up without waiting on the next poll.
+  // The extra delayed refetch covers end()/decline() being fire-and-forget
+  // against the server (see CallContext's end/decline, which don't await).
+  useEffect(() => {
+    if (call.phase === 'ended' && call.conversationId && call.conversationId === selectedId) {
+      loadCallEvents(call.conversationId);
+      const timer = setTimeout(() => loadCallEvents(call.conversationId!), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [call.phase, call.conversationId, selectedId, loadCallEvents]);
 
   // ── scrollback ("infinite scroll up") ──────────────────
   const loadOlderMessages = useCallback(async () => {
@@ -776,9 +836,12 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
   // Poll messages for active conversation
   useEffect(() => {
     if (!selectedId || !slug || selectedId.startsWith('draft')) return;
-    const timer = setInterval(() => loadMessages(selectedId, true), POLL_INTERVAL);
+    const timer = setInterval(() => {
+      loadMessages(selectedId, true);
+      loadCallEvents(selectedId);
+    }, POLL_INTERVAL);
     return () => clearInterval(timer);
-  }, [selectedId, slug, loadMessages]);
+  }, [selectedId, slug, loadMessages, loadCallEvents]);
 
   // Poll who's typing — a faster, cheap poll (in-memory on the server, no DB hit)
   // separate from the main message poll so the indicator feels responsive.
@@ -1892,7 +1955,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400 dark:text-zinc-500" />
               </div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && callEvents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <MessageCircle className="w-10 h-10 text-slate-300 dark:text-zinc-600 mb-3" />
                 <p className="text-sm text-slate-500 dark:text-zinc-400">No messages yet — say hello!</p>
@@ -1903,25 +1966,44 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                 // Only the most recent message I sent ever shows a read receipt —
                 // matches iMessage/WhatsApp instead of stamping every bubble.
                 const lastMyMessageId = [...sorted].reverse().find(m => m.sender_id === myUserId)?.id;
+                // Merged client-side by timestamp — call history lives in its own
+                // small table (hub_call_events), not folded into hub_messages.
+                type TimelineItem =
+                  | { kind: 'message'; key: string; createdAt: string; message: HubMessage }
+                  | { kind: 'call'; key: string; createdAt: string; event: HubCallEvent };
+                const timeline: TimelineItem[] = [
+                  ...sorted.map(m => ({ kind: 'message' as const, key: `m-${m.id}`, createdAt: m.created_at, message: m })),
+                  ...callEvents.map(c => ({ kind: 'call' as const, key: `c-${c.id}`, createdAt: c.created_at, event: c })),
+                ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                 let lastDate = '';
-                return sorted.map((msg) => {
+                return timeline.map((item) => {
+                  const itemDate = new Date(item.createdAt).toDateString();
+                  const showSeparator = itemDate !== lastDate;
+                  lastDate = itemDate;
+                  const dateSeparator = showSeparator && (
+                    <div className="flex items-center gap-3 my-1 select-none">
+                      <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+                      <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 px-1">
+                        {formatDateSeparator(item.createdAt)}
+                      </span>
+                      <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
+                    </div>
+                  );
+                  if (item.kind === 'call') {
+                    return (
+                      <React.Fragment key={item.key}>
+                        {dateSeparator}
+                        <CallEventChip event={item.event} selfId={myUserId} />
+                      </React.Fragment>
+                    );
+                  }
+                  const msg = item.message;
                   const isMe = msg.sender_id === myUserId;
                   const isRead = isMe && msg.id === lastMyMessageId && !!peerLastReadAt
                     && new Date(peerLastReadAt).getTime() >= new Date(msg.created_at).getTime();
-                  const msgDate = new Date(msg.created_at).toDateString();
-                  const showSeparator = msgDate !== lastDate;
-                  lastDate = msgDate;
                   return (
-                    <React.Fragment key={msg.id}>
-                      {showSeparator && (
-                        <div className="flex items-center gap-3 my-1 select-none">
-                          <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
-                          <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500 px-1">
-                            {formatDateSeparator(msg.created_at)}
-                          </span>
-                          <div className="flex-1 h-px bg-slate-200 dark:bg-zinc-800" />
-                        </div>
-                      )}
+                    <React.Fragment key={item.key}>
+                      {dateSeparator}
                     <div id={`msg-${msg.id}`} className={`group flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
                       {/* Avatar for all non-me messages — clickable → profile */}
                       {!isMe && (

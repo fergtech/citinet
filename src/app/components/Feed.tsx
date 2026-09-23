@@ -1714,6 +1714,19 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     setActiveFilter(cat);
   }, []);
 
+  // Deep-link: "Create Event"/"Create Poll" from the Dashboard's intent
+  // search — skips the inline composer straight into that mode's own form
+  // instead of landing on the feed still needing an explicit Event/Poll
+  // click (unlike the plain "Create Post" deep-link above, which is already
+  // ready to type the moment it focuses).
+  const [composerForceMode, setComposerForceMode] = useState<'event' | 'poll' | undefined>(undefined);
+  useEffect(() => {
+    const mode = sessionStorage.getItem('citinet-deeplink-compose-mode');
+    if (mode !== 'event' && mode !== 'poll') return;
+    sessionStorage.removeItem('citinet-deeplink-compose-mode');
+    setComposerForceMode(mode);
+  }, []);
+
   // Compatibility redirect for old poll share links (#poll=<id>, from before polls had
   // a real /feed/:id detail route) — land on the real route instead.
   useEffect(() => {
@@ -2105,6 +2118,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                 onOpenFullComposer={(initialBody) => { setComposeInitial({ title: '', body: initialBody }); setComposing(true); }}
                 autoFocus={focusComposer}
                 activeFilter={activeFilter}
+                forceMode={composerForceMode}
               />
 
               {/* Loading */}

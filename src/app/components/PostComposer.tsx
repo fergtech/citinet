@@ -45,6 +45,12 @@ export interface PostComposerProps {
   onPostCreated: (post: HubPost) => void;
   onOpenFullComposer: (initialBody: string) => void;
   autoFocus?: boolean;
+  /** Skips straight into the Event or Poll mode on mount (e.g. the
+   * Dashboard's "Create Event" intent-search command) instead of requiring
+   * an explicit click on the Event/Poll pill below once the composer is
+   * already on screen. One-shot: the parent clears its own deep-link flag
+   * right after setting this, so it never re-fires on its own. */
+  forceMode?: 'event' | 'poll';
   // Whichever feed tab is currently active — used to default the quick-post
   // category picker (e.g. viewing "Requests" defaults a new plain post to
   // Request instead of always Discussion).
@@ -62,8 +68,8 @@ export interface PostComposerProps {
  * feed (space-scoped, via `spaceSlug`). Supports a quick plain post (with an
  * optional photo/video/place attachment and a category pick), or expanding
  * into a dedicated Event or Poll mode with its own required fields. */
-export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus, activeFilter, spaceSlug }: PostComposerProps) {
-  const [mode, setMode] = useState<'idle' | 'poll' | 'event'>('idle');
+export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus, activeFilter, spaceSlug, forceMode }: PostComposerProps) {
+  const [mode, setMode] = useState<'idle' | 'poll' | 'event'>(forceMode ?? 'idle');
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
