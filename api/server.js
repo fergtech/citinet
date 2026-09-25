@@ -14,6 +14,7 @@
  *   POST   /api/files                     — upload file (auth required)
  *   GET    /api/files/:filename           — download file (auth required)
  *   DELETE /api/files/:filename           — delete file (auth required)
+ *   POST   /api/files/bulk-delete         — delete several files at once (auth required)
  *   PATCH  /api/files/:filename           — update visibility and/or folder_id (auth required)
  *   GET    /api/folders                   — list folders for a parent scope (auth required)
  *   POST   /api/folders                   — create folder (auth required)
@@ -3791,14 +3792,66 @@ app.delete('/api/files/:filename', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'File not found' });
 
     if (minioClient) {
+      // The DB row above is already gone regardless of what happens here —
+      // deliberately, so a storage-layer hiccup can never leave a file stuck
+      // undeletable in the UI. But that means a failure here orphans the
+      // actual bytes in MinIO with nothing left to point at them, so it must
+      // be logged (not swallowed) or that orphan is invisible forever. Seen
+      // in practice as a transient EACCES/"permission denied" on the
+      // Windows-bind-mounted storage volume (H:\citinet-hub\data\storage) —
+      // minio-js retries once automatically and usually clears it, but a
+      // repeat here is a real leak worth investigating on the host.
       await minioClient
         .removeObject(STORAGE_BUCKET, result.rows[0].file_key)
-        .catch(() => {});
+        .catch(err => console.error(`MinIO removeObject failed for ${fileName} (${result.rows[0].file_key}):`, err));
     }
     publicFileCache.delete(fileName);
     res.sendStatus(204);
   } catch (err) {
     console.error('Delete error:', err);
+    res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// Bulk delete — the mass-upload counterpart. A DELETE request can't reliably
+// carry a JSON body through every proxy/client, so this takes the filename
+// list as a POST body instead. Same ownership rule and MinIO-then-cache
+// cleanup as the single-file route above, just looped, with the same
+// per-item success/failure split the batch upload route already returns.
+app.post('/api/files/bulk-delete', authenticate, async (req, res) => {
+  const fileNames = Array.isArray(req.body?.file_names) ? req.body.file_names : null;
+  if (!fileNames || !fileNames.length)
+    return res.status(400).json({ error: 'file_names must be a non-empty array' });
+
+  try {
+    const results = await Promise.all(fileNames.map(async (fileName) => {
+      try {
+        const result = await pool.query(
+          `DELETE FROM hub_files WHERE file_name = $1 AND owner_id = $2 RETURNING file_key`,
+          [fileName, req.user.id],
+        );
+        if (!result.rows[0]) return { error: 'File not found', file_name: fileName };
+
+        if (minioClient) {
+          // See the single-file DELETE route's comment above — same
+          // orphan-if-swallowed risk, same fix.
+          await minioClient
+            .removeObject(STORAGE_BUCKET, result.rows[0].file_key)
+            .catch(err => console.error(`MinIO removeObject failed for ${fileName} (${result.rows[0].file_key}):`, err));
+        }
+        publicFileCache.delete(fileName);
+        return { file_name: fileName };
+      } catch (err) {
+        console.error('Bulk delete item error:', err);
+        return { error: 'Delete failed', file_name: fileName };
+      }
+    }));
+
+    const successes = results.filter((r) => !r.error).map((r) => r.file_name);
+    const failures = results.filter((r) => r.error);
+    res.json({ deleted: successes, failures: failures.length ? failures : undefined });
+  } catch (err) {
+    console.error('Bulk delete error:', err);
     res.status(500).json({ error: 'Delete failed' });
   }
 });
@@ -6418,11 +6471,11 @@ app.patch('/api/notes/:id', authenticate, async (req, res) => {
 
     const isAdminOrMod = req.user.is_admin || req.user.role === 'moderator';
 
-    if (req.body.is_web_public === true && !isAdminOrMod) {
-      return res.status(403).json({
-        error: 'Only admins and moderators can publish notes to the public web',
-      });
-    }
+    // is_web_public is an unlisted, link-only share (never surfaced in any
+    // public listing — see GET /api/public/notes, which filters on
+    // is_blog_published) so any member may enable it on their own note.
+    // Only is_blog_published makes a note publicly discoverable and stays
+    // admin/mod-gated.
     if (req.body.is_blog_published === true && !isAdminOrMod) {
       return res.status(403).json({
         error: 'Only admins and moderators can publish notes to the blog',

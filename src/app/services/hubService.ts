@@ -1683,6 +1683,33 @@ class HubService {
     }
   }
 
+  /**
+   * Delete several files in one request — the mass-upload counterpart.
+   * POST /api/files/bulk-delete. Per-file failures (already deleted,
+   * someone else's file, etc.) come back in `failures` rather than failing
+   * the whole call, same split the batch upload endpoint uses.
+   */
+  async deleteFiles(hubSlug: string, fileNames: string[]): Promise<{ deleted: string[]; failures: { file_name: string; error: string }[] }> {
+    const connection = this.getHubConnection(hubSlug);
+    if (!connection) throw new Error(`No hub found with slug: ${hubSlug}`);
+    if (!connection.hub.tunnelUrl) throw new Error('Hub has no tunnel URL');
+
+    const { headers } = this.getAuthHeaders(hubSlug);
+
+    const response = await fetch(`${connection.hub.tunnelUrl}/api/files/bulk-delete`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_names: fileNames }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || `Delete failed (${response.status})`);
+    }
+    const data = await response.json() as { deleted: string[]; failures?: { file_name: string; error: string }[] };
+    return { deleted: data.deleted, failures: data.failures ?? [] };
+  }
+
   /** Raw PATCH of the visibility flag only — does not touch stored bytes. */
   private async patchFileVisibility(
     hubSlug: string,

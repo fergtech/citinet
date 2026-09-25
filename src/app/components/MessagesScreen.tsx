@@ -20,6 +20,7 @@ import { useBroadcast } from '../context/BroadcastContext';
 import { OutgoingCallModal } from './comms/IncomingCallModal';
 import { BroadcastSetupModal } from './comms/BroadcastSetupModal';
 import { LiveThumbnail } from './comms/LiveThumbnail';
+import { CommsAvatar } from './comms/CommsAvatar';
 import { ensureBackfill, ingestMessages, initForHub, searchMessages } from '../services/messageSearchIndex';
 import { notificationsService } from '../services/notificationsService';
 import { isOnline } from '../utils/presence';
@@ -179,6 +180,8 @@ function AttachTrayItem({ icon: Icon, label, onClick, disabled }: {
 
 /** One card in the "Live now" strip — a currently-active broadcast/room. */
 export function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; onClick?: () => void; showPreview?: boolean }) {
+  const { currentHub } = useHub();
+  const slug = currentHub?.slug || '';
   const isBroadcast = item.kind === 'broadcast';
   return (
     <button
@@ -196,9 +199,7 @@ export function LiveCard({ item, onClick, showPreview }: { item: LiveCommsItem; 
       </span>
       <div className="absolute left-2.5 right-2.5 bottom-2.5 flex flex-col gap-1">
         <div className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-            {(item.host_username || '?').charAt(0).toUpperCase()}
-          </div>
+          <CommsAvatar slug={slug} userId={item.host_id} name={item.host_username || '?'} size={20} />
           <span className="text-white text-[11px] flex-1 truncate">{item.host_username} · {isBroadcast ? 'Broadcast' : 'Room'}</span>
         </div>
         <span className="text-white text-[13px] font-semibold line-clamp-2">{item.title || (isBroadcast ? 'Live broadcast' : 'Open room')}</span>

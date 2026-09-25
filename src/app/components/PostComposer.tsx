@@ -6,6 +6,7 @@ import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
 import { createPostOrQueue } from '../services/writeQueueService';
 import { requestsService, type HubRequest } from '../services/requestsService';
+import { hubService } from '../services/hubService';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -145,6 +146,26 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
       setOpenRequests(reqs.filter(r => !['shipped', 'declined', 'approved'].includes(r.status)))
     ).catch(() => {});
   }, [hubSlug, mode, isMod]);
+
+  // Approved-member count — same denominator the server uses to resolve
+  // quorum_pct (COUNT(*) FROM hub_users WHERE status = 'approved', see
+  // computePollOutcome/checkPollThreshold in server.js) — fetched so the
+  // governance helper text below can translate a bare percentage into an
+  // actual headcount instead of leaving the admin to do that math themselves.
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (mode !== 'poll') return;
+    hubService.listMembers(hubSlug).then(members => setMemberCount(members.length)).catch(() => {});
+  }, [hubSlug, mode]);
+
+  // Quorum's headcount is the real one the server will check against.
+  // Threshold's example headcount piggybacks on it when a quorum is set
+  // (the natural "once enough people vote to meet quorum" scenario); with
+  // no quorum, it falls back to "if everyone voted" using the same member
+  // count, so the threshold explanation is never just an abstract percentage.
+  const quorumVotesNeeded = memberCount && quorumPct > 0 ? Math.ceil((memberCount * quorumPct) / 100) : null;
+  const passScenarioVoters = quorumVotesNeeded ?? memberCount;
+  const passVotesNeeded = passScenarioVoters && passPct > 0 ? Math.ceil((passScenarioVoters * passPct) / 100) : null;
 
   const reset = () => {
     setMode('idle'); setBody(''); setPostError('');
@@ -343,11 +364,25 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
                   <label className="block text-xs font-medium cn-text-3 mb-1">Quorum (%)</label>
                   <input type="number" min={0} max={100} value={quorumPct}
                     onChange={e => setQuorumPct(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))} className={fieldCls} />
+                  <p className="text-[10px] cn-text-4 mt-1 leading-relaxed">
+                    {quorumPct === 0
+                      ? '0 = no quorum — the poll counts no matter how many people vote.'
+                      : memberCount
+                      ? `The hub has ${memberCount} approved member${memberCount === 1 ? '' : 's'} right now, so at least ${quorumVotesNeeded} of them would need to vote for this poll to count.`
+                      : '0 = no quorum'}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium cn-text-3 mb-1">Pass threshold (%)</label>
                   <input type="number" min={1} max={100} value={passPct}
                     onChange={e => setPassPct(Math.min(100, Math.max(1, parseInt(e.target.value) || 50)))} className={fieldCls} />
+                  <p className="text-[10px] cn-text-4 mt-1 leading-relaxed">
+                    {passVotesNeeded
+                      ? quorumVotesNeeded
+                        ? `Of votes cast — so once ${quorumVotesNeeded} people vote to meet quorum, the leading option still needs at least ${passVotesNeeded} of those votes to win.`
+                        : `Of votes cast — for example, if all ${memberCount} members voted, the leading option would need at least ${passVotesNeeded} of those votes to win.`
+                      : 'of votes cast'}
+                  </p>
                 </div>
               </div>
               {openRequests.length > 0 && (

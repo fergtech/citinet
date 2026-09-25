@@ -4,19 +4,21 @@ import {
   MapPin, Shield, Calendar, MessageCircle,
   Loader2, AlertCircle, Globe,
   ImagePlus, Pencil, ArrowLeft,
-  FileText, Sparkles, Film,
+  FileText, Sparkles, Film, NotebookPen,
   Share2, Copy, Check, X, Users, Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
+import { atlasService } from '../services/atlasService';
 import { useHub } from '../context/HubContext';
 import { AutoplayVideo } from './AutoplayVideo';
 import { AvatarFallback } from './icons';
 import { PostDetailModal } from './PostDetailModal';
 import { ListingCard } from './MarketplaceScreen';
-import type { HubMember, HubPost, HubVendor, HubListing } from '../types/hub';
+import type { HubMember, HubPost, HubVendor, HubListing, HubNote } from '../types/hub';
+import { ATLAS_CATEGORIES, type AtlasPin } from '../types/atlas';
 import type { LucideIcon } from 'lucide-react';
 
 // ── Helpers ────────────────────────────────────────────────
@@ -223,6 +225,95 @@ function PostGridCard({ post, hubSlug, onClick }: { post: HubPost; hubSlug: stri
   );
 }
 
+/** Grid-tile variant of a publicly-shared note — same tile shape/sizing as
+ *  PostGridCard (so they interleave cleanly in the Activity grid) but
+ *  text-only, since a note has no attachment/cover-media concept. */
+function NoteGridCard({ note, onClick }: { note: HubNote; onClick: () => void }) {
+  const excerpt = note.title || note.body_plain?.trim() || '';
+  const label = note.is_blog_published ? 'Blog' : note.is_web_public ? 'Web note' : 'Note';
+
+  return (
+    <button
+      onClick={onClick}
+      className="relative h-40 text-left flex flex-col overflow-hidden rounded-2xl transition-all group cn-glass hover:border-black/15 dark:hover:border-white/15"
+    >
+      <div className="relative flex flex-col h-full p-3.5">
+        <span className="self-start shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold cn-text-4">
+          <NotebookPen className="w-3 h-3" />{label}
+        </span>
+
+        <div className="flex-1 min-h-0 flex items-end py-1.5">
+          {excerpt ? (
+            <p className="text-sm font-semibold line-clamp-3 leading-snug cn-text-1">{excerpt}</p>
+          ) : (
+            <p className="text-[11px] cn-text-4 italic">No content preview</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between shrink-0">
+          <span className="text-[10px] font-mono cn-text-4">{formatTimestamp(note.updated_at)}</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/** Grid-tile variant of an Atlas pin — same h-40 tile shape as PostGridCard,
+ *  but leans on the pin's own category identity (icon + gradient, from
+ *  ATLAS_CATEGORIES — the same lookup Atlas itself uses for markers/cards)
+ *  as its cover whenever there's no photo, rather than a plain themed card,
+ *  since a pin without a photo isn't "text-only" the way a note is — the
+ *  category *is* the visual. */
+function PinGridCard({ pin, hubSlug, onClick }: { pin: AtlasPin; hubSlug: string; onClick: () => void }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const meta = ATLAS_CATEGORIES[pin.category];
+  const photoUrl = pin.imageFileName ? hubService.getPublicFileUrl(hubSlug, pin.imageFileName) : null;
+  const hasPhoto = !!photoUrl && !imgFailed;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative h-40 text-left flex flex-col overflow-hidden rounded-2xl transition-all group ${
+        hasPhoto ? '' : `bg-gradient-to-br ${meta.gradient}`
+      }`}
+    >
+      {hasPhoto && (
+        <>
+          <img
+            src={photoUrl!}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgFailed(true)}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-black/0" />
+        </>
+      )}
+      {!hasPhoto && (
+        <meta.Icon className="absolute -right-3 -bottom-3 w-20 h-20 text-white/15" />
+      )}
+
+      <div className="relative flex flex-col h-full p-3.5">
+        <span className="self-start shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ring-1 ring-inset bg-white/15 backdrop-blur-sm text-white ring-white/25">
+          <meta.Icon className="w-3 h-3" />{meta.label}
+        </span>
+
+        <div className="flex-1 min-h-0 flex items-end py-1.5">
+          <p className="text-sm font-semibold line-clamp-3 leading-snug text-white">{pin.title}</p>
+        </div>
+
+        <div className="flex items-center justify-between shrink-0">
+          <span className="text-[10px] font-mono text-white/70">{formatTimestamp(pin.createdAt)}</span>
+          {(pin.replyCount ?? 0) > 0 && (
+            <span className="flex items-center gap-1 text-[10px] text-white/70">
+              <MessageCircle className="w-3 h-3" />{pin.replyCount}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────
 
 interface ProfileScreenProps {
@@ -238,6 +329,8 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
 
   const [member, setMember]           = useState<HubMember | null>(null);
   const [posts, setPosts]             = useState<HubPost[]>([]);
+  const [notes, setNotes]             = useState<HubNote[]>([]);
+  const [pins, setPins]               = useState<AtlasPin[]>([]);
   const [vendor, setVendor]           = useState<HubVendor | null>(null);
   const [listings, setListings]       = useState<HubListing[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -262,15 +355,23 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
     setActiveTab('overview');
     setVendor(null);
     setListings([]);
+    setNotes([]);
+    setPins([]);
     Promise.allSettled([
       hubService.getMember(slug, userId),
       hubService.listPosts(slug),
       marketplaceService.listVendors(slug),
-    ]).then(([memberRes, postsRes, vendorsRes]) => {
+      hubService.getPublicNotes(slug, userId),
+      atlasService.getPins(slug),
+    ]).then(([memberRes, postsRes, vendorsRes, notesRes, pinsRes]) => {
       if (memberRes.status === 'fulfilled') {
         setMember(memberRes.value);
         if (postsRes.status === 'fulfilled')
           setPosts(postsRes.value.filter(p => p.author_id === userId));
+        if (notesRes.status === 'fulfilled')
+          setNotes(notesRes.value);
+        if (pinsRes.status === 'fulfilled')
+          setPins(pinsRes.value.filter(p => p.authorId === userId));
         // No by-owner-user-id vendor lookup endpoint — find it in the full
         // vendor list, same client-side-filter pattern as posts above.
         if (vendorsRes.status === 'fulfilled') {
@@ -368,15 +469,46 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
   const bio = member.bio ?? '';
   const bioClamped = bio.length > 280 ? bio.slice(0, 280).trim() + '…' : bio;
 
-  // Requests get their own tab, so "Activity" (general posts, discussions,
-  // announcements) is everything else. Same underlying `posts` fetch, just
-  // split by the category the post already carries — no extra request.
-  const activityPosts = posts.filter(p => p.category !== 'REQUEST');
+  // Requests get their own tab; everything else (posts, notes, pins) is
+  // built into activityItems below.
   const requestPosts = posts.filter(p => p.category === 'REQUEST');
+
+  // One combined, newest-first pool mixing every post (any category) with
+  // publicly-shared notes and this member's Atlas pins — each another
+  // "type" of activity alongside posts. Overview's "Recent activity" card
+  // takes its top 3 from this so a note/pin shows up there too when it's
+  // genuinely the member's most recent thing, not just on the Activity tab.
+  // The Activity tab below filters this same pool down to non-request
+  // posts + notes + pins (requests keep their own tab).
+  type ActivityItem = { key: string; date: string; isRequest: boolean; node: React.ReactNode };
+  const allActivityItems: ActivityItem[] = [
+    ...posts.map(post => ({
+      key: `post-${post.id}`,
+      date: post.created_at,
+      isRequest: post.category === 'REQUEST',
+      node: <PostGridCard key={post.id} post={post} hubSlug={slug} onClick={() => setSelectedPost(post)} />,
+    })),
+    ...notes.map(note => ({
+      key: `note-${note.id}`,
+      date: note.updated_at,
+      isRequest: false,
+      node: <NoteGridCard key={note.id} note={note} onClick={() => onNavigate(`notes/${note.id}`)} />,
+    })),
+    ...pins.map(pin => ({
+      key: `pin-${pin.id}`,
+      date: pin.createdAt,
+      isRequest: false,
+      node: <PinGridCard key={pin.id} pin={pin} hubSlug={slug} onClick={() => {
+        sessionStorage.setItem('citinet-deeplink-pin', pin.id);
+        onNavigate('atlas');
+      }} />,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const activityItems = allActivityItems.filter(item => !item.isRequest);
 
   const TABS: { value: Tab; label: string }[] = [
     { value: 'overview', label: 'Overview' },
-    { value: 'activity', label: `Activity${activityPosts.length ? ` (${activityPosts.length})` : ''}` },
+    { value: 'activity', label: `Activity${activityItems.length ? ` (${activityItems.length})` : ''}` },
     { value: 'resources', label: `Resources${listings.length ? ` (${listings.length})` : ''}` },
     { value: 'requests', label: `Requests${requestPosts.length ? ` (${requestPosts.length})` : ''}` },
   ];
@@ -687,21 +819,17 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                   </div>
                 ) : null}
 
-                {/* Card 1 — recent community activity (Activity + Requests
-                    combined, newest first; the full per-type lists live on
-                    their own tabs). Top 3, three-column grid — matches the
-                    "Shared resources" grid below it. */}
+                {/* Card 1 — recent community activity (posts of every
+                    category + publicly-shared notes, combined newest-first;
+                    the full per-type lists live on their own tabs). Top 3,
+                    three-column grid — matches the "Shared resources" grid
+                    below it. */}
                 <div>
                   <span className="cn-eyebrow">Recent activity</span>
                   <div className="mt-2.5">
-                    {posts.length > 0 ? (
+                    {allActivityItems.length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {[...posts]
-                          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                          .slice(0, 3)
-                          .map(post => (
-                            <PostGridCard key={post.id} post={post} hubSlug={slug} onClick={() => setSelectedPost(post)} />
-                          ))}
+                        {allActivityItems.slice(0, 3).map(item => item.node)}
                       </div>
                     ) : (
                       <EmptyTab
@@ -747,8 +875,9 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
               </motion.div>
             )}
 
-            {/* ── Activity tab — general posts: discussions, announcements,
-                projects, events, polls. Requests get their own tab. ── */}
+            {/* ── Activity tab — general posts (discussions, announcements,
+                projects, events, polls) interleaved with publicly-shared
+                notes, newest first. Requests get their own tab. ── */}
             {activeTab === 'activity' && (
               <motion.div
                 key="activity"
@@ -758,11 +887,9 @@ export function ProfileScreen({ userId, onBack, onNavigate }: ProfileScreenProps
                 transition={{ duration: 0.15 }}
                 className="p-5"
               >
-                {activityPosts.length > 0 ? (
+                {activityItems.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {activityPosts.map(post => (
-                      <PostGridCard key={post.id} post={post} hubSlug={slug} onClick={() => setSelectedPost(post)} />
-                    ))}
+                    {activityItems.map(item => item.node)}
                   </div>
                 ) : (
                   <EmptyTab

@@ -5,7 +5,7 @@ import {
   MonitorPlay, Table2, Download, Search, Loader2, AlertCircle, RefreshCw,
   HardDrive, Upload, Trash2, Globe, Lock, X, Eye, Link2, Users, Check,
   Star, List, LayoutGrid, ArrowUpDown, ChevronLeft, ChevronRight, Folder,
-  FolderPlus, FolderInput, Home,
+  FolderPlus, FolderInput, Home, CheckSquare, Square, ListChecks,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { hubService } from '../services/hubService';
@@ -226,23 +226,26 @@ function UploaderChip({
 
 function GridFileTile({
   file, slug, index, starred, onToggleStar, onOpen, memberMap, myUserId,
+  selectMode, selected, isOwner, onToggleSelect,
 }: {
   file: HubFile; slug: string; index: number; starred: boolean;
   onToggleStar: () => void; onOpen: () => void;
   memberMap: Map<string, HubMember>; myUserId: string;
+  selectMode?: boolean; selected?: boolean; isOwner?: boolean; onToggleSelect?: () => void;
 }) {
   const { Icon, grad } = KIND_CFG[getKind(file)];
   const fresh = isRecent(file);
   const ref = useRef<HTMLDivElement>(null);
   const thumb = useFileThumbnail(slug, file, ref);
+  const clickable = selectMode ? isOwner : true;
 
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * 0.02 }}
-      className="group rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer overflow-hidden"
-      onClick={onOpen}
+      className={`group rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all overflow-hidden ${clickable ? 'cursor-pointer' : ''} ${selected ? 'ring-2 ring-amber-500/50 border-amber-500/40' : ''}`}
+      onClick={selectMode ? (isOwner ? onToggleSelect : undefined) : onOpen}
     >
       <div ref={ref} className={`relative h-20 ${thumb ? '' : `bg-gradient-to-br ${grad}`} flex items-center justify-center overflow-hidden`}>
         {thumb?.kind === 'video' ? (
@@ -252,14 +255,22 @@ function GridFileTile({
         ) : (
           <Icon className="w-8 h-8 text-white/80" />
         )}
-        {fresh && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
-        <button
-          onClick={e => { e.stopPropagation(); onToggleStar(); }}
-          className="absolute top-2 left-2 w-6 h-6 rounded-md bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-          title={starred ? 'Unstar file' : 'Star file'}
-        >
-          <Star className={`w-3 h-3 ${starred ? 'text-amber-400 fill-amber-400' : 'text-white/70'}`} />
-        </button>
+        {fresh && !selectMode && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+        {selectMode ? (
+          isOwner && (
+            <span className="absolute top-2 left-2 w-6 h-6 rounded-md bg-black/30 flex items-center justify-center">
+              {selected ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4 text-white/80" />}
+            </span>
+          )
+        ) : (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleStar(); }}
+            className="absolute top-2 left-2 w-6 h-6 rounded-md bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            title={starred ? 'Unstar file' : 'Star file'}
+          >
+            <Star className={`w-3 h-3 ${starred ? 'text-amber-400 fill-amber-400' : 'text-white/70'}`} />
+          </button>
+        )}
       </div>
       <div className="p-3 min-w-0">
         <p className="text-xs font-semibold cn-text-1 truncate max-w-full">{file.name || 'Unnamed'}</p>
@@ -499,6 +510,13 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
   const [movePopoverId, setMovePopoverId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // bulk delete — the mass-upload counterpart. Selection is scoped to files
+  // the user owns (same rule the single-file delete button already enforces)
+  // and to whatever's currently visible under the active tab/search/filter.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   // lightbox
   const [previewFile, setPreviewFile] = useState<HubFile | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -565,6 +583,11 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
     setShowUploadMenu(true);
   }, []);
 
+  // Selection is scoped to what's currently visible — drop it whenever the
+  // visible set changes underneath it (switching folders/tabs/searching),
+  // so a stale id never lingers into a delete it was never intended to cover.
+  useEffect(() => { setSelectedIds(new Set()); }, [currentFolderId, tab, search]);
+
   // ── derived lists ─────────────────────────────────────────────────────────────
   const folderScopedFiles = useMemo(
     () => allFiles.filter(f => (f.folder_id || null) === currentFolderId),
@@ -601,6 +624,8 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       return new Date(b.uploaded_at || 0).getTime() - new Date(a.uploaded_at || 0).getTime();
     });
   }, [tabFiles, search, kindFilter, sortBy]);
+
+  const selectableDisplayed = useMemo(() => displayed.filter(f => f.owner_id === myUserId), [displayed, myUserId]);
 
   // ── upload ────────────────────────────────────────────────────────────────────
   const triggerUpload = (isPublic: boolean) => {
@@ -669,6 +694,40 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
       setAllFiles(prev => prev.filter(f => f.id !== file.id));
     } catch (err) { console.error('Delete failed:', err); }
     finally { setDeletingId(null); }
+  };
+
+  // ── bulk delete ───────────────────────────────────────────────────────────────
+  const toggleSelected = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+
+  const handleBulkDelete = async () => {
+    if (!slug || selectedIds.size === 0) return;
+    const targets = selectableDisplayed.filter(f => selectedIds.has(f.id));
+    if (!targets.length) return;
+    setBulkDeleting(true);
+    setUploadError('');
+    try {
+      const { deleted, failures } = await hubService.deleteFiles(slug, targets.map(f => f.name));
+      const deletedNames = new Set(deleted);
+      const deletedIds = new Set(targets.filter(f => deletedNames.has(f.name)).map(f => f.id));
+      setAllFiles(prev => prev.filter(f => !deletedIds.has(f.id)));
+      if (failures.length) {
+        setUploadError(`Deleted ${deleted.length} of ${targets.length} — ${failures.length} couldn't be removed.`);
+      }
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      setUploadError(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      setBulkDeleting(false);
+      exitSelectMode();
+    }
   };
 
   // ── visibility ────────────────────────────────────────────────────────────────
@@ -1060,6 +1119,50 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     </button>
                   ))}
                 </span>
+                {/* Select — the mass-delete counterpart to mass upload. Only
+                    offered when there's at least one file here you actually
+                    own (nothing else is deletable, same rule the per-file
+                    delete button already enforces). */}
+                {selectableDisplayed.length > 0 && (
+                  <button
+                    onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                      selectMode
+                        ? 'border-amber-600/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        : 'cn-border cn-surface cn-text-2 hover:bg-black/5 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <ListChecks className="w-3.5 h-3.5" />
+                    {selectMode ? 'Cancel' : 'Select'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Bulk-selection action bar */}
+            {selectMode && (
+              <div className="flex items-center gap-3 mb-4 p-2.5 pl-3.5 rounded-xl border border-amber-600/30 bg-amber-500/10">
+                <button
+                  onClick={() => setSelectedIds(
+                    selectedIds.size === selectableDisplayed.length
+                      ? new Set()
+                      : new Set(selectableDisplayed.map(f => f.id))
+                  )}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:underline"
+                >
+                  {selectedIds.size === selectableDisplayed.length ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                  {selectedIds.size === selectableDisplayed.length ? 'Deselect all' : 'Select all'}
+                </button>
+                <span className="text-xs cn-text-4">{selectedIds.size} selected</span>
+                <div className="flex-1" />
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedIds.size === 0 || bulkDeleting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-600 text-white text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Delete{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                </button>
               </div>
             )}
 
@@ -1146,6 +1249,11 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     const isMoveOpen = movePopoverId === file.id;
                     const canMove = isOwner && (file.folder_id != null || folders.length > 0);
 
+                    const isSelected = selectedIds.has(file.id);
+                    const rowClick = selectMode
+                      ? (isOwner ? () => toggleSelected(file.id) : undefined)
+                      : () => openPreview(file);
+
                     return (
                       <motion.div
                         key={file.id}
@@ -1153,12 +1261,22 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
                         transition={{ delay: index * 0.025 }}
-                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all cursor-pointer ${(isVisOpen || isMoveOpen) ? 'z-20' : 'z-0'}`}
-                        onClick={() => openPreview(file)}
+                        className={`group w-full overflow-visible flex items-center gap-3 p-3 rounded-2xl cn-glass hover:border-black/20 dark:hover:border-white/20 transition-all ${rowClick ? 'cursor-pointer' : ''} ${isSelected ? 'ring-2 ring-amber-500/50 border-amber-500/40' : ''} ${(isVisOpen || isMoveOpen) ? 'z-20' : 'z-0'}`}
+                        onClick={rowClick}
                       >
+                        {selectMode && (
+                          <span className="shrink-0 w-5 h-5 flex items-center justify-center">
+                            {isOwner ? (
+                              isSelected
+                                ? <CheckSquare className="w-4 h-4 text-amber-500" />
+                                : <Square className="w-4 h-4 cn-text-4" />
+                            ) : null}
+                          </span>
+                        )}
+
                         <FileKindBadge file={file} slug={slug} size={42} />
 
-                        <div className="flex-1 min-w-0" onClick={() => openPreview(file)}>
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-sm font-semibold cn-text-1 truncate min-w-0 max-w-full">{file.name || 'Unnamed file'}</span>
                             {fresh && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
@@ -1171,6 +1289,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                           </div>
                         </div>
 
+                        {!selectMode && (
                         <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                           {/* Star */}
                           <button
@@ -1322,6 +1441,7 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                             </button>
                           )}
                         </div>
+                        )}
                       </motion.div>
                     );
                   })}
@@ -1343,6 +1463,10 @@ export function FilesScreen({ onBack }: FilesScreenProps) {
                     onOpen={() => openPreview(file)}
                     memberMap={memberMap}
                     myUserId={myUserId}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(file.id)}
+                    isOwner={file.owner_id === myUserId}
+                    onToggleSelect={() => toggleSelected(file.id)}
                   />
                 ))}
               </div>

@@ -1349,6 +1349,25 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
     ).catch(() => {});
   }, [hubSlug, isEditing, isMod]);
 
+  // Approved-member count — same denominator the server uses to resolve
+  // quorum_pct (COUNT(*) FROM hub_users WHERE status = 'approved', see
+  // computePollOutcome/checkPollThreshold) — fetched so the governance
+  // helper text below can translate a bare percentage into an actual
+  // headcount instead of leaving the admin to do that math themselves.
+  const [memberCount, setMemberCount] = useState<number | null>(null);
+  useEffect(() => {
+    hubService.listMembers(hubSlug).then(members => setMemberCount(members.length)).catch(() => {});
+  }, [hubSlug]);
+
+  // Quorum's headcount is the real one the server will check against.
+  // Threshold's example headcount piggybacks on it when a quorum is set
+  // (the natural "once enough people vote to meet quorum" scenario); with
+  // no quorum, it falls back to "if everyone voted" using the same member
+  // count, so the threshold explanation is never just an abstract percentage.
+  const quorumVotesNeeded = memberCount && quorumPct > 0 ? Math.ceil((memberCount * quorumPct) / 100) : null;
+  const passScenarioVoters = quorumVotesNeeded ?? memberCount;
+  const passVotesNeeded = passScenarioVoters && passPct > 0 ? Math.ceil((passScenarioVoters * passPct) / 100) : null;
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleKey);
@@ -1488,7 +1507,13 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
                           className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400" />
                         <span className="text-sm cn-text-4">%</span>
                       </div>
-                      <p className="text-[10px] cn-text-4 mt-1">0 = no quorum</p>
+                      <p className="text-[10px] cn-text-4 mt-1 leading-relaxed">
+                        {quorumPct === 0
+                          ? '0 = no quorum — the poll counts no matter how many people vote.'
+                          : memberCount
+                          ? `The hub has ${memberCount} approved member${memberCount === 1 ? '' : 's'} right now, so at least ${quorumVotesNeeded} of them would need to vote for this poll to count.`
+                          : '0 = no quorum'}
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium cn-text-3 mb-1.5">Pass threshold</label>
@@ -1498,7 +1523,13 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
                           className="w-full cn-surface-2 border cn-border rounded-lg px-3 py-2 text-sm cn-text-1 focus:outline-none focus:border-indigo-400" />
                         <span className="text-sm cn-text-4">%</span>
                       </div>
-                      <p className="text-[10px] cn-text-4 mt-1">of votes cast</p>
+                      <p className="text-[10px] cn-text-4 mt-1 leading-relaxed">
+                        {passVotesNeeded
+                          ? quorumVotesNeeded
+                            ? `Of votes cast — so once ${quorumVotesNeeded} people vote to meet quorum, the leading option still needs at least ${passVotesNeeded} of those votes to win.`
+                            : `Of votes cast — for example, if all ${memberCount} members voted, the leading option would need at least ${passVotesNeeded} of those votes to win.`
+                          : 'of votes cast'}
+                      </p>
                     </div>
                   </div>
 

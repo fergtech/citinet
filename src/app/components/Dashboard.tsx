@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentType } from 'react';
 import {
   Search, Plus, Calendar, MapPin, Store, Users, Sparkles, ArrowRight,
-  MessageSquare, Layers, NotebookPen, Radio, FileText, Newspaper, Upload,
+  MessageSquare, Layers, NotebookPen, Radio, FileText, Newspaper, Upload, Vote,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
@@ -95,6 +95,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const list: Command[] = [
       { id: 'create-post', icon: Plus, label: 'Create Post', keywords: 'create post new write share update', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); n('feed'); } },
       { id: 'create-event', icon: Calendar, label: 'Create Event', keywords: 'create event new meetup schedule calendar', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); sessionStorage.setItem('citinet-deeplink-feed-category', 'EVENT'); sessionStorage.setItem('citinet-deeplink-compose-mode', 'event'); n('feed'); } },
+      { id: 'create-poll', icon: Vote, label: 'Create Poll', keywords: 'create poll new vote survey question', run: n => { sessionStorage.setItem('citinet-deeplink-compose', '1'); sessionStorage.setItem('citinet-deeplink-feed-category', 'POLL'); sessionStorage.setItem('citinet-deeplink-compose-mode', 'poll'); n('feed'); } },
       { id: 'add-pin', icon: MapPin, label: 'Add Atlas Pin', keywords: 'add pin atlas map location place new', run: n => { sessionStorage.setItem('citinet-deeplink-atlas-add-pin', '1'); n('atlas'); } },
       { id: 'new-listing', icon: Store, label: 'New Marketplace Listing', keywords: 'sell listing marketplace exchange vendor new', run: n => { sessionStorage.setItem('citinet-deeplink-marketplace-post', '1'); n('marketplace'); } },
       { id: 'upload-file', icon: Upload, label: 'Upload a File', keywords: 'upload file files share attach document photo picture pdf', run: n => { sessionStorage.setItem('citinet-deeplink-upload', '1'); n('files'); } },
@@ -154,7 +155,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const quickActionIds = ['create-post', 'create-event', 'add-pin', 'new-listing', 'find-people'];
+  const quickActionIds = ['upload-file', 'create-post', 'create-event', 'add-pin', 'create-poll'];
   const quickActions = quickActionIds
     .map(id => commands.find(c => c.id === id))
     .filter((c): c is Command => !!c);

@@ -586,41 +586,16 @@ function SpaceInfoSidebar({ space, hubSlug, posts }: {
     return acc;
   }, new Map<string, { username: string; count: number }>());
   const [showBroadcastSetup, setShowBroadcastSetup] = useState(false);
-  const [liveItems, setLiveItems] = useState<LiveCommsItem[]>([]);
-  const { joinAsViewer } = useBroadcast();
-  const isActiveSpaceMember = space.my_status === 'active';
-
-  // Space-scoped live list — GET /api/comms/live?space_slug=X, membership-
-  // checked server-side, never includes hub-wide broadcasts/rooms. Same
-  // 10s poll cadence as Messages' own hub-wide Live strip.
-  useEffect(() => {
-    if (!isActiveSpaceMember) return;
-    let cancelled = false;
-    const load = () => hubService.listLiveComms(hubSlug, space.slug).then(items => { if (!cancelled) setLiveItems(items); }).catch(() => {});
-    load();
-    const interval = setInterval(load, 10_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [hubSlug, space.slug, isActiveSpaceMember]);
 
   return (
     <div className="p-4 space-y-5">
-      {/* Live — same comms system Messages uses, now genuinely scoped to
-          this space (2026-09-08): the backend re-checks active space
-          membership on every join of a broadcast/room created with this
-          space's slug, and GET /api/comms/live?space_slug=X only ever
-          returns this space's own live items, never hub-wide ones (and vice
-          versa — this space's broadcasts don't leak into Messages' hub-wide
-          Live strip either). (No call button here — 1:1 calls don't fit a
-          space's membership and group-room calling has no UI yet.) */}
+      {/* Starting a broadcast lives here regardless of whether one's already
+          active — the list/viewing of currently-active broadcasts moved to
+          its own "Live" tab in the main tab bar (SpaceDetail), which only
+          appears once ≥1 is actually live. This button needs to stay
+          reachable even when that tab is hidden (nothing live yet). */}
       <div>
-        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Live</p>
-        {liveItems.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-2 -mx-1 px-1">
-            {liveItems.map(item => (
-              <LiveCard key={item.room_name} item={item} onClick={() => joinAsViewer(item)} />
-            ))}
-          </div>
-        )}
+        <p className="text-[11px] font-semibold cn-text-4 uppercase tracking-widest mb-2">Broadcast</p>
         <button onClick={() => setShowBroadcastSetup(true)}
           className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-950/60 text-red-600 dark:text-red-400 text-xs font-semibold transition-colors">
           <Radio className="w-3.5 h-3.5" /> Broadcast to space
@@ -629,7 +604,7 @@ function SpaceInfoSidebar({ space, hubSlug, posts }: {
       {showBroadcastSetup && (
         <BroadcastSetupModal open={showBroadcastSetup} onClose={() => setShowBroadcastSetup(false)} initialTitle={`Live from ${space.name}`} spaceSlug={space.slug} />
       )}
-      
+
       {/* About */}
       {space.description && (
         <div>
@@ -833,7 +808,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
 
 // ── Space Detail ──────────────────────────────────────────
 
-type SpaceTab = 'feed' | 'initiatives' | 'members' | 'files' | 'settings';
+type SpaceTab = 'feed' | 'initiatives' | 'members' | 'files' | 'live' | 'settings';
 
 function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUser, onSpaceUpdated, onSpaceDeleted }: {
   hubSlug: string; space: HubSpace; myUserId?: string;
@@ -887,6 +862,16 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   const [scrollY, setScrollY] = useState(0);
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const contentRef = useRef<HTMLDivElement>(null);
+  // Live tab — active broadcasts/rooms scoped to this space. Same comms
+  // system Messages uses, genuinely scoped (2026-09-08): the backend
+  // re-checks active space membership on every join of a broadcast/room
+  // created with this space's slug, and GET /api/comms/live?space_slug=X
+  // only ever returns this space's own live items (and vice versa — this
+  // space's broadcasts don't leak into Messages' hub-wide Live strip
+  // either). The tab itself only appears in the bar below once this is
+  // non-empty.
+  const [liveItems, setLiveItems] = useState<LiveCommsItem[]>([]);
+  const { joinAsViewer } = useBroadcast();
 
   const isActive = space.my_status === 'active';
   const isPending = space.my_status === 'pending';
@@ -953,6 +938,24 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
       spacesService.getMembers(hubSlug, space.slug).then(setMembers).catch(() => {}).finally(() => setMembersLoading(false));
     }
   }, [tab, space.slug, isActive]);
+
+  // Space-scoped live list — 10s poll, same cadence Messages' own hub-wide
+  // Live strip uses.
+  useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    const load = () => hubService.listLiveComms(hubSlug, space.slug).then(items => { if (!cancelled) setLiveItems(items); }).catch(() => {});
+    load();
+    const interval = setInterval(load, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [hubSlug, space.slug, isActive]);
+
+  // The Live tab button only renders while liveItems is non-empty (below) —
+  // if the last broadcast ends while it's the selected tab, fall back to
+  // Feed rather than leaving the view stranded on a tab with no button.
+  useEffect(() => {
+    if (tab === 'live' && liveItems.length === 0) setTab('feed');
+  }, [tab, liveItems.length]);
 
   async function handleJoin() {
     setActionLoading(true); setError('');
@@ -1167,7 +1170,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
   }
 
   const bannerStyle = getBannerStyle(space, tunnelUrl);
-  const tabs: SpaceTab[] = ['feed', 'initiatives', 'members', 'files', ...(isAdmin ? ['settings' as SpaceTab] : [])];
+  const tabs: SpaceTab[] = ['feed', 'initiatives', 'members', 'files', ...(liveItems.length > 0 ? ['live' as SpaceTab] : []), ...(isAdmin ? ['settings' as SpaceTab] : [])];
 
   // Posts and initiative activity merged into one chronological feed list.
   type FeedItem = { kind: 'post'; createdAt: string; post: HubPost } | { kind: 'activity'; createdAt: string; activity: SpaceInitiativeActivityItem };
@@ -1313,7 +1316,8 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         <div className="flex border-b cn-border px-6 flex-shrink-0 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors ${tab === t ? 'border-blue-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
+              className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === t ? 'border-blue-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
+              {t === 'live' && <span className="cn-live-dot w-1.5 h-1.5" />}
               {t}
             </button>
           ))}
@@ -1611,6 +1615,20 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
         {/* Files tab */}
         {isActive && tab === 'files' && (
           <FilesTab hubSlug={hubSlug} spaceSlug={space.slug} tunnelUrl={tunnelUrl} authToken={authToken} />
+        )}
+
+        {/* Live tab — only ever reachable while liveItems is non-empty (see
+            the tabs array above), so no "nothing's live" empty state is
+            needed here. Same LiveCard Messages' own hub-wide Live strip
+            uses, with its video-thumbnail cover turned on. */}
+        {isActive && tab === 'live' && (
+          <div className="p-5">
+            <div className="flex flex-wrap gap-3">
+              {liveItems.map(item => (
+                <LiveCard key={item.room_name} item={item} onClick={() => joinAsViewer(item)} showPreview />
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Settings tab */}
