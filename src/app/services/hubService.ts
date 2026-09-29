@@ -1935,16 +1935,11 @@ class HubService {
       return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}?src=${encodeURIComponent(publicUrl)}`;
     }
 
-    // No Tailscale — build a LAN-accessible link by replacing localhost/127.0.0.1
-    // with the hub's actual LAN IP so other devices on the same network can reach it.
-    const lanIp = conn?.hub?.lanIp;
-    const swapLocal = (url: string) =>
-      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
-
-    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
-    const base = swapLocal(window.location.origin);
-    const src = srcUrl && !this.isShellUrl(srcUrl) ? `?src=${encodeURIComponent(srcUrl)}` : '';
-    return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}${src}`;
+    // No public URL known locally — never embed a private/LAN address (it only
+    // works on one network and makes browsers prompt for local-network access).
+    // The share page resolves the hub's public address from the registry.
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+    return `${base}/share/${hubSlug}/${encodeURIComponent(fileName)}`;
   }
 
   /**

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Loader2, AlertCircle, Users, Globe, MessageCircle, LayoutGrid } from 'lucide-react';
-import { hubService } from '../services/hubService';
+import { fetchFromPublicHub } from '../utils/publicHubBase';
 import { AvatarFallback } from './icons';
 import { ShareWallpaper } from './ShareWallpaper';
 import type { HubPost } from '../types/hub';
@@ -84,28 +84,13 @@ export function ShareSpacePage() {
   useEffect(() => {
     if (!hubSlug || !spaceSlug) { setError('Invalid share link'); setLoading(false); return; }
 
-    const localConn = hubService.getHubConnection(hubSlug);
-    const localTunnelUrl = localConn?.hub?.tunnelUrl;
-    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
-    const fetchBase = (localTunnelUrl && !isShell(localTunnelUrl)) ? localTunnelUrl : srcParam;
-
-    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
-      setError('This share link is missing the hub source. Ask the owner to re-copy the link.');
-      setLoading(false);
-      return;
-    }
-
-    setResolvedSrc(fetchBase);
-    fetch(`${fetchBase}/api/public/spaces/${spaceSlug}`)
-      .then(async r => {
-        if (!r.ok) {
-          setError('This space is not publicly accessible or no longer exists.');
-          return;
-        }
-        setData(await r.json() as PublicSpaceData);
-      })
-      .catch(() => setError('Could not reach the hub. It may be offline.'))
-      .finally(() => setLoading(false));
+    (async () => {
+      const hit = await fetchFromPublicHub(hubSlug, srcParam, `/api/public/spaces/${encodeURIComponent(spaceSlug)}`);
+      if (!hit) { setError('Could not reach the hub. It may be offline, or it has no public address.'); return; }
+      if (!hit.res.ok) { setError('This space is not publicly accessible or no longer exists.'); return; }
+      setResolvedSrc(hit.base);
+      setData(await hit.res.json() as PublicSpaceData);
+    })().finally(() => setLoading(false));
   }, [hubSlug, spaceSlug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

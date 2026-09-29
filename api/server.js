@@ -1741,6 +1741,16 @@ function emailCopyForNotification(type, actorName, hubName) {
       return { subject: `New message from ${actorName}`, line: `${actorName} sent you a message on ${hubName}.` };
     case 'reply':
       return { subject: `${actorName} replied to your post`, line: `${actorName} replied to your post on ${hubName}.` };
+    case 'message_reaction':
+      return { subject: `${actorName} reacted to your message`, line: `${actorName} reacted to your message on ${hubName}.` };
+    case 'like':
+      return { subject: `${actorName} liked your post`, line: `${actorName} liked your post on ${hubName}.` };
+    case 'pin_reply':
+      return { subject: `${actorName} commented on your pin`, line: `${actorName} commented on your Atlas pin on ${hubName}.` };
+    case 'note_reply':
+      return { subject: `${actorName} replied to your note`, line: `${actorName} replied to your note on a project on ${hubName}.` };
+    case 'update_comment':
+      return { subject: `${actorName} commented on your update`, line: `${actorName} commented on your project update on ${hubName}.` };
     case 'space_invite':
       return { subject: `${actorName} invited you to a Space`, line: `${actorName} invited you to join a Space on ${hubName}.` };
     case 'initiative_invite':
@@ -2406,6 +2416,13 @@ app.get('/api/auth/avatar/:userId', async (req, res) => {
     const user = result.rows[0];
     if (!user || !user.avatar_url)
       return res.status(404).json({ error: 'No avatar' });
+
+    // Seeded/demo users store an external image URL rather than a MinIO key;
+    // passing that to getObject throws "Object name contains unsupported
+    // characters" on every request, so send the client to it directly.
+    if (/^https?:\/\//i.test(user.avatar_url)) {
+      return res.redirect(302, user.avatar_url);
+    }
 
     const ext = (user.avatar_url.split('.').pop() || 'jpg').toLowerCase();
     const mimeMap = {
@@ -3199,7 +3216,7 @@ app.post('/api/messages/:id/reactions', authenticate, async (req, res) => {
 
   try {
     const msg = await pool.query(
-      `SELECT conversation_id FROM hub_messages WHERE id = $1`,
+      `SELECT conversation_id, sender_id FROM hub_messages WHERE id = $1`,
       [id],
     );
     if (!msg.rows[0]) return res.status(404).json({ error: 'Message not found' });
@@ -3228,6 +3245,16 @@ app.post('/api/messages/:id/reactions', authenticate, async (req, res) => {
         [id, req.user.id, emoji],
       );
       reacted = true;
+      // Notify on a fresh reaction only (not on un-reacting, never for
+      // reacting to your own message) — same "skip if it's you, skip on
+      // remove" shape as toggleLike. ref_id is the conversation id, same as
+      // a plain 'message' notification, but a distinct type keeps it a
+      // separate row/group in the notifications list rather than merging
+      // with actual messages from that same conversation.
+      const senderId = msg.rows[0].sender_id;
+      if (senderId && senderId !== req.user.id) {
+        notifyUser(senderId, 'message_reaction', req.user.id, msg.rows[0].conversation_id).catch(() => {});
+      }
     }
 
     const { rows } = await pool.query(
@@ -4003,7 +4030,7 @@ registerCallEventHistoryRoute(app, pool, authenticate);
 
 // ── Notifications ─────────────────────────────────────────
 
-const FEATURE_TYPES = { feed: ['reply'], messages: ['message'], hub_management: ['join_request'] };
+const FEATURE_TYPES = { feed: ['reply', 'like'], messages: ['message', 'message_reaction'], hub_management: ['join_request'] };
 
 // Get unread counts grouped by feature
 app.get('/api/notifications/counts', authenticate, async (req, res) => {
@@ -4027,13 +4054,26 @@ app.get('/api/notifications/counts', authenticate, async (req, res) => {
 });
 
 // List individual unread notifications (used for deep-linking on badge tap)
+//
+// post_category/pin_category: the referenced content's own category, e.g.
+// 'EVENT' or 'DISCUSSION' for a post, so the client can say "replied to your
+// event" instead of a generic "your post" — one conditional LEFT JOIN per
+// content type ref_id can point at, not a per-row fetch (this list is
+// unbounded per client — see docs/list-virtualization-sop.md's own warning
+// against exactly that shape of bug). The join's ON clause guards by n.type
+// so it only ever matches the table ref_id actually refers to for that row;
+// every other row gets NULL here, same as an unmatched LEFT JOIN always does.
 app.get('/api/notifications/unread', authenticate, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT n.id, n.type, n.actor_id, n.ref_id, n.created_at,
-              u.username AS actor_username
+              u.username AS actor_username,
+              p.category AS post_category,
+              pin.category AS pin_category
        FROM hub_notifications n
        LEFT JOIN hub_users u ON u.id = n.actor_id
+       LEFT JOIN hub_posts p ON n.type IN ('reply', 'like') AND p.id::text = n.ref_id
+       LEFT JOIN hub_atlas_pins pin ON n.type = 'pin_reply' AND pin.id::text = n.ref_id
        WHERE n.user_id = $1 AND n.read = false
        ORDER BY n.created_at DESC
        LIMIT 50`,
@@ -4084,18 +4124,31 @@ app.post('/api/notifications/:id/read', authenticate, async (req, res) => {
   }
 });
 
-// Mark notifications for a specific conversation or post as read
+// Mark notifications for a specific conversation, post, or initiative as
+// read — optionally scoped to one `type`. Several distinct notification
+// types can share the same ref_id (a conversation id carries both 'message'
+// and 'message_reaction'; an initiative id carries 'note_reply',
+// 'update_comment', and 'initiative_invite') and are meant to be tracked
+// independently — e.g. opening a conversation to read new messages
+// shouldn't silently also dismiss an unrelated reaction notification for
+// that same conversation nobody has looked at yet. Omitting `type` keeps
+// the old "clear everything for this ref_id" behavior for callers that
+// genuinely want that (there are none left server-side, but nothing forces
+// every caller to pass it).
 app.post(
   '/api/notifications/mark-read-by-ref',
   authenticate,
   async (req, res) => {
-    const { ref_id } = req.body || {};
+    const { ref_id, type } = req.body || {};
     if (!ref_id) return res.status(400).json({ error: 'ref_id required' });
     try {
       await pool.query(
-        `UPDATE hub_notifications SET read = true
-       WHERE user_id = $1 AND ref_id = $2 AND read = false`,
-        [req.user.id, String(ref_id)],
+        type
+          ? `UPDATE hub_notifications SET read = true
+             WHERE user_id = $1 AND ref_id = $2 AND type = $3 AND read = false`
+          : `UPDATE hub_notifications SET read = true
+             WHERE user_id = $1 AND ref_id = $2 AND read = false`,
+        type ? [req.user.id, String(ref_id), String(type)] : [req.user.id, String(ref_id)],
       );
       res.json({ ok: true });
     } catch (err) {
@@ -5296,6 +5349,14 @@ app.post('/api/posts/:id/like', authenticate, async (req, res) => {
         [req.params.id, req.user.id],
       );
       liked = true;
+      // Notify on a fresh like only (not on unlike, and never for liking
+      // your own post) — same "skip if it's you" guard toggleLike's sibling
+      // handlers (reply, etc.) already use.
+      const post = await pool.query(`SELECT author_id FROM hub_posts WHERE id = $1`, [req.params.id]);
+      const postAuthorId = post.rows[0]?.author_id;
+      if (postAuthorId && postAuthorId !== req.user.id) {
+        notifyUser(postAuthorId, 'like', req.user.id, req.params.id).catch(() => {});
+      }
     }
     const { rows: countRows } = await pool.query(
       `SELECT COUNT(*)::int AS count FROM hub_post_likes WHERE post_id = $1`,
@@ -7089,7 +7150,7 @@ app.post('/api/atlas/pins/:id/replies', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Comment cannot be empty' });
 
   try {
-    const pin = await pool.query('SELECT id FROM hub_atlas_pins WHERE id = $1', [req.params.id]);
+    const pin = await pool.query('SELECT id, author_id FROM hub_atlas_pins WHERE id = $1', [req.params.id]);
     if (!pin.rows[0]) return res.status(404).json({ error: 'Pin not found' });
 
     const result = await pool.query(
@@ -7104,6 +7165,18 @@ app.post('/api/atlas/pins/:id/replies', authenticate, async (req, res) => {
         reply_to_user_id || null,
       ],
     );
+
+    // Notify pin author (skip if commenting on your own pin) and, same as
+    // post replies, whoever's specifically being replied to if different.
+    const pinAuthorId = pin.rows[0].author_id;
+    const notifiedUsers = new Set();
+    if (pinAuthorId && pinAuthorId !== req.user.id) {
+      notifiedUsers.add(pinAuthorId);
+      notifyUser(pinAuthorId, 'pin_reply', req.user.id, req.params.id).catch(() => {});
+    }
+    if (reply_to_user_id && reply_to_user_id !== req.user.id && !notifiedUsers.has(reply_to_user_id)) {
+      notifyUser(reply_to_user_id, 'pin_reply', req.user.id, req.params.id).catch(() => {});
+    }
 
     let reply_to_username = null;
     if (reply_to_user_id) {
@@ -8730,6 +8803,18 @@ app.post('/api/initiatives/notes/:noteId/replies', authenticate, async (req, res
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.params.noteId, req.user.id, initiativeActorName(req), content.trim()],
     );
+
+    // Notify the original note's author (skip if replying to your own note).
+    // Routed by initiative_id (not the note id) — same level of precision as
+    // 'initiative_invite' (lands on the project overview, not a specific
+    // task/note deep link, which mobile has no single-param route for).
+    const note = await pool.query(
+      `SELECT author_id, initiative_id FROM hub_initiative_task_notes WHERE id = $1`,
+      [req.params.noteId],
+    );
+    if (note.rows[0]?.author_id && note.rows[0].author_id !== req.user.id) {
+      notifyUser(note.rows[0].author_id, 'note_reply', req.user.id, note.rows[0].initiative_id).catch(() => {});
+    }
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -9126,6 +9211,17 @@ app.post('/api/initiatives/updates/:updateId/comments', authenticate, async (req
        VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.params.updateId, req.user.id, initiativeActorName(req), content.trim()],
     );
+
+    // Notify the update's author (skip if commenting on your own update).
+    // Routed by initiative_id, same reasoning as note_reply above.
+    const update = await pool.query(
+      `SELECT author_id, initiative_id FROM hub_initiative_updates WHERE id = $1`,
+      [req.params.updateId],
+    );
+    if (update.rows[0]?.author_id && update.rows[0].author_id !== req.user.id) {
+      notifyUser(update.rows[0].author_id, 'update_comment', req.user.id, update.rows[0].initiative_id).catch(() => {});
+    }
+
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

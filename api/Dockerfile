@@ -13,7 +13,10 @@ ENV VITE_REGISTRY_API_URL=https://citinet.cloud/api/registry
 RUN npm run build
 
 # Stage 2 — Production API image with portal bundled
-FROM node:18-alpine
+# Node 20+, not 18: open-graph-scraper (the /api/public/og link-preview proxy)
+# relies on the global `File`, which Node 18 doesn't have -- every preview
+# request failed with "ReferenceError: File is not defined".
+FROM node:20-alpine
 WORKDIR /app
 # libheif-tools provides the `heif-convert` CLI server.js shells out to for
 # HEIC/HEIF uploads (iPhone photos) -- Alpine's package links against

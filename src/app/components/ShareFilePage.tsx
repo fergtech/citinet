@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle,
 } from 'lucide-react';
 import { hubService } from '../services/hubService';
-import { registryService } from '../services/registryService';
+import { getPublicHubBases } from '../utils/publicHubBase';
 import { ShareWallpaper } from './ShareWallpaper';
 
 export function ShareFilePage() {
@@ -21,36 +21,14 @@ export function ShareFilePage() {
   useEffect(() => {
     if (!hubSlug) { setError('Invalid share link'); setLoading(false); return; }
 
-    // 1. ?src= param embedded by the share-link generator — most reliable, skips
-    //    registry slug-matching entirely. Validated: must be https:// (no localhost).
-    const srcParam = searchParams.get('src');
-    if (srcParam && /^https:\/\/.+/.test(srcParam) && !srcParam.includes('localhost')) {
-      setTunnelUrl(srcParam);
-      // Try to enrich hub name from local storage if available
-      const local = hubService.getHubConnection(hubSlug);
-      setHubName(local?.hub.name || hubSlug);
-      setLoading(false);
-      return;
-    }
-
-    // 2. Locally stored connection (same device / already joined)
-    const local = hubService.getHubConnection(hubSlug);
-    if (local?.hub.tunnelUrl && !isShellUrl(local.hub.tunnelUrl)) {
-      setTunnelUrl(local.hub.tunnelUrl);
-      setHubName(local.hub.name || hubSlug);
-      setLoading(false);
-      return;
-    }
-
-    // 3. Fall back to the public registry (external visitors, no ?src= param)
-    registryService.getHubBySlug(hubSlug)
-      .then(hub => {
-        if (hub?.tunnel_url && !isShellUrl(hub.tunnel_url)) {
-          setTunnelUrl(hub.tunnel_url);
-          setHubName(hub.name || hubSlug);
-        } else {
-          setError('This hub is not publicly accessible. Ask the owner to set up Tailscale.');
-        }
+    // Public HTTPS addresses only (?src=, stored public URL, registry) — never a
+    // LAN/localhost/Tailscale address, which would trigger the browser's
+    // local-network permission prompt for anonymous visitors.
+    setHubName(hubService.getHubConnection(hubSlug)?.hub.name || hubSlug);
+    getPublicHubBases(hubSlug, searchParams.get('src'))
+      .then(bases => {
+        if (bases.length) setTunnelUrl(bases[0]);
+        else setError('This hub does not have a public address, so this file cannot be opened from outside its network.');
       })
       .catch(() => setError('Could not load hub information.'))
       .finally(() => setLoading(false));
@@ -164,9 +142,4 @@ export function ShareFilePage() {
       </div>
     </div>
   );
-}
-
-/** Returns true for empty / shell-only tunnel URLs that have no real hostname */
-function isShellUrl(url: string): boolean {
-  return !url || url === 'http://' || url === 'https://' || url.trim() === '';
 }

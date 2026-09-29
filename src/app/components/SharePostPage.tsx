@@ -4,7 +4,7 @@ import {
   Loader2, AlertCircle, MessageCircle, Calendar, MapPin, Users,
   Megaphone, Briefcase, HelpCircle, BarChart3, Newspaper,
 } from 'lucide-react';
-import { hubService } from '../services/hubService';
+import { fetchFromPublicHub } from '../utils/publicHubBase';
 import { AvatarFallback } from './icons';
 import { ShareWallpaper } from './ShareWallpaper';
 import type { HubPost } from '../types/hub';
@@ -56,26 +56,13 @@ export function SharePostPage() {
   useEffect(() => {
     if (!hubSlug || !postId) { setError('Invalid share link'); setLoading(false); return; }
 
-    const localConn = hubService.getHubConnection(hubSlug);
-    const localTunnelUrl = localConn?.hub?.tunnelUrl;
-    const srcParam = searchParams.get('src');
-    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
-    const fetchBase = (localTunnelUrl && !isShell(localTunnelUrl)) ? localTunnelUrl : srcParam;
-
-    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
-      setError('This post cannot be reached — the hub does not have a public tunnel URL configured.');
-      setLoading(false);
-      return;
-    }
-
-    setResolvedSrc(fetchBase);
-    fetch(`${fetchBase}/api/public/posts/${postId}`)
-      .then(async r => {
-        if (!r.ok) { setError('This post is not publicly accessible or no longer exists.'); return; }
-        setPost(await r.json() as HubPost);
-      })
-      .catch(() => setError('Could not reach the hub. It may be offline.'))
-      .finally(() => setLoading(false));
+    (async () => {
+      const hit = await fetchFromPublicHub(hubSlug, searchParams.get('src'), `/api/public/posts/${encodeURIComponent(postId)}`);
+      if (!hit) { setError('Could not reach the hub. It may be offline, or it has no public address.'); return; }
+      if (!hit.res.ok) { setError('This post is not publicly accessible or no longer exists.'); return; }
+      setResolvedSrc(hit.base);
+      setPost(await hit.res.json() as HubPost);
+    })().finally(() => setLoading(false));
   }, [hubSlug, postId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const meta = post ? (CATEGORY_META[post.category] ?? CATEGORY_META.DISCUSSION) : null;

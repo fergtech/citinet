@@ -202,13 +202,10 @@ class SpacesService {
       const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
       return `${base}/share-space/${hubSlug}/${spaceSlug}?src=${encodeURIComponent(publicUrl)}`;
     }
-    const lanIp = conn?.hub?.lanIp;
-    const swapLocal = (url: string) =>
-      lanIp ? url.replace(/localhost|127\.0\.0\.1/, lanIp) : url;
-    const srcUrl = swapLocal(conn?.hub?.tunnelUrl ?? '');
-    const base = swapLocal(window.location.origin);
-    const src = srcUrl ? `?src=${encodeURIComponent(srcUrl)}` : '';
-    return `${base}/share-space/${hubSlug}/${spaceSlug}${src}`;
+    // Never embed a private/LAN address — the share page resolves the hub's
+    // public address from the registry.
+    const base = import.meta.env.VITE_APP_URL ?? 'https://citinet.cloud';
+    return `${base}/share-space/${hubSlug}/${spaceSlug}`;
   }
 
   async deleteSpace(hubSlug: string, spaceSlug: string): Promise<void> {

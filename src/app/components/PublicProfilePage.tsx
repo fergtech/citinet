@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { hubService } from '../services/hubService';
+import { fetchFromPublicHub } from '../utils/publicHubBase';
 import { AvatarFallback } from './icons';
 import { ShareWallpaper } from './ShareWallpaper';
 import {
@@ -51,56 +51,22 @@ export function PublicProfilePage() {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const [resolvedBase, setResolvedBase] = useState('');
 
   useEffect(() => {
     if (!hubSlug || !username) { setError('Invalid profile link.'); setLoading(false); return; }
 
-    // Prefer local hub connection when available — avoids Tailscale hairpin
-    // issues where the public *.ts.net URL can't be reached from the same machine.
-    const localConn = hubService.getHubConnection(hubSlug);
-    const localTunnelUrl = localConn?.hub?.tunnelUrl;
-    const srcParam = searchParams.get('src');
-    const fetchBase = (localTunnelUrl && localTunnelUrl !== '' && localTunnelUrl !== 'http://' && localTunnelUrl !== 'https://')
-      ? localTunnelUrl
-      : srcParam;
-
-    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
-      setError('This profile cannot be reached — the hub does not have a public tunnel URL configured.');
-      setLoading(false);
-      return;
-    }
-
-    const enc = encodeURIComponent(username);
-
-    const fetchWithTimeout = (url: string, ms: number) => {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), ms);
-      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    };
-
-    const tryBase = async (base: string) => {
-      const pRes = await fetchWithTimeout(`${base}/api/public/profile/${enc}`, 5000);
-      if (!pRes.ok) throw new Error('not_found');
-      setProfile(await pRes.json() as PublicProfile);
-    };
-
     (async () => {
-      const bases = [fetchBase, 'http://localhost:9090'];
-      for (const base of bases) {
-        try { await tryBase(base); return; }
-        catch (err) {
-          if ((err as Error).message === 'not_found') {
-            setError('This profile is not public or does not exist.');
-            return;
-          }
-        }
-      }
-      setError('Could not reach the hub — it may be offline or the tunnel is not configured.');
+      const hit = await fetchFromPublicHub(hubSlug, searchParams.get('src'), `/api/public/profile/${encodeURIComponent(username)}`);
+      if (!hit) { setError('Could not reach the hub — it may be offline or has no public address.'); return; }
+      if (!hit.res.ok) { setError('This profile is not public or does not exist.'); return; }
+      setResolvedBase(hit.base);
+      setProfile(await hit.res.json() as PublicProfile);
     })()
       .finally(() => setLoading(false));
   }, [hubSlug, username]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const src     = searchParams.get('src') ?? '';
+  const src     = resolvedBase;
   const joinUrl = 'https://citinet.cloud';
 
   return (

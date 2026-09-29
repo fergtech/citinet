@@ -12,6 +12,7 @@ import { LinkPreview } from './editor/LinkPreviewExtension';
 import { Loader2, AlertCircle, NotebookPen, Copy, Check, LogIn } from 'lucide-react';
 import { hubService } from '../services/hubService';
 import { ShareWallpaper } from './ShareWallpaper';
+import { fetchFromPublicHub } from '../utils/publicHubBase';
 
 export const PENDING_FORK_KEY = 'citinet-pending-fork';
 
@@ -151,35 +152,11 @@ export function ShareNotePage() {
   useEffect(() => {
     if (!hubSlug || !noteId) { setError('Invalid share link'); setLoading(false); return; }
 
-    const localConn = hubService.getHubConnection(hubSlug);
-    const localTunnelUrl = localConn?.hub?.tunnelUrl;
-    const srcParam = searchParams.get('src');
-    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
-    const fetchBase = (localTunnelUrl && !isShell(localTunnelUrl)) ? localTunnelUrl : srcParam;
-
-    if (!fetchBase || !/^https?:\/\/.+/.test(fetchBase)) {
-      setError('This note cannot be reached — the hub does not have a public tunnel URL configured. The owner needs to set up Tailscale Funnel and re-share the link.');
-      setLoading(false);
-      return;
-    }
-
-    const fetchWithTimeout = (url: string, ms: number) => {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), ms);
-      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
-    };
-
     const load = async () => {
-      const bases = [fetchBase, 'http://localhost:9090'];
-      for (const base of bases) {
-        try {
-          const r = await fetchWithTimeout(`${base}/api/public/notes/${noteId}`, 5000);
-          if (!r.ok) { setError('This note is not publicly accessible or no longer exists.'); return; }
-          setNote(await r.json() as PublicNote);
-          return;
-        } catch { /* try next */ }
-      }
-      setError('Could not reach the hub. It may be offline.');
+      const hit = await fetchFromPublicHub(hubSlug, searchParams.get('src'), `/api/public/notes/${encodeURIComponent(noteId)}`);
+      if (!hit) { setError('Could not reach the hub. It may be offline, or it has no public address.'); return; }
+      if (!hit.res.ok) { setError('This note is not publicly accessible or no longer exists.'); return; }
+      setNote(await hit.res.json() as PublicNote);
     };
 
     load().finally(() => setLoading(false));

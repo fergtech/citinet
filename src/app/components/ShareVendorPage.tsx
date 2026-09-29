@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { registryService } from '../services/registryService';
-import { hubService } from '../services/hubService';
+import { fetchFromPublicHub } from '../utils/publicHubBase';
 import { VendorProfileScreen } from './VendorProfileScreen';
 import { ShareWallpaper } from './ShareWallpaper';
 import type { HubVendor, HubListing } from '../types/hub';
@@ -24,35 +23,13 @@ export function ShareVendorPage() {
   useEffect(() => {
     if (!hubSlug || !vendorSlug) { setError('Invalid link'); setLoading(false); return; }
 
-    const localConn = hubService.getHubConnection(hubSlug);
-    const localTunnelUrl = localConn?.hub?.tunnelUrl;
-    const isShell = (u: string) => !u || u === 'http://' || u === 'https://';
-
-    const resolveBase = () => {
-      if (localTunnelUrl && !isShell(localTunnelUrl)) return Promise.resolve(localTunnelUrl);
-      return registryService.getHubBySlug(hubSlug).then(hub => {
-        if (!hub?.tunnel_url) throw new Error('not_registered');
-        return hub.tunnel_url;
-      });
-    };
-
-    resolveBase().then(rawBase => {
-      const base = rawBase.replace(/\/$/, '');
-      setHubBaseUrl(base);
-      return fetch(`${base}/api/public/vendors/${vendorSlug}`)
-        .then(async r => {
-          if (!r.ok) {
-            setError('This vendor profile is not publicly accessible or no longer exists.');
-            return;
-          }
-          setData(await r.json() as PublicVendorData);
-        })
-        .catch(() => setError('Could not reach the hub. It may be offline.'));
-    }).catch(err => {
-      setError(err?.message === 'not_registered'
-        ? 'This hub is not registered or currently offline.'
-        : 'Could not reach the hub registry.');
-    }).finally(() => setLoading(false));
+    (async () => {
+      const hit = await fetchFromPublicHub(hubSlug, new URLSearchParams(window.location.search).get('src'), `/api/public/vendors/${encodeURIComponent(vendorSlug)}`);
+      if (!hit) { setError('This hub is not registered, is offline, or has no public address.'); return; }
+      if (!hit.res.ok) { setError('This vendor profile is not publicly accessible or no longer exists.'); return; }
+      setHubBaseUrl(hit.base);
+      setData(await hit.res.json() as PublicVendorData);
+    })().finally(() => setLoading(false));
   }, [hubSlug, vendorSlug]);
 
   if (loading) {
