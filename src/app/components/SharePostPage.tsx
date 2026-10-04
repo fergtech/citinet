@@ -12,7 +12,7 @@ import type { HubPost } from '../types/hub';
 const CATEGORY_META: Record<string, { label: string; Icon: React.ElementType; color: string }> = {
   DISCUSSION:   { label: 'Discussion',   Icon: MessageCircle, color: 'text-blue-400' },
   ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     color: 'text-amber-400' },
-  PROJECT:      { label: 'Project',      Icon: Briefcase,     color: 'text-emerald-400' },
+  PROJECT:      { label: 'Proposal',     Icon: Briefcase,     color: 'text-emerald-400' },
   REQUEST:      { label: 'Request',      Icon: HelpCircle,    color: 'text-rose-400' },
   EVENT:        { label: 'Event',        Icon: Calendar,      color: 'text-violet-400' },
   POLL:         { label: 'Poll',         Icon: BarChart3,     color: 'text-sky-400' },

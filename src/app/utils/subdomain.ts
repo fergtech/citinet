@@ -79,7 +79,17 @@ export function getHubUrl(slug: string): string {
 /** Returns a router path with ?hub=slug appended so the slug survives SPA navigation. */
 export function hubPath(path: string, slug?: string): string {
   const s = slug ?? getSubdomain();
-  return s ? `${path}?hub=${s}` : path;
+  const canonical = toRoutePath(path);
+  return s ? `${canonical}?hub=${s}` : canonical;
+}
+
+/**
+ * The Projects feature keeps its internal id `initiatives` (stored in hubs' enabled-apps lists, members' saved nav
+ * layouts, the hub API and the mobile app — renaming that would break existing hubs), but its URL is /projects.
+ * Every in-app navigation builds its path through hubPath(), so this one place maps the id to the URL.
+ */
+export function toRoutePath(path: string): string {
+  return path.replace(/^(\/?)initiatives(?=\/|\?|$)/, '$1projects');
 }
 
 /** Hard-navigates to a hub's subdomain (or query param for localhost).

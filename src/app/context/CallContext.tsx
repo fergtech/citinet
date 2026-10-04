@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useHub } from './HubContext';
 import { hubService } from '../services/hubService';
 import { useCommsSocket } from '../lib/comms/socket';
+import { NOTIFICATIONS_CHANGED_EVENT } from '../services/notificationsService';
 import type { CallMode, CallOutcome } from '../types/hub';
 
 export type CallPhase = 'idle' | 'outgoing' | 'incoming' | 'connected' | 'ended';
@@ -88,7 +89,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   callRef.current = call;
 
   useCommsSocket(tunnelUrl, authToken, (event) => {
-    if (event.type === 'incoming_call') {
+    if (event.type === 'notification') {
+      // Not call-related - piggybacks on this one socket; the badge/chime hooks
+      // listen for this and refetch immediately.
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
+    } else if (event.type === 'incoming_call') {
       // A second ring arriving mid-call: don't let it stomp whatever's
       // already happening.
       if (callRef.current.phase !== 'idle') return;

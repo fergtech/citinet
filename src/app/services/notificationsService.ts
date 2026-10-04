@@ -1,5 +1,8 @@
 import { hubService } from './hubService';
 
+/** Fired after anything here marks notifications read, so the bell/tile badge hooks can refetch. */
+export const NOTIFICATIONS_CHANGED_EVENT = 'citinet:notifications-changed';
+
 export type NotificationFeature = 'feed' | 'messages' | 'hub_management';
 export interface NotificationCounts { feed: number; messages: number; hub_management: number }
 
@@ -70,14 +73,21 @@ class NotificationsService {
     }).catch(() => {});
   }
 
-  async markReadByRef(hubSlug: string, refId: string): Promise<void> {
+  /** Marks unread notifications for one ref_id (a conversation id, post id…)
+   * read, optionally scoped to a single `type` — pass 'message' when only
+   * the messages themselves have been seen, so an unrelated reaction
+   * notification sharing that conversation id isn't silently dismissed.
+   * Announces the change so badge hooks refresh right away instead of
+   * waiting out their poll interval. */
+  async markReadByRef(hubSlug: string, refId: string, type?: NotificationType): Promise<void> {
     const auth = this.getAuth(hubSlug);
     if (!auth?.token) return;
     await fetch(`${auth.baseUrl}/api/notifications/mark-read-by-ref`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ref_id: refId }),
+      body: JSON.stringify(type ? { ref_id: refId, type } : { ref_id: refId }),
     }).catch(() => {});
+    window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
   }
 }
 

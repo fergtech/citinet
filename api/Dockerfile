@@ -6,6 +6,9 @@ RUN npm install --legacy-peer-deps
 COPY index.html tsconfig.json vite.config.ts postcss.config.mjs ./
 COPY public ./public
 COPY src ./src
+# scriptGenerator.ts embeds the hub-owner helper scripts at build time (Vite ?raw imports
+# of ../../../scripts/hub-tools/*), so the portal build needs them in this stage too.
+COPY scripts/hub-tools ./scripts/hub-tools
 # Bake in the production registry URLs so the bundled portal can reach
 # the Vercel registry API even when served directly from the hub container.
 ENV VITE_REGISTRY_URL=https://raw.githubusercontent.com/fergtech/citinet-registry/main/registry.json
@@ -43,6 +46,8 @@ RUN npm install --omit=dev --ignore-scripts
 # shipped) are untouched by construction rather than by remembering to
 # exclude them.
 COPY api/*.js ./
+# Hub-owner helper scripts, served at /api/tools/<file> so existing hubs can install them.
+COPY scripts/hub-tools ./hub-tools
 COPY --from=portal-builder /portal/dist ./dist
 EXPOSE 9090
 USER node

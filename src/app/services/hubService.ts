@@ -7,9 +7,12 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus } from '../types/hub';
-import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted } from '../utils/crypto';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus, StackAlert, StackHealth, EmailSettingsStatus, EmailSettingsInput } from '../types/hub';
+import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted, decryptKeyBackup, exportKeyMaterial, importKeyMaterial } from '../utils/crypto';
+import type { KeyMaterial } from '../utils/crypto';
+import { seenPosts } from '../utils/seenStore';
 import type { KeyBackupPayload } from '../utils/crypto';
+import { playUploadCompleteSound } from '../utils/notificationAlert';
 import { clearIndexForHub } from './messageSearchIndex';
 
 const STORAGE_KEYS = {
@@ -401,7 +404,7 @@ class HubService {
   async updateProfile(
     hubSlug: string,
     updates: {
-      displayName?: string; location?: string; bio?: string; tags?: string[];
+      displayName?: string; email?: string; location?: string; bio?: string; tags?: string[];
       profileHeadline?: string; website?: string;
       bannerMode?: 'image' | 'solid' | 'gradient'; bannerColor?: string;
       bannerGradientFrom?: string; bannerGradientTo?: string;
@@ -412,8 +415,9 @@ class HubService {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const body: Record<string, unknown> = {};
     if (updates.displayName        !== undefined) body.display_name        = updates.displayName;
+    if (updates.email              !== undefined) body.email                = updates.email;
     if (updates.location           !== undefined) body.location             = updates.location;
-    if (updates.bio                !== undefined) body.bio                  = updates.bio;
+    if (updates.bio               !== undefined) body.bio                  = updates.bio;
     if (updates.tags               !== undefined) body.tags                 = updates.tags;
     if (updates.profileHeadline    !== undefined) body.profile_headline     = updates.profileHeadline;
     if (updates.website            !== undefined) body.website              = updates.website;
@@ -436,6 +440,7 @@ class HubService {
 
     return this.updateUserProfile(hubSlug, {
       displayName:        updates.displayName,
+      email:              updates.email,
       location:           updates.location,
       bio:                updates.bio,
       tags:               updates.tags,
@@ -538,6 +543,7 @@ class HubService {
       throw new Error(body.error || `Upload failed (${res.status})`);
     }
     const { avatar_key } = await res.json();
+    playUploadCompleteSound();
     return avatar_key;
   }
 
@@ -1111,11 +1117,14 @@ class HubService {
     limit = 50,
     before?: string,
     members?: Array<{ user_id: string }>,
+    /** Read without marking the conversation read (bulk reads like the data export). */
+    peek = false,
   ): Promise<HubMessage[]> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
 
     const params = new URLSearchParams({ limit: String(limit) });
     if (before) params.set('before', before);
+    if (peek) params.set('peek', '1');
 
     const response = await fetch(
       `${tunnelUrl}/api/conversations/${conversationId}/messages?${params}`,
@@ -1643,6 +1652,8 @@ class HubService {
               reject(err);
               return;
             }
+            // Whole batch is on the server — one confirmation sound, not one per file.
+            if (results.length > 0) playUploadCompleteSound();
             resolve(results);
           } catch {
             reject(new Error('Invalid response from server'));
@@ -2035,6 +2046,35 @@ class HubService {
   }
 
   /**
+   * Fetch a file's real bytes into memory (decrypting client-side encrypted
+   * files with this account's key). Used by the account data export, which
+   * needs the bytes rather than a browser download. `decrypted: false` with
+   * `encrypted: true` means the file is encrypted and this device lacks the key.
+   */
+  async fetchFileBytes(
+    hubSlug: string,
+    fileName: string,
+  ): Promise<{ bytes: ArrayBuffer; encrypted: boolean; decrypted: boolean }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const tokRes = await fetch(`${tunnelUrl}/api/files/${encodeURIComponent(fileName)}/token`, {
+      method: 'POST',
+      headers: { Authorization: headers.Authorization },
+    });
+    if (!tokRes.ok) throw new Error(`Token request failed (${tokRes.status})`);
+    const { token: dlToken } = await tokRes.json();
+    const res = await fetch(
+      `${tunnelUrl}/api/files/${encodeURIComponent(fileName)}/download?token=${dlToken}`,
+    );
+    if (!res.ok) throw new Error(`Download failed (${res.status})`);
+    const buf = await res.arrayBuffer();
+    if (!isFileEncrypted(buf)) return { bytes: buf, encrypted: false, decrypted: true };
+    const plain = await decryptFileBuffer(this.keyScope(hubSlug), buf);
+    return plain
+      ? { bytes: plain, encrypted: true, decrypted: true }
+      : { bytes: buf, encrypted: true, decrypted: false };
+  }
+
+  /**
    * Returns a streaming URL for a private file using a short-lived token.
    * The URL is valid for 1 hour and supports Range requests (video seeking, resumable downloads).
    * Use this for large files to avoid loading them into browser memory.
@@ -2239,7 +2279,8 @@ class HubService {
   }
 
   /** Fetch upcoming EVENT posts sorted by event_date ascending. */
-  async getUpcomingEvents(hubSlug: string, limit = 3): Promise<HubPost[]> {
+  /** `strict`: throw if the hub can't be reached instead of returning [] (see AtlasService.getPins). */
+  async getUpcomingEvents(hubSlug: string, limit = 3, opts?: { strict?: boolean }): Promise<HubPost[]> {
     try {
       const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
       // Try the dedicated endpoint first; fall back to the posts endpoint with client-side filtering
@@ -2251,7 +2292,7 @@ class HubService {
       }
       // Fallback: fetch all recent posts filtered to EVENT category, then filter + sort client-side
       const fallback = await fetch(`${tunnelUrl}/api/posts?category=EVENT&limit=50`, { headers });
-      if (!fallback.ok) return [];
+      if (!fallback.ok) { if (opts?.strict) throw new Error(`Failed to load events (${fallback.status})`); return []; }
       const data = await fallback.json();
       const posts: HubPost[] = data.posts ?? [];
       const cutoff = Date.now() - 2 * 3600 * 1000; // 2-hour grace window
@@ -2259,7 +2300,8 @@ class HubService {
         .filter(p => p.event_date && new Date(p.event_date).getTime() >= cutoff)
         .sort((a, b) => new Date(a.event_date!).getTime() - new Date(b.event_date!).getTime())
         .slice(0, limit);
-    } catch {
+    } catch (err) {
+      if (opts?.strict) throw err;
       return [];
     }
   }
@@ -2302,6 +2344,31 @@ class HubService {
     if (!connection?.hub.tunnelUrl) return null;
     const base = `${connection.hub.tunnelUrl}/api/public/files/${encodeURIComponent(fileName)}`;
     return opts?.thumb ? `${base}?thumb=1` : base;
+  }
+
+  /**
+   * Record that the signed-in member opened a post — feeds Home's "seen" rule and the
+   * post's view count. Marked seen locally FIRST (instant, so Home is right the moment
+   * the member navigates back, even before the request lands), then reported to the hub.
+   * A failed request is retried a couple of times instead of silently dropped: a flaky
+   * tunnel used to lose the view, leaving the same post "unseen" on Home forever.
+   * Fire-and-forget: never throws, never blocks the UI.
+   * POST /api/posts/:id/view
+   */
+  recordPostView(hubSlug: string, postId: string): void {
+    seenPosts.markSeen(postId);
+    const delays = [0, 3000, 12000];
+    const attempt = (i: number) => {
+      const conn = this.getHubConnection(hubSlug);
+      if (!conn?.hub.tunnelUrl || !conn.user?.authToken) return;
+      fetch(`${conn.hub.tunnelUrl}/api/posts/${encodeURIComponent(postId)}/view`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${conn.user.authToken}` },
+      })
+        .then((r) => { if (!r.ok) throw new Error(String(r.status)); })
+        .catch(() => { if (i + 1 < delays.length) setTimeout(() => attempt(i + 1), delays[i + 1]); });
+    };
+    attempt(0);
   }
 
   /** List replies for a post, oldest first. */
@@ -2697,6 +2764,72 @@ class HubService {
     } catch { return false; }
   }
 
+  /** This device's full key material for the hub, or null if any part is missing (see exportKeyMaterial). */
+  async getKeyMaterial(hubSlug: string): Promise<KeyMaterial | null> {
+    return exportKeyMaterial(this.keyScope(hubSlug));
+  }
+
+  /**
+   * True if `phrase` really unlocks this account's server-side key backup.
+   * Used to catch a mistyped recovery phrase BEFORE it is used to protect a
+   * portable package — a package locked with a wrong phrase can't be opened later.
+   */
+  async verifyRecoveryPhrase(hubSlug: string, phrase: string): Promise<boolean> {
+    const backup = await this.fetchKeyBackup(hubSlug);
+    if (!backup) return false;
+    return (await decryptKeyBackup(backup, phrase)) !== null;
+  }
+
+  /**
+   * Make a portable package's keys this account's keys on THIS hub: install them
+   * locally, register the public key, and store a key backup so the account can be
+   * recovered on other devices. Reuses `reusePhrase` for the backup when given (so a
+   * member keeps the one recovery phrase they already know); otherwise mints a new one.
+   *
+   * Only safe on an account with no encrypted content yet — replacing the keys of an
+   * account that already has notes/messages encrypted to the old ones would orphan
+   * them (see hasKeyBackup's note). The caller enforces that; this method guarantees
+   * the other half: if any step fails, the previous keys and public key are put back.
+   */
+  async adoptKeyMaterial(
+    hubSlug: string,
+    km: KeyMaterial,
+    opts: { reusePhrase?: string } = {},
+  ): Promise<{ ok: true; recoveryPhrase: string; reusedPhrase: boolean } | { ok: false; error: string }> {
+    const scope = this.keyScope(hubSlug);
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return { ok: false, error: 'Not signed in to this hub.' };
+    const previous = await exportKeyMaterial(scope);
+
+    const register = async (publicKeyJwk: string) => {
+      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${conn.user.authToken}` },
+        body: JSON.stringify({ publicKeyJwk }),
+      });
+      if (!res.ok) throw new Error(`The hub refused the new public key (${res.status}).`);
+    };
+
+    try {
+      const { publicKeyJwk } = await importKeyMaterial(scope, km);
+      await register(publicKeyJwk);
+      let phrase = opts.reusePhrase;
+      if (phrase) {
+        if (!(await this.storeKeyBackup(hubSlug, phrase))) throw new Error('Could not store the key backup on the hub.');
+      } else {
+        phrase = (await this.regenerateRecoveryPhrase(hubSlug)) ?? undefined;
+        if (!phrase) throw new Error('Could not create a recovery phrase for the imported keys.');
+      }
+      return { ok: true, recoveryPhrase: phrase, reusedPhrase: !!opts.reusePhrase };
+    } catch (err) {
+      if (previous) {
+        await importKeyMaterial(scope, previous).catch(() => {});
+        await register(JSON.stringify(previous.ecdh_public)).catch(() => {});
+      }
+      return { ok: false, error: err instanceof Error ? err.message : 'Could not adopt the package keys.' };
+    }
+  }
+
   /** Fetch the raw encrypted key backup blob from the server, or null if none exists. */
   private async fetchKeyBackup(hubSlug: string): Promise<KeyBackupPayload | null> {
     try {
@@ -2987,6 +3120,72 @@ class HubService {
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     const data = await response.json();
     return { available: !!data.available, services: data.services || [] };
+  }
+
+  // ── Hub operator settings: email relay + outage monitoring (api/opsSettings.js) ──
+
+  private async opsRequest<T>(hubSlug: string, method: string, path: string, body?: unknown): Promise<T> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/ops${path}`, {
+      method,
+      headers: body === undefined ? headers : { ...headers, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    // 4xx from these routes carry a readable { error } the form shows as-is.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error((data as { error?: string }).error || `Request failed (${response.status})`);
+    return data as T;
+  }
+
+  getEmailSettings(hubSlug: string) {
+    return this.opsRequest<EmailSettingsStatus>(hubSlug, 'GET', '/email');
+  }
+  saveEmailSettings(hubSlug: string, input: EmailSettingsInput) {
+    return this.opsRequest<{ ok: true }>(hubSlug, 'PUT', '/email', input);
+  }
+  deleteEmailSettings(hubSlug: string) {
+    return this.opsRequest<{ ok: true }>(hubSlug, 'DELETE', '/email');
+  }
+  /** Tests the given settings WITHOUT saving them. */
+  testEmailSettings(hubSlug: string, input: EmailSettingsInput & { to?: string }) {
+    return this.opsRequest<{ ok: boolean; error?: string; to?: string }>(hubSlug, 'POST', '/email/test', input);
+  }
+  getMonitoringSettings(hubSlug: string) {
+    return this.opsRequest<{ configured: boolean; pingUrlMasked: string }>(hubSlug, 'GET', '/monitoring');
+  }
+  saveMonitoringSettings(hubSlug: string, pingUrl: string) {
+    return this.opsRequest<{ ok: true }>(hubSlug, 'PUT', '/monitoring', { pingUrl });
+  }
+  deleteMonitoringSettings(hubSlug: string) {
+    return this.opsRequest<{ ok: true }>(hubSlug, 'DELETE', '/monitoring');
+  }
+  /** Pings the URL once from the hub (pass the URL to test before saving, omit to test the saved one). */
+  testMonitoringSettings(hubSlug: string, pingUrl?: string) {
+    return this.opsRequest<{ ok: boolean; status?: number; error?: string }>(hubSlug, 'POST', '/monitoring/test', pingUrl ? { pingUrl } : {});
+  }
+
+  /** Open + recent stack alerts. GET /api/admin/stack/alerts */
+  async getStackAlerts(hubSlug: string): Promise<{ alerts: StackAlert[]; emailConfigured: boolean }> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/alerts`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    const data = await response.json();
+    return { alerts: data.alerts || [], emailConfigured: !!data.emailConfigured };
+  }
+
+  /** Self-healing + backup-verification state. GET /api/admin/stack/health */
+  async getStackHealth(hubSlug: string): Promise<StackHealth> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/health`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return (await response.json()) as StackHealth;
+  }
+
+  /** Start a restore test now (it runs in the background; poll getStackHealth). POST /api/admin/stack/drill */
+  async runRestoreDrill(hubSlug: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/drill`, { method: 'POST', headers });
+    if (!response.ok && response.status !== 409) await this.parseErrorResponse(response, hubSlug);
   }
 
   /**

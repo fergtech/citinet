@@ -12,7 +12,7 @@ interface CatConfig {
 const CAT_CONFIG: Record<string, CatConfig> = {
   DISCUSSION:   { label: 'Discussion',   Icon: MessageCircle, iconColor: 'text-blue-400' },
   ANNOUNCEMENT: { label: 'Announcement', Icon: Megaphone,     iconColor: 'text-rose-400' },
-  PROJECT:      { label: 'Project',      Icon: Target,        iconColor: 'text-emerald-400' },
+  PROJECT:      { label: 'Proposal',     Icon: Target,        iconColor: 'text-emerald-400' },
   REQUEST:      { label: 'Request',      Icon: HelpCircle,    iconColor: 'text-orange-400' },
   EVENT:        { label: 'Event',        Icon: Calendar,      iconColor: 'text-blue-400' },
 };

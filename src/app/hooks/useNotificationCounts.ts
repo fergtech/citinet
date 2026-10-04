@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { notificationsService, type NotificationCounts, type NotificationFeature } from '../services/notificationsService';
+import { notificationsService, NOTIFICATIONS_CHANGED_EVENT, type NotificationCounts, type NotificationFeature } from '../services/notificationsService';
 
 const POLL_INTERVAL = 30_000; // 30 seconds
 
@@ -18,9 +18,11 @@ export function useNotificationCounts(hubSlug: string) {
     timerRef.current = setInterval(fetch, POLL_INTERVAL);
     const onFocus = () => fetch();
     window.addEventListener('focus', onFocus);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onFocus);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onFocus);
     };
   }, [fetch]);
 

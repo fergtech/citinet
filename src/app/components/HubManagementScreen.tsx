@@ -1,5 +1,6 @@
+import { postCategoryLabel } from '../utils/postCategory';
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw, CloudUpload, Server } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw, CloudUpload, Server, Search } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -36,6 +37,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState('');
+  const filteredMembers = members.filter(member => {
+    const query = memberSearch.trim().toLowerCase();
+    return !query || member.username.toLowerCase().includes(query);
+  });
 
   // Pending join-approval queue (admin only)
   const [pendingUsers, setPendingUsers] = useState<Array<{ user_id: string; username: string; email: string | null; created_at: string }>>([]);
@@ -1380,7 +1386,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{post.title}</p>
                           <p className="text-xs text-slate-400 dark:text-zinc-500">
-                            {post.category} · {post.author_username}
+                            {postCategoryLabel(post.category)} · {post.author_username}
                             {post.media_file_name && ` · 📎 ${post.media_file_name.split('.').pop()?.toUpperCase()}`}
                           </p>
                         </div>
@@ -1620,9 +1626,24 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
         {/* ─── Members Tab ─── */}
         {activeTab === 'members' && (
           <div className="cn-glass rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+                <input
+                  type="search"
+                  value={memberSearch}
+                  onChange={e => setMemberSearch(e.target.value)}
+                  placeholder="Search members…"
+                  aria-label="Search members"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-zinc-800">
               <span className="text-sm font-medium text-slate-900 dark:text-white">
-                {membersLoading ? 'Loading...' : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
+                {membersLoading ? 'Loading...' : memberSearch.trim()
+                  ? `${filteredMembers.length} of ${members.length} ${members.length === 1 ? 'member' : 'members'}`
+                  : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
               </span>
               <button
                 onClick={loadMembers}
@@ -1648,7 +1669,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             )}
 
             <div className="divide-y divide-slate-100 dark:divide-zinc-800">
-              {members.map(member => {
+              {filteredMembers.map(member => {
                 const isSelf   = member.user_id === currentUser?.hubUserId;
                 const busy     = memberActionId === member.user_id;
                 const memRole  = member.role ?? (member.is_admin ? 'admin' : 'member');
@@ -1722,6 +1743,11 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 );
               })}
             </div>
+            {!membersLoading && !membersError && members.length > 0 && filteredMembers.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-slate-400 dark:text-zinc-500">
+                No members match your search
+              </div>
+            )}
           </div>
         )}
 
@@ -1749,7 +1775,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'files',       label: 'Files',        Icon: FolderOpen },
                     { screen: 'discover',    label: 'Discover',     Icon: SearchGlyph },
                     { screen: 'toolkit',     label: 'Resources',    Icon: Package },
-                    { screen: 'initiatives', label: 'Initiatives',  Icon: Target },
+                    { screen: 'initiatives', label: 'Projects',  Icon: Target },
                     { screen: 'network',     label: 'Network',      Icon: Radio },
                     { screen: 'mod-log',     label: 'Mod Log',      Icon: ScrollText },
                   ].map(({ screen, label, Icon }) => {
@@ -1818,7 +1844,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
                       {connectedApp
                         ? `Connected — powering ${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length} feature${appsStatus.filter(a => a.appUrl === connectedApp.appUrl).length === 1 ? '' : 's'} on this hub.`
-                        : 'Connect any compatible app to extend this hub with Initiatives, Spaces, and more.'}
+                        : 'Connect any compatible app to extend this hub with Projects, Spaces, and more.'}
                     </p>
                   </div>
                 </div>
@@ -1854,7 +1880,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                         {/* Powered capabilities — derived from what the app actually advertises */}
                         {(() => {
                           const CAPABILITY_LABELS: Record<string, string> = {
-                            initiatives: 'Initiatives',
+                            initiatives: 'Projects',
                             societies:   'Spaces',
                           };
                           const poweredCaps = appsStatus.filter(a => a.appUrl === ini.appUrl);
@@ -1936,7 +1962,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                       <>
                         <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-zinc-500 py-1">
                           <AlertCircle className="w-4 h-4 shrink-0" />
-                          Not connected — Initiatives and Spaces will use local hub data only.
+                          Not connected — Projects and Spaces will use local hub data only.
                         </div>
 
                         <div className="space-y-3">
@@ -2633,4 +2659,3 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
     </div>
   );
 }
-

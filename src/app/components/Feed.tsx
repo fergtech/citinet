@@ -1,3 +1,4 @@
+import { postCategoryLabel } from '../utils/postCategory';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PostCard } from './PostCard';
@@ -51,7 +52,7 @@ const CAT_TABS = [
   { value: 'ANNOUNCEMENT', label: 'Announcements' },
   { value: 'EVENT',        label: 'Events' },
   { value: 'REQUEST',      label: 'Requests' },
-  { value: 'PROJECT',      label: 'Projects' },
+  { value: 'PROJECT',      label: 'Proposals' },
   { value: 'DISCUSSION',   label: 'Discussions' },
   { value: 'POLL',         label: 'Polls' },
 ] as const;
@@ -473,6 +474,12 @@ export function PostDetailView({
   canManagePoll, pollVoting, pollClosing, pollReopening, pollDeleting, onPollVote, onPollClose, onPollReopen, onPollEdit, onPollDelete, onCopyLink, copyLinkActive,
   saved, onToggleSave,
 }: PostDetailViewProps) {
+  // Opening a post counts as viewing it (Home's "seen" rule + the view count). Not recorded
+  // for the author's own post — their own views aren't meaningful.
+  useEffect(() => {
+    if (post.author_id !== currentUserId) hubService.recordPostView(hubSlug, post.id);
+  }, [hubSlug, post.id, post.author_id, currentUserId]);
+
   const [replies, setReplies] = useState<HubPostReply[]>([]);
   const replyTree = useMemo(() => buildReplyTree(replies), [replies]);
   const [loadingReplies, setLoadingReplies] = useState(true);
@@ -850,7 +857,7 @@ export function PostDetailView({
                       {post.category && (
                         <>
                           <span aria-hidden="true">·</span>
-                          <span>{post.category.charAt(0) + post.category.slice(1).toLowerCase()}</span>
+                          <span>{postCategoryLabel(post.category)}</span>
                         </>
                       )}
                     </div>
@@ -1257,7 +1264,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
               <div>
                 <button type="button" onClick={() => { setLabelOpen(v => !v); setVisibilityOpen(false); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10 transition-all">
-                  {category.charAt(0) + category.slice(1).toLowerCase()}
+                  {postCategoryLabel(category)}
                   <ChevronDown className={`w-3 h-3 transition-transform ${labelOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {labelOpen && (
@@ -1267,7 +1274,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                           category === cat ? 'bg-blue-600 text-white' : 'bg-black/5 dark:bg-white/5 cn-text-3 hover:bg-black/5 dark:hover:bg-white/10'
                         }`}>
-                        {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                        {postCategoryLabel(cat)}
                       </button>
                     ))}
                   </div>

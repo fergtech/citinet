@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Plus, Store, Loader2, AlertCircle, RefreshCw, X, Pencil, MoveVertical, ImagePlus, Check,
-  Package, HandHelping, Apple, Cpu, CalendarDays, Palette, Sparkles, Bookmark,
+  Bookmark,
   TrendingUp, ShieldCheck, Gift, Repeat, ChevronLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,6 +10,8 @@ import type { MarketplaceBannerConfig } from '../services/marketplaceService';
 import { VendorAvatarFallback } from './icons';
 import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
+import { seenListings } from '../utils/seenStore';
+import { LISTING_CATEGORY_META } from '../utils/listingCategoryMeta';
 import { hubService } from '../services/hubService';
 import { CreateVendorModal } from './CreateVendorModal';
 import { AddListingModal } from './AddListingModal';
@@ -24,15 +26,7 @@ interface MarketplaceScreenProps {
 
 const CATEGORIES = ['Goods', 'Services', 'Food', 'Electronics', 'Events', 'Arts & Crafts', 'Other'] as const;
 
-const CATEGORY_META: Record<string, { Icon: React.ElementType; gradient: string }> = {
-  'Goods':         { Icon: Package,      gradient: 'from-blue-500 to-indigo-600' },
-  'Services':      { Icon: HandHelping,  gradient: 'from-violet-500 to-blue-600' },
-  'Food':          { Icon: Apple,        gradient: 'from-rose-500 to-pink-600' },
-  'Electronics':   { Icon: Cpu,          gradient: 'from-cyan-500 to-sky-600' },
-  'Events':        { Icon: CalendarDays, gradient: 'from-amber-500 to-orange-600' },
-  'Arts & Crafts': { Icon: Palette,      gradient: 'from-fuchsia-500 to-pink-600' },
-  'Other':         { Icon: Sparkles,     gradient: 'from-slate-500 to-slate-600' },
-};
+const CATEGORY_META = LISTING_CATEGORY_META;
 
 export const KIND_META: Record<HubListing['price_type'], { label: string; classes: string }> = {
   fixed:      { label: 'For sale',   classes: 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30' },
@@ -175,6 +169,8 @@ export function MarketplaceScreen({ onBack, onNavigate, onVendorClick }: Marketp
   const { ids: savedVendorIds } = useSavedIds('saved_vendors', 'saved_vendors');
 
   const [selectedListing, setSelectedListing] = useState<HubListing | null>(null);
+  // Opening a listing counts as seeing it — Home's Marketplace card skips seen listings.
+  useEffect(() => { if (selectedListing) seenListings.markSeen(selectedListing.id); }, [selectedListing]);
   const [showCreateVendor, setShowCreateVendor] = useState(false);
   const [showAddListing, setShowAddListing] = useState(false);
 

@@ -5,7 +5,9 @@ export type CommsSocketEvent =
   | IncomingCallPayload
   | { type: 'call_answered'; call_id: string }
   | { type: 'call_declined'; call_id: string }
-  | { type: 'call_ended'; call_id: string };
+  | { type: 'call_ended'; call_id: string }
+  // Hub just saved a notification for this user - only a nudge to refetch.
+  | { type: 'notification'; notification_type?: string; ref_id?: string | null };
 
 // tunnelUrl is http(s):// — swap the scheme for ws(s):// and keep the rest.
 // The session token rides as a query param (not a header) to match

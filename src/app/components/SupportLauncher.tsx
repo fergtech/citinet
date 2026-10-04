@@ -8,7 +8,7 @@ import { requestsService, type RequestType } from '../services/requestsService';
 const FEATURE_MAP: Record<string, string> = {
   feed: 'Feed', discover: 'Discover', atlas: 'Atlas',
   marketplace: 'Exchange', neighbors: 'Neighbors', files: 'Files',
-  initiatives: 'Initiatives', toolkit: 'Resources', network: 'Network',
+  initiatives: 'Projects', projects: 'Projects', toolkit: 'Resources', network: 'Network',
   messages: 'Communications', account: 'Account', profile: 'Profile',
   settings: 'Settings', 'hub-management': 'Hub Management',
   vendor: 'Vendor Profile', chat: 'Chat', notes: 'Notes',

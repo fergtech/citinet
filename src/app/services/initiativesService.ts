@@ -1,5 +1,6 @@
 import { hubService } from './hubService';
 import { hubPath } from '../utils/subdomain';
+import { playUploadCompleteSound } from '../utils/notificationAlert';
 
 // ── Types ─────────────────────────────────────────────────
 // Initiatives are proxied to an external app — most fields below come straight
@@ -185,14 +186,14 @@ class InitiativesService {
   async listAll(hubSlug: string): Promise<Initiative[]> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/initiatives`, { headers });
-    const data = await this.json<any>(res, 'Failed to load initiatives');
+    const data = await this.json<any>(res, 'Failed to load projects');
     return Array.isArray(data) ? data : data.initiatives ?? [];
   }
 
   async get(hubSlug: string, id: string): Promise<Initiative> {
     const { headers, baseUrl } = this.getAuth(hubSlug);
     const res = await fetch(`${baseUrl}/api/initiatives/${encodeURIComponent(id)}`, { headers });
-    return this.json(res, 'Initiative not found');
+    return this.json(res, 'Project not found');
   }
 
   async create(hubSlug: string, data: { title: string; goal?: string; category?: string; space_id?: string | null }): Promise<Initiative> {
@@ -544,7 +545,9 @@ class InitiativesService {
       headers,
       body: formData,
     });
-    return this.json(res, 'Failed to upload banner');
+    const uploaded = await this.json<{ file_name: string }>(res, 'Failed to upload banner');
+    playUploadCompleteSound();
+    return uploaded;
   }
 
   async setBannerMode(hubSlug: string, id: string, data: { banner_mode: 'gradient' | 'solid'; banner_color?: string; banner_gradient_from?: string; banner_gradient_to?: string }): Promise<void> {

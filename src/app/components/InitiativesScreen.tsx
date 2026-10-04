@@ -1626,7 +1626,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
 
       {notConfigured ? (
         <div className="cn-glass rounded-2xl px-6 py-14 text-center cn-text-3 text-sm">
-          Initiatives aren't set up for this hub yet.
+          Projects aren't set up for this hub yet.
         </div>
       ) : filtered.length === 0 ? (
         <div className="cn-glass rounded-2xl px-6 py-14 text-center cn-text-3 text-sm">
@@ -1767,7 +1767,7 @@ export function InitiativesScreen({ onBack, initialId, onOpenDetail, onBackToLis
                     <InitiativesGlyph className="w-[22px] h-[22px] text-white" />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Initiatives</h1>
+                    <h1 className="text-xl md:text-[26px] font-bold cn-text-1 tracking-tight">Projects</h1>
                     <p className="text-[13px] cn-text-3 mt-0.5">Community projects residents are building together</p>
                   </div>
                   <button onClick={() => setShowNewModal(true)} className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-sm font-semibold shadow-sm transition-all shrink-0">

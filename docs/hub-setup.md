@@ -193,34 +193,102 @@ prefer the hostname above whenever the hub has any internet access.
 
 ---
 
-## Common Commands
+## Moving a member's account to another hub
 
-All commands assume you're on the hub machine. Prefix paths with the full path if running remotely.
+Nobody is locked in to a hub. A member can take their account with them:
+
+1. **On the old hub** — Account → *Your Data* → **Move to another hub**. Choose what locks the file
+   (their recovery phrase — the default — or a package password), keep *Include my encryption keys*
+   ticked, and press **Create portable package**. They get one encrypted `.citinet-account` file.
+2. **On the new hub** — sign up as usual (the hub's admin approves new members), then
+   Account → *Your Data* → **Bring an account from another hub**: pick the file, enter the same
+   phrase/password, choose what to bring over, and import.
+
+What comes over, and how:
+
+| Item | On the new hub |
+|---|---|
+| Encryption identity (keys) | Kept, if the new account has no encrypted content yet — and the *same recovery phrase* keeps working. If the account already has notes/messages/files, its own keys are kept (replacing them would make that content unreadable) and everything imported is re-encrypted with them |
+| Profile, notes, files + folders, settings | Restored as **private** |
+| Posts | Restored as **private** posts (so old posts don't flood the new feed) — share the ones you want. Polls can't be recreated |
+| Old conversations | Saved as one **private note** per conversation (they can't be put back into other people's inboxes) |
+| Atlas pins, marketplace page + listings | **Opt-in** (unticked by default) — they would appear on the new hub's public map/market |
+| Saved pins/listings/posts, replies, likes, RSVPs, vendor pictures | Not carried — they refer to things on the old hub |
+
+The package is encrypted (Argon2id-derived key, AES-256-GCM, tamper- and truncation-detecting), because it holds
+everything about the account: anyone with the file *and* the phrase/password can open it, so treat it like a
+password and delete it once the move is confirmed. Nothing is changed or removed on the old hub.
+Very large accounts are limited by browser memory (individual files over 150 MB are skipped and listed).
+
+---
+
+## Everyday Commands — the `citinet` helper
+
+Every hub has a small helper in its own folder (next to `docker-compose.yml`) so you never
+have to remember Docker flags or paths. Open a terminal **in your hub's folder** and run:
+
+| Windows (PowerShell) | Mac / Linux | When to use it |
+|---|---|---|
+| `.\citinet.ps1 diagnose` | `./citinet.sh diagnose` | **Start here** when anything seems wrong. Checks settings, every container, the API, ports, disk space and backups, and tells you the next command to run for each problem |
+| `.\citinet.ps1 fix` | `./citinet.sh fix` | After a restart or power cut — starts anything that should be running. Never touches your data |
+| `.\citinet.ps1 status` | `./citinet.sh status` | What's running, and is it healthy |
+| `.\citinet.ps1 logs api` | `./citinet.sh logs api` | What a service is saying. Add `-f` to watch live. Services: `api db storage caddy backup admin livekit ollama` |
+| `.\citinet.ps1 update` | `./citinet.sh update` | Install the latest version. **Backs up first**, saves the old version, and rolls back by itself if the new one won't start |
+| `.\citinet.ps1 rollback` | `./citinet.sh rollback` | An update made things worse — go back to the version you had before |
+| `.\citinet.ps1 backup-now` | `./citinet.sh backup-now` | Take a backup right now (e.g. before moving the hub to a new drive) |
+| `.\citinet.ps1 restore-test` | `./citinet.sh restore-test` | Prove the newest backup really restores (into a throwaway database) |
+| `.\citinet.ps1 restart [service]` | `./citinet.sh restart [service]` | Restart one service, or everything |
+| `.\citinet.ps1 support-bundle` | `./citinet.sh support-bundle` | Need help? Makes one zip of logs and settings with passwords, keys and tokens removed. Skim it before sharing |
+| `.\citinet.ps1 info` | `./citinet.sh info` | Where this hub's folder, address and data live |
+
+Hub Management → **System** → *If something goes wrong* shows the same list with copy buttons
+and your hub's exact folder filled in. Windows blocking scripts? Run it as
+`powershell -ExecutionPolicy Bypass -File .\citinet.ps1 diagnose`.
+
+**Hub created before this helper existed?** Run this once in the hub's folder (it's served by
+your own hub — nothing is downloaded from anywhere else), then use the commands above:
 
 ```bash
-# View live API logs
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml logs -f citinet-api
-
-# Stop hub
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml down
-
-# Start hub
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml up -d
-
-# Check health
-curl -s http://localhost:9090/health
-
-# Update to latest API version
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml pull citinet-api
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml up -d --force-recreate citinet-api
-
-# Check container status
-docker compose -f ~/citinet-hub-<hub-slug>/docker-compose.yml ps
+# Mac / Linux
+curl -fsSL http://localhost:9090/api/tools/citinet.sh -o citinet.sh && chmod +x citinet.sh
 ```
+```powershell
+# Windows
+Invoke-WebRequest http://localhost:9090/api/tools/citinet.ps1 -OutFile citinet.ps1
+```
+
+(Needs a hub image from after this feature shipped; if it answers "does not include the helper
+scripts", update the hub first, or copy `scripts/hub-tools/` from the repository.)
+
+### The raw Docker commands, if you ever want them
+
+The helper is a convenience, not a requirement — these still work, from the hub's folder:
+
+```bash
+docker compose logs -f citinet-api                 # live API logs
+docker compose ps                                  # container status
+docker compose stop   /   docker compose up -d     # stop / start the hub
+docker compose pull citinet-api && docker compose up -d --force-recreate citinet-api   # update the API
+curl -s http://localhost:9090/health               # health check
+```
+
+### For whoever builds the images (not hub owners)
+
+From a checkout of the repository, on the hub machine: `.\scripts\deploy-hub.ps1` builds, pushes
+and rolls out **both** images a hub runs (`citinet-api` and the `citinet-admin` sidecar), saves a
+rollback tag first, waits for health, and verifies each container is really running the image it
+just built. `-Service api|admin`, `-NoPush` and `-DryRun` are available; it warns if you deploy
+one image while files belonging to the other have changed. `scripts\rebuild-hub-api.ps1` still
+works (API only).
 
 ---
 
 ## Troubleshooting
+
+**Start with `./citinet.sh diagnose` (Windows: `.\citinet.ps1 diagnose`).** It runs the checks below
+for you and prints the exact next command for anything it finds — see
+[Everyday Commands](#everyday-commands--the-citinet-helper). The notes here explain what the
+common problems mean.
 
 **`citinet-api` shows `unhealthy`**
 
@@ -411,6 +479,51 @@ cp -a /restored/storage/. "$FILES_DIR/"
 Run a fresh `citinet-setup.sh`/`citinet-setup.ps1` on the new machine first (same
 hub slug) to get a working stack, stop it, restore into `DATA_DIR`/`FILES_DIR` as
 above, then start it back up.
+
+### Self-healing, backup checks and outage alerts
+
+The `citinet-admin` container watches the rest of the stack. Hub Management → **System**
+shows what it finds.
+
+**Automatic recovery.** Every minute it checks each service. A service that is stopped
+because it *failed* — never started (for example it lost a port-80/443 race during a
+reboot), failed to start, ran out of memory, or exited with an error — is started again.
+A service you stopped on purpose (`docker stop`, `docker compose stop`) is left alone.
+If a service keeps stopping (4 restarts in 30 minutes) it stops retrying and raises a
+critical alert instead of looping forever.
+
+**Backup checks.** A backup file existing is not the same as being able to restore it, so:
+
+| Check | How often | What it proves |
+|---|---|---|
+| Freshness | every 30 min | the newest database + file backup exist, aren't tiny, and are under 36 h old |
+| Off-site | every 6 h (if configured) | restic reports a snapshot under 48 h old |
+| **Restore test** | weekly, or "Run restore test now" | the newest backup loads into a **throwaway database** (no network, read-only access to the backups, never your live DB) and real tables + accounts come out. With off-site configured it also pulls the dump back from the remote first, so it proves the remote copy restores too |
+
+**Email alerts.** Critical problems (a service down, backups stale, a failed restore test)
+are emailed to hub admins who have an address on file. Your hub does not run a mail server —
+it hands messages to an SMTP relay you already have (Gmail with an App Password, Brevo,
+Resend, Mailgun, Amazon SES, Zoho, your domain host's SMTP…). Set it up in
+Hub Management → **System** → **Email alerts**: pick your provider, paste the details, press
+**Send test email** (it checks the settings *before* saving), then **Save**. No restart needed.
+The password is stored encrypted in the hub's own database and is never shown again.
+Hubs configured earlier through `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`
+in `.env` keep working; settings saved in the UI take priority over them.
+
+**Outage alert for "the whole machine is off".** A dead machine can't report itself, so the hub
+checks in with an outside monitor instead. In Hub Management → **System** → **Outage alert**:
+
+1. Run a monitor that is **not on this hub's machine** — [Uptime Kuma](https://github.com/louislam/uptime-kuma)
+   on a Raspberry Pi / second hub / small VPS, or a free [Healthchecks.io](https://healthchecks.io) account.
+   (A monitor on the same machine goes down with it and can't warn you.)
+2. Create a **Push** monitor (Kuma) or a check (Healthchecks.io), set its interval to ≥ 2 minutes
+   (this hub pings every minute), and add your email under its notifications.
+3. Paste its ping URL into the card and press **Test & save**.
+
+The hub pings it once a minute while its core services (database, storage, API, HTTPS) are
+healthy; when the pings stop, *that service* emails you. The URL is stored encrypted on the hub,
+changes apply within about 5 minutes with no restart, and nothing here depends on Citinet.
+(`HEALTHCHECK_PING_URL` in `.env` still works as a fallback for hubs set up earlier.)
 
 ### Restoring from a backup
 

@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo, useRef, useCallback, type ComponentType } from 'react';
 import {
   Search, Plus, Calendar, MapPin, Store, Users, Sparkles, ArrowRight,
-  MessageSquare, Layers, NotebookPen, Radio, FileText, Newspaper, Upload, Vote,
+  MessageSquare, Layers, NotebookPen, Upload, Vote,
 } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService } from '../services/aiService';
-import { AvatarCircle } from './AvatarCircle';
 import { AvatarFallback } from './icons';
-import { useActivityFeed, timeAgo, type ActivityItem, type ActivityType } from '../hooks/useActivityFeed';
+import { HomeActivityCard, HomeFeedSkeleton } from './HomeActivityCard';
+import { useHomeFeed } from '../hooks/useHomeFeed';
+import { seenInitiativeUpdates } from '../utils/seenStore';
+import type { HomeCardData } from '../utils/homeFeedSelection';
 import type { SearchResults } from '../types/hub';
 
 interface DashboardProps {
@@ -41,26 +43,32 @@ function greetingForHour(hour: number): string {
   return 'Good evening';
 }
 
-// Same activity → destination mapping the old dashboard used, and the same
-// sessionStorage deep-link keys Feed/FilesScreen/AtlasScreen already consume
-// today (they outlived the dashboard that used to be their only producer).
-function navigateToActivity(item: ActivityItem, nav: (screen: string) => void) {
-  if (item.type === 'pin_added' && item.itemId) {
-    sessionStorage.setItem('citinet-deeplink-pin', item.itemId);
-    nav('atlas');
-    return;
+// Where a Home feed card lands. Uses the same sessionStorage deep-link keys the destination
+// screens already consume (Atlas pins, Marketplace listings, Initiative tabs).
+const INITIATIVE_TAB: Record<string, string> = { task: 'tasks', resource: 'resources', team: 'team' };
+function openHomeCard(card: HomeCardData, nav: (screen: string) => void) {
+  const a = card.action;
+  switch (a.type) {
+    case 'post':
+      nav(`feed/${a.id}`);
+      return;
+    case 'pin':
+      sessionStorage.setItem('citinet-deeplink-pin', a.id);
+      nav('atlas');
+      return;
+    case 'listing':
+      sessionStorage.setItem('citinet-deeplink-listing', a.id);
+      nav('marketplace');
+      return;
+    case 'initiative': {
+      // Initiative updates have no per-viewer server record, so opening one is what marks it seen.
+      seenInitiativeUpdates.markSeen(a.updateId);
+      const tab = INITIATIVE_TAB[a.kind];
+      if (tab) sessionStorage.setItem('citinet-deeplink-initiative-tab', JSON.stringify({ initiativeId: a.initiativeId, tab, taskId: a.taskId }));
+      nav(`initiatives/${a.initiativeId}`);
+      return;
+    }
   }
-  if (item.type === 'file_shared' && item.itemId) {
-    sessionStorage.setItem('citinet-deeplink-file', item.itemId);
-    nav('files');
-    return;
-  }
-  const postTypes: ActivityType[] = ['discussion', 'announcement', 'project', 'request', 'event'];
-  if (postTypes.includes(item.type) && item.itemId) {
-    nav(`feed/${item.itemId}`);
-    return;
-  }
-  nav(item.navigateTo);
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
@@ -70,7 +78,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const nav = useCallback((screen: string) => onNavigate?.(screen), [onNavigate]);
 
-  const { items: activity } = useActivityFeed(hubSlug);
+  // "Mine" for the feed's no-self-content rule. Initiative activity rows only carry a free-text
+  // actor name, so those are matched by username/display name.
+  const myNames = useMemo(
+    () => [currentUser?.username, currentUser?.displayName].filter(Boolean).map(n => n!.trim().toLowerCase()),
+    [currentUser?.username, currentUser?.displayName],
+  );
+  const { cards, loading: feedLoading, error: feedError } = useHomeFeed(hubSlug, { userId: currentUser?.hubUserId, names: myNames });
 
   const [now] = useState(() => new Date());
   const [prompt] = useState(() => PROMPTS[Math.floor(Math.random() * PROMPTS.length)]);
@@ -159,41 +173,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const quickActions = quickActionIds
     .map(id => commands.find(c => c.id === id))
     .filter((c): c is Command => !!c);
-
-  // ── Featured cards: whatever's freshest per category, out of the same
-  // activity feed the "Recent Activity" list below already fetches. ──
-  const cards = useMemo(() => {
-    const findByTypes = (types: ActivityType[]) => activity.find(i => types.includes(i.type));
-    const out: { key: string; label: string; icon: ComponentType<{ className?: string }>; item: ActivityItem }[] = [];
-
-    const pin = findByTypes(['pin_added']);
-    if (pin) out.push({ key: 'pin', label: 'Latest Atlas Pin', icon: MapPin, item: pin });
-
-    const post = findByTypes(['discussion', 'announcement', 'project', 'request']);
-    if (post) out.push({ key: 'post', label: 'Newest Community Post', icon: Newspaper, item: post });
-
-    const event = findByTypes(['event']);
-    if (event) out.push({ key: 'event', label: 'Recent Event', icon: Calendar, item: event });
-
-    const other = findByTypes(['neighbor_joined', 'space_created', 'live_broadcast', 'file_shared']);
-    if (other) {
-      const labelByType: Partial<Record<ActivityType, string>> = {
-        neighbor_joined: 'New Neighbor',
-        space_created: 'New Space',
-        live_broadcast: 'Live Now',
-        file_shared: 'Newly Shared File',
-      };
-      const iconByType: Partial<Record<ActivityType, ComponentType<{ className?: string }>>> = {
-        neighbor_joined: Users,
-        space_created: Layers,
-        live_broadcast: Radio,
-        file_shared: FileText,
-      };
-      out.push({ key: 'other', label: labelByType[other.type] ?? 'Recent Activity', icon: iconByType[other.type] ?? FileText, item: other });
-    }
-
-    return out.slice(0, 4);
-  }, [activity]);
 
   return (
     <div className="px-4 md:px-8 pt-6 md:pt-12 pb-24 max-w-3xl mx-auto">
@@ -287,7 +266,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {/* Suggested actions */}
-      <div className="flex flex-wrap gap-1.5 mb-10">
+      <div className="flex flex-wrap gap-1.5 mb-6">
         {quickActions.map(cmd => (
           <button
             key={cmd.id}
@@ -300,55 +279,31 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         ))}
       </div>
 
-      {/* Featured cards */}
-      {cards.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
-          {cards.map(card => (
-            <button
-              key={card.key}
-              onClick={() => navigateToActivity(card.item, nav)}
-              className="text-left p-4 cn-glass cn-glass-hover rounded-2xl hover:border-black/15 dark:hover:border-white/15 transition-all duration-200"
-            >
-              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mb-2.5">
-                <card.icon className="w-4 h-4 text-white" />
-              </span>
-              <p className="cn-eyebrow">{card.label}</p>
-              <p className="text-sm font-semibold cn-text-1 mt-0.5 truncate">{card.item.title}</p>
-              <p className="text-xs cn-text-4 mt-1">{timeAgo(card.item.timestamp)} · View →</p>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Recent activity */}
-      {activity.length > 0 && (
-        <div className="mb-10">
-          <h2 className="text-sm font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide mb-3">Recent Activity</h2>
-          <div className="space-y-1">
-            {activity.slice(0, 5).map(item => (
-              <button
-                key={item.id}
-                onClick={() => navigateToActivity(item, nav)}
-                className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 hover:backdrop-blur-md transition-all duration-200"
-              >
-                <AvatarCircle
-                  authorId={item.id}
-                  authorUsername={item.actor}
-                  authorAvatarUrl={item.actorAvatarUrl}
-                  currentUserId={currentUser?.hubUserId}
-                  currentUserAvatarUrl={currentUser?.avatarUrl}
-                  size="md"
-                />
-                <p className="text-sm text-slate-600 dark:text-zinc-300 truncate">
-                  <span className="font-medium text-slate-900 dark:text-white">{item.actor}</span>{' '}
-                  {item.summary}{' '}
-                  <span className="text-slate-400 dark:text-zinc-500">· {timeAgo(item.timestamp)}</span>
-                </p>
-              </button>
+      {/* Activity feed — one card per feature area (Feed, Events, Atlas, Marketplace, Initiatives),
+          the freshest thing the member hasn't seen yet. Rules: utils/homeFeedSelection.ts */}
+      <div className="mb-10">
+        {feedLoading && cards.length === 0 ? (
+          <HomeFeedSkeleton />
+        ) : cards.length === 0 ? (
+          <p className="text-sm cn-text-4 px-1">Nothing new yet — when neighbours post, add pins, list things or start projects, it shows up here.</p>
+        ) : (
+          <div className="space-y-3">
+            {cards.map(card => (
+              <HomeActivityCard
+                key={card.key}
+                card={card}
+                hubSlug={hubSlug}
+                currentUserId={currentUser?.hubUserId}
+                currentUserAvatarUrl={currentUser?.avatarUrl}
+                onOpen={() => openHomeCard(card, nav)}
+                onOpenProfile={id => nav(`profile/${id}`)}
+                onOpenVendor={id => nav(`vendor/${id}`)}
+              />
             ))}
           </div>
-        </div>
-      )}
+        )}
+        {feedError && cards.length > 0 && <p className="text-xs cn-text-4 mt-2 px-1">{feedError}</p>}
+      </div>
 
       {/* Feedback */}
       <a

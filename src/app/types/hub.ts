@@ -417,6 +417,8 @@ export interface HubPost {
   my_rsvp?: boolean;
   like_count?: number;
   my_liked?: boolean;
+  /** Whether the caller has already opened this post (hub_post_views) — Home's "seen" rule. */
+  my_viewed?: boolean;
   /** Present only when category === 'POLL'. */
   poll?: HubPostPoll;
 }
@@ -605,6 +607,83 @@ export interface StackServiceStatus {
   status?: string;
   restartable?: boolean;
   recentLogs?: string;
+}
+
+/** What the hub reports about its email relay (never includes the password). */
+export interface EmailSettingsStatus {
+  configured: boolean;
+  /** 'ui' = saved in Hub Management; 'env' = set in the hub's .env (older hubs). */
+  source: 'ui' | 'env' | 'none';
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  hasPassword: boolean;
+  canStoreSecrets: boolean;
+}
+
+export interface EmailSettingsInput {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  /** Leave blank to keep the stored password. */
+  pass: string;
+  from: string;
+}
+
+/** A problem the stack sidecar found (GET /api/admin/stack/alerts). */
+export interface StackAlert {
+  id: number;
+  key: string;
+  severity: 'critical' | 'warning';
+  title: string;
+  detail?: string | null;
+  created_at: string;
+  last_seen_at: string;
+  resolved_at?: string | null;
+  /** Still happening (not resolved, and the sidecar is still reporting it). */
+  open: boolean;
+}
+
+export interface StackBackupFileInfo {
+  count: number;
+  newestAt: string | null;
+  ageHours: number | null;
+  sizeBytes: number | null;
+  ok: boolean;
+}
+
+export interface StackDrillResult {
+  source: string;
+  ok: boolean;
+  file?: string;
+  tables?: number | null;
+  users?: number | null;
+  seconds?: number;
+  detail?: string | null;
+}
+
+/** Self-healing + backup-verification state (GET /api/admin/stack/health). */
+export interface StackHealth {
+  available: boolean;
+  /** An older sidecar image that predates health reporting. */
+  outdated?: boolean;
+  /** The host folder this hub's docker-compose.yml lives in (from the compose label). */
+  composeDir?: string | null;
+  watchdog?: {
+    lastTick: string | null;
+    heartbeatConfigured: boolean;
+    heartbeatSource?: 'ui' | 'env' | 'none';
+    lastPing?: { at: string; ok: boolean } | null;
+    events: { at: string; service: string; action: string; reason?: string }[];
+  };
+  backups?: {
+    local: { checkedAt: string | null; ok: boolean | null; db: StackBackupFileInfo | null; storage: StackBackupFileInfo | null; problem: string | null };
+    offsite: { configured: boolean; checkedAt: string | null; ok: boolean | null; latestSnapshotAt: string | null; problem: string | null };
+    drill: { running: boolean; lastRunAt: string | null; ok: boolean | null; results: StackDrillResult[] };
+  };
 }
 
 /** A product or service listed on the hub marketplace */

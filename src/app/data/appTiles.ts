@@ -23,7 +23,7 @@ export const APP_TILES: { Icon: React.ElementType; label: string; screen: string
   { Icon: SearchGlyph,   label: 'Discover',    screen: 'discover',    gradient: CN_TILE_SKY },
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: CN_TILE_INDIGO },
   { Icon: FilesGlyph,    label: 'Files',       screen: 'files',       gradient: CN_TILE_SLATE },
-  { Icon: InitiativesGlyph, label: 'Initiatives', screen: 'initiatives', gradient: CN_TILE_BLUE },
+  { Icon: InitiativesGlyph, label: 'Projects', screen: 'initiatives', gradient: CN_TILE_BLUE },
   { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: CN_TILE_TEAL },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: CN_TILE_SKY },
   { Icon: MessagesGlyph, label: 'Communications', screen: 'messages',    gradient: CN_TILE_INDIGO, notifyFeature: 'messages' },

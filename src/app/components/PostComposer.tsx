@@ -22,7 +22,7 @@ import type { HubPost } from '../types/hub';
 export const QUICK_POST_CATEGORIES = [
   { value: 'DISCUSSION',   label: 'Discussion' },
   { value: 'ANNOUNCEMENT', label: 'Announcement' },
-  { value: 'PROJECT',      label: 'Project' },
+  { value: 'PROJECT',      label: 'Proposal' },
   { value: 'REQUEST',      label: 'Request' },
 ] as const;
 

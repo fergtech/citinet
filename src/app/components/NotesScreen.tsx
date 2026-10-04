@@ -24,6 +24,7 @@ import { hubService } from '../services/hubService';
 import { canNativeShare, nativeShare } from '../utils/share';
 import { PENDING_FORK_KEY } from './ShareNotePage';
 import type { HubNote } from '../types/hub';
+import { editorContentForNote, plainTextToHtml } from '../utils/noteContent';
 
 interface NotesScreenProps {
   onBack: () => void;
@@ -341,7 +342,7 @@ function NoteEditor({
       Video,
       LinkPreview,
     ],
-    content: note.body_rich ?? '',
+    content: editorContentForNote(note),
     editable: !readOnly,
     editorProps: {
       handleDrop: (_view, event, _slice, moved) => {
@@ -390,6 +391,15 @@ function NoteEditor({
       scheduleAutosave(patch);
     },
   });
+
+  // Safety net: if the stored rich document could not be rendered (empty editor)
+  // but the note has real plain text, show that instead of a blank page.
+  useEffect(() => {
+    if (!editor || readOnly || !editor.isEmpty) return;
+    const html = plainTextToHtml(latestNote.current);
+    if (html) editor.commands.setContent(html, { emitUpdate: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   // Keep upload refs in sync with the current editor + hubSlug closure.
   useEffect(() => {

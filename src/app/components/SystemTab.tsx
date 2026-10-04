@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Server, RefreshCw, Loader2, AlertCircle, CheckCircle2, XCircle, ChevronDown, ChevronUp, RotateCw } from 'lucide-react';
 import { hubService } from '../services/hubService';
 import type { StackServiceStatus } from '../types/hub';
+import { StackHealthPanel } from './StackHealthPanel';
+import { QuickCommandsPanel } from './QuickCommandsPanel';
+import { EmailSetupCard } from './EmailSetupCard';
+import { MonitoringSetupCard } from './MonitoringSetupCard';
 
 interface SystemTabProps {
   hubSlug: string;
@@ -178,6 +182,8 @@ export function SystemTab({ hubSlug }: SystemTabProps) {
         </div>
       )}
 
+      {!loading && !error && available === true && <StackHealthPanel hubSlug={hubSlug} />}
+
       {!loading && !error && available === true && (
         <div className="space-y-2">
           {restartError && (
@@ -194,6 +200,14 @@ export function SystemTab({ hubSlug }: SystemTabProps) {
             />
           ))}
         </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          <QuickCommandsPanel hubSlug={hubSlug} />
+          <EmailSetupCard hubSlug={hubSlug} />
+          <MonitoringSetupCard hubSlug={hubSlug} />
+        </>
       )}
     </div>
   );

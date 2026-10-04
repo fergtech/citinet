@@ -100,6 +100,17 @@ function requireLivekit(res) {
 // the initial "ring".
 const sockets = new Map();
 
+// Best-effort push of a small event to one user's open comms socket (if any).
+// Used by server.js's notifyUser to tell a connected client "you have a new
+// notification" so it can refetch immediately instead of waiting for its next
+// poll. Never throws — the notification row is already saved either way.
+function pushToUser(userId, payload) {
+  try {
+    const ws = sockets.get(userId);
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload));
+  } catch {}
+}
+
 // Space-scoped broadcasts/rooms — resolves a space slug to id and requires
 // the caller to be an active member, same check pattern already used by
 // /call/ring's conversation-membership check and the space-scoped post
@@ -442,4 +453,4 @@ function attachCommsSignaling(server, pool) {
   });
 }
 
-module.exports = { initCommsDb, createCommsRouter, registerCallEventHistoryRoute, attachCommsSignaling, livekitConfigured };
+module.exports = { pushToUser, initCommsDb, createCommsRouter, registerCallEventHistoryRoute, attachCommsSignaling, livekitConfigured };

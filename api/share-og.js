@@ -32,7 +32,7 @@ const SHARE_PATH_BY_TYPE = {
 };
 
 const CATEGORY_LABEL = {
-  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Project',
+  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Proposal',
   REQUEST: 'Request', EVENT: 'Event', POLL: 'Poll',
 };
 

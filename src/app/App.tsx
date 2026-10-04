@@ -382,6 +382,13 @@ function HubAtlasRoute() {
   return <AtlasScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
+/** /initiatives[/id] -> /projects[/id], keeping the ?hub= query so the hub survives the redirect. */
+function LegacyInitiativesRedirect() {
+  const { '*': rest } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/projects${rest ? `/${rest}` : ''}${search}`} replace />;
+}
+
 function HubInitiativesRoute() {
   const navigate = useNavigate();
   const { '*': initiativeId } = useParams();
@@ -390,8 +397,8 @@ function HubInitiativesRoute() {
     <InitiativesScreen
       onBack={useSmartBack()}
       initialId={id}
-      onOpenDetail={detailId => navigate(hubPath(`/initiatives/${detailId}`))}
-      onBackToList={() => navigate(hubPath('/initiatives'), { replace: true })}
+      onOpenDetail={detailId => navigate(hubPath(`/projects/${detailId}`))}
+      onBackToList={() => navigate(hubPath('/projects'), { replace: true })}
       onOpenSpace={spaceSlug => navigate(hubPath(`/spaces/${spaceSlug}`))}
     />
   );
@@ -524,7 +531,9 @@ function HubModeRoutes() {
       <Route path="/toolkit/my-submissions" element={<HubGuard><HubLayout><HubMySubmissionsRoute /></HubLayout></HubGuard>} />
       <Route path="/toolkit/moderation" element={<HubGuard><HubLayout><HubModerationQueueRoute /></HubLayout></HubGuard>} />
       <Route path="/atlas" element={<HubGuard><HubLayout><HubAtlasRoute /></HubLayout></HubGuard>} />
-      <Route path="/initiatives/*" element={<HubGuard><HubLayout><HubInitiativesRoute /></HubLayout></HubGuard>} />
+      <Route path="/projects/*" element={<HubGuard><HubLayout><HubInitiativesRoute /></HubLayout></HubGuard>} />
+      {/* Projects used to live at /initiatives — keep old bookmarks and shared links working. */}
+      <Route path="/initiatives/*" element={<LegacyInitiativesRedirect />} />
       <Route path="/settings" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="settings" /></HubLayout></HubGuard>} />
       <Route path="/post" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="post" /></HubLayout></HubGuard>} />
       <Route path="/chat" element={<HubGuard><HubLayout><HubPlaceholderRoute screen="chat" /></HubLayout></HubGuard>} />

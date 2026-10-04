@@ -27,7 +27,7 @@ const REGISTRY_JSON_URL = 'https://raw.githubusercontent.com/fergtech/citinet-re
 const FETCH_TIMEOUT_MS = 3500;
 const DEFAULT_IMAGE = 'https://citinet.cloud/icons/og-image.png';
 const CATEGORY_LABEL = {
-  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Project',
+  DISCUSSION: 'Discussion', ANNOUNCEMENT: 'Announcement', PROJECT: 'Proposal',
   REQUEST: 'Request', EVENT: 'Event', POLL: 'Poll',
 };
 

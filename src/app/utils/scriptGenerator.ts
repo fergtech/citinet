@@ -7,6 +7,9 @@
  * the stack, and reporting back once the hub is live.
  */
 
+import citinetShRaw from '../../../scripts/hub-tools/citinet.sh?raw';
+import citinetPs1Raw from '../../../scripts/hub-tools/citinet.ps1?raw';
+
 // ─────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────
@@ -279,6 +282,13 @@ function generateEnvContent(config: HubScriptConfig): string {
     '# RESTIC_PASSWORD=',
     'OFFSITE_BACKUP_RETENTION_DAYS=30',
     '',
+    '# Outage alert (optional) — a hub that is completely off, or whose Docker has',
+    '# died, cannot report that itself. If you set this to a "ping URL" from a free',
+    '# monitoring service (healthchecks.io, Uptime Kuma push monitor, ...), this hub',
+    '# pings it once a minute while its core services are healthy; when the pings',
+    '# stop, THAT service alerts you. Nothing here depends on Citinet.',
+    '# HEALTHCHECK_PING_URL=',
+    '',
     ...(config.enableAi ? [
       '# Ollama Directory — downloaded local AI models are stored here. These can be',
       '# several GB each, so point this at a drive with room if space is tight.',
@@ -368,6 +378,8 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - STORAGE_BUCKET=' + vd('STORAGE_BUCKET', 'hub-files'),
     '      - JWT_SECRET=' + v('JWT_SECRET'),
     '      - ADMIN_SIDECAR_TOKEN=' + v('ADMIN_SIDECAR_TOKEN'),
+    // Optional external dead-man's-switch (see the .env comment above); empty = off.
+    '      - HEALTHCHECK_PING_URL=' + vd('HEALTHCHECK_PING_URL', ''),
     '      - CORS_ORIGIN=' + vd('CORS_ORIGIN', '*'),
     '      - REGISTRY_URL=' + vd('REGISTRY_URL', ''),
     '      - TUNNEL_URL=' + vd('TUNNEL_URL', ''),
@@ -775,6 +787,8 @@ function generateBashScript(config: HubScriptConfig): string {
   const envContent = generateEnvContent(config);
   const composeYaml = getComposeYaml(config);
   const caddyfileContent = getCaddyfileContent(config);
+  // Bash must never see CRLF, whatever line endings the repo checkout used.
+  const citinetShContent = citinetShRaw.split(/\r?\n/).join('\n').replace(/\n+$/, '');
   const livekitYamlContent = getLivekitYamlContent(config);
   const isTailscale = config.visibility === 'tailscale';
 
@@ -876,6 +890,13 @@ function generateBashScript(config: HubScriptConfig): string {
     caddyfileContent,
     'CITINET_CADDYFILE_END',
     'ok "Caddyfile written"',
+    '',
+    '# === Write citinet.sh -- the everyday command for this hub (status, diagnose, update, ...) ===',
+    "cat > \"$HUB_DIR/citinet.sh\" << 'CITINET_TOOLS_END'",
+    citinetShContent,
+    'CITINET_TOOLS_END',
+    'chmod +x "$HUB_DIR/citinet.sh"',
+    'ok "citinet.sh written -- run ./citinet.sh help any time"',
     '',
     '# === Detect LAN IP -- lets the automatic HTTPS bridge point your',
     '# hub hostname at this machine for anyone on your own network ===',
@@ -1155,6 +1176,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
   // (avoids heredoc issues with single quotes in YAML version string, etc.)
   const composeB64 = btoa(unescape(encodeURIComponent(composeYaml)));
   const caddyfileB64 = btoa(unescape(encodeURIComponent(caddyfileContent)));
+  const citinetPs1B64 = btoa(unescape(encodeURIComponent(citinetPs1Raw.split(/\r?\n/).join('\r\n'))));
   const livekitYamlB64 = btoa(unescape(encodeURIComponent(livekitYamlContent)));
 
   const tailscaleLines = isTailscale
@@ -1243,6 +1265,11 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '$CaddyfileContent = [System.Text.Encoding]::UTF8.GetString($CaddyfileBytes)',
     '[System.IO.File]::WriteAllText("$HubDir\\Caddyfile", $CaddyfileContent, [System.Text.Encoding]::UTF8)',
     'Ok "Caddyfile written"',
+    '',
+    '# === Write citinet.ps1 -- the everyday command for this hub (status, diagnose, update, ...) ===',
+    '$ToolsB64 = "' + citinetPs1B64 + '"',
+    '[System.IO.File]::WriteAllText("$HubDir\\citinet.ps1", [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ToolsB64)), [System.Text.Encoding]::UTF8)',
+    'Ok "citinet.ps1 written -- run .\\citinet.ps1 help any time"',
     '',
     '# === Detect LAN IP -- lets the automatic HTTPS bridge point your',
     '# hub hostname at this machine for anyone on your own network ===',

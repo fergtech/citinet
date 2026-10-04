@@ -14,6 +14,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
 import { useHub } from '../context/HubContext';
 import { useSavedIds } from '../hooks/useSavedIds';
+import { seenPins } from '../utils/seenStore';
 import { hubService } from '../services/hubService';
 import { AvatarCircle } from './AvatarCircle';
 import { AutoplayVideo } from './AutoplayVideo';
@@ -2154,6 +2155,8 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const selectedPin = selectedPinId ? pins.find(p => p.id === selectedPinId) ?? null : null;
+  // Opening a pin counts as seeing it — Home's Atlas card skips seen pins.
+  useEffect(() => { if (selectedPinId) seenPins.markSeen(selectedPinId); }, [selectedPinId]);
   const rightPanelActive = !!selectedPin || !!pendingPosition;
   // Showing one specific pin (selected from the map, the list, or any of the
   // deep-link paths above) zooms all the way in, centered on it — browsing

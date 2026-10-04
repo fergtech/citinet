@@ -747,10 +747,10 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
   return (
     <div className="max-w-2xl mx-auto w-full flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold cn-text-3">Initiatives from this space</span>
+        <span className="text-xs font-semibold cn-text-3">Projects from this space</span>
         <button onClick={startInitiative}
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cn-surface-2 hover:bg-black/10 dark:hover:bg-white/10 text-xs font-medium cn-text-2 transition-colors">
-          <Plus className="w-3.5 h-3.5" /> Start an initiative
+          <Plus className="w-3.5 h-3.5" /> Start a project
         </button>
       </div>
       {items.length === 0 && (
@@ -777,7 +777,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
           <button
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={clampedPage === 0}
-            aria-label="Previous initiatives"
+            aria-label="Previous projects"
             className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
           >
             <ChevronLeft className="w-3.5 h-3.5 cn-text-2" />
@@ -795,7 +795,7 @@ function SpaceInitiativesSection({ hubSlug, spaceId }: { hubSlug: string; spaceI
           <button
             onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
             disabled={clampedPage === pageCount - 1}
-            aria-label="Next initiatives"
+            aria-label="Next projects"
             className="w-6 h-6 rounded-full cn-surface border cn-border flex items-center justify-center shadow-sm disabled:opacity-30 disabled:cursor-default hover:border-blue-300/60 dark:hover:border-blue-500/30 transition-colors"
           >
             <ChevronRight className="w-3.5 h-3.5 cn-text-2" />
@@ -1318,7 +1318,7 @@ function SpaceDetail({ hubSlug, space, myUserId, tunnelUrl, authToken, currentUs
             <button key={t} onClick={() => setTab(t)}
               className={`py-3 px-1 mr-6 text-sm font-medium border-b-2 -mb-px capitalize whitespace-nowrap transition-colors flex items-center gap-1.5 ${tab === t ? 'border-blue-500 cn-text-1' : 'border-transparent cn-text-4 hover:text-slate-700 dark:hover:text-zinc-300'}`}>
               {t === 'live' && <span className="cn-live-dot w-1.5 h-1.5" />}
-              {t}
+              {t === 'initiatives' ? 'projects' : t}
             </button>
           ))}
         </div>

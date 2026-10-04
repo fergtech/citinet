@@ -19,35 +19,18 @@
  */
 
 const express = require('express');
-const Docker = require('dockerode');
+const { findContainer, demuxDockerLog, ownComposeDir, HUB_SLUG } = require('./docker-util');
+const watchdog = require('./watchdog');
+const backupHealth = require('./backup-health');
+const remoteConfig = require('./remote-config');
 
 const PORT = process.env.PORT || 7070;
-const HUB_SLUG = process.env.HUB_SLUG || '';
 const ADMIN_SIDECAR_TOKEN = process.env.ADMIN_SIDECAR_TOKEN || '';
-// The exact suffix THIS hub's own docker-compose.yml uses for every
-// container_name (normally `-${HUB_SLUG}`, matching scriptGenerator.ts's
-// getComposeYaml -- empty for older hubs like hub1 that predate that
-// convention). Passed in explicitly rather than guessed: this container has
-// no way to know, on a machine that might run several hubs, whether an
-// unsuffixed "citinet-backup" it can see belongs to THIS hub or a completely
-// different one -- an earlier version of this file tried "suffixed, then
-// fall back to unsuffixed" and that fallback leaked another hub's real
-// container logs through a mismatched HUB_SLUG during testing. No fallback,
-// no guessing: if this is wrong, the affected service just reports as not
-// present, which is the safe failure mode (nothing found beats the wrong
-// thing found).
-const CONTAINER_SUFFIX = process.env.CONTAINER_SUFFIX ?? (HUB_SLUG ? `-${HUB_SLUG}` : '');
 
 if (!ADMIN_SIDECAR_TOKEN) {
   console.error('ADMIN_SIDECAR_TOKEN is not set -- refusing to start. This container has Docker socket access and must never run without the shared-secret check in place.');
   process.exit(1);
 }
-
-// docker.sock is a Linux path -- Docker Desktop on Windows/Mac exposes the
-// same path *inside* every Linux container regardless of host OS (containers
-// always run in the Linux VM/WSL2 backend), so no host-OS branching is
-// needed here despite hubs running on Windows, macOS, or Linux hosts.
-const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 // Every service this sidecar will ever report on. Two container-naming
 // conventions exist across hubs: HUB_SLUG-suffixed (citinet-backup-<slug>,
@@ -63,35 +46,6 @@ const KNOWN_SERVICES = [
 // itself are excluded: a bad remote restart of any of those is far more
 // disruptive (or, for citinet-admin, self-defeating) than the two below.
 const RESTARTABLE_SERVICES = new Set(['citinet-backup', 'citinet-livekit']);
-
-/** Exact-name lookup for THIS hub's one expected container name -- Docker's
- *  own `name` filter is substring, not exact, so the result is re-checked
- *  client-side before accepting it. Deliberately never tries a second/
- *  fallback name -- see CONTAINER_SUFFIX's comment above for why. */
-async function findContainer(service) {
-  const name = `${service}${CONTAINER_SUFFIX}`;
-  const containers = await docker.listContainers({ all: true, filters: JSON.stringify({ name: [name] }) });
-  const exact = containers.find(c => (c.Names || []).some(n => n.replace(/^\//, '') === name));
-  return exact ? { info: exact, container: docker.getContainer(exact.Id) } : null;
-}
-
-/** Docker's non-TTY log stream multiplexes stdout/stderr with an 8-byte
- *  frame header per chunk (byte 0 = stream type, bytes 4-7 = big-endian
- *  payload size) -- every one of this project's containers runs without a
- *  TTY, so this demux is required or log output has garbage header bytes
- *  mixed into the text. */
-function demuxDockerLog(buffer) {
-  let result = '';
-  let offset = 0;
-  while (offset + 8 <= buffer.length) {
-    const size = buffer.readUInt32BE(offset + 4);
-    const start = offset + 8;
-    const end = Math.min(start + size, buffer.length);
-    result += buffer.slice(start, end).toString('utf8');
-    offset = start + size;
-  }
-  return result;
-}
 
 const app = express();
 
@@ -131,6 +85,19 @@ app.get('/status', async (req, res) => {
   }
 });
 
+// Aggregated self-healing + backup-verification state for Hub Management → System.
+app.get('/health', async (req, res) => {
+  res.json({ hubSlug: HUB_SLUG, composeDir: await ownComposeDir(), watchdog: watchdog.snapshot(), backups: backupHealth.snapshot() });
+});
+
+// Run the restore drill now (otherwise it runs weekly). Fire-and-forget: it can take
+// minutes, so this returns immediately and the result shows up in /health.
+app.post('/drill', (req, res) => {
+  if (backupHealth.snapshot().drill.running) return res.status(409).json({ error: 'A restore test is already running' });
+  backupHealth.runDrill().catch((e) => console.error('drill error:', e.message));
+  res.status(202).json({ started: true });
+});
+
 app.post('/restart/:service', async (req, res) => {
   const service = req.params.service;
   if (!RESTARTABLE_SERVICES.has(service)) {
@@ -148,5 +115,8 @@ app.post('/restart/:service', async (req, res) => {
 });
 
 app.listen(PORT, () => {
+  remoteConfig.start();
+  watchdog.start();
+  backupHealth.start();
   console.log(`citinet-admin sidecar listening on ${PORT} (hub: ${HUB_SLUG || 'unknown'})`);
 });

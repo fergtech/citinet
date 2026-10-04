@@ -40,17 +40,23 @@ class AtlasService {
     };
   }
 
-  async getPins(hubSlug: string): Promise<AtlasPin[]> {
+  /**
+   * `strict`: throw on any failure instead of returning []. Callers that keep a last-known
+   * copy (Home's feed) need to tell "the hub has no pins" from "the hub didn't answer" —
+   * otherwise an unreachable hub would blank what they already had.
+   */
+  async getPins(hubSlug: string, opts?: { strict?: boolean }): Promise<AtlasPin[]> {
     const conn = this.getConn(hubSlug);
-    if (!conn) return [];
+    if (!conn) { if (opts?.strict) throw new Error('Not connected'); return []; }
     try {
       const res = await fetch(`${conn.baseUrl}/api/atlas/pins`, {
         headers: { Authorization: `Bearer ${conn.token}` },
       });
-      if (!res.ok) return [];
+      if (!res.ok) { if (opts?.strict) throw new Error(`Failed to load pins (${res.status})`); return []; }
       const data = await res.json();
       return (data.pins as Record<string, unknown>[]).map(r => this.rowToPin(r, hubSlug));
-    } catch {
+    } catch (err) {
+      if (opts?.strict) throw err;
       return [];
     }
   }

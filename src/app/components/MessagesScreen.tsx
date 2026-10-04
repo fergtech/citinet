@@ -23,6 +23,7 @@ import { LiveThumbnail } from './comms/LiveThumbnail';
 import { CommsAvatar } from './comms/CommsAvatar';
 import { ensureBackfill, ingestMessages, initForHub, searchMessages } from '../services/messageSearchIndex';
 import { notificationsService } from '../services/notificationsService';
+import { setActiveConversation } from '../utils/notificationAlert';
 import { isOnline } from '../utils/presence';
 import { formatCallDuration } from '../lib/comms/use-elapsed';
 import type { HubConversation, HubMessage, HubMember, HubConversationMediaItem, LiveCommsItem, HubCallEvent } from '../types/hub';
@@ -843,6 +844,38 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
     }, POLL_INTERVAL);
     return () => clearInterval(timer);
   }, [selectedId, slug, loadMessages, loadCallEvents]);
+
+  // A conversation that's open AND actually being looked at has no unread
+  // messages by definition — anything arriving via the poll above is seen the
+  // moment it renders. Without this, the tile badge and bell count/dot climb
+  // for every incoming message even though the thread is on screen. Skips a
+  // hidden tab (a backgrounded tab with the thread open genuinely hasn't been
+  // seen) and catches up when the tab becomes visible again.
+  const lastMessageId = messages[messages.length - 1]?.id;
+  const lastMessageIsIncoming = messages.length > 0 && messages[messages.length - 1].sender_id !== myUserId;
+  useEffect(() => {
+    if (!slug || !selectedId || selectedId.startsWith('draft')) return;
+    const markSeen = () => {
+      if (document.visibilityState !== 'visible') return;
+      notificationsService.markReadByRef(slug, selectedId, 'message');
+      setUnreadConvIds(prev => {
+        if (!prev.has(selectedId)) return prev;
+        const next = new Set(prev);
+        next.delete(selectedId);
+        return next;
+      });
+    };
+    if (lastMessageIsIncoming) markSeen();
+    document.addEventListener('visibilitychange', markSeen);
+    return () => document.removeEventListener('visibilitychange', markSeen);
+  }, [slug, selectedId, lastMessageId, lastMessageIsIncoming]);
+
+  // Tell the notification chime/badge which thread is open (see
+  // utils/notificationAlert.ts).
+  useEffect(() => {
+    setActiveConversation(selectedId && !selectedId.startsWith('draft') ? selectedId : null);
+    return () => setActiveConversation(null);
+  }, [selectedId]);
 
   // Poll who's typing — a faster, cheap poll (in-memory on the server, no DB hit)
   // separate from the main message poll so the indicator feels responsive.
@@ -2276,7 +2309,7 @@ export function MessagesScreen({ onBack, onNavigate }: MessagesScreenProps) {
                         <AttachTrayItem icon={NotebookPen} label="Note" disabled />
                         <AttachTrayItem icon={Users} label="Space" disabled />
                         <AttachTrayItem icon={CalendarDays} label="Event" disabled />
-                        <AttachTrayItem icon={Sparkles} label="Project / initiative" disabled />
+                        <AttachTrayItem icon={Sparkles} label="Project" disabled />
                       </motion.div>
                     </>
                   )}

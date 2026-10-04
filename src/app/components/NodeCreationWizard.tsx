@@ -939,7 +939,7 @@ export function NodeCreationWizard({ onComplete, onBack }: NodeCreationWizardPro
                     { id: 'files',       label: 'Files',        icon: '/icons/onboard/files.png',       desc: 'Shared file storage' },
                     { id: 'discover',    label: 'Discover',     icon: '/icons/onboard/discover.png',    desc: 'Community resources and links' },
                     { id: 'toolkit',     label: 'Resources',    icon: '/icons/onboard/resources.png',   desc: 'Tools and local resources' },
-                    { id: 'initiatives', label: 'Initiatives',  icon: '/icons/onboard/initiatives-1.png', desc: 'Community projects and goals' },
+                    { id: 'initiatives', label: 'Projects',  icon: '/icons/onboard/initiatives-1.png', desc: 'Community projects and goals' },
                     { id: 'network',     label: 'Network',      icon: '/icons/onboard/network.png',     desc: 'Hub network map and stats' },
                     { id: 'mod-log',     label: 'Decisions',    icon: '/icons/onboard/log.png',         desc: 'A public record of what was voted on and decided' },
                   ];

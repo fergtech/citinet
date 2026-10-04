@@ -41,11 +41,15 @@ const { execFile } = require('child_process');
 const busboy = require('busboy');
 const { PassThrough } = require('stream');
 const Minio = require('minio');
-const { sendEmail } = require('./mailer');
+const { sendEmail, resolveConfig: resolveEmailConfig, RESERVED_EMAIL_PATTERN } = require('./mailer');
+const { createAccountExportRouter } = require('./accountExport');
+const { createStackHealth } = require('./stackHealth');
+const { createOpsSettings } = require('./opsSettings');
+const { createHubToolsRouter } = require('./hubTools');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
 const { startBlogSync } = require('./blogSyncHeartbeat');
-const { initCommsDb, createCommsRouter, registerCallEventHistoryRoute, attachCommsSignaling, livekitConfigured } = require('./comms');
+const { pushToUser, initCommsDb, createCommsRouter, registerCallEventHistoryRoute, attachCommsSignaling, livekitConfigured } = require('./comms');
 // open-graph-scraper is ESM-only (v6+) — imported dynamically inside the route
 
 const app = express();
@@ -849,6 +853,14 @@ async function initDb() {
     await client.query(
       `ALTER TABLE hub_post_polls ADD COLUMN IF NOT EXISTS pending_user_id UUID REFERENCES hub_users(id) ON DELETE CASCADE`,
     );
+    // The copy below writes hub_posts.visibility, but that column is otherwise only added
+    // much later in this routine. On a brand-new database (a newly created hub) the INSERT
+    // therefore ran before the column existed and the whole init failed — leaving every
+    // table after this point uncreated. Existing hubs never noticed because the column had
+    // been added on an earlier boot. Adding it here too is idempotent.
+    await client.query(
+      `ALTER TABLE hub_posts ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'inherit'`,
+    );
     // ID-preserving data copy — reuses hub_polls.id as the new hub_posts.id so every
     // inbound reference (hub_requests.poll_id, vote rows, old share links) keeps
     // resolving to the same UUID. ON CONFLICT DO NOTHING makes this safe to re-run.
@@ -1002,6 +1014,21 @@ async function initDb() {
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_hub_notifications_user_unread
       ON hub_notifications(user_id, read) WHERE read = false
+    `);
+    // Email delivery marker (see sendNotificationDigests). When the column is first
+    // added, everything that already exists is stamped as handled so deploying this
+    // doesn't email people their whole backlog of old unread notifications.
+    const { rowCount: hadEmailedAt } = await client.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'hub_notifications' AND column_name = 'emailed_at'`,
+    );
+    if (!hadEmailedAt) {
+      await client.query(`ALTER TABLE hub_notifications ADD COLUMN emailed_at TIMESTAMPTZ`);
+      await client.query(`UPDATE hub_notifications SET emailed_at = NOW()`);
+    }
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hub_notifications_unemailed
+      ON hub_notifications(created_at) WHERE emailed_at IS NULL AND read = false
     `);
     // Spaces
     await client.query(`
@@ -1764,19 +1791,56 @@ function emailCopyForNotification(type, actorName, hubName) {
   }
 }
 
-/** Records an in-app notification and, if the recipient has an email on file and
- * hasn't opted out (hub_user_preferences key 'email_notifications', default on),
- * sends a matching email. Fire-and-forget safe — never throws into the caller. */
+// Notification types where waiting makes no sense: the person isn't looking at
+// the app (new account) or it's an admin action item. Everything else is held
+// back and only emailed if it's still unread after EMAIL_NOTIFY_DELAY_MIN.
+const EMAIL_IMMEDIATE_TYPES = new Set(['account_approved', 'join_request']);
+const EMAIL_NOTIFY_DELAY_MIN = 10;
+const EMAIL_NOTIFY_MAX_AGE_HOURS = 24; // never email something older than this
+const EMAIL_DIGEST_MAX_ITEMS = 10;
+
+const escHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+/** Builds and sends one email covering one or more notification lines. */
+async function sendNotificationEmail(to, items) {
+  const hubName = process.env.HUB_NAME || 'your hub';
+  const tunnelUrl = (process.env.TUNNEL_URL || '').replace(/\/$/, '');
+  const footer = 'You can turn off email notifications in Account Settings.';
+  const shown = items.slice(0, EMAIL_DIGEST_MAX_ITEMS);
+  const more = items.length - shown.length;
+  const subject = items.length === 1
+    ? items[0].subject
+    : `${items.length} new notifications on ${hubName}`;
+  const lines = shown.map((i) => i.line);
+  if (more > 0) lines.push(`…and ${more} more.`);
+  return sendEmail({
+    to,
+    subject: `[${hubName}] ${subject}`,
+    text: `${lines.join('\n')}${tunnelUrl ? `\n\n${tunnelUrl}` : ''}\n\n${footer}`,
+    html: `${lines.map((l) => `<p>${escHtml(l)}</p>`).join('')}${tunnelUrl ? `<p><a href="${escHtml(tunnelUrl)}">Open ${escHtml(hubName)}</a></p>` : ''}<p style="color:#888;font-size:12px">${footer}</p>`,
+  });
+}
+
+/** Records an in-app notification. Urgent types (EMAIL_IMMEDIATE_TYPES) are also
+ * emailed right away; the rest are picked up by sendNotificationDigests if the
+ * recipient hasn't read them in time. Email goes only to recipients with an
+ * address on file who haven't opted out (hub_user_preferences key
+ * 'email_notifications', default on). Fire-and-forget safe — never throws. */
 async function notifyUser(userId, type, actorId, refId) {
+  let notifId = null;
   try {
-    await pool.query(
-      `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, $2, $3, $4)`,
+    const ins = await pool.query(
+      `INSERT INTO hub_notifications (user_id, type, actor_id, ref_id) VALUES ($1, $2, $3, $4) RETURNING id`,
       [userId, type, actorId, refId],
     );
+    notifId = ins.rows[0]?.id ?? null;
+    pushToUser(userId, { type: 'notification', notification_type: type, ref_id: refId });
   } catch (err) {
     console.error('Notification insert failed:', err.message);
   }
 
+  if (!EMAIL_IMMEDIATE_TYPES.has(type) || notifId === null) return;
   try {
     const { rows } = await pool.query(
       `SELECT u.email,
@@ -1790,22 +1854,78 @@ async function notifyUser(userId, type, actorId, refId) {
     );
     const recipient = rows[0];
     if (!recipient?.email || recipient.email_notifications !== 'true') return;
-
-    const hubName = process.env.HUB_NAME || 'your hub';
-    const tunnelUrl = (process.env.TUNNEL_URL || '').replace(/\/$/, '');
-    const actorName = recipient.actor_username || 'Someone';
-    const { subject, line } = emailCopyForNotification(type, actorName, hubName);
+    const { subject, line } = emailCopyForNotification(
+      type, recipient.actor_username || 'Someone', process.env.HUB_NAME || 'your hub',
+    );
     if (!subject) return;
-
-    const footer = 'You can turn off email notifications in Account Settings.';
-    await sendEmail({
-      to: recipient.email,
-      subject,
-      text: `${line}${tunnelUrl ? `\n\n${tunnelUrl}` : ''}\n\n${footer}`,
-      html: `<p>${line}</p>${tunnelUrl ? `<p><a href="${tunnelUrl}">Open ${hubName}</a></p>` : ''}<p style="color:#888;font-size:12px">${footer}</p>`,
-    });
+    const r = await sendNotificationEmail(recipient.email, [{ subject, line }]);
+    if (r.sent) await pool.query(`UPDATE hub_notifications SET emailed_at = NOW() WHERE id = $1`, [notifId]);
   } catch (err) {
     console.error('Notification email failed:', err.message);
+  }
+}
+
+let digestRunning = false;
+let digestBackoffUntil = 0;
+
+/** "In case you miss it" email: once a minute, bundles each person's still-unread,
+ * not-yet-emailed notifications older than EMAIL_NOTIFY_DELAY_MIN into ONE email.
+ * Reading something in-app (which flips read=true) before then means no email,
+ * so active users aren't spammed. Rows are claimed (emailed_at set) before
+ * sending so overlapping runs can't double-send, and released on failure. */
+async function sendNotificationDigests() {
+  if (digestRunning || Date.now() < digestBackoffUntil) return;
+  digestRunning = true;
+  try {
+    if (!(await resolveEmailConfig())) return; // no relay configured — leave rows untouched
+    const { rows } = await pool.query(
+      `UPDATE hub_notifications n SET emailed_at = NOW()
+         FROM hub_users u
+         LEFT JOIN hub_user_preferences p ON p.user_id = u.id AND p.key = 'email_notifications'
+        WHERE n.user_id = u.id
+          AND n.emailed_at IS NULL AND n.read = false
+          AND n.created_at < NOW() - make_interval(mins => $1)
+          AND n.created_at > NOW() - make_interval(hours => $2)
+          AND COALESCE(u.email, '') <> ''
+          AND u.email !~* $3
+          AND COALESCE(p.value, 'true') = 'true'
+        RETURNING n.id, n.user_id, n.type, n.actor_id, u.email`,
+      [EMAIL_NOTIFY_DELAY_MIN, EMAIL_NOTIFY_MAX_AGE_HOURS, RESERVED_EMAIL_PATTERN],
+    );
+    if (!rows.length) return;
+
+    const actorIds = [...new Set(rows.map((r) => r.actor_id).filter(Boolean))];
+    const names = new Map();
+    if (actorIds.length) {
+      const a = await pool.query(`SELECT id, username FROM hub_users WHERE id = ANY($1::uuid[])`, [actorIds]);
+      a.rows.forEach((r) => names.set(r.id, r.username));
+    }
+
+    const byUser = new Map();
+    for (const r of rows) {
+      if (!byUser.has(r.user_id)) byUser.set(r.user_id, { email: r.email, ids: [], items: [] });
+      const g = byUser.get(r.user_id);
+      g.ids.push(r.id);
+      const copy = emailCopyForNotification(
+        r.type, names.get(r.actor_id) || 'Someone', process.env.HUB_NAME || 'your hub',
+      );
+      if (copy.subject) g.items.push(copy);
+    }
+
+    for (const g of byUser.values()) {
+      if (!g.items.length) continue;
+      const r = await sendNotificationEmail(g.email, g.items);
+      if (!r.sent) {
+        await pool.query(`UPDATE hub_notifications SET emailed_at = NULL WHERE id = ANY($1::int[])`, [g.ids]);
+        digestBackoffUntil = Date.now() + 10 * 60 * 1000; // relay is failing — don't hammer it
+        console.error('Notification digest failed:', r.error || 'send failed');
+        break;
+      }
+    }
+  } catch (err) {
+    console.error('Notification digest error:', err.message);
+  } finally {
+    digestRunning = false;
   }
 }
 
@@ -2530,11 +2650,22 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
     website,
     profile_visibility,
     location_visible,
+    email,
   } = req.body || {};
   const VALID_VISIBILITY = ['public', 'hub', 'private'];
   const fields = [];
   const values = [];
   let idx = 1;
+
+  // The address used for email notifications and the System-tab test email.
+  // An empty string clears it ('' is also what signup stores when none is given).
+  if (email !== undefined) {
+    const e = String(email || '').trim();
+    if (e && (e.length > 255 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e)))
+      return res.status(400).json({ error: 'Enter a valid email address' });
+    fields.push(`email = $${idx++}`);
+    values.push(e);
+  }
 
   if (display_name !== undefined) {
     fields.push(`display_name = $${idx++}`);
@@ -2598,7 +2729,7 @@ app.patch('/api/auth/profile', authenticate, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE hub_users SET ${fields.join(', ')} WHERE id = $${idx}
-       RETURNING id AS user_id, username, display_name, location, location_visible, bio, tags, avatar_url, is_admin, created_at, updated_at,
+       RETURNING id AS user_id, username, email, display_name, location, location_visible, bio, tags, avatar_url, is_admin, created_at, updated_at,
                  profile_headline, banner_mode, banner_color, banner_gradient_from, banner_gradient_to, banner_image_file_name, website, profile_visibility`,
       values,
     );
@@ -3015,12 +3146,16 @@ app.get('/api/conversations/:id/messages', authenticate, async (req, res) => {
 
     // Fire-and-forget read receipt: fetching a conversation's messages (on open,
     // and on every poll while it stays open) is treated as "read up to now".
-    pool
-      .query(
-        `UPDATE hub_conversation_members SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
-        [id, req.user.id],
-      )
-      .catch(() => {});
+    // `?peek=1` opts out — used by the account data export, which reads every
+    // conversation in bulk and must not mark them all read as a side effect.
+    if (req.query.peek !== '1') {
+      pool
+        .query(
+          `UPDATE hub_conversation_members SET last_read_at = NOW() WHERE conversation_id = $1 AND user_id = $2`,
+          [id, req.user.id],
+        )
+        .catch(() => {});
+    }
 
     const ATTACH_AGG = `
       COALESCE(
@@ -4027,6 +4162,14 @@ app.patch('/api/folders/:id', authenticate, async (req, res) => {
 // ── Comms (calls, broadcasts, rooms) ──────────────────────
 app.use('/api/comms', createCommsRouter({ pool, authenticate, express }));
 registerCallEventHistoryRoute(app, pool, authenticate);
+app.use('/api/me/export', createAccountExportRouter({ pool, authenticate, express }));
+const stackHealth = createStackHealth({ pool, authenticate, express, sidecarUrl: ADMIN_SIDECAR_URL, sidecarToken: ADMIN_SIDECAR_TOKEN });
+app.use('/api/internal', stackHealth.internal);
+app.use('/api/admin/stack', stackHealth.admin);
+const opsSettings = createOpsSettings({ pool, authenticate, express, sidecarToken: ADMIN_SIDECAR_TOKEN });
+app.use('/api/admin/ops', opsSettings.admin);
+app.use('/api/internal', opsSettings.internal);
+app.use('/api/tools', createHubToolsRouter({ express }));
 
 // ── Notifications ─────────────────────────────────────────
 
@@ -11767,6 +11910,9 @@ async function start() {
       })
       .catch(() => {});
   }, 5000);
+
+  // Email people about notifications they haven't read yet (see sendNotificationDigests)
+  setInterval(() => sendNotificationDigests().catch(() => {}), 60 * 1000);
 
   // Purge expired sessions every 6 hours
   setInterval(

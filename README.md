@@ -47,6 +47,8 @@ See [docs/vision.md](./docs/vision.md) for the full picture of where this is hea
 | Notification badges — unread counts on dashboard tiles | ✅ |
 | Profile customization — banner, avatar, headline, bio, links | ✅ |
 | Navigation customization — per-account reorder/pin, synced across devices | ✅ |
+| Account data export — download your own data (or just parts: Atlas pins, files, messages, notes…) as a zip, decrypted on-device | ✅ |
+| Portable account package — move your account to another hub: one encrypted file (data + encryption keys) imported on the new hub; you choose what comes over | ✅ |
 | Online presence — live "who's here now" count | ✅ |
 | Hub app integrations — third-party apps via open contract | ✅ |
 | Dark mode | ✅ |
@@ -288,7 +290,7 @@ docker push ghcr.io/fergtech/citinet-api:latest
 | POST | `/api/comms/call/ring` | ✅ | Start ringing a 1:1 call |
 
 This is a representative subset, not the full surface — `api/server.js` has 190+ routes
-covering initiatives, spaces, atlas, messaging, comms (calls/broadcasts), files, and more;
+covering projects, spaces, atlas, messaging, comms (calls/broadcasts), files, and more;
 search `server.js` directly for the full list.
 
 ---

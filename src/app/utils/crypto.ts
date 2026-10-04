@@ -180,6 +180,51 @@ export async function setContentKey(hubSlug: string, jwk: JsonWebKey): Promise<v
   await idbSet(slot(hubSlug, 'content_key'), jwk);
 }
 
+/** Everything that makes up an account's encryption identity. */
+export interface KeyMaterial {
+  ecdh_private: JsonWebKey;
+  ecdh_public: JsonWebKey;
+  content_key: JsonWebKey;
+}
+
+/**
+ * Read this hub's full key material out of IndexedDB, for a portable account
+ * package. Returns null if any part is missing (e.g. a device that never
+ * restored its keys) — a package must never silently ship half an identity.
+ */
+export async function exportKeyMaterial(hubSlug: string): Promise<KeyMaterial | null> {
+  const [priv, pub, content] = await Promise.all([
+    idbGet(slot(hubSlug, 'ecdh_private')) as Promise<JsonWebKey | undefined>,
+    idbGet(slot(hubSlug, 'ecdh_public'))  as Promise<JsonWebKey | undefined>,
+    idbGet(slot(hubSlug, 'content_key'))  as Promise<JsonWebKey | undefined>,
+  ]);
+  if (!priv || !pub || !content) return null;
+  return { ecdh_private: priv, ecdh_public: pub, content_key: content };
+}
+
+/**
+ * Install key material from a portable package as this hub's keys. Validates
+ * that every part actually imports as the right kind of key, and that the public
+ * key really belongs to the private key, BEFORE writing anything — a corrupt or
+ * mismatched package must not overwrite working keys. Returns the public key JWK
+ * string to register with the hub.
+ */
+export async function importKeyMaterial(hubSlug: string, km: KeyMaterial): Promise<{ publicKeyJwk: string }> {
+  const ecdh = { name: 'ECDH', namedCurve: 'P-256' } as const;
+  await crypto.subtle.importKey('jwk', km.ecdh_private, ecdh, true, ['deriveKey', 'deriveBits']);
+  await crypto.subtle.importKey('jwk', km.ecdh_public, ecdh, true, []);
+  await crypto.subtle.importKey('jwk', km.content_key, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
+  if (km.ecdh_private.x !== km.ecdh_public.x || km.ecdh_private.y !== km.ecdh_public.y) {
+    throw new Error('The package\'s public key does not match its private key.');
+  }
+  await Promise.all([
+    idbSet(slot(hubSlug, 'ecdh_private'), km.ecdh_private),
+    idbSet(slot(hubSlug, 'ecdh_public'),  km.ecdh_public),
+    idbSet(slot(hubSlug, 'content_key'),  km.content_key),
+  ]);
+  return { publicKeyJwk: JSON.stringify(km.ecdh_public) };
+}
+
 /** Remove all keys for this hub from IndexedDB (on logout / account deletion). */
 export async function clearKeys(hubSlug: string): Promise<void> {
   await Promise.all([

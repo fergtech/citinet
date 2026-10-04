@@ -1,3 +1,4 @@
+import { postCategoryLabel } from '../utils/postCategory';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Compass, Layers, Target, Wrench, Calendar, Users, Hexagon,
@@ -28,7 +29,7 @@ interface DiscoverScreenProps {
 const SECTIONS: { value: FilterId; label: string; icon: LucideIcon }[] = [
   { value: 'all', label: 'All', icon: Compass },
   { value: 'spaces', label: 'Spaces', icon: Layers },
-  { value: 'initiatives', label: 'Initiatives', icon: Target },
+  { value: 'initiatives', label: 'Projects', icon: Target },
   { value: 'resources', label: 'Resources', icon: Wrench },
   { value: 'events', label: 'Events', icon: Calendar },
   { value: 'people', label: 'People', icon: Users },
@@ -454,7 +455,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     const topIni = [...initiatives].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') || b.progress - a.progress)[0];
     if (topIni) {
       items.push({
-        id: `i-${topIni.id}`, title: topIni.title, meta: `Initiatives · ${topIni.progress}% complete`,
+        id: `i-${topIni.id}`, title: topIni.title, meta: `Project · ${topIni.progress}% complete`,
         gradient: 'var(--cn-grad-initiatives)', icon: Target, onClick: () => onNavigate('initiatives'),
       });
     }
@@ -479,7 +480,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
     for (const p of searchResults!.posts) {
       rows.push({
         key: `p-${p.id}`, title: p.title || p.body?.slice(0, 60) || 'Untitled',
-        meta: `${p.category.charAt(0)}${p.category.slice(1).toLowerCase()} · ${p.author_username ?? 'Unknown'}`,
+        meta: `${postCategoryLabel(p.category)} · ${p.author_username ?? 'Unknown'}`,
         gradient: p.category === 'EVENT' ? 'var(--cn-grad-atlas)' : 'var(--cn-grad-feed)',
         icon: p.category === 'EVENT' ? Calendar : MessageCircle,
         score: p.score, onClick: () => setSelectedPost(p),
@@ -569,7 +570,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search spaces, initiatives, resources, people, hubs…"
+            placeholder="Search spaces, projects, resources, people, hubs…"
             className="w-full h-[46px] pl-10 pr-4 rounded-xl border cn-border cn-surface-2 cn-text-1 text-sm placeholder:cn-text-4 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           />
         </div>
@@ -649,7 +650,7 @@ export function DiscoverScreen({ onBack, onNavigate, onViewProfile }: DiscoverSc
 
         {!loading && (showAll || filter === 'initiatives') && featuredInitiatives.length > 0 && (
           <section>
-            <SectionHeading title="Featured initiatives" sub="Community projects residents are building" onSeeAll={showAll ? () => setFilter('initiatives') : undefined} />
+            <SectionHeading title="Featured projects" sub="Community projects residents are building" onSeeAll={showAll ? () => setFilter('initiatives') : undefined} />
             <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
               {(showAll ? featuredInitiatives : filteredInitiatives).map(i => (
                 <InitiativeCard key={i.id} ini={i} onClick={() => onNavigate('initiatives')} />

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { setNotificationSoundEnabled, useNotificationSoundEnabled, playNotificationSound } from '../utils/notificationAlert';
 
 /** Compress an image file to JPEG using canvas — scales down if > maxDim, targets quality 0.82. */
 function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File> {
@@ -32,6 +33,10 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
 }
 import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle, Share2 } from 'lucide-react';
 import { canNativeShare, nativeShare } from '../utils/share';
+import { AccountExportCard } from './AccountExportCard';
+import { MovePackageCard } from './MovePackageCard';
+import { ImportPackageCard } from './ImportPackageCard';
+import { Download } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -244,6 +249,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     try {
       await hubService.updateProfile(currentHub.slug, {
         displayName: displayName.trim() || currentUser?.displayName,
+        email: email.trim(),
         location: location.trim(),
         bio: bio.trim(),
         tags,
@@ -252,7 +258,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         profileVisibility,
         locationVisible,
       });
-      if (email.trim()) updateUserProfile({ email: email.trim() });
+      // updateProfile above already saved the email on the hub; this just syncs
+      // the in-memory user so the UI reflects it without a reload.
+      updateUserProfile({ email: email.trim() });
       setIsDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -414,7 +422,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const roleLabel = isAdmin ? '★ Hub Admin' : role.charAt(0).toUpperCase() + role.slice(1);
 
-  type Section = 'profile' | 'appearance' | 'notifications' | 'security' | 'hub' | 'danger';
+  type Section = 'profile' | 'appearance' | 'notifications' | 'security' | 'hub' | 'data' | 'danger';
   const [activeSection, setActiveSection] = useState<Section>('profile');
 
   const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; danger?: boolean }[] = [
@@ -423,6 +431,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     { id: 'notifications', label: 'Notifications', icon: Bell    },
     { id: 'security',      label: 'Security',      icon: Lock    },
     { id: 'hub',           label: 'Connected Hub', icon: Server },
+    { id: 'data',          label: 'Your Data',     icon: Download },
     { id: 'danger',        label: 'Delete Account', icon: Trash2, danger: true },
   ];
 
@@ -814,6 +823,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   );
 
   const emailNotificationsEnabled = userPreferences.email_notifications !== 'false';
+  const notificationSoundEnabled = useNotificationSoundEnabled();
 
   const notificationsSection = (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 p-6">
@@ -827,12 +837,28 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         </p>
       )}
       <button
+        onClick={() => {
+          const next = !notificationSoundEnabled;
+          setNotificationSoundEnabled(next);
+          if (next) playNotificationSound();
+        }}
+        className="w-full flex items-center gap-3 py-1 mb-4 text-left"
+      >
+        <div className="flex-1">
+          <p className="text-sm font-medium text-slate-900 dark:text-white">Notification sound</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Play a chime when something new arrives while this tab is open. Applies to this browser only.</p>
+        </div>
+        <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${notificationSoundEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${notificationSoundEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+        </span>
+      </button>
+      <button
         onClick={() => updateUserPreferences({ email_notifications: emailNotificationsEnabled ? 'false' : 'true' })}
         className="w-full flex items-center gap-3 py-1 text-left"
       >
         <div className="flex-1">
           <p className="text-sm font-medium text-slate-900 dark:text-white">Email notifications</p>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">Get an email for new messages, replies to your posts, and Space invites — the same things you get notified about in-app.</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">If you haven't read a notification in-app after about 10 minutes, get one email covering new messages, replies to your posts, Space invites and the like.</p>
         </div>
         <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${emailNotificationsEnabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
           <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${emailNotificationsEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -1048,6 +1074,13 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     notifications: notificationsSection,
     security: securitySection,
     hub: hubSection,
+    data: currentHub?.slug ? (
+      <div className="space-y-4">
+        <AccountExportCard hubSlug={currentHub.slug} hubName={currentHub.name} />
+        <MovePackageCard hubSlug={currentHub.slug} hubName={currentHub.name} />
+        <ImportPackageCard hubSlug={currentHub.slug} hubName={currentHub.name} />
+      </div>
+    ) : null,
     danger: dangerSection,
   };
 
