@@ -2140,17 +2140,59 @@ class HubService {
 
   /** List posts on the hub, newest first. Optionally filter by category. */
   async listPosts(hubSlug: string, category?: string, opts?: { limit?: number; order?: 'newest' }): Promise<HubPost[]> {
+    return (await this.listPostsPage(hubSlug, category, opts)).posts;
+  }
+
+  /**
+   * One page of posts plus whether the server says more follow. `after` is the
+   * last post of the previous page — the server's keyset cursor is
+   * (my_viewed, created_at, id), so it must be a post as returned by the
+   * server (carrying its my_viewed at fetch time).
+   */
+  async listPostsPage(
+    hubSlug: string,
+    category?: string,
+    opts?: { limit?: number; order?: 'newest'; after?: Pick<HubPost, 'id' | 'created_at' | 'my_viewed' | 'rank_fresh' | 'rank_m1' | 'rank_m2' | 'rank_m3'> },
+  ): Promise<{ posts: HubPost[]; hasMore: boolean }> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const query = new URLSearchParams();
     if (category) query.set('category', category);
     if (opts?.limit !== undefined) query.set('limit', String(opts.limit));
     if (opts?.order) query.set('order', opts.order);
+    if (opts?.after) {
+      if (opts.order !== 'newest') {
+        query.set('before_viewed', String(!!opts.after.my_viewed));
+        query.set('before_fresh', String(opts.after.rank_fresh ?? 0));
+        query.set('before_m1', String(opts.after.rank_m1 ?? 0));
+        query.set('before_m2', String(opts.after.rank_m2 ?? 0));
+        query.set('before_m3', String(opts.after.rank_m3 ?? 0));
+      }
+      query.set('before_created_at', opts.after.created_at);
+      query.set('before_id', opts.after.id);
+    }
     const qs = query.toString();
     const params = qs ? `?${qs}` : '';
     const response = await fetch(`${tunnelUrl}/api/posts${params}`, { headers });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     const data = await response.json();
-    return Array.isArray(data) ? data : (data.posts || []);
+    if (Array.isArray(data)) return { posts: data, hasMore: false };
+    const posts: HubPost[] = data.posts || [];
+    return { posts, hasMore: data.hasMore === true };
+  }
+
+  /** Whole-hub per-category post counts (for the Feed's filter pills). Null
+   * if the hub's API predates GET /api/posts/counts — callers fall back to
+   * counting what's loaded. */
+  async getPostCounts(hubSlug: string): Promise<Record<string, number> | null> {
+    try {
+      const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+      const response = await fetch(`${tunnelUrl}/api/posts/counts`, { headers });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data && typeof data.counts === 'object' ? data.counts : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Real relevance-ranked search across posts/members/local spaces (and, for

@@ -85,10 +85,11 @@ function getVariant(mediaFileName?: string | null): 'text' | 'image' | 'video' {
 
 // ── Right Rail ───────────────────────────────────────────────
 
-function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCount, onFilterChange, onSavedToggle, onNavigateToProfile }: {
-  hubName: string;
+function RightRail({ hubSlug, posts, categoryCounts, activeFilter, savedOnly, savedCount, onFilterChange, onSavedToggle, onNavigateToProfile }: {
   hubSlug: string;
   posts: HubPost[];
+  /** Whole-hub per-category totals; null when the hub can't provide them. */
+  categoryCounts: Record<string, number> | null;
   activeFilter: string | null;
   savedOnly: boolean;
   savedCount: number;
@@ -96,12 +97,6 @@ function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCoun
   onSavedToggle: () => void;
   onNavigateToProfile?: (userId: string) => void;
 }) {
-  const { currentHub } = useHub();
-  // Kept live by HubContext's existing 60s /api/status poll (currentHub.meta)
-  // — no extra fetch needed here.
-  const activeMembers = currentHub?.meta?.activeMembers;
-  const onlineNow = currentHub?.meta?.onlineNow;
-
   // Ranked from whatever's already loaded in `posts` — no extra fetch.
   // Real hub members only: proxied/external-source posts have no local
   // author to rank or link to a profile.
@@ -123,10 +118,6 @@ function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCoun
     <div className="flex flex-col gap-4">
       {/* Hub info */}
       <div className="cn-glass rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="cn-live-dot w-1.5 h-1.5 shrink-0" />
-          <span className="cn-eyebrow">{hubName}</span>
-        </div>
         <p className="text-xs cn-text-3 leading-relaxed">
           Posts are visible to verified members of this hub only. No exploitative algorithms. Nothing manipulative or hidden.
         </p>
@@ -146,7 +137,7 @@ function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCoun
               {savedCount > 0 && <span className="text-[10px] opacity-70">{savedCount}</span>}
             </button>
             {CAT_TABS.map(({ value, label }) => {
-              const count = posts.filter(post => post.category === value).length;
+              const count = Math.max(categoryCounts?.[value] ?? 0, posts.filter(post => post.category === value).length);
               const selected = activeFilter === value;
               return (
                 <button
@@ -167,48 +158,25 @@ function RightRail({ hubName, hubSlug, posts, activeFilter, savedOnly, savedCoun
         </div>
       </div>
 
-      {/* Hub pulse — live member/online counts (same /api/status data the
-          dashboard's Node Status card uses) plus this feed's top
-          contributors. Replaces the old per-category post-count list, which
-          just re-stated numbers already visible on the pill filters above
-          the feed. */}
-      <div className="cn-glass rounded-2xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="cn-live-dot w-1.5 h-1.5 shrink-0" />
-          <span className="cn-eyebrow">Hub pulse</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-[11px] cn-text-3 mb-0.5">Members</div>
-            <div className="font-mono text-xl font-bold cn-text-1">{activeMembers ?? '—'}</div>
-          </div>
-          <div>
-            <div className="text-[11px] cn-text-3 mb-0.5">Online now</div>
-            <div className="font-mono text-xl font-bold cn-text-1">{onlineNow ?? '—'}</div>
+      {topContributors.length > 0 && (
+        <div className="cn-glass rounded-2xl p-4">
+          <span className="text-sm font-semibold cn-text-1 block mb-3">Top contributors</span>
+          <div className="flex flex-col gap-2">
+            {topContributors.map(c => (
+              <button
+                key={c.authorId}
+                onClick={() => onNavigateToProfile?.(c.authorId)}
+                disabled={!onNavigateToProfile}
+                className="flex items-center gap-2 w-full text-left disabled:cursor-default hover:opacity-80 transition-opacity"
+              >
+                <AvatarCircle authorId={c.authorId} authorUsername={c.username} authorAvatarUrl={hubService.getAvatarUrl(hubSlug, c.authorId) ?? undefined} size="sm" />
+                <span className="text-sm cn-text-2 truncate flex-1">{c.username}</span>
+                <span className="cn-mono text-xs cn-text-4">{c.count}</span>
+              </button>
+            ))}
           </div>
         </div>
-
-        {topContributors.length > 0 && (
-          <>
-            <div className="mt-3.5 mb-3 h-px cn-border border-t" />
-            <span className="text-[11px] cn-text-3 block mb-2">Top contributors</span>
-            <div className="flex flex-col gap-2">
-              {topContributors.map(c => (
-                <button
-                  key={c.authorId}
-                  onClick={() => onNavigateToProfile?.(c.authorId)}
-                  disabled={!onNavigateToProfile}
-                  className="flex items-center gap-2 w-full text-left disabled:cursor-default hover:opacity-80 transition-opacity"
-                >
-                  <AvatarCircle authorId={c.authorId} authorUsername={c.username} authorAvatarUrl={hubService.getAvatarUrl(hubSlug, c.authorId) ?? undefined} size="sm" />
-                  <span className="text-sm cn-text-2 truncate flex-1">{c.username}</span>
-                  <span className="cn-mono text-xs cn-text-4">{c.count}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      )}
 
       {/* Guidelines */}
       <div className="cn-glass rounded-2xl p-4">
@@ -1594,6 +1562,53 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
 
 // ── Feed ──────────────────────────────────────────────────────
 
+/** Fresh posts win over any same-id post already held; older held posts the
+ * fresh page doesn't mention (earlier-loaded pages) are kept. */
+function mergePosts(fresh: HubPost[], prev: HubPost[]): HubPost[] {
+  const freshIds = new Set(fresh.map(p => p.id));
+  return [...fresh, ...prev.filter(p => !freshIds.has(p.id))];
+}
+
+/** Same ordering the server applies (unread-first optional, then newest). */
+/** A post's ranking key as first seen this session (see `rankAtFirstSight` in
+ * Feed) — not live — so opening a post, or a like landing during the 30s
+ * refresh, doesn't make it hop around under the user's cursor. */
+interface RankKey { viewed: boolean; fresh: number; m1: number; m2: number; m3: number; pinned: boolean }
+
+function rankKeyOf(p: HubPost): RankKey {
+  return {
+    viewed: !!p.my_viewed,
+    fresh: p.rank_fresh ?? 0,
+    m1: p.rank_m1 ?? 0,
+    m2: p.rank_m2 ?? 0,
+    m3: p.rank_m3 ?? 0,
+    pinned: false,
+  };
+}
+
+/** Mirrors the server's unread-first ORDER BY (api/server.js GET /api/posts):
+ * unseen first, then this-week's posts, then the per-type popularity metrics
+ * in priority order, then newest. `newest` mode is plain created_at. */
+function compareFeed(a: HubPost, b: HubPost, unreadFirst: boolean, key: (p: HubPost) => RankKey): number {
+  if (unreadFirst) {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka.pinned !== kb.pinned) return ka.pinned ? -1 : 1;
+    if (ka.viewed !== kb.viewed) return ka.viewed ? 1 : -1;
+    if (ka.fresh !== kb.fresh) return kb.fresh - ka.fresh;
+    if (ka.m1 !== kb.m1) return kb.m1 - ka.m1;
+    if (ka.m2 !== kb.m2) return kb.m2 - ka.m2;
+    if (ka.m3 !== kb.m3) return kb.m3 - ka.m3;
+  }
+  const t = +new Date(b.created_at) - +new Date(a.created_at);
+  if (t !== 0) return t;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+function sortFeed(list: HubPost[], unreadFirst: boolean, key: (p: HubPost) => RankKey): HubPost[] {
+  return [...list].sort((a, b) => compareFeed(a, b, unreadFirst, key));
+}
+
 export function Feed({ onBack, onNavigate }: FeedProps) {
   const { currentHub, currentUser, userPreferences, updateUserPreferences } = useHub();
   const hubSlug = currentHub?.slug ?? '';
@@ -1627,6 +1642,18 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     HUB_CATEGORIES.find(cat => cat.hubFocus === currentHub?.hubFocus)?.feedDefaultFilter ?? null
   );
   const [savedOnly, setSavedOnly] = useState(false);
+  // Paging. `posts` accumulates every page loaded (all-feed and per-category);
+  // each paging "chain" (feed order × category) remembers its own keyset
+  // cursor so a category chain never skips over rows the all-feed chain
+  // happened to load.
+  const chainRef = useRef<Map<string, { end: HubPost | null; extended: boolean }>>(new Map());
+  const [hasMoreByScope, setHasMoreByScope] = useState<Record<string, boolean>>({});
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
+  const rankAtFirstSight = useRef<Map<string, RankKey>>(new Map());
+  // Whole-hub per-category totals (GET /api/posts/counts); null until loaded
+  // or when the hub's API predates the endpoint.
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number> | null>(null);
   // Account-synced bookmark — same saved-items pattern as Atlas pins/Exchange
   // listings/vendors (see useSavedIds). Shared between every post's Bookmark
   // button (feed cards + detail view) and the "Saved" filter chip below.
@@ -1802,8 +1829,23 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const postData = await hubService.listPosts(hubSlug, undefined, feedOrder === 'newest' ? { order: 'newest' } : undefined);
-      setPosts(postData);
+      const [page, counts] = await Promise.all([
+        hubService.listPostsPage(hubSlug, undefined, feedOrder === 'newest' ? { order: 'newest' } : undefined),
+        hubService.getPostCounts(hubSlug),
+      ]);
+      const postData = page.posts;
+      // Merge, don't replace: a refresh only re-reads the first page, and
+      // must not throw away older pages the user already scrolled through.
+      setPosts(prev => mergePosts(postData, prev));
+      if (counts) setCategoryCounts(counts);
+      // Only (re)seed the paging chain from this first page while nothing
+      // beyond it has been loaded — otherwise keep the chain's real end.
+      const key = `${feedOrder}:`;
+      const chain = chainRef.current.get(key);
+      if (!chain || !chain.extended) {
+        chainRef.current.set(key, { end: postData[postData.length - 1] ?? null, extended: false });
+        setHasMoreByScope(m => ({ ...m, [key]: page.hasMore }));
+      }
       writeCache(hubSlug, feedCacheKey, postData);
     } catch (err) {
       // Leave whatever's already on screen (fresh or cache-seeded) alone —
@@ -1839,7 +1881,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         | { hubSlug: string; kind: 'vote'; postId: string };
       if (detail.hubSlug !== hubSlug) return;
       if (detail.kind === 'post') {
-        setPosts(prev => prev.some(p => p.id === detail.post.id) ? prev : [detail.post, ...prev]);
+        rankAtFirstSight.current.set(detail.post.id, { ...rankKeyOf(detail.post), pinned: true });
+        setPosts(prev => prev.some(p => p.id === detail.post.id) ? prev : [{ ...detail.post, my_viewed: true }, ...prev]);
       }
       setQueueBanner({ text: `A queued ${detail.kind} was sent.`, tone: 'ok' });
       setTimeout(() => setQueueBanner(null), 4000);
@@ -1860,11 +1903,101 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
 
   // Posts already come back chronologically sorted from the API — polls are just
   // another post category now, no separate fetch/merge needed.
+  // The feed only holds the pages loaded so far (and excludes space-only
+  // posts), but saved ids can point at either — Spaces/Discover share the
+  // same bookmark list. In Saved view, fetch any saved post that isn't
+  // already loaded directly by id so the "Saved N" count always matches
+  // what's shown. Ids that 404 (deleted/no access) are remembered so we
+  // don't re-request them.
+  const [savedExtra, setSavedExtra] = useState<HubPost[]>([]);
+  const missingSavedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!savedOnly || !hubSlug) return;
+    const have = new Set([...posts, ...savedExtra].map(p => p.id));
+    const need = savedPostIds.filter(id => !have.has(id) && !missingSavedRef.current.has(id));
+    if (need.length === 0) return;
+    let cancelled = false;
+    Promise.all(need.map(id =>
+      hubService.getPost(hubSlug, id).catch(() => { missingSavedRef.current.add(id); return null; }),
+    )).then(found => {
+      if (cancelled) return;
+      const ok = found.filter((p): p is HubPost => !!p);
+      if (ok.length) setSavedExtra(prev => [...prev, ...ok.filter(p => !prev.some(x => x.id === p.id))]);
+    });
+    return () => { cancelled = true; };
+  }, [savedOnly, savedPostIds, posts, savedExtra, hubSlug]);
+
   const filteredPosts = useMemo(() => {
-    return posts
+    const base = savedOnly
+      ? [...posts, ...savedExtra.filter(e => !posts.some(p => p.id === e.id))]
+      : posts;
+    const unreadFirst = !savedOnly && feedOrder !== 'newest';
+    // Pin each post's seen-state to what it was when this session first saw
+    // it. Opening a post (or the 30s refresh learning it's now viewed) then
+    // never reorders the list under the reader; a reload re-sorts for real.
+    const seen = rankAtFirstSight.current;
+    for (const p of base) if (!seen.has(p.id)) seen.set(p.id, rankKeyOf(p));
+    const viewed = (p: HubPost) => seen.get(p.id) ?? rankKeyOf(p);
+    // The unfiltered list stops at the all-feed paging cursor: category
+    // fetches also merge older posts into `posts`, which would otherwise
+    // show up here out of sequence ahead of the pages in between.
+    const end = !activeFilter && !savedOnly ? chainRef.current.get(`${feedOrder}:`)?.end : null;
+    const filtered = base
       .filter(p => !activeFilter || p.category === activeFilter)
-      .filter(p => !savedOnly || savedPostIds.includes(p.id));
-  }, [posts, activeFilter, savedOnly, savedPostIds]);
+      .filter(p => !savedOnly || savedPostIds.includes(p.id))
+      .filter(p => !end || compareFeed(p, end, unreadFirst, viewed) <= 0);
+    return sortFeed(filtered, unreadFirst, viewed);
+  }, [posts, savedExtra, activeFilter, savedOnly, savedPostIds, feedOrder]);
+
+  // Load the next page of the current scope (all posts, or one category).
+  // First call for a category (no chain yet) fetches that category's first page.
+  const scopeKey = `${feedOrder}:${activeFilter ?? ''}`;
+  const hasMore = !savedOnly && hasMoreByScope[scopeKey] !== false;
+  const loadMore = useCallback(async () => {
+    if (!hubSlug || loadingMoreRef.current) return;
+    const chain = chainRef.current.get(scopeKey);
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await hubService.listPostsPage(hubSlug, activeFilter ?? undefined, {
+        limit: 20,
+        order: feedOrder === 'newest' ? 'newest' : undefined,
+        after: chain?.end ?? undefined,
+      });
+      setPosts(prev => mergePosts(page.posts, prev));
+      chainRef.current.set(scopeKey, { end: page.posts[page.posts.length - 1] ?? chain?.end ?? null, extended: true });
+      setHasMoreByScope(m => ({ ...m, [scopeKey]: page.hasMore }));
+    } catch {
+      // Leave hasMore as-is so the "Load more" button lets the user retry.
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [hubSlug, scopeKey, activeFilter, feedOrder]);
+
+  // Selecting a category whose pages haven't been fetched yet: pull its first
+  // page right away so the list reflects the whole hub, not just whichever of
+  // its posts happened to be in the all-feed's first 20.
+  useEffect(() => {
+    if (!activeFilter || savedOnly || loading) return;
+    if (chainRef.current.has(scopeKey)) return;
+    void loadMore();
+  }, [activeFilter, savedOnly, loading, scopeKey, loadMore]);
+
+  // Infinite scroll: when the sentinel under the list comes into view, fetch
+  // the next page. Re-created as the list grows so a sentinel that is still
+  // on screen after a short page triggers another load.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore || loading) return;
+    if (activeFilter && !chainRef.current.has(scopeKey)) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) void loadMore();
+    }, { rootMargin: '400px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loading, filteredPosts.length, loadMore, activeFilter, scopeKey, selectedPost]);
 
   // A post's detail view lives at /feed/:postId — real, shareable, survives refresh/back.
   // These only ever touch the URL; the effect above is solely responsible for reacting
@@ -1915,7 +2048,13 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     }
   }
 
-  function handleCreated(post: HubPost) { setPosts(prev => [post, ...prev]); }
+  // Your own post counts as seen server-side (so after a reload it sorts with
+  // the seen group), but for this session pin it to the top — you just wrote
+  // it and expect to see it there.
+  function handleCreated(post: HubPost) {
+    rankAtFirstSight.current.set(post.id, { ...rankKeyOf(post), pinned: true });
+    setPosts(prev => [{ ...post, my_viewed: true }, ...prev]);
+  }
   function handlePostDeleted(postId: string) {
     setPosts(prev => prev.filter(p => p.id !== postId));
     if (selectedPost?.id === postId) closePost();
@@ -2101,11 +2240,13 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   <div ref={chipContentRef} className="flex items-center gap-2">
                     <button
                       onClick={() => void updateUserPreferences({ feed_order: feedOrder === 'newest' ? 'unread_first' : 'newest' })}
-                      title={feedOrder === 'newest' ? 'Showing newest first. Click to show unread posts first.' : 'Showing unread posts first, then newest. Click for plain newest-first.'}
+                      title={feedOrder === 'newest'
+                        ? 'Showing newest first. Click for unread-first, then popular.'
+                        : 'Unread posts first; within that, this week’s posts, ranked by popularity for their type (events: going, likes, comments; polls: votes, likes, comments; others: likes, comments, views), then newest. Click for plain newest-first.'}
                       className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15 transition-all"
                     >
                       <ArrowDownUp className="w-3.5 h-3.5" />
-                      {feedOrder === 'newest' ? 'Newest first' : 'Unread first'}
+                      {feedOrder === 'newest' ? 'Newest first' : 'Unread & popular'}
                     </button>
                     <button
                       onClick={() => setSavedOnly(s => !s)}
@@ -2119,7 +2260,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       Saved{savedPostIds.length > 0 ? ` (${savedPostIds.length})` : ''}
                     </button>
                     {CAT_TABS.map(({ value, label }) => {
-                      const count = posts.filter(p => p.category === value).length;
+                      const loadedCount = posts.filter(p => p.category === value).length;
+                      const count = Math.max(categoryCounts?.[value] ?? 0, loadedCount);
                       return (
                         <button
                           key={value}
@@ -2190,7 +2332,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               )}
 
               {/* Empty */}
-              {!loading && !error && filteredPosts.length === 0 && (
+              {!loading && !error && filteredPosts.length === 0 && !loadingMore && (
                 <div className="flex flex-col items-center justify-center py-16 text-center cn-glass rounded-2xl">
                   <p className="cn-text-3 text-sm mb-3">
                     {savedOnly
@@ -2297,14 +2439,31 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   </div>
                 );
               })}
+
+              {/* Paging footer — the sentinel auto-loads the next page as it
+                  scrolls into view; the button is the manual/retry path. */}
+              {!loading && !error && hasMore && (
+                <div ref={sentinelRef} className="flex items-center justify-center py-6">
+                  {loadingMore ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                  ) : (
+                    <button
+                      onClick={() => void loadMore()}
+                      className="px-4 py-2 rounded-xl bg-black/5 dark:bg-white/5 text-sm cn-text-2 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                    >
+                      Load more
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Right rail — desktop only */}
             <div className="hidden lg:block sticky top-7 self-start">
               <RightRail
-                hubName={currentHub?.name ?? 'Hub'}
                 hubSlug={hubSlug}
                 posts={posts}
+                categoryCounts={categoryCounts}
                 activeFilter={activeFilter}
                 savedOnly={savedOnly}
                 savedCount={savedPostIds.length}

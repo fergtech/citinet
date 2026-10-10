@@ -4634,21 +4634,43 @@ app.get('/api/posts', authenticate, async (req, res) => {
     // yet, which was exactly the gap this replaces (see the "does this make
     // logical sense" conversation this came out of — unseen-first only
     // worked within whatever page was already fetched, not the whole hub).
-    const myViewedExpr = `EXISTS(SELECT 1 FROM hub_post_views v WHERE v.post_id = p.id AND v.user_id = $${myUserIdParam})`;
+    // Your own posts count as already seen: "unread first" is about what
+    // other people posted that you haven't opened, so your own never jump
+    // the queue ahead of them (they stay in the feed, newest-first, with
+    // the seen group). The same expression drives the cursor below, so
+    // paging stays consistent with the ordering.
+    const myViewedExpr = `(p.author_id = $${myUserIdParam} OR EXISTS(SELECT 1 FROM hub_post_views v WHERE v.post_id = p.id AND v.user_id = $${myUserIdParam}))`;
 
-    // Keyset ("seek") pagination on (my_viewed, created_at, id), not OFFSET —
-    // a client passes back the last post it already has (?before_viewed=&
-    // before_created_at=&before_id=) and gets whatever comes after it in the
-    // same ORDER BY. Stays correct under concurrent inserts (OFFSET N can
-    // skip or duplicate a row across two page fetches when a new post lands
-    // in between) and doesn't get slower paging deep into a hub's history
-    // the way OFFSET does. my_viewed is ASC (unseen/false first) while
-    // created_at/id are DESC, so "comes after" in this 3-key order means:
-    // strictly more-viewed, OR equally-viewed with an older created_at, OR
-    // equally-viewed and same created_at with a smaller id (id is the
-    // tiebreaker for posts sharing a created_at timestamp — bulk-imported/
-    // seeded data, or same-millisecond posts).
-    // ?order=newest skips the unread-first step entirely: plain created_at DESC, id DESC.
+    // Popularity ranking, per post type, applied inside the unseen/seen
+    // groups of the default ("unread first") order. Metrics are compared
+    // strictly in priority order (most first, ties fall through to the next):
+    //   EVENT  : going (RSVPs), likes, comments
+    //   POLL   : votes, likes, comments
+    //   others : likes, comments, views
+    // A "fresh" band (posted in the last 7 days) sorts ahead of older posts
+    // so a brand-new post isn't buried under old posts that have simply had
+    // longer to collect likes. Deterministic and explainable: no hidden
+    // weights, no decay formula. ?order=newest ignores all of this.
+    const likesE = `(SELECT COUNT(*) FROM hub_post_likes l2 WHERE l2.post_id = p.id)`;
+    const repliesE = `(SELECT COUNT(*) FROM hub_post_replies r2 WHERE r2.post_id = p.id)`;
+    const viewsE = `(SELECT COUNT(*) FROM hub_post_views v2 WHERE v2.post_id = p.id)`;
+    const rsvpsE = `(SELECT COUNT(*) FROM hub_event_rsvps e2 WHERE e2.post_id = p.id)`;
+    const votesE = `(SELECT COUNT(*) FROM hub_post_poll_votes pv2 WHERE pv2.post_id = p.id)`;
+    const freshExpr = `(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END)`;
+    const m1Expr = `(CASE p.category WHEN 'EVENT' THEN ${rsvpsE} WHEN 'POLL' THEN ${votesE} ELSE ${likesE} END)::int`;
+    const m2Expr = `(CASE WHEN p.category IN ('EVENT','POLL') THEN ${likesE} ELSE ${repliesE} END)::int`;
+    const m3Expr = `(CASE WHEN p.category IN ('EVENT','POLL') THEN ${repliesE} ELSE ${viewsE} END)::int`;
+
+    // Keyset ("seek") pagination, not OFFSET — a client passes back the key
+    // values of the last post it already has and gets whatever comes after it
+    // in the same ORDER BY. Stays correct under concurrent inserts and doesn't
+    // slow down paging deep into a hub's history. The client sends the values
+    // the post had when it was fetched (rank_* fields on each post), so the
+    // position is stable even if that post's counts have since moved.
+    // "After" for each key in ORDER BY order is: this key beyond the cursor's,
+    // OR all earlier keys equal and this one beyond. id is the final
+    // tiebreaker (bulk-imported/same-millisecond posts).
+    // ?order=newest skips unread-first and popularity: plain created_at DESC, id DESC.
     const newestFirst = req.query.order === 'newest';
     let cursorClause = '';
     if (newestFirst && req.query.before_created_at && req.query.before_id) {
@@ -4657,15 +4679,22 @@ app.get('/api/posts', authenticate, async (req, res) => {
       const idParam = params.length;
       cursorClause = ` AND (p.created_at < $${createdAtParam} OR (p.created_at = $${createdAtParam} AND p.id < $${idParam}))`;
     } else if (req.query.before_viewed !== undefined && req.query.before_created_at && req.query.before_id) {
-      params.push(req.query.before_viewed === 'true', req.query.before_created_at, req.query.before_id);
-      const viewedParam = params.length - 2;
-      const createdAtParam = params.length - 1;
-      const idParam = params.length;
-      cursorClause = ` AND (
-        ${myViewedExpr} > $${viewedParam}
-        OR (${myViewedExpr} = $${viewedParam} AND p.created_at < $${createdAtParam})
-        OR (${myViewedExpr} = $${viewedParam} AND p.created_at = $${createdAtParam} AND p.id < $${idParam})
-      )`;
+      const int = (v) => Math.max(0, parseInt(v, 10) || 0);
+      const keys = [
+        { expr: myViewedExpr, val: req.query.before_viewed === 'true', cmp: '>' },   // unseen (false) first
+        { expr: freshExpr,    val: int(req.query.before_fresh), cmp: '<' },
+        { expr: m1Expr,       val: int(req.query.before_m1),    cmp: '<' },
+        { expr: m2Expr,       val: int(req.query.before_m2),    cmp: '<' },
+        { expr: m3Expr,       val: int(req.query.before_m3),    cmp: '<' },
+        { expr: 'p.created_at', val: req.query.before_created_at, cmp: '<' },
+        { expr: 'p.id',         val: req.query.before_id,         cmp: '<' },
+      ];
+      const ps = keys.map(k => { params.push(k.val); return `$${params.length}`; });
+      const branches = keys.map((k, i) => {
+        const eq = keys.slice(0, i).map((e, j) => `${e.expr} = ${ps[j]}`);
+        return `(${[...eq, `${k.expr} ${k.cmp} ${ps[i]}`].join(' AND ')})`;
+      });
+      cursorClause = ` AND (${branches.join(' OR ')})`;
     }
 
     const combinedWhere = where
@@ -4685,6 +4714,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
               EXISTS(SELECT 1 FROM hub_post_likes l WHERE l.post_id = p.id AND l.user_id = $${myUserIdParam}) AS my_liked,
               (SELECT COUNT(*) FROM hub_post_views v WHERE v.post_id = p.id)::int AS view_count,
               ${myViewedExpr} AS my_viewed,
+              ${freshExpr} AS rank_fresh, ${m1Expr} AS rank_m1, ${m2Expr} AS rank_m2, ${m3Expr} AS rank_m3,
               pp.options AS poll_options, pp.closes_at AS poll_closes_at, pp.closed AS poll_closed,
               pp.request_id AS poll_request_id, pp.quorum_pct AS poll_quorum_pct, pp.pass_pct AS poll_pass_pct,
               rq.problem AS poll_request_problem
@@ -4695,7 +4725,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
        LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
        LEFT JOIN hub_requests rq ON rq.id = pp.request_id
        ${combinedWhere}
-       ORDER BY ${newestFirst ? '' : `${myViewedExpr} ASC, `}p.created_at DESC, p.id DESC
+       ORDER BY ${newestFirst ? '' : `${myViewedExpr} ASC, ${freshExpr} DESC, ${m1Expr} DESC, ${m2Expr} DESC, ${m3Expr} DESC, `}p.created_at DESC, p.id DESC
        LIMIT $${params.length + 1}`,
       [...params, lim],
     );
@@ -4709,6 +4739,30 @@ app.get('/api/posts', authenticate, async (req, res) => {
   } catch (err) {
     console.error('List posts error:', err);
     res.status(500).json({ error: 'Failed to list posts' });
+  }
+});
+
+// Per-category post counts for the Feed's filter pills — the whole feed the
+// caller can see (same space/visibility/block rules as GET /api/posts), not
+// just whatever page the client has loaded. Registered before /api/posts/:id.
+app.get('/api/posts/counts', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.category, COUNT(*)::int AS n
+         FROM hub_posts p
+        WHERE (p.space_id IS NULL OR p.shared_to_feed = TRUE)
+          AND (p.visibility != 'private' OR p.author_id = $1)
+          AND ${blockedPairClause('p.author_id', 1)}
+        GROUP BY p.category`,
+      [req.user.id],
+    );
+    const counts = {};
+    let total = 0;
+    for (const r of rows) { counts[r.category] = r.n; total += r.n; }
+    res.json({ counts, total });
+  } catch (err) {
+    console.error('Post counts error:', err);
+    res.status(500).json({ error: 'Failed to count posts' });
   }
 });
 

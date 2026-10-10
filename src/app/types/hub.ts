@@ -419,6 +419,14 @@ export interface HubPost {
   my_liked?: boolean;
   /** Whether the caller has already opened this post (hub_post_views) — Home's "seen" rule. */
   my_viewed?: boolean;
+  /** Feed ranking keys from GET /api/posts (unread-first order): `rank_fresh`
+   * is 1 for posts from the last 7 days; m1..m3 are the per-type popularity
+   * metrics in priority order (EVENT: going/likes/comments, POLL:
+   * votes/likes/comments, else likes/comments/views). Also the keyset cursor. */
+  rank_fresh?: number;
+  rank_m1?: number;
+  rank_m2?: number;
+  rank_m3?: number;
   /** Present only when category === 'POLL'. */
   poll?: HubPostPoll;
 }
