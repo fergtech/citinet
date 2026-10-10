@@ -48,9 +48,9 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
 
         {/* Headline */}
         <h1 className="text-foreground mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
-          Your new local
+          A digital home
           <br />
-          <span className="text-muted-foreground font-medium">digital ecosystem.</span>
+          <span className="text-muted-foreground font-medium">for your community.</span>
         </h1>
 
         {/* Subtext */}
