@@ -9,3 +9,9 @@ api/registryHeartbeat.js
 api/blogSyncHeartbeat.js
 api/package.json
 api/package-lock.json
+api/accountExport.js
+api/externalFeeds.js
+api/hubTools.js
+api/opsSettings.js
+api/stackHealth.js
+api/seed
