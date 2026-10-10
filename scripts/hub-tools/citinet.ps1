@@ -63,6 +63,47 @@ function Cid($s) { $r = Dc ps -aq $s 2>$null; if ($r) { return ([string]($r | Se
 function StateOf($c)  { if (-not $c) { return '' }; ([string](docker inspect -f '{{.State.Status}}' $c 2>$null)).Trim() }
 function HealthOf($c) { if (-not $c) { return '' }; ([string](docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $c 2>$null)).Trim() }
 function NeedDocker { $null = docker info 2>$null; if ($LASTEXITCODE -ne 0) { Die "Docker isn't running. Start Docker Desktop and wait for it to say 'running', then try again." } }
+# -- address pre-flight ---------------------------------------------------------
+# docker-compose.yml can publish the API on this machine's LAN / Tailscale address (${LAN_IP},
+# ${TAILSCALE_IP} from .env). If that address has gone (moved Ethernet -> Wi-Fi, DHCP changed it,
+# Tailscale logged out) Docker can't bind it and the API never starts, with only a cryptic
+# "can't bind on the specified endpoint". Catch it first and say what to do.
+function LocalIps {
+  try { @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress }) } catch { @() }
+}
+# One object per stale address: Fatal = compose publishes on it. Empty when all is fine, or when
+# the machine's addresses can't be read.
+function AddrProblems {
+  $ips = @(LocalIps); if ($ips.Count -eq 0) { return @() }
+  $composeText = [System.IO.File]::ReadAllText((Join-Path $HubDir 'docker-compose.yml'))
+  $found = @()
+  foreach ($name in 'LAN_IP', 'TAILSCALE_IP') {
+    $val = (EnvGet $name).Trim('"').Trim("'")
+    if (-not $val -or ($ips -contains $val)) { continue }
+    $found += [pscustomobject]@{ Name = $name; Value = $val; Fatal = [bool]($composeText -match ('\$\{' + $name + '\}:')) }
+  }
+  return $found
+}
+function AddrHint($name) {
+  if ($name -eq 'TAILSCALE_IP') { return 'Is Tailscale logged in? Check with: tailscale ip -4 - then set TAILSCALE_IP in .env' }
+  return 'Check your current address (run: ipconfig) and set LAN_IP in .env'
+}
+# Gate for commands that (re)create containers. Returns $false (after explaining) if one can't start.
+function PreflightAddrs {
+  $ok = $true
+  foreach ($p in @(AddrProblems)) {
+    if ($p.Fatal) {
+      $ok = $false
+      Write-Host "x $($p.Name)=$($p.Value) (in $(Join-Path $HubDir '.env')) is not an address on this machine, and docker-compose.yml publishes the API on it." -ForegroundColor Red
+      Write-Host "  Addresses present now: $((@(LocalIps) | Where-Object { $_ -notlike '127.*' -and $_ -notlike '169.254.*' }) -join ', ')" -ForegroundColor Red
+      Write-Host "  $(AddrHint $p.Name)" -ForegroundColor Red
+    } else {
+      Write-Host "! $($p.Name)=$($p.Value) is not an address on this machine (not fatal here, but anything using it is stale). $(AddrHint $p.Name)" -ForegroundColor Yellow
+    }
+  }
+  if (-not $ok) { Write-Host '  Fix that, then re-run this command.' -ForegroundColor Red }
+  return $ok
+}
 function ApiHealth { try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://127.0.0.1:$ApiPort/health"; return $r.Content } catch { return $null } }
 
 # -- status ---------------------------------------------------------------------
@@ -95,6 +136,10 @@ function Cmd-Diagnose {
   else {
     $missing = @('DB_PASSWORD', 'JWT_SECRET', 'STORAGE_ACCESS_KEY', 'STORAGE_SECRET_KEY') | Where-Object { -not (EnvGet $_) }
     if (-not $missing) { Ok '.env has its required secrets' } else { Bad (".env has blank values: " + ($missing -join ' ')) 'Blank passwords make services restart forever - restore them from your setup script / password manager' }
+    foreach ($p in @(AddrProblems)) {
+      if ($p.Fatal) { Bad "$($p.Name)=$($p.Value) is not an address on this machine, and the compose file publishes the API on it - the API can't start" "$(AddrHint $p.Name), then .\citinet.ps1 fix" }
+      else { Warn2 "$($p.Name)=$($p.Value) is not an address on this machine, so anything using it is stale" (AddrHint $p.Name) }
+    }
   }
 
   Head1 'Containers'
@@ -154,6 +199,7 @@ function Cmd-Diagnose {
 # -- fix ------------------------------------------------------------------------
 function Cmd-Fix {
   NeedDocker
+  if (-not (PreflightAddrs)) { Say ''; Cmd-Diagnose; exit 1 }
   Say 'Starting anything that should be running (your data is never touched)...'
   Dc up -d
   Say ''; Cmd-Diagnose
@@ -174,7 +220,7 @@ function Cmd-Restart {
   if ($t -eq 'all') { Say 'Restarting every service...'; Dc restart }
   else { $s = Norm $t; if (-not (HasService $s)) { Die "No such service: $s" }; Say "Restarting $s..."; Dc restart $s }
 }
-function Cmd-Start { NeedDocker; Dc up -d }
+function Cmd-Start { NeedDocker; if (-not (PreflightAddrs)) { exit 1 }; Dc up -d }
 function Cmd-Stop {
   NeedDocker; $a = Read-Host 'Stop the whole hub? Members will be disconnected. [y/N]'
   if ($a -match '^(y|yes)$') { Dc stop } else { Say 'Cancelled.' }
@@ -267,6 +313,7 @@ function Cmd-Update {
   }
   if (-not $plan) { Die 'Nothing to update.' }
   if ($dry) { Say ''; Say 'Dry run - nothing was changed.'; return }
+  if (-not (PreflightAddrs)) { Die 'Update cancelled - nothing changed.' }
 
   Head1 '1/4  Backing up first'
   if (-not (Do-BackupNow)) { $a = Read-Host '  Backup did not finish cleanly. Continue the update anyway? [y/N]'; if ($a -notmatch '^(y|yes)$') { Die 'Update cancelled - nothing changed.' } }
@@ -299,6 +346,7 @@ function Cmd-Update {
 
 function Cmd-Rollback {
   NeedDocker; $targets = @($Rest | ForEach-Object { Norm $_ }); if (-not $targets) { $targets = $DefaultUpdate }
+  if (-not (PreflightAddrs)) { return }
   foreach ($s in $targets) {
     if (-not (HasService $s)) { continue }
     $img = ImgOf $s; $repo = ($img -replace ':[^:/]+$', ''); $prev = RollbackTags $repo | Select-Object -First 1

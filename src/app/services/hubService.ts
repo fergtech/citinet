@@ -2139,11 +2139,12 @@ class HubService {
   // ──────────────────────────────────────────────
 
   /** List posts on the hub, newest first. Optionally filter by category. */
-  async listPosts(hubSlug: string, category?: string, opts?: { limit?: number }): Promise<HubPost[]> {
+  async listPosts(hubSlug: string, category?: string, opts?: { limit?: number; order?: 'newest' }): Promise<HubPost[]> {
     const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
     const query = new URLSearchParams();
     if (category) query.set('category', category);
     if (opts?.limit !== undefined) query.set('limit', String(opts.limit));
+    if (opts?.order) query.set('order', opts.order);
     const qs = query.toString();
     const params = qs ? `?${qs}` : '';
     const response = await fetch(`${tunnelUrl}/api/posts${params}`, { headers });

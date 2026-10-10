@@ -49,23 +49,59 @@ function Run([string]$what, [scriptblock]$cmd) {
     & $cmd
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)." }
 }
-function ImageId($ref) { ([string](docker image inspect -f '{{.Id}}' $ref 2>$null)).Trim() }
+# "$(...)" not [string](...): in Windows PowerShell 5.1 a [string] cast of empty command output
+# yields $null, and .Trim() on that throws.
+function ImageId($ref) { "$(docker image inspect -f '{{.Id}}' $ref 2>$null)".Trim() }
 function ContainerImageId($svc) {
-    $cid = ([string](docker compose -f $ComposeFile ps -q $svc 2>$null)).Trim()
+    $cid = "$(docker compose -f $ComposeFile ps -q $svc 2>$null)".Trim()
     if (-not $cid) { return '' }
-    ([string](docker inspect -f '{{.Image}}' $cid 2>$null)).Trim()
+    "$(docker inspect -f '{{.Image}}' $cid 2>$null)".Trim()
 }
 function ContainerHealthy($svc) {
-    $cid = ([string](docker compose -f $ComposeFile ps -q $svc 2>$null)).Trim()
+    $cid = "$(docker compose -f $ComposeFile ps -q $svc 2>$null)".Trim()
     if (-not $cid) { return $false }
-    $st = ([string](docker inspect -f '{{.State.Status}}' $cid)).Trim()
-    $h  = ([string](docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $cid)).Trim()
+    $st = "$(docker inspect -f '{{.State.Status}}' $cid)".Trim()
+    $h  = "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $cid)".Trim()
     return ($st -eq 'running' -and (-not $h -or $h -eq 'healthy'))
 }
 
 if (-not (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) { Write-Error "Docker Compose file not found: $ComposeFile"; exit 1 }
 $null = docker info 2>$null
 if ($LASTEXITCODE -ne 0) { Write-Error "Docker isn't running. Start Docker Desktop first."; exit 1 }
+
+# Pre-flight: compose can publish the API on this machine's LAN / Tailscale address (${LAN_IP},
+# ${TAILSCALE_IP} from the hub's .env). If that address is no longer on this machine - e.g. you
+# moved from Ethernet to Wi-Fi, or Tailscale is logged out - Docker can't bind it and the API
+# container never starts. Catch that up front with a plain-English message instead.
+$envFile = Join-Path (Split-Path -Parent $ComposeFile) '.env'
+if (Test-Path -LiteralPath $envFile -PathType Leaf) {
+    $envText = [System.IO.File]::ReadAllText($envFile)
+    $composeText = [System.IO.File]::ReadAllText($ComposeFile)
+    $localIps = @()
+    try { $localIps = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress }) } catch {}
+    if ($localIps.Count -gt 0) {
+        $addrProblem = $false
+        foreach ($name in 'LAN_IP', 'TAILSCALE_IP') {
+            $m = [regex]::Match($envText, "(?m)^$name=(.+?)\s*$")
+            if (-not $m.Success) { continue }
+            $val = $m.Groups[1].Value.Trim().Trim('"').Trim("'")
+            if (-not $val -or $localIps -contains $val) { continue }
+            $bound = $composeText -match ('\$\{' + $name + '\}:')   # published in a ports: entry => fatal if missing
+            $others = ($localIps | Where-Object { $_ -notlike '127.*' -and $_ -notlike '169.254.*' }) -join ', '
+            $hint = if ($name -eq 'TAILSCALE_IP') { "Is Tailscale logged in? (run: tailscale ip -4)" } else { "Check your current address (Windows: ipconfig, Mac/Linux: ip addr or ifconfig), then set $name in $envFile." }
+            if ($bound) {
+                Write-Host "x $name=$val (in $envFile) is not an address on this machine, and docker-compose.yml publishes the API on it." -ForegroundColor Red
+                Write-Host "  Addresses present now: $others" -ForegroundColor Red
+                Write-Host "  $hint" -ForegroundColor Red
+                $addrProblem = $true
+            } else {
+                Write-Host "!  $name=$val (in $envFile) is not an address on this machine. Not fatal here, but anything using it is stale." -ForegroundColor Yellow
+                Write-Host "   Addresses present now: $others. $hint" -ForegroundColor Yellow
+            }
+        }
+        if ($addrProblem -and -not $DryRun) { Write-Host '  Fix that, then re-run this script.' -ForegroundColor Red; exit 1 }
+    }
+}
 
 Push-Location $repoRoot
 try {

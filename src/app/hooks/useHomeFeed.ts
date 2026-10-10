@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readCache, writeCache } from '../utils/dataCache';
-import { seenInitiativeUpdates, seenListings, seenPins, seenPosts } from '../utils/seenStore';
+import { seenExternal, seenInitiativeUpdates, seenListings, seenPins, seenPosts } from '../utils/seenStore';
 import { selectHomeCards, type HomeCardData } from '../utils/homeFeedSelection';
 import { EMPTY_SNAPSHOT, SECTION_COUNT, loadHomeSnapshot, type HomeSnapshot } from '../utils/homeFeedData';
 
@@ -77,12 +77,13 @@ export function useHomeFeed(hubSlug: string, viewer: { userId?: string; names: s
   const seenPinIds = seenPins.useSeenIds();
   const seenListingIds = seenListings.useSeenIds();
   const seenUpdateIds = seenInitiativeUpdates.useSeenIds();
+  const seenExternalIds = seenExternal.useSeenIds();
 
   const namesKey = viewer.names.join('|');
   const cards = useMemo(
-    () => selectHomeCards(snap, { userId: viewer.userId, names: viewer.names, seenPostIds, seenPinIds, seenListingIds, seenUpdateIds }),
+    () => selectHomeCards(snap, { userId: viewer.userId, names: viewer.names, seenPostIds, seenPinIds, seenListingIds, seenUpdateIds, seenExternalIds }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- namesKey stands in for the names array identity.
-    [snap, viewer.userId, namesKey, seenPostIds, seenPinIds, seenListingIds, seenUpdateIds],
+    [snap, viewer.userId, namesKey, seenPostIds, seenPinIds, seenListingIds, seenUpdateIds, seenExternalIds],
   );
 
   return { cards, loading, error, refresh: () => void load(false) };

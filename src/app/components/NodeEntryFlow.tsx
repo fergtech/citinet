@@ -37,8 +37,8 @@ const manifestoPrinciples = [
     description: 'This network is owned and governed by the community, not by corporations or external interests.'
   },
   {
-    title: 'Chronological Feeds',
-    description: 'Information appears in the order it was shared, not ranked by engagement algorithms.'
+    title: 'Time-Ordered Feeds',
+    description: 'Posts are ordered by time: unread first by default, or plain newest-first if you prefer. Nothing is ranked to keep you scrolling, and anything highlighted says why.'
   },
   {
     title: 'Collective Moderation',

@@ -16,6 +16,9 @@ html, body, #root {
 /* Citinet design system tokens */
 @import './citinet-tokens.css';
 
+/* Brand layer: keeps the portal visually in step with citinet-info (loads last on purpose) */
+@import './citinet-brand.css';
+
 /* Slick Carousel */
 @import 'slick-carousel/slick/slick.css';
 @import 'slick-carousel/slick/slick-theme.css';

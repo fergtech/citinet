@@ -46,6 +46,7 @@ const { createAccountExportRouter } = require('./accountExport');
 const { createStackHealth } = require('./stackHealth');
 const { createOpsSettings } = require('./opsSettings');
 const { createHubToolsRouter } = require('./hubTools');
+const { createExternalFeeds } = require('./externalFeeds');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
 const { startBlogSync } = require('./blogSyncHeartbeat');
@@ -4170,6 +4171,9 @@ const opsSettings = createOpsSettings({ pool, authenticate, express, sidecarToke
 app.use('/api/admin/ops', opsSettings.admin);
 app.use('/api/internal', opsSettings.internal);
 app.use('/api/tools', createHubToolsRouter({ express }));
+const externalFeeds = createExternalFeeds({ pool, authenticate, express, ollamaUrl: OLLAMA_URL });
+app.use('/api/external', externalFeeds.member);
+app.use('/api/admin/external-sources', externalFeeds.admin);
 
 // ── Notifications ─────────────────────────────────────────
 
@@ -4644,8 +4648,15 @@ app.get('/api/posts', authenticate, async (req, res) => {
     // equally-viewed and same created_at with a smaller id (id is the
     // tiebreaker for posts sharing a created_at timestamp — bulk-imported/
     // seeded data, or same-millisecond posts).
+    // ?order=newest skips the unread-first step entirely: plain created_at DESC, id DESC.
+    const newestFirst = req.query.order === 'newest';
     let cursorClause = '';
-    if (req.query.before_viewed !== undefined && req.query.before_created_at && req.query.before_id) {
+    if (newestFirst && req.query.before_created_at && req.query.before_id) {
+      params.push(req.query.before_created_at, req.query.before_id);
+      const createdAtParam = params.length - 1;
+      const idParam = params.length;
+      cursorClause = ` AND (p.created_at < $${createdAtParam} OR (p.created_at = $${createdAtParam} AND p.id < $${idParam}))`;
+    } else if (req.query.before_viewed !== undefined && req.query.before_created_at && req.query.before_id) {
       params.push(req.query.before_viewed === 'true', req.query.before_created_at, req.query.before_id);
       const viewedParam = params.length - 2;
       const createdAtParam = params.length - 1;
@@ -4684,7 +4695,7 @@ app.get('/api/posts', authenticate, async (req, res) => {
        LEFT JOIN hub_post_polls pp ON pp.post_id = p.id
        LEFT JOIN hub_requests rq ON rq.id = pp.request_id
        ${combinedWhere}
-       ORDER BY ${myViewedExpr} ASC, p.created_at DESC, p.id DESC
+       ORDER BY ${newestFirst ? '' : `${myViewedExpr} ASC, `}p.created_at DESC, p.id DESC
        LIMIT $${params.length + 1}`,
       [...params, lim],
     );
@@ -7802,6 +7813,13 @@ const PREF_KEYS = [
   'saved_listings',
   'saved_vendors',
   'saved_posts',
+  // Outside (external feeds) -- per-member opt-out, topics (comma list; unset =
+  // fall back to profile tags) and muted source ids (comma list).
+  'external_enabled',
+  'external_topics',
+  'external_muted_sources',
+  // Feed order: 'newest' = plain newest-first; absent = unread posts first, then newest.
+  'feed_order',
 ];
 
 app.get('/api/me/preferences', authenticate, async (req, res) => {
@@ -11893,6 +11911,9 @@ async function start() {
   }
 
   await ensureBucket();
+
+  // Public-web feed sources + shared item cache (Outside cards); self-schedules.
+  externalFeeds.start();
 
   // Non-blocking — discovers missing capabilities from already-connected apps
   backfillAppCapabilities().catch(() => {});

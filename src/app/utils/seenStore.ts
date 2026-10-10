@@ -68,3 +68,4 @@ export const seenPins = createSeenStore('citinet-seen-pins');
 export const seenListings = createSeenStore('citinet-seen-listings');
 export const seenInitiativeUpdates = createSeenStore('citinet-seen-initiative-updates');
 export const seenPosts = createSeenStore('citinet-seen-posts');
+export const seenExternal = createSeenStore('citinet-seen-external');

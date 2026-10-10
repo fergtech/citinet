@@ -71,11 +71,11 @@ export function HubBackground() {
     >
       <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <pattern id="hub-bg-dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" fill="currentColor" className="text-blue-500 dark:text-blue-400" />
+          <pattern id="hub-bg-dots" x="0" y="0" width="18" height="18" patternUnits="userSpaceOnUse">
+            <circle cx="9" cy="9" r="0.9" fill="currentColor" className="text-zinc-400 dark:text-zinc-500" />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill="url(#hub-bg-dots)" opacity="0.05" className="dark:opacity-[0.09]" />
+        <rect width="100%" height="100%" fill="url(#hub-bg-dots)" opacity="0.26" className="dark:opacity-[0.21]" />
       </svg>
     </div>
   );

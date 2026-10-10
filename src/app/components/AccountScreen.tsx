@@ -31,12 +31,13 @@ function compressImage(file: File, maxDim = 1920, quality = 0.82): Promise<File>
     img.src = url;
   });
 }
-import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle, Share2 } from 'lucide-react';
+import { Save, Check, MapPin, Users, Lock, Trash2, Camera, Loader2, ExternalLink, X as XIcon, Palette, ImagePlus, RotateCcw, X, User, Server, KeyRound, Copy, Bell, AlertTriangle, Share2, Globe } from 'lucide-react';
 import { canNativeShare, nativeShare } from '../utils/share';
 import { AccountExportCard } from './AccountExportCard';
 import { MovePackageCard } from './MovePackageCard';
 import { ImportPackageCard } from './ImportPackageCard';
 import { Download } from 'lucide-react';
+import { OutsideSettings } from './OutsideSettings';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { preferencesService } from '../services/preferencesService';
@@ -422,13 +423,14 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
 
   const roleLabel = isAdmin ? '★ Hub Admin' : role.charAt(0).toUpperCase() + role.slice(1);
 
-  type Section = 'profile' | 'appearance' | 'notifications' | 'security' | 'hub' | 'data' | 'danger';
+  type Section = 'profile' | 'appearance' | 'notifications' | 'outside' | 'security' | 'hub' | 'data' | 'danger';
   const [activeSection, setActiveSection] = useState<Section>('profile');
 
   const NAV_ITEMS: { id: Section; label: string; icon: React.ElementType; danger?: boolean }[] = [
     { id: 'profile',       label: 'Profile',       icon: User    },
     { id: 'appearance',    label: 'Appearance',    icon: Palette },
     { id: 'notifications', label: 'Notifications', icon: Bell    },
+    { id: 'outside',       label: 'Outside',       icon: Globe   },
     { id: 'security',      label: 'Security',      icon: Lock    },
     { id: 'hub',           label: 'Connected Hub', icon: Server },
     { id: 'data',          label: 'Your Data',     icon: Download },
@@ -1072,6 +1074,7 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     profile: profileSection,
     appearance: appearanceSection,
     notifications: notificationsSection,
+    outside: <OutsideSettings profileTags={tags} />,
     security: securitySection,
     hub: hubSection,
     data: currentHub?.slug ? (

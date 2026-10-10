@@ -7,7 +7,7 @@ import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
 import { PostComposer, contextualDefaultCategory } from './PostComposer';
 import {
-  Loader2, AlertCircle, RefreshCw, X, Image, Film, Newspaper,
+  Loader2, AlertCircle, RefreshCw, X, Image, Film, Newspaper, ArrowDownUp,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
   MessageCircle, ShieldCheck, ChevronLeft, ChevronRight, ChevronUp, Send, Vote, Plus, Link2,
   MoreVertical, Edit2, Trash2, Clock, Check, CornerDownRight, Heart, Share2, Bookmark, ArrowUpRight,
@@ -1595,8 +1595,12 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
 // ── Feed ──────────────────────────────────────────────────────
 
 export function Feed({ onBack, onNavigate }: FeedProps) {
-  const { currentHub, currentUser } = useHub();
+  const { currentHub, currentUser, userPreferences, updateUserPreferences } = useHub();
   const hubSlug = currentHub?.slug ?? '';
+  // Unread posts first (then newest) is the default; 'newest' is plain chronological. Kept in a separate cache
+  // slot so switching never flashes the other order's posts.
+  const feedOrder = userPreferences.feed_order === 'newest' ? 'newest' : 'unread_first';
+  const feedCacheKey = feedOrder === 'newest' ? 'feed-posts-newest' : 'feed-posts';
   // Real center to bound place search to the hub's own area — falls back to
   // geocoding the hub's free-text location when it has no stored lat/lng
   // (the common case; see useHubGeoCenter). Composing here used to pass
@@ -1613,8 +1617,8 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
   // `!loading` below, so if it stayed true here the cached posts would sit
   // hidden behind the spinner until the very first fetch settles, defeating
   // the whole point of seeding them.
-  const [posts, setPosts] = useState<HubPost[]>(() => readCache<HubPost[]>(hubSlug, 'feed-posts')?.data ?? []);
-  const [loading, setLoading] = useState(() => !readCache<HubPost[]>(hubSlug, 'feed-posts'));
+  const [posts, setPosts] = useState<HubPost[]>(() => readCache<HubPost[]>(hubSlug, feedCacheKey)?.data ?? []);
+  const [loading, setLoading] = useState(() => !readCache<HubPost[]>(hubSlug, feedCacheKey));
   const [error, setError] = useState('');
   // Hubs created via a wizard category with a feedDefaultFilter (e.g. HOA)
   // open straight to that tab instead of the general feed, since that's
@@ -1798,9 +1802,9 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const postData = await hubService.listPosts(hubSlug);
+      const postData = await hubService.listPosts(hubSlug, undefined, feedOrder === 'newest' ? { order: 'newest' } : undefined);
       setPosts(postData);
-      writeCache(hubSlug, 'feed-posts', postData);
+      writeCache(hubSlug, feedCacheKey, postData);
     } catch (err) {
       // Leave whatever's already on screen (fresh or cache-seeded) alone —
       // a failed fetch (e.g. the hub is mid-restart) shouldn't blank the feed.
@@ -1811,12 +1815,12 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
     } finally {
       setLoading(false);
     }
-  }, [hubSlug]);
+  }, [hubSlug, feedOrder, feedCacheKey]);
 
   // Silent (no loading spinner) when cache already seeded `posts` above — a
   // background revalidation, not a first paint. A genuinely first-ever visit
   // (no cache yet) still shows the normal loading state.
-  useEffect(() => { load(!!readCache<HubPost[]>(hubSlug, 'feed-posts')); }, [load]);
+  useEffect(() => { load(!!readCache<HubPost[]>(hubSlug, feedCacheKey)); }, [load]);
   useEffect(() => {
     const id = setInterval(() => load(true), 30_000);
     return () => clearInterval(id);
@@ -2095,6 +2099,14 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       scroll container's own box size, which a container-only observer
                       would never notice. */}
                   <div ref={chipContentRef} className="flex items-center gap-2">
+                    <button
+                      onClick={() => void updateUserPreferences({ feed_order: feedOrder === 'newest' ? 'unread_first' : 'newest' })}
+                      title={feedOrder === 'newest' ? 'Showing newest first. Click to show unread posts first.' : 'Showing unread posts first, then newest. Click for plain newest-first.'}
+                      className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border cn-surface cn-text-3 cn-border hover:border-black/15 dark:hover:border-white/15 transition-all"
+                    >
+                      <ArrowDownUp className="w-3.5 h-3.5" />
+                      {feedOrder === 'newest' ? 'Newest first' : 'Unread first'}
+                    </button>
                     <button
                       onClick={() => setSavedOnly(s => !s)}
                       className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-all ${

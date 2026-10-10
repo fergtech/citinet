@@ -64,8 +64,8 @@ interface HubIconProps {
 }
 
 /** Renders a hub's identity icon — a custom image, or a symbol-on-background preset,
- * falling back to today's hardcoded look (white Hexagon on a blue→purple gradient,
- * or a plain purple Hexagon for the inline variant) when nothing's configured. */
+ * falling back to today's hardcoded look (white Hexagon on the neutral Citinet tile,
+ * or a plain foreground Hexagon for the inline variant) when nothing's configured. */
 export function HubIcon({ hub, baseUrl, size, variant, className = '' }: HubIconProps) {
   if (hub?.hub_icon_mode === 'image' && hub.hub_icon_image_file_name && baseUrl) {
     const url = `${baseUrl.replace(/\/$/, '')}/api/public/files/${encodeURIComponent(hub.hub_icon_image_file_name)}`;
@@ -89,17 +89,19 @@ export function HubIcon({ hub, baseUrl, size, variant, className = '' }: HubIcon
   const solidFillProps = symbolId === 'hexagon' ? { fill: 'currentColor', strokeWidth: 0 } : {};
 
   if (variant === 'inline') {
-    return <Symbol className={`text-blue-500 dark:text-blue-400 shrink-0 ${className}`} style={{ width: size, height: size }} {...solidFillProps} />;
+    return <Symbol className={`text-foreground shrink-0 ${className}`} style={{ width: size, height: size }} {...solidFillProps} />;
   }
 
   const bgMode = hub?.hub_icon_bg_mode ?? 'gradient';
   const background = bgMode === 'solid' && hub?.hub_icon_solid_color
     ? hub.hub_icon_solid_color
-    : `linear-gradient(135deg, ${hub?.hub_icon_gradient_from || '#2563eb'}, ${hub?.hub_icon_gradient_to || '#9333ea'})`;
+    : hub?.hub_icon_gradient_from && hub?.hub_icon_gradient_to
+      ? `linear-gradient(135deg, ${hub.hub_icon_gradient_from}, ${hub.hub_icon_gradient_to})`
+      : 'var(--cn-tile)'; // unconfigured hubs get the neutral Citinet tile, not the old blue-purple gradient
 
   return (
     <span
-      className={`rounded-xl flex items-center justify-center shrink-0 shadow-md ${className}`}
+      className={`rounded-xl flex items-center justify-center shrink-0 ${className}`}
       style={{ width: size, height: size, background }}
     >
       <Symbol className="text-white" style={{ width: size * 0.45, height: size * 0.45 }} {...solidFillProps} />

@@ -21,6 +21,14 @@ export interface UserPreferences {
   saved_listings?: string;
   saved_vendors?: string;
   saved_posts?: string;
+  /** Outside (public-web cards): off until the member turns it on. See api/externalFeeds.js. */
+  external_enabled?: 'true' | 'false';
+  /** Feed order: 'newest' = plain newest-first. Absent = unread posts first, then newest. */
+  feed_order?: 'newest' | 'unread_first';
+  /** Comma-separated topics. Absent/'' = use the member's profile interests. */
+  external_topics?: string;
+  /** Comma-separated external source ids the member muted. */
+  external_muted_sources?: string;
 }
 
 class PreferencesService {

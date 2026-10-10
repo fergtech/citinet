@@ -40,21 +40,21 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           animate={{ y: [0, -10, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         >
-          <div className="w-24 h-24 md:w-32 md:h-32 rounded-3xl backdrop-blur-md bg-white/10 border border-white/20 flex items-center justify-center overflow-hidden">
+          <div className="w-24 h-24 md:w-32 md:h-32 rounded-2xl backdrop-blur-md bg-foreground/5 border border-foreground/15 flex items-center justify-center overflow-hidden">
             {/* Citinet mesh logo mark - MapPin icon */}
-            <MapPin className="w-12 h-12 md:w-16 md:h-16 text-white" strokeWidth={2} />
+            <MapPin className="w-12 h-12 md:w-16 md:h-16 text-foreground" strokeWidth={2} />
           </div>
         </motion.div>
 
         {/* Headline */}
-        <h1 className="text-white mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
-          The Worl-Wide-Web.
+        <h1 className="text-foreground mb-4 max-w-xl text-3xl md:text-5xl leading-tight font-semibold tracking-tight">
+          Your new local
           <br />
-          <span className="text-white/90 font-medium">Made local (again).</span>
+          <span className="text-muted-foreground font-medium">digital ecosystem.</span>
         </h1>
 
         {/* Subtext */}
-        <p className="text-white/90 mb-10 font-light leading-relaxed text-base max-w-md">
+        <p className="text-foreground/80 mb-10 font-light leading-relaxed text-base max-w-md">
           Store files. Chat. Connect with others on your locally-owned and operated network.<br />
           No Big Tech platforms. No middleman.
         </p>
@@ -64,19 +64,19 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           {/* Join Existing Network */}
           <motion.button
             onClick={onJoinNetwork}
-            className="group bg-white dark:bg-zinc-900/78 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left"
+            className="group bg-foreground/60 backdrop-blur-2xl backdrop-saturate-150 ring-1 ring-inset ring-background/20 shadow-lg text-background rounded-xl p-6 transition-all hover:bg-foreground/70 active:scale-[0.99] text-left"
             whileHover={{ y: -4 }}
           >
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mb-4">
-              <Network className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-lg border border-background/20 bg-background/10 flex items-center justify-center mb-4">
+              <Network className="w-6 h-6 text-background" />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+            <h3 className="text-xl font-semibold tracking-tight text-background mb-2">
               Join Your Local Network
             </h3>
-            <p className="text-sm text-slate-600 dark:text-zinc-400 leading-relaxed">
+            <p className="text-sm text-background/85 leading-relaxed">
               Browse available community hubs or connect directly with a hub URL
             </p>
-            <div className="mt-4 flex items-center gap-2 text-blue-600 dark:text-blue-400 font-semibold text-sm group-hover:gap-3 transition-all">
+            <div className="mt-4 flex items-center gap-2 text-background font-semibold text-sm group-hover:gap-3 transition-all">
               <span>Find a hub</span>
               <span>→</span>
             </div>
@@ -85,19 +85,19 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
           {/* Create New Node */}
           <motion.button
             onClick={onCreateNetwork}
-            className="group bg-gradient-to-br from-blue-600/20 to-pink-600/20 backdrop-blur-md rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all hover:scale-[1.02] active:scale-95 text-left"
+            className="group border border-foreground/20 bg-foreground/5 backdrop-blur-md rounded-xl p-6 transition-all hover:bg-foreground/10 active:scale-[0.99] text-left"
             whileHover={{ y: -4 }}
           >
-            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4">
-              <Plus className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-lg border border-foreground/20 bg-foreground/5 flex items-center justify-center mb-4">
+              <Plus className="w-6 h-6 text-foreground" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">
+            <h3 className="text-xl font-semibold tracking-tight text-foreground mb-2">
               Start a New Community Node
             </h3>
-            <p className="text-sm text-white/90 leading-relaxed">
+            <p className="text-sm text-foreground/80 leading-relaxed">
               Be the first in your neighborhood to launch a local mesh network
             </p>
-            <div className="mt-4 flex items-center gap-2 text-white font-semibold text-sm group-hover:gap-3 transition-all">
+            <div className="mt-4 flex items-center gap-2 text-foreground font-semibold text-sm group-hover:gap-3 transition-all">
               <span>Create your node</span>
               <span>→</span>
             </div>
@@ -105,14 +105,14 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
         </div>
 
         {/* Footer Note */}
-        <p className="text-white/70 text-sm font-light mt-8">
-          Participating in citinet means joining a shared digital ecosytem
+        <p className="text-muted-foreground text-sm font-light mt-8">
+          Participating in citinet means joining a shared digital ecosystem
         </p>
         <a
           href={INFO_SITE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1.5 text-white/60 hover:text-white text-xs font-medium transition-colors"
+          className="mt-3 inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-xs font-medium transition-colors"
         >
           <ExternalLink className="w-3.5 h-3.5" />
           About Citinet
@@ -129,26 +129,26 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
             transition={{ type: 'spring', damping: 24, stiffness: 260 }}
             className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-safe"
           >
-            <div className="max-w-md mx-auto bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-pink-600 flex items-center justify-center shrink-0 mt-0.5">
-                {isIOS ? <Share className="w-5 h-5 text-white" /> : <Download className="w-5 h-5 text-white" />}
+            <div className="max-w-md mx-auto bg-card/95 backdrop-blur-xl border border-border rounded-xl p-4 shadow-xl flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg border border-border bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                {isIOS ? <Share className="w-5 h-5 text-foreground" /> : <Download className="w-5 h-5 text-foreground" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm">Add citinet to your home screen</p>
+                <p className="text-foreground font-semibold text-sm">Add citinet to your home screen</p>
                 {isIOS ? (
-                  <p className="text-white/60 text-xs mt-0.5 leading-relaxed">
-                    Tap the <strong className="text-white/80">Share</strong> button in your browser, then choose{' '}
-                    <strong className="text-white/80">Add to Home Screen</strong>.
+                  <p className="text-muted-foreground text-xs mt-0.5 leading-relaxed">
+                    Tap the <strong className="text-foreground">Share</strong> button in your browser, then choose{' '}
+                    <strong className="text-foreground">Add to Home Screen</strong>.
                   </p>
                 ) : (
-                  <p className="text-white/60 text-xs mt-0.5">
+                  <p className="text-muted-foreground text-xs mt-0.5">
                     Install for faster access — no App Store needed.
                   </p>
                 )}
                 {!isIOS && (
                   <button
                     onClick={install}
-                    className="mt-2 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+                    className="mt-2 px-4 py-1.5 rounded-md bg-foreground hover:bg-foreground/90 text-background text-xs font-semibold transition-colors"
                   >
                     Install
                   </button>
@@ -156,7 +156,7 @@ export function WelcomeScreen({ onJoinNetwork, onCreateNetwork }: WelcomeScreenP
               </div>
               <button
                 onClick={dismiss}
-                className="text-white/40 hover:text-white/70 transition-colors shrink-0 mt-0.5"
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0 mt-0.5"
                 aria-label="Dismiss"
               >
                 <X className="w-4 h-4" />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Calendar, MapPin, Package } from 'lucide-react';
+import { Calendar, ExternalLink, Globe, MapPin, Package } from 'lucide-react';
 import { hubService } from '../services/hubService';
 import { marketplaceService } from '../services/marketplaceService';
 import { initiativesService } from '../services/initiativesService';
@@ -20,13 +20,13 @@ import type { HomeCardData } from '../utils/homeFeedSelection';
 // the same limits, so the two always agree.
 const MEDIA_MAX_HEIGHT = '460px';
 const MEDIA_MAX_WIDTH = '100%'; // '100%' = as wide as the card allows; set e.g. '560px' to narrow everything
-const STICKER_MAX_HEIGHT = '280px'; // stickers are illustrations, not photos: kept to their own, smaller height cap
+const STICKER_MAX_HEIGHT = '140px'; // stickers are illustrations, not photos: kept to their own, smaller height cap
 const LIMITS = { '--media-max-h': MEDIA_MAX_HEIGHT, '--media-max-w': MEDIA_MAX_WIDTH, '--sticker-max-h': STICKER_MAX_HEIGHT } as React.CSSProperties;
 
 /** Placeholders for items whose creator didn't upload a picture of their own (public/stickers/). */
 const MARKETPLACE_STICKER = '/stickers/black-friday.png';
 const INITIATIVE_STICKER = '/stickers/task-list.png';
-const STICKER_CLASS = 'block mx-auto w-auto h-auto max-w-full max-h-[var(--sticker-max-h)] object-contain py-2 select-none';
+const STICKER_CLASS = 'block mx-auto w-auto h-auto max-w-[50%] max-h-[var(--sticker-max-h)] object-contain py-2 select-none';
 
 const MEDIA_CLASS = 'block mx-auto w-auto h-auto max-h-[var(--media-max-h)] max-w-[var(--media-max-w)] rounded-xl object-contain';
 // 4:3 frame: width is the height limit x 4/3 (so a capped box keeps its shape instead of stretching wider than tall),
@@ -163,10 +163,9 @@ function EventVisual({ card, hubSlug }: { card: HomeCardData; hubSlug: string })
 // ── Marketplace ───────────────────────────────────────────────────────────────
 // The vendor's own picture if they uploaded one (and it loads); otherwise ALWAYS the marketplace sticker — never a
 // generated category block. The sticker keeps its own proportions (it is transparent, so no box behind it).
-function ListingVisual({ card, hubSlug }: { card: HomeCardData; hubSlug: string }) {
+function ListingVisual({ card, url, onStickerFallback }: { card: HomeCardData; url: string | null; onStickerFallback: () => void }) {
   const [failed, setFailed] = useState(false);
-  const url = card.mediaFileName ? marketplaceService.getListingImageUrl(hubSlug, card.mediaFileName) : null;
-  if (url && !failed) return <img src={url} alt={card.title} loading="lazy" className={MEDIA_CLASS} onError={() => setFailed(true)} />;
+  if (url && !failed) return <img src={url} alt={card.title} loading="lazy" className={MEDIA_CLASS} onError={() => { setFailed(true); onStickerFallback(); }} />;
   return (
     <img
       src={MARKETPLACE_STICKER}
@@ -182,7 +181,7 @@ function ListingVisual({ card, hubSlug }: { card: HomeCardData; hubSlug: string 
 // What the initiative's creator made: an uploaded banner image (shown at its own proportions, like any media), or a
 // custom gradient they chose. If they set neither — or the image won't load — ALWAYS the initiative sticker; never a
 // category stock photo or a generated icon block.
-function InitiativeVisual({ ini, hubSlug }: { ini: NonNullable<HomeCardData['initiative']>; hubSlug: string }) {
+function InitiativeVisual({ ini, hubSlug, onStickerFallback }: { ini: NonNullable<HomeCardData['initiative']>; hubSlug: string; onStickerFallback: () => void }) {
   const [bannerFailed, setBannerFailed] = useState(false);
   if (ini.hasBannerImage && !bannerFailed) {
     return (
@@ -191,7 +190,7 @@ function InitiativeVisual({ ini, hubSlug }: { ini: NonNullable<HomeCardData['ini
         alt=""
         loading="lazy"
         className={MEDIA_CLASS}
-        onError={() => setBannerFailed(true)}
+        onError={() => { setBannerFailed(true); onStickerFallback(); }}
       />
     );
   }
@@ -214,11 +213,24 @@ interface Props {
 
 export function HomeActivityCard({ card, hubSlug, currentUserId, currentUserAvatarUrl, onOpen, onOpenProfile, onOpenVendor }: Props) {
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
+  const [stickerFallbackFailed, setStickerFallbackFailed] = useState(false);
+  const listingImageUrl = card.listing && card.mediaFileName
+    ? marketplaceService.getListingImageUrl(hubSlug, card.mediaFileName)
+    : null;
+  const hasInitiativeGradient = Boolean(card.initiative?.bannerMode === 'gradient' && card.initiative.gradientFrom && card.initiative.gradientTo);
+  const stickerFallback = Boolean(
+    (card.listing && (!listingImageUrl || stickerFallbackFailed))
+    || (card.initiative && ((!card.initiative.hasBannerImage && !hasInitiativeGradient) || (stickerFallbackFailed && !hasInitiativeGradient))),
+  );
 
   let visual: React.ReactNode = null;
   if (card.event) visual = <EventVisual card={card} hubSlug={hubSlug} />;
-  else if (card.listing) visual = <ListingVisual card={card} hubSlug={hubSlug} />;
-  else if (card.initiative) visual = <InitiativeVisual ini={card.initiative} hubSlug={hubSlug} />;
+  else if (card.listing) visual = <ListingVisual card={card} url={listingImageUrl} onStickerFallback={() => setStickerFallbackFailed(true)} />;
+  else if (card.initiative) visual = <InitiativeVisual
+    ini={card.initiative}
+    hubSlug={hubSlug}
+    onStickerFallback={() => { if (!hasInitiativeGradient) setStickerFallbackFailed(true); }}
+  />;
   else if (card.mediaFileName) visual = <MediaBlock hubSlug={hubSlug} fileName={card.mediaFileName} alt={card.title} />;
   else if (card.atlasPin) visual = <AtlasVisual pin={card.atlasPin} />;
 
@@ -231,12 +243,30 @@ export function HomeActivityCard({ card, hubSlug, currentUserId, currentUserAvat
       style={LIMITS}
       className="text-left cursor-pointer p-4 cn-glass cn-glass-hover rounded-2xl hover:border-black/15 dark:hover:border-white/15 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
     >
-      <p className="cn-eyebrow">{card.label}</p>
+      <p className="cn-eyebrow">
+        {card.label}
+        {card.highlight && (
+          <span
+            className="normal-case tracking-normal font-medium"
+            title="Shown ahead of newer posts because it got more likes or replies than most in your hub."
+          >
+            {' · '}{card.highlight}
+          </span>
+        )}
+      </p>
+      {stickerFallback && visual && <div className="mt-2">{visual}</div>}
       <p className="text-[15px] font-semibold cn-text-1 mt-0.5 line-clamp-2">{card.title}</p>
       {card.caption && <p className="text-sm cn-text-3 mt-1 line-clamp-3">{card.caption}</p>}
 
-      {visual && <div className="mt-3">{visual}</div>}
+      {visual && !stickerFallback && <div className="mt-3">{visual}</div>}
 
+      {card.external && (
+        <p className="mt-3 inline-flex items-center gap-1.5 max-w-full text-xs cn-text-3">
+          <Globe className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{card.external.host || card.external.sourceLabel}</span>
+          <ExternalLink className="w-3 h-3 shrink-0 opacity-70" aria-label="Opens in a new tab" />
+        </p>
+      )}
       {card.listing && (
         <button onClick={stop(() => onOpenVendor(card.listing!.vendor.id))} className="mt-3 inline-flex items-center gap-2 max-w-full text-xs cn-text-3 hover:underline">
           {card.listing.vendor.logoFileName

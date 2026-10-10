@@ -6,6 +6,15 @@ import { StackHealthPanel } from './StackHealthPanel';
 import { QuickCommandsPanel } from './QuickCommandsPanel';
 import { EmailSetupCard } from './EmailSetupCard';
 import { MonitoringSetupCard } from './MonitoringSetupCard';
+import { SectionPills, SECTION_SCROLL_MARGIN, type SectionPill } from './SectionPills';
+
+const SYSTEM_SECTIONS: SectionPill[] = [
+  { id: 'system-health', label: 'Health' },
+  { id: 'system-services', label: 'Services' },
+  { id: 'system-troubleshooting', label: 'Troubleshooting' },
+  { id: 'system-email', label: 'Email alerts' },
+  { id: 'system-monitoring', label: 'Outage alert' },
+];
 
 interface SystemTabProps {
   hubSlug: string;
@@ -182,10 +191,16 @@ export function SystemTab({ hubSlug }: SystemTabProps) {
         </div>
       )}
 
-      {!loading && !error && available === true && <StackHealthPanel hubSlug={hubSlug} />}
+      <SectionPills sections={SYSTEM_SECTIONS} />
 
       {!loading && !error && available === true && (
-        <div className="space-y-2">
+        <div id="system-health" className={SECTION_SCROLL_MARGIN}>
+          <StackHealthPanel hubSlug={hubSlug} />
+        </div>
+      )}
+
+      {!loading && !error && available === true && (
+        <div id="system-services" className={`space-y-2 ${SECTION_SCROLL_MARGIN}`}>
           {restartError && (
             <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 p-3">
               <p className="text-xs text-rose-700 dark:text-rose-300">{restartError}</p>
@@ -204,9 +219,9 @@ export function SystemTab({ hubSlug }: SystemTabProps) {
 
       {!loading && !error && (
         <>
-          <QuickCommandsPanel hubSlug={hubSlug} />
-          <EmailSetupCard hubSlug={hubSlug} />
-          <MonitoringSetupCard hubSlug={hubSlug} />
+          <div id="system-troubleshooting" className={SECTION_SCROLL_MARGIN}><QuickCommandsPanel hubSlug={hubSlug} /></div>
+          <div id="system-email" className={SECTION_SCROLL_MARGIN}><EmailSetupCard hubSlug={hubSlug} /></div>
+          <div id="system-monitoring" className={SECTION_SCROLL_MARGIN}><MonitoringSetupCard hubSlug={hubSlug} /></div>
         </>
       )}
     </div>

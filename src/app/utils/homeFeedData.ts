@@ -2,11 +2,12 @@ import { hubService } from '../services/hubService';
 import { atlasService } from '../services/atlasService';
 import { marketplaceService } from '../services/marketplaceService';
 import { initiativesService, type InitiativeResource, type InitiativeTask } from '../services/initiativesService';
+import { externalFeedService } from '../services/externalFeedService';
 import type { HomeFeedInput, InitiativeUpdateRow } from './homeFeedSelection';
 
 export type HomeSnapshot = HomeFeedInput;
 
-export const EMPTY_SNAPSHOT: HomeSnapshot = { posts: [], events: [], pins: [], listings: [], initiativeUpdates: [], memberCount: 0, myVendorId: null };
+export const EMPTY_SNAPSHOT: HomeSnapshot = { posts: [], events: [], pins: [], listings: [], initiativeUpdates: [], memberCount: 0, myVendorId: null, externalItems: [] };
 
 /** Number of independently-loaded sections (see loadHomeSnapshot). */
 export const SECTION_COUNT = 7;
@@ -105,5 +106,9 @@ export async function loadHomeSnapshot(hubSlug: string, prev: HomeSnapshot): Pro
     section('members', async () => (await hubService.listMembers(hubSlug)).length, prev.memberCount),
     section('vendor', async () => (await marketplaceService.getMyVendor(hubSlug))?.id ?? null, prev.myVendorId),
   ]);
-  return { snapshot: { posts, events, pins, listings, initiativeUpdates, memberCount, myVendorId }, failures };
+  // Outside is a bonus feed: it never counts as a failure (an older hub without it, or a source
+  // being down, must not make Home look broken) — it just keeps its previous items.
+  let externalItems = prev.externalItems ?? [];
+  try { externalItems = (await externalFeedService.getItems(hubSlug)).items; } catch { /* keep previous */ }
+  return { snapshot: { posts, events, pins, listings, initiativeUpdates, memberCount, myVendorId, externalItems }, failures };
 }

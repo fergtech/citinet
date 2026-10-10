@@ -9,7 +9,7 @@ import { aiService } from '../services/aiService';
 import { AvatarFallback } from './icons';
 import { HomeActivityCard, HomeFeedSkeleton } from './HomeActivityCard';
 import { useHomeFeed } from '../hooks/useHomeFeed';
-import { seenInitiativeUpdates } from '../utils/seenStore';
+import { seenExternal, seenInitiativeUpdates } from '../utils/seenStore';
 import type { HomeCardData } from '../utils/homeFeedSelection';
 import type { SearchResults } from '../types/hub';
 
@@ -59,6 +59,11 @@ function openHomeCard(card: HomeCardData, nav: (screen: string) => void) {
     case 'listing':
       sessionStorage.setItem('citinet-deeplink-listing', a.id);
       nav('marketplace');
+      return;
+    case 'external':
+      // Public-web item: leaves Citinet on purpose, in a fresh tab with no referrer/opener back to the hub.
+      seenExternal.markSeen(a.id);
+      window.open(a.url, '_blank', 'noopener,noreferrer');
       return;
     case 'initiative': {
       // Initiative updates have no per-viewer server record, so opening one is what marks it seen.

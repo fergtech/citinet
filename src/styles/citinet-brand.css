@@ -1,0 +1,616 @@
+/* ============================================================
+   Citinet brand layer: makes the portal read as the same product as citinet-info.
+
+   citinet-info is flat and neutral: zinc surfaces, 10px radii, mono labels, and a single blue accent
+   used sparingly. The portal had grown colour gradients on buttons and tiles, coloured wallpaper blobs
+   and a 26px "mega rounded" radius. Rather than edit hundreds of utility strings, this layer flattens
+   them in one place. Imported last so it outranks the generated utilities.
+
+   Scrims (a gradient fading to transparent or from black over a photo) are left alone: they exist for
+   legibility, not decoration.
+   ============================================================ */
+
+/* 0. citinet-info is built on zinc. Slate and gray carry a blue tint, which is what made the portal read as a
+      different product in light mode (navy headings, bluish captions). Alias them onto zinc so every existing
+      text-slate-*, bg-gray-*, border-slate-* utility lands on the same neutral palette as the info site. */
+:root {
+  --color-slate-50: var(--color-zinc-50);
+  --color-slate-100: var(--color-zinc-100);
+  --color-slate-200: var(--color-zinc-200);
+  --color-slate-300: var(--color-zinc-300);
+  --color-slate-400: var(--color-zinc-400);
+  --color-slate-500: var(--color-zinc-500);
+  --color-slate-600: var(--color-zinc-600);
+  --color-slate-700: var(--color-zinc-700);
+  --color-slate-800: var(--color-zinc-800);
+  --color-slate-900: var(--color-zinc-950);
+  --color-slate-950: var(--color-zinc-950);
+  --color-gray-50: var(--color-zinc-50);
+  --color-gray-100: var(--color-zinc-100);
+  --color-gray-200: var(--color-zinc-200);
+  --color-gray-300: var(--color-zinc-300);
+  --color-gray-400: var(--color-zinc-400);
+  --color-gray-500: var(--color-zinc-500);
+  --color-gray-600: var(--color-zinc-600);
+  --color-gray-700: var(--color-zinc-700);
+  --color-gray-800: var(--color-zinc-800);
+  --color-gray-900: var(--color-zinc-950);
+  --color-gray-950: var(--color-zinc-950);
+}
+
+/* 0b. Decorative hues (orange, violet, purple, fuchsia, pink, indigo, cyan, teal, sky) have no meaning of their
+      own in the portal: they only colour category tiles, icons and chips. citinet-info has one accent (blue) plus
+      status colours (emerald = live, amber = in development, red = danger), so the decorative palettes are
+      aliased onto zinc. Blue, emerald/green, amber/yellow and red/rose are left alone on purpose. */
+:root {
+  --color-orange-50: var(--color-zinc-50);
+  --color-orange-100: var(--color-zinc-100);
+  --color-orange-200: var(--color-zinc-200);
+  --color-orange-300: var(--color-zinc-300);
+  --color-orange-400: var(--color-zinc-400);
+  --color-orange-500: var(--color-zinc-500);
+  --color-orange-600: var(--color-zinc-600);
+  --color-orange-700: var(--color-zinc-700);
+  --color-orange-800: var(--color-zinc-800);
+  --color-orange-900: var(--color-zinc-900);
+  --color-orange-950: var(--color-zinc-950);
+  --color-violet-50: var(--color-zinc-50);
+  --color-violet-100: var(--color-zinc-100);
+  --color-violet-200: var(--color-zinc-200);
+  --color-violet-300: var(--color-zinc-300);
+  --color-violet-400: var(--color-zinc-400);
+  --color-violet-500: var(--color-zinc-500);
+  --color-violet-600: var(--color-zinc-600);
+  --color-violet-700: var(--color-zinc-700);
+  --color-violet-800: var(--color-zinc-800);
+  --color-violet-900: var(--color-zinc-900);
+  --color-violet-950: var(--color-zinc-950);
+  --color-purple-50: var(--color-zinc-50);
+  --color-purple-100: var(--color-zinc-100);
+  --color-purple-200: var(--color-zinc-200);
+  --color-purple-300: var(--color-zinc-300);
+  --color-purple-400: var(--color-zinc-400);
+  --color-purple-500: var(--color-zinc-500);
+  --color-purple-600: var(--color-zinc-600);
+  --color-purple-700: var(--color-zinc-700);
+  --color-purple-800: var(--color-zinc-800);
+  --color-purple-900: var(--color-zinc-900);
+  --color-purple-950: var(--color-zinc-950);
+  --color-fuchsia-50: var(--color-zinc-50);
+  --color-fuchsia-100: var(--color-zinc-100);
+  --color-fuchsia-200: var(--color-zinc-200);
+  --color-fuchsia-300: var(--color-zinc-300);
+  --color-fuchsia-400: var(--color-zinc-400);
+  --color-fuchsia-500: var(--color-zinc-500);
+  --color-fuchsia-600: var(--color-zinc-600);
+  --color-fuchsia-700: var(--color-zinc-700);
+  --color-fuchsia-800: var(--color-zinc-800);
+  --color-fuchsia-900: var(--color-zinc-900);
+  --color-fuchsia-950: var(--color-zinc-950);
+  --color-pink-50: var(--color-zinc-50);
+  --color-pink-100: var(--color-zinc-100);
+  --color-pink-200: var(--color-zinc-200);
+  --color-pink-300: var(--color-zinc-300);
+  --color-pink-400: var(--color-zinc-400);
+  --color-pink-500: var(--color-zinc-500);
+  --color-pink-600: var(--color-zinc-600);
+  --color-pink-700: var(--color-zinc-700);
+  --color-pink-800: var(--color-zinc-800);
+  --color-pink-900: var(--color-zinc-900);
+  --color-pink-950: var(--color-zinc-950);
+  --color-indigo-50: var(--color-zinc-50);
+  --color-indigo-100: var(--color-zinc-100);
+  --color-indigo-200: var(--color-zinc-200);
+  --color-indigo-300: var(--color-zinc-300);
+  --color-indigo-400: var(--color-zinc-400);
+  --color-indigo-500: var(--color-zinc-500);
+  --color-indigo-600: var(--color-zinc-600);
+  --color-indigo-700: var(--color-zinc-700);
+  --color-indigo-800: var(--color-zinc-800);
+  --color-indigo-900: var(--color-zinc-900);
+  --color-indigo-950: var(--color-zinc-950);
+  --color-cyan-50: var(--color-zinc-50);
+  --color-cyan-100: var(--color-zinc-100);
+  --color-cyan-200: var(--color-zinc-200);
+  --color-cyan-300: var(--color-zinc-300);
+  --color-cyan-400: var(--color-zinc-400);
+  --color-cyan-500: var(--color-zinc-500);
+  --color-cyan-600: var(--color-zinc-600);
+  --color-cyan-700: var(--color-zinc-700);
+  --color-cyan-800: var(--color-zinc-800);
+  --color-cyan-900: var(--color-zinc-900);
+  --color-cyan-950: var(--color-zinc-950);
+  --color-teal-50: var(--color-zinc-50);
+  --color-teal-100: var(--color-zinc-100);
+  --color-teal-200: var(--color-zinc-200);
+  --color-teal-300: var(--color-zinc-300);
+  --color-teal-400: var(--color-zinc-400);
+  --color-teal-500: var(--color-zinc-500);
+  --color-teal-600: var(--color-zinc-600);
+  --color-teal-700: var(--color-zinc-700);
+  --color-teal-800: var(--color-zinc-800);
+  --color-teal-900: var(--color-zinc-900);
+  --color-teal-950: var(--color-zinc-950);
+  --color-sky-50: var(--color-zinc-50);
+  --color-sky-100: var(--color-zinc-100);
+  --color-sky-200: var(--color-zinc-200);
+  --color-sky-300: var(--color-zinc-300);
+  --color-sky-400: var(--color-zinc-400);
+  --color-sky-500: var(--color-zinc-500);
+  --color-sky-600: var(--color-zinc-600);
+  --color-sky-700: var(--color-zinc-700);
+  --color-sky-800: var(--color-zinc-800);
+  --color-sky-900: var(--color-zinc-900);
+  --color-sky-950: var(--color-zinc-950);
+}
+
+/* 1. Any two-colour gradient becomes a solid of its starting colour. */
+:where([class*="bg-gradient-to-"][class*="from-"]:not([class*="to-transparent"]):not([class*="from-black"]):not([class*="from-zinc-950"]):not([class*="from-[#"]):not([class*="from-transparent"]):not([class*="from-white"])) {
+  background-image: none;
+  background-color: var(--tw-gradient-from);
+}
+
+/* 2. The portal's primary action (the blue gradient button) takes the site's monochrome primary,
+      exactly like citinet-info's "Start a Hub". Text and icons inside follow the primary foreground. */
+[class*="bg-gradient-to-"][class*="from-blue-500"][class*="to-blue-700"],
+[class*="bg-gradient-to-"][class*="from-blue-700"][class*="to-blue-500"],
+[class*="bg-gradient-to-"][class*="from-blue-600"][class*="to-indigo-600"] {
+  background-image: none;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: none;
+}
+[class*="bg-gradient-to-"][class*="from-blue-500"][class*="to-blue-700"]:hover:not(:disabled),
+[class*="bg-gradient-to-"][class*="from-blue-700"][class*="to-blue-500"]:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--primary) 88%, transparent);
+}
+[class*="bg-gradient-to-"][class*="from-blue-500"][class*="to-blue-700"] :where(svg, span, p),
+[class*="bg-gradient-to-"][class*="from-blue-700"][class*="to-blue-500"] :where(svg, span, p) {
+  color: inherit;
+}
+
+/* 3. Same flat treatment for the soft decorative washes ("from-indigo-50 to-indigo-50/50", etc.). */
+[class*="bg-gradient-to-"][class*="from-slate-50"],
+[class*="bg-gradient-to-"][class*="from-indigo-50"],
+[class*="bg-gradient-to-"][class*="from-emerald-100"] {
+  background-image: none;
+}
+
+/* 2b. Solid coloured buttons (blue, orange, violet, green...) take the monochrome primary, exactly like
+      "Start a Hub" on citinet-info. Only real buttons and links: coloured dots, badges and fills keep their
+      colour so status still reads. Red stays red (destructive). */
+button[class~="bg-blue-500"],
+a[class~="bg-blue-500"],
+[role="button"][class~="bg-blue-500"],
+button[class~="bg-blue-600"],
+a[class~="bg-blue-600"],
+[role="button"][class~="bg-blue-600"],
+button[class~="bg-blue-700"],
+a[class~="bg-blue-700"],
+[role="button"][class~="bg-blue-700"],
+button[class~="bg-indigo-500"],
+a[class~="bg-indigo-500"],
+[role="button"][class~="bg-indigo-500"],
+button[class~="bg-indigo-600"],
+a[class~="bg-indigo-600"],
+[role="button"][class~="bg-indigo-600"],
+button[class~="bg-indigo-700"],
+a[class~="bg-indigo-700"],
+[role="button"][class~="bg-indigo-700"],
+button[class~="bg-violet-500"],
+a[class~="bg-violet-500"],
+[role="button"][class~="bg-violet-500"],
+button[class~="bg-violet-600"],
+a[class~="bg-violet-600"],
+[role="button"][class~="bg-violet-600"],
+button[class~="bg-violet-700"],
+a[class~="bg-violet-700"],
+[role="button"][class~="bg-violet-700"],
+button[class~="bg-purple-500"],
+a[class~="bg-purple-500"],
+[role="button"][class~="bg-purple-500"],
+button[class~="bg-purple-600"],
+a[class~="bg-purple-600"],
+[role="button"][class~="bg-purple-600"],
+button[class~="bg-purple-700"],
+a[class~="bg-purple-700"],
+[role="button"][class~="bg-purple-700"],
+button[class~="bg-fuchsia-500"],
+a[class~="bg-fuchsia-500"],
+[role="button"][class~="bg-fuchsia-500"],
+button[class~="bg-fuchsia-600"],
+a[class~="bg-fuchsia-600"],
+[role="button"][class~="bg-fuchsia-600"],
+button[class~="bg-fuchsia-700"],
+a[class~="bg-fuchsia-700"],
+[role="button"][class~="bg-fuchsia-700"],
+button[class~="bg-pink-500"],
+a[class~="bg-pink-500"],
+[role="button"][class~="bg-pink-500"],
+button[class~="bg-pink-600"],
+a[class~="bg-pink-600"],
+[role="button"][class~="bg-pink-600"],
+button[class~="bg-pink-700"],
+a[class~="bg-pink-700"],
+[role="button"][class~="bg-pink-700"],
+button[class~="bg-rose-500"],
+a[class~="bg-rose-500"],
+[role="button"][class~="bg-rose-500"],
+button[class~="bg-rose-600"],
+a[class~="bg-rose-600"],
+[role="button"][class~="bg-rose-600"],
+button[class~="bg-rose-700"],
+a[class~="bg-rose-700"],
+[role="button"][class~="bg-rose-700"],
+button[class~="bg-orange-500"],
+a[class~="bg-orange-500"],
+[role="button"][class~="bg-orange-500"],
+button[class~="bg-orange-600"],
+a[class~="bg-orange-600"],
+[role="button"][class~="bg-orange-600"],
+button[class~="bg-orange-700"],
+a[class~="bg-orange-700"],
+[role="button"][class~="bg-orange-700"],
+button[class~="bg-amber-500"],
+a[class~="bg-amber-500"],
+[role="button"][class~="bg-amber-500"],
+button[class~="bg-amber-600"],
+a[class~="bg-amber-600"],
+[role="button"][class~="bg-amber-600"],
+button[class~="bg-amber-700"],
+a[class~="bg-amber-700"],
+[role="button"][class~="bg-amber-700"],
+button[class~="bg-emerald-500"],
+a[class~="bg-emerald-500"],
+[role="button"][class~="bg-emerald-500"],
+button[class~="bg-emerald-600"],
+a[class~="bg-emerald-600"],
+[role="button"][class~="bg-emerald-600"],
+button[class~="bg-emerald-700"],
+a[class~="bg-emerald-700"],
+[role="button"][class~="bg-emerald-700"],
+button[class~="bg-green-500"],
+a[class~="bg-green-500"],
+[role="button"][class~="bg-green-500"],
+button[class~="bg-green-600"],
+a[class~="bg-green-600"],
+[role="button"][class~="bg-green-600"],
+button[class~="bg-green-700"],
+a[class~="bg-green-700"],
+[role="button"][class~="bg-green-700"],
+button[class~="bg-teal-500"],
+a[class~="bg-teal-500"],
+[role="button"][class~="bg-teal-500"],
+button[class~="bg-teal-600"],
+a[class~="bg-teal-600"],
+[role="button"][class~="bg-teal-600"],
+button[class~="bg-teal-700"],
+a[class~="bg-teal-700"],
+[role="button"][class~="bg-teal-700"],
+button[class~="bg-cyan-500"],
+a[class~="bg-cyan-500"],
+[role="button"][class~="bg-cyan-500"],
+button[class~="bg-cyan-600"],
+a[class~="bg-cyan-600"],
+[role="button"][class~="bg-cyan-600"],
+button[class~="bg-cyan-700"],
+a[class~="bg-cyan-700"],
+[role="button"][class~="bg-cyan-700"],
+button[class~="bg-sky-500"],
+a[class~="bg-sky-500"],
+[role="button"][class~="bg-sky-500"],
+button[class~="bg-sky-600"],
+a[class~="bg-sky-600"],
+[role="button"][class~="bg-sky-600"],
+button[class~="bg-sky-700"],
+a[class~="bg-sky-700"],
+[role="button"][class~="bg-sky-700"],
+button[class~="bg-[#2164f3]"],
+a[class~="bg-[#2164f3]"],
+[role="button"][class~="bg-[#2164f3]"],
+button[class~="bg-[#1d4ed8]"],
+a[class~="bg-[#1d4ed8]"],
+[role="button"][class~="bg-[#1d4ed8]"],
+button[class~="bg-[#2563eb]"],
+a[class~="bg-[#2563eb]"],
+[role="button"][class~="bg-[#2563eb]"] {
+  background-color: var(--primary);
+  background-image: none;
+  color: var(--primary-foreground);
+  border-color: transparent;
+  box-shadow: none;
+}
+button[class~="bg-blue-500"]:hover:not(:disabled),
+a[class~="bg-blue-500"]:hover:not(:disabled),
+[role="button"][class~="bg-blue-500"]:hover:not(:disabled),
+button[class~="bg-blue-600"]:hover:not(:disabled),
+a[class~="bg-blue-600"]:hover:not(:disabled),
+[role="button"][class~="bg-blue-600"]:hover:not(:disabled),
+button[class~="bg-blue-700"]:hover:not(:disabled),
+a[class~="bg-blue-700"]:hover:not(:disabled),
+[role="button"][class~="bg-blue-700"]:hover:not(:disabled),
+button[class~="bg-indigo-500"]:hover:not(:disabled),
+a[class~="bg-indigo-500"]:hover:not(:disabled),
+[role="button"][class~="bg-indigo-500"]:hover:not(:disabled),
+button[class~="bg-indigo-600"]:hover:not(:disabled),
+a[class~="bg-indigo-600"]:hover:not(:disabled),
+[role="button"][class~="bg-indigo-600"]:hover:not(:disabled),
+button[class~="bg-indigo-700"]:hover:not(:disabled),
+a[class~="bg-indigo-700"]:hover:not(:disabled),
+[role="button"][class~="bg-indigo-700"]:hover:not(:disabled),
+button[class~="bg-violet-500"]:hover:not(:disabled),
+a[class~="bg-violet-500"]:hover:not(:disabled),
+[role="button"][class~="bg-violet-500"]:hover:not(:disabled),
+button[class~="bg-violet-600"]:hover:not(:disabled),
+a[class~="bg-violet-600"]:hover:not(:disabled),
+[role="button"][class~="bg-violet-600"]:hover:not(:disabled),
+button[class~="bg-violet-700"]:hover:not(:disabled),
+a[class~="bg-violet-700"]:hover:not(:disabled),
+[role="button"][class~="bg-violet-700"]:hover:not(:disabled),
+button[class~="bg-purple-500"]:hover:not(:disabled),
+a[class~="bg-purple-500"]:hover:not(:disabled),
+[role="button"][class~="bg-purple-500"]:hover:not(:disabled),
+button[class~="bg-purple-600"]:hover:not(:disabled),
+a[class~="bg-purple-600"]:hover:not(:disabled),
+[role="button"][class~="bg-purple-600"]:hover:not(:disabled),
+button[class~="bg-purple-700"]:hover:not(:disabled),
+a[class~="bg-purple-700"]:hover:not(:disabled),
+[role="button"][class~="bg-purple-700"]:hover:not(:disabled),
+button[class~="bg-fuchsia-500"]:hover:not(:disabled),
+a[class~="bg-fuchsia-500"]:hover:not(:disabled),
+[role="button"][class~="bg-fuchsia-500"]:hover:not(:disabled),
+button[class~="bg-fuchsia-600"]:hover:not(:disabled),
+a[class~="bg-fuchsia-600"]:hover:not(:disabled),
+[role="button"][class~="bg-fuchsia-600"]:hover:not(:disabled),
+button[class~="bg-fuchsia-700"]:hover:not(:disabled),
+a[class~="bg-fuchsia-700"]:hover:not(:disabled),
+[role="button"][class~="bg-fuchsia-700"]:hover:not(:disabled),
+button[class~="bg-pink-500"]:hover:not(:disabled),
+a[class~="bg-pink-500"]:hover:not(:disabled),
+[role="button"][class~="bg-pink-500"]:hover:not(:disabled),
+button[class~="bg-pink-600"]:hover:not(:disabled),
+a[class~="bg-pink-600"]:hover:not(:disabled),
+[role="button"][class~="bg-pink-600"]:hover:not(:disabled),
+button[class~="bg-pink-700"]:hover:not(:disabled),
+a[class~="bg-pink-700"]:hover:not(:disabled),
+[role="button"][class~="bg-pink-700"]:hover:not(:disabled),
+button[class~="bg-rose-500"]:hover:not(:disabled),
+a[class~="bg-rose-500"]:hover:not(:disabled),
+[role="button"][class~="bg-rose-500"]:hover:not(:disabled),
+button[class~="bg-rose-600"]:hover:not(:disabled),
+a[class~="bg-rose-600"]:hover:not(:disabled),
+[role="button"][class~="bg-rose-600"]:hover:not(:disabled),
+button[class~="bg-rose-700"]:hover:not(:disabled),
+a[class~="bg-rose-700"]:hover:not(:disabled),
+[role="button"][class~="bg-rose-700"]:hover:not(:disabled),
+button[class~="bg-orange-500"]:hover:not(:disabled),
+a[class~="bg-orange-500"]:hover:not(:disabled),
+[role="button"][class~="bg-orange-500"]:hover:not(:disabled),
+button[class~="bg-orange-600"]:hover:not(:disabled),
+a[class~="bg-orange-600"]:hover:not(:disabled),
+[role="button"][class~="bg-orange-600"]:hover:not(:disabled),
+button[class~="bg-orange-700"]:hover:not(:disabled),
+a[class~="bg-orange-700"]:hover:not(:disabled),
+[role="button"][class~="bg-orange-700"]:hover:not(:disabled),
+button[class~="bg-amber-500"]:hover:not(:disabled),
+a[class~="bg-amber-500"]:hover:not(:disabled),
+[role="button"][class~="bg-amber-500"]:hover:not(:disabled),
+button[class~="bg-amber-600"]:hover:not(:disabled),
+a[class~="bg-amber-600"]:hover:not(:disabled),
+[role="button"][class~="bg-amber-600"]:hover:not(:disabled),
+button[class~="bg-amber-700"]:hover:not(:disabled),
+a[class~="bg-amber-700"]:hover:not(:disabled),
+[role="button"][class~="bg-amber-700"]:hover:not(:disabled),
+button[class~="bg-emerald-500"]:hover:not(:disabled),
+a[class~="bg-emerald-500"]:hover:not(:disabled),
+[role="button"][class~="bg-emerald-500"]:hover:not(:disabled),
+button[class~="bg-emerald-600"]:hover:not(:disabled),
+a[class~="bg-emerald-600"]:hover:not(:disabled),
+[role="button"][class~="bg-emerald-600"]:hover:not(:disabled),
+button[class~="bg-emerald-700"]:hover:not(:disabled),
+a[class~="bg-emerald-700"]:hover:not(:disabled),
+[role="button"][class~="bg-emerald-700"]:hover:not(:disabled),
+button[class~="bg-green-500"]:hover:not(:disabled),
+a[class~="bg-green-500"]:hover:not(:disabled),
+[role="button"][class~="bg-green-500"]:hover:not(:disabled),
+button[class~="bg-green-600"]:hover:not(:disabled),
+a[class~="bg-green-600"]:hover:not(:disabled),
+[role="button"][class~="bg-green-600"]:hover:not(:disabled),
+button[class~="bg-green-700"]:hover:not(:disabled),
+a[class~="bg-green-700"]:hover:not(:disabled),
+[role="button"][class~="bg-green-700"]:hover:not(:disabled),
+button[class~="bg-teal-500"]:hover:not(:disabled),
+a[class~="bg-teal-500"]:hover:not(:disabled),
+[role="button"][class~="bg-teal-500"]:hover:not(:disabled),
+button[class~="bg-teal-600"]:hover:not(:disabled),
+a[class~="bg-teal-600"]:hover:not(:disabled),
+[role="button"][class~="bg-teal-600"]:hover:not(:disabled),
+button[class~="bg-teal-700"]:hover:not(:disabled),
+a[class~="bg-teal-700"]:hover:not(:disabled),
+[role="button"][class~="bg-teal-700"]:hover:not(:disabled),
+button[class~="bg-cyan-500"]:hover:not(:disabled),
+a[class~="bg-cyan-500"]:hover:not(:disabled),
+[role="button"][class~="bg-cyan-500"]:hover:not(:disabled),
+button[class~="bg-cyan-600"]:hover:not(:disabled),
+a[class~="bg-cyan-600"]:hover:not(:disabled),
+[role="button"][class~="bg-cyan-600"]:hover:not(:disabled),
+button[class~="bg-cyan-700"]:hover:not(:disabled),
+a[class~="bg-cyan-700"]:hover:not(:disabled),
+[role="button"][class~="bg-cyan-700"]:hover:not(:disabled),
+button[class~="bg-sky-500"]:hover:not(:disabled),
+a[class~="bg-sky-500"]:hover:not(:disabled),
+[role="button"][class~="bg-sky-500"]:hover:not(:disabled),
+button[class~="bg-sky-600"]:hover:not(:disabled),
+a[class~="bg-sky-600"]:hover:not(:disabled),
+[role="button"][class~="bg-sky-600"]:hover:not(:disabled),
+button[class~="bg-sky-700"]:hover:not(:disabled),
+a[class~="bg-sky-700"]:hover:not(:disabled),
+[role="button"][class~="bg-sky-700"]:hover:not(:disabled),
+button[class~="bg-[#2164f3]"]:hover:not(:disabled),
+a[class~="bg-[#2164f3]"]:hover:not(:disabled),
+[role="button"][class~="bg-[#2164f3]"]:hover:not(:disabled),
+button[class~="bg-[#1d4ed8]"]:hover:not(:disabled),
+a[class~="bg-[#1d4ed8]"]:hover:not(:disabled),
+[role="button"][class~="bg-[#1d4ed8]"]:hover:not(:disabled),
+button[class~="bg-[#2563eb]"]:hover:not(:disabled),
+a[class~="bg-[#2563eb]"]:hover:not(:disabled),
+[role="button"][class~="bg-[#2563eb]"]:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--primary) 88%, transparent);
+}
+button[class~="bg-blue-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-blue-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-blue-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-blue-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-blue-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-blue-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-blue-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-blue-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-blue-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-indigo-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-indigo-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-indigo-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-indigo-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-indigo-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-indigo-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-indigo-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-indigo-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-indigo-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-violet-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-violet-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-violet-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-violet-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-violet-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-violet-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-violet-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-violet-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-violet-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-purple-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-purple-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-purple-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-purple-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-purple-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-purple-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-purple-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-purple-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-purple-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-fuchsia-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-fuchsia-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-fuchsia-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-fuchsia-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-fuchsia-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-fuchsia-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-fuchsia-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-fuchsia-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-fuchsia-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-pink-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-pink-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-pink-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-pink-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-pink-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-pink-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-pink-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-pink-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-pink-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-rose-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-rose-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-rose-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-rose-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-rose-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-rose-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-rose-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-rose-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-rose-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-orange-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-orange-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-orange-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-orange-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-orange-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-orange-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-orange-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-orange-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-orange-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-amber-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-amber-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-amber-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-amber-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-amber-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-amber-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-amber-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-amber-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-amber-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-emerald-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-emerald-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-emerald-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-emerald-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-emerald-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-emerald-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-emerald-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-emerald-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-emerald-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-green-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-green-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-green-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-green-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-green-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-green-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-green-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-green-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-green-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-teal-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-teal-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-teal-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-teal-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-teal-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-teal-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-teal-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-teal-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-teal-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-cyan-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-cyan-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-cyan-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-cyan-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-cyan-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-cyan-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-cyan-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-cyan-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-cyan-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-sky-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-sky-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-sky-500"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-sky-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-sky-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-sky-600"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-sky-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-sky-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-sky-700"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-[#2164f3]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-[#2164f3]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-[#2164f3]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-[#1d4ed8]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-[#1d4ed8]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-[#1d4ed8]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+button[class~="bg-[#2563eb]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+a[class~="bg-[#2563eb]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div),
+[role="button"][class~="bg-[#2563eb]"] :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div) {
+  color: inherit;
+}
+
+
+/* 2c. Gradient buttons in any hue (the portal's amber Upload, rose Report, indigo Confirm...) take the same
+      monochrome primary. Scrims that fade to transparent or from black are excluded. */
+:root:root :is(button, a, [role="button"])[class*="bg-gradient-to-"]:not([class*="to-transparent"]):not([class*="from-black"]):not([class*="from-red-"]):not([class*="from-zinc-950"]):not([class*="to-pink-600/"]):not([class*="from-blue-600/"]):not([class*="/20"]):not([class*="/10"]):not([class*="/30"]) {
+  background-color: var(--primary);
+  background-image: none;
+  color: var(--primary-foreground);
+  border-color: transparent;
+  box-shadow: none;
+}
+:root:root :is(button, a, [role="button"])[class*="bg-gradient-to-"]:not([class*="to-transparent"]):not([class*="from-black"]):not([class*="from-red-"]):not([class*="from-zinc-950"]):not([class*="to-pink-600/"]):not([class*="from-blue-600/"]):not([class*="/20"]):not([class*="/10"]):not([class*="/30"]) :where(svg, span, p, i, h1, h2, h3, h4, strong, em, div) {
+  color: inherit;
+}
+
+/* 2d. Gradient icon tiles (a centred icon on a coloured square) are the one neutral tile used by the app grid. */
+:root:root :is(div, span)[class*="bg-gradient-to-"][class*="justify-center"]:not([class*="to-transparent"]):not([class*="from-black"]) {
+  background-image: none;
+  background-color: var(--cn-tile);
+}

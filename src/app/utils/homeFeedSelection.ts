@@ -21,12 +21,15 @@ import { postCategoryLabel } from './postCategory';
 import type { AtlasPin } from '../types/atlas';
 import type { HubListing, HubPost } from '../types/hub';
 import type { InitiativeActivityEntry } from '../services/initiativesService';
+import type { ExternalItem } from '../services/externalFeedService';
 
 export type HomeCardAction =
   | { type: 'post'; id: string }
   | { type: 'pin'; id: string }
   | { type: 'listing'; id: string }
-  | { type: 'initiative'; initiativeId: string; updateId: string; kind: string; taskId?: string };
+  | { type: 'initiative'; initiativeId: string; updateId: string; kind: string; taskId?: string }
+  /** Public-web item: opens `url` in a new browser tab (never inside Citinet). */
+  | { type: 'external'; id: string; url: string };
 
 export interface InitiativeUpdateRow {
   entry: InitiativeActivityEntry;
@@ -46,6 +49,8 @@ export interface HomeCardData {
   key: string;
   /** Brand-colored eyebrow, e.g. "EVENT" / "DISCUSSION". */
   label: string;
+  /** Why this was chosen, shown only when the engagement boost beat plain "latest". */
+  highlight?: string | null;
   title: string;
   caption?: string | null;
   authorUsername?: string | null;
@@ -54,6 +59,8 @@ export interface HomeCardData {
   listing?: { category: string; vendor: { id: string; name: string; logoFileName: string | null } };
   initiative?: Pick<InitiativeUpdateRow, 'initiativeId' | 'initiativeCategory' | 'initiativeColor' | 'bannerMode' | 'hasBannerImage' | 'gradientFrom' | 'gradientTo'>;
   atlasPin?: AtlasPin;
+  /** Where an Outside card points, so the card can say "opens bbc.com" before the click. */
+  external?: { sourceLabel: string; host: string };
   event?: { location: string | null; lat: number | null; lng: number | null; pin: AtlasPin | null };
   action: HomeCardAction;
   timestamp: number;
@@ -67,6 +74,8 @@ export interface HomeFeedInput {
   initiativeUpdates: InitiativeUpdateRow[];
   memberCount: number;
   myVendorId: string | null;
+  /** Already ranked for this member by the hub (their topics/mutes applied server-side). */
+  externalItems?: ExternalItem[];
 }
 
 export interface HomeFeedViewer {
@@ -77,10 +86,16 @@ export interface HomeFeedViewer {
   seenPinIds: ReadonlySet<string>;
   seenListingIds: ReadonlySet<string>;
   seenUpdateIds: ReadonlySet<string>;
+  seenExternalIds?: ReadonlySet<string>;
 }
 
 const newest = <T,>(items: T[], at: (item: T) => string): T | undefined =>
   [...items].sort((a, b) => new Date(at(b)).getTime() - new Date(at(a)).getTime())[0];
+
+/** Filled in by `pick`: true when the engagement boost chose something other than the plain newest eligible item. */
+export interface PickInfo { boosted?: boolean }
+
+export const POPULAR_LABEL = 'Popular in your hub';
 
 /** `engagement` omitted → this item type can't take likes/comments. `seen` omitted → no seen rule. */
 export function pick<T>(
@@ -89,11 +104,14 @@ export function pick<T>(
   threshold: number,
   engagement?: (item: T) => number[],
   seen?: (item: T) => boolean,
+  info?: PickInfo,
 ): T | undefined {
   const unseen = seen ? items.filter((item) => !seen(item)) : items;
   const pool = unseen.length > 0 ? unseen : items;
   const popular = engagement ? pool.filter((item) => engagement(item).some((n) => n >= threshold)) : [];
-  return newest(popular.length > 0 ? popular : pool, at);
+  const chosen = newest(popular.length > 0 ? popular : pool, at);
+  if (info) info.boosted = chosen !== undefined && chosen !== newest(pool, at);
+  return chosen;
 }
 
 /** The pin a "Create an event" flow linked to this event, else one whose title matches its location text. */
@@ -111,6 +129,7 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
   const threshold = Math.max(1, Math.ceil(memberCount * 0.05));
   const cards: HomeCardData[] = [];
 
+  const postInfo: PickInfo = {};
   const post = pick(
     posts.filter((p) => p.category !== 'EVENT' && p.author_id !== me),
     (p) => p.created_at,
@@ -119,11 +138,13 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
     // Server flag OR this browser's own record: Home refetches when it regains focus, and a
     // quick trip back from a post can outrun the view request — the local set is already current.
     (p) => !!p.my_viewed || viewer.seenPostIds.has(p.id),
+    postInfo,
   );
   if (post) {
     cards.push({
       key: `post-${post.id}`,
       label: postCategoryLabel(post.category),
+      highlight: postInfo.boosted ? POPULAR_LABEL : null,
       title: post.title || post.body?.slice(0, 60) || 'Untitled',
       caption: post.title ? post.body : null,
       authorUsername: post.author_username,
@@ -137,6 +158,7 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
   // `events` (upcoming) ∪ EVENT-category `posts` not already in it.
   const postsById = new Map(posts.map((p) => [p.id, p]));
   const eventIds = new Set(events.map((e) => e.id));
+  const eventInfo: PickInfo = {};
   const event = pick(
     [...events, ...posts.filter((p) => p.category === 'EVENT' && !eventIds.has(p.id))].filter((e) => e.author_id !== me),
     (e) => e.created_at,
@@ -145,11 +167,13 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
     // The upcoming-events endpoint doesn't return my_viewed (only the posts list does), so also look
     // the event up among `posts` for the server's flag, plus this browser's own record.
     (e) => !!e.my_viewed || !!postsById.get(e.id)?.my_viewed || viewer.seenPostIds.has(e.id),
+    eventInfo,
   );
   if (event) {
     cards.push({
       key: `event-${event.id}`,
       label: 'Event',
+      highlight: eventInfo.boosted ? POPULAR_LABEL : null,
       title: event.title ?? 'Event',
       caption: event.body,
       authorUsername: event.author_username,
@@ -166,17 +190,20 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
     });
   }
 
+  const pinInfo: PickInfo = {};
   const pin = pick(
     pins.filter((p) => p.authorId !== me),
     (p) => p.createdAt,
     threshold,
     (p) => [p.replyCount ?? 0],
     (p) => viewer.seenPinIds.has(p.id),
+    pinInfo,
   );
   if (pin) {
     cards.push({
       key: `pin-${pin.id}`,
       label: 'Atlas Pin',
+      highlight: pinInfo.boosted ? POPULAR_LABEL : null,
       title: pin.title,
       caption: pin.description,
       authorUsername: pin.authorUsername,
@@ -233,6 +260,26 @@ export function selectHomeCards(input: HomeFeedInput, viewer: HomeFeedViewer): H
       initiative: update,
       action: { type: 'initiative', initiativeId: update.initiativeId, updateId: update.entry.id, kind: update.entry.kind, taskId: update.taskId },
       timestamp: new Date(update.entry.created_at).getTime(),
+    });
+  }
+
+  // Outside: the hub already ranked these for this member, so "best" = first, not newest. Prefer
+  // one they haven't opened; once they've opened them all the rule switches off (never empty).
+  const outsideItems = input.externalItems ?? [];
+  const seenExternal = viewer.seenExternalIds;
+  const outside = outsideItems.find((i) => !seenExternal?.has(i.id)) ?? outsideItems[0];
+  if (outside) {
+    let host = '';
+    try { host = new URL(outside.url).hostname.replace(/^www\./, ''); } catch { /* url was validated server-side; leave blank */ }
+    cards.push({
+      key: `external-${outside.id}`,
+      label: `Outside · ${outside.source.label}`,
+      title: outside.title,
+      caption: outside.excerpt || null,
+      authorUsername: null,
+      external: { sourceLabel: outside.source.label, host },
+      action: { type: 'external', id: outside.id, url: outside.url },
+      timestamp: outside.published_at ? new Date(outside.published_at).getTime() : Date.now(),
     });
   }
 

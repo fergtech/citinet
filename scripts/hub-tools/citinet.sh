@@ -48,6 +48,51 @@ health_of() { docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{e
 
 need_docker() { docker info >/dev/null 2>&1 || die "Docker isn't running. Start Docker Desktop (Windows/Mac) or run: sudo systemctl start docker"; }
 
+# ── address pre-flight ──────────────────────────────────────────────────────
+# docker-compose.yml can publish the API on this machine's LAN / Tailscale address (${LAN_IP},
+# ${TAILSCALE_IP} from .env). If that address has gone (moved Ethernet→Wi-Fi, DHCP changed it,
+# Tailscale logged out) Docker can't bind it and the API never starts, with only a cryptic
+# "can't bind on the specified endpoint". Catch it first and say what to do.
+local_ips() {
+  if command -v ip >/dev/null 2>&1; then ip -4 -o addr show 2>/dev/null | awk '{split($4,a,"/"); print a[1]}'
+  elif command -v ifconfig >/dev/null 2>&1; then ifconfig 2>/dev/null | awk '/inet /{sub("addr:","",$2); print $2}'
+  elif command -v hostname >/dev/null 2>&1; then hostname -I 2>/dev/null | tr ' ' '\n'; fi
+}
+# One "FATAL|NAME|value" (compose publishes on it) or "WARN|NAME|value" per stale address.
+# Prints nothing when everything is fine, or when the machine's addresses can't be read.
+addr_problems() {
+  ips="$(local_ips | grep -E '^[0-9]' || true)"; [ -n "$ips" ] || return 0
+  for name in LAN_IP TAILSCALE_IP; do
+    val="$(env_get "$name")"; val="${val%\"}"; val="${val#\"}"; [ -n "$val" ] || continue
+    echo "$ips" | grep -qxF "$val" && continue
+    if grep -qF "\${$name}:" docker-compose.yml; then echo "FATAL|$name|$val"; else echo "WARN|$name|$val"; fi
+  done
+}
+addr_hint() {
+  case "$1" in
+    TAILSCALE_IP) echo "Is Tailscale logged in? Check with: tailscale ip -4 — then set TAILSCALE_IP in .env";;
+    *) echo "Check your current address (ip addr, or ifconfig) and set LAN_IP in .env";;
+  esac
+}
+# Gate for commands that (re)create containers. Returns 1 (after explaining) if one can't start.
+preflight_addrs() {
+  rc=0
+  while IFS='|' read -r lvl name val; do
+    [ -n "$lvl" ] || continue
+    if [ "$lvl" = FATAL ]; then
+      rc=1
+      echo "${R}✗ $name=$val (in $HERE/.env) is not an address on this machine, and docker-compose.yml publishes the API on it.${N}" >&2
+      echo "  Addresses present now: $(local_ips | grep -E '^[0-9]' | grep -v '^127\.' | tr '\n' ' ')" >&2
+      echo "  $(addr_hint "$name")" >&2
+    else
+      say "${Y}!${N} $name=$val is not an address on this machine (not fatal here, but anything using it is stale). $(addr_hint "$name")"
+    fi
+  done <<EOF
+$(addr_problems)
+EOF
+  [ "$rc" -eq 0 ] || { echo "  Fix that, then re-run this command." >&2; return 1; }
+}
+
 # ── status ──────────────────────────────────────────────────────────────────
 cmd_status() {
   need_docker
@@ -77,6 +122,13 @@ cmd_diagnose() {
   if [ ! -f .env ]; then bad ".env is missing" "Re-run your hub's setup script to recreate it"; else
     missing=""; for k in DB_PASSWORD JWT_SECRET STORAGE_ACCESS_KEY STORAGE_SECRET_KEY; do [ -z "$(env_get $k)" ] && missing="$missing $k"; done
     [ -z "$missing" ] && ok ".env has its required secrets" || bad ".env has blank values:$missing" "Blank passwords make services restart forever — restore them from your setup script/password manager"
+    while IFS='|' read -r lvl name val; do
+      [ -n "$lvl" ] || continue
+      if [ "$lvl" = FATAL ]; then bad "$name=$val is not an address on this machine, and the compose file publishes the API on it — the API can't start" "$(addr_hint "$name"), then ./citinet.sh fix"
+      else warn "$name=$val is not an address on this machine, so anything using it is stale" "$(addr_hint "$name")"; fi
+    done <<EOF
+$(addr_problems)
+EOF
   fi
 
   head1 "Containers"
@@ -135,6 +187,7 @@ cmd_diagnose() {
 # ── fix ─────────────────────────────────────────────────────────────────────
 cmd_fix() {
   need_docker
+  preflight_addrs || { echo; cmd_diagnose; exit 1; }
   say "Starting anything that should be running (your data is never touched)…"
   $DC up -d 2>&1 | sed 's/^/  /'
   echo; cmd_diagnose
@@ -151,7 +204,7 @@ cmd_restart() {
   need_docker; t="${1:-all}"
   if [ "$t" = all ]; then say "Restarting every service…"; $DC restart; else svc="$(norm "$t")"; has_service "$svc" || die "No such service: $svc"; say "Restarting $svc…"; $DC restart "$svc"; fi
 }
-cmd_start() { need_docker; $DC up -d; }
+cmd_start() { need_docker; preflight_addrs || exit 1; $DC up -d; }
 cmd_stop() {
   need_docker; read -r -p "Stop the whole hub? Members will be disconnected. [y/N] " a; case "$a" in y|Y|yes) $DC stop;; *) say "Cancelled.";; esac
 }
@@ -220,6 +273,7 @@ cmd_update() {
   done
   [ -z "$plan" ] && die "Nothing to update."
   [ "$dry" = 1 ] && { say; say "Dry run — nothing was changed."; return 0; }
+  preflight_addrs || die "Update cancelled — nothing changed."
 
   head1 "1/4  Backing up first"
   backup_now || { read -r -p "  Backup did not finish cleanly. Continue the update anyway? [y/N] " a; case "$a" in y|Y) ;; *) die "Update cancelled — nothing changed.";; esac; }
@@ -254,6 +308,7 @@ cmd_update() {
 
 cmd_rollback() {
   need_docker; targets=""; for a in "$@"; do targets="$targets $(norm "$a")"; done; [ -z "$targets" ] && targets="$DEFAULT_UPDATE"
+  preflight_addrs || return 1
   for s in $targets; do
     has_service "$s" || continue; img="$(img_of "$s")"; repo="${img%:*}"
     prev="$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^$repo:rollback-" | sort -r | head -1)"
