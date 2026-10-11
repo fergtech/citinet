@@ -12,6 +12,7 @@ import { registryService } from '../services/registryService';
 import { preferencesService, type UserPreferences } from '../services/preferencesService';
 import { getSubdomain, navigateToHub, clearSubdomainCache } from '../utils/subdomain';
 import { flushQueuedWrites } from '../services/writeQueueService';
+import { consumeHandoff } from '../utils/hubHandoff';
 
 interface HubContextValue {
   /** Current hub connection (null if not connected to any hub) */
@@ -74,6 +75,23 @@ export function HubProvider({ children }: { children: ReactNode }) {
     if (slug) {
       // Bootstrap localStorage from URL param when navigating between hubs
       // (localStorage is origin-scoped — start and hub subdomains can't share it directly)
+      // Handoff from citinet.cloud (fragment, never sent to a server). Only installed
+      // when this origin has no signed-in session for the hub already, so a crafted
+      // link can never silently swap an existing session or overwrite working keys.
+      const handoff = consumeHandoff();
+      if (handoff && handoff.slug === slug) {
+        const existing = hubService.getHubConnection(slug);
+        if (!existing?.user?.authToken) {
+          const hubs = hubService.getAllHubConnections();
+          hubs[slug] = handoff.connection;
+          localStorage.setItem('citinet-hubs', JSON.stringify(hubs));
+          hubService.setActiveHub(slug);
+        }
+        if (handoff.keys) {
+          hubService.installHandoffKeys(slug, handoff.keys).catch(() => {});
+        }
+      }
+
       const params = new URLSearchParams(window.location.search);
       const encoded = params.get('_cc');
       if (encoded) {

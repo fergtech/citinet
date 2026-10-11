@@ -24,6 +24,7 @@ import type { Hub, HubInfoResponse, HubStatusResponse } from '../types/hub';
 import { OnboardingBackground } from './OnboardingBackground';
 import { HubIcon } from './HubIcon';
 import { CitinetLogo } from './CitinetLogo';
+import { rememberHub } from '../utils/myHubs';
 
 interface NodeDiscoveryScreenProps {
   onNodeFound: (hubSlug: string, hubName: string, hub: Hub) => void;
@@ -156,6 +157,9 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   };
 
   const handleProbeDirectoryHub = async (hub: RegistryHub) => {
+    // Click-time My Hubs registration: the shell can't observe the sign-in that
+    // follows, so it records the intent now (state 'opened'; upgraded on success).
+    rememberHub({ slug: hub.slug, name: hub.name, tunnelUrl: hub.tunnel_url });
     setProbingHubName(hub.name);
     setTunnelUrl(hub.tunnel_url);
     await handleProbeUrl(hub.tunnel_url);
@@ -176,6 +180,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const handleQuickEnter = async (hub: RegistryHub) => {
     const connection = hubService.getHubConnection(hub.slug);
     if (!connection) return; // shouldn't happen -- caller only offers this when isOnboarded() is true
+    rememberHub({ slug: hub.slug, name: hub.name, tunnelUrl: hub.tunnel_url });
     setQuickEnterSlug(hub.slug);
     const status = await hubService.checkAccountStatus(hub.slug);
     setQuickEnterSlug(null);
@@ -229,7 +234,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
       // just starts fresh here rather than prompting — manage/restore keys
       // properly from Account settings after landing in the hub.
       const hubSlugForKeys = hub.slug;
-      hubService.ensureUserKeys(hubSlugForKeys).then(async ({ status }) => {
+      const keysReady = hubService.ensureUserKeys(hubSlugForKeys).then(async ({ status }) => {
         // 'has-keys-new-backup' already created the backup server-side inside
         // ensureUserKeys -- the phrase just isn't shown here (see NodeEntryFlow
         // for that UI); the user can view/regenerate it from Account settings.
@@ -251,6 +256,11 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
           await hubService.restoreFromKeyBackup(hubSlugForKeys, password).catch(() => false);
         }
       }).catch(() => {});
+
+      // Hand-off to the hub's own origin exports this device's keys, so a brand-new
+      // account's key setup has to land first or it would be stranded here. Bounded
+      // so a slow/failed key check can never hold up entering the hub.
+      await Promise.race([keysReady, new Promise<void>(r => setTimeout(r, 8000))]);
 
       onNodeFound(hub.slug, hub.name, hub);
     } catch (err) {

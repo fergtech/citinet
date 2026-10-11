@@ -43,6 +43,7 @@ import { HubLayout } from './components/HubLayout';
 import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
+import { enterHub } from './utils/hubHandoff';
 import type { Hub, HubUser, HubVendor, HubListing } from './types/hub';
 
 const screenTitles: Record<string, string> = {
@@ -92,7 +93,8 @@ function JoinHubRoute() {
   const handleHubFound = (hubSlug: string, _hubName: string, hub: Hub) => {
     onHubJoined(hub);
     const connection = hubService.getHubConnection(hubSlug);
-    navigateToHub(hubSlug, connection ?? { hub });
+    // Hands off to the hub's own HTTPS UI when it has one; otherwise stays here.
+    void enterHub(hubSlug, connection, hub);
   };
 
   return (

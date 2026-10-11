@@ -2830,6 +2830,23 @@ class HubService {
     } catch { return false; }
   }
 
+  /**
+   * Installs key material that arrived with a cross-origin hub handoff (see
+   * utils/hubHandoff.ts) as this origin's keys for the hub. Never overwrites keys
+   * this origin already has — a handoff must not be able to replace working keys.
+   * importKeyMaterial validates the package before writing anything.
+   */
+  async installHandoffKeys(hubSlug: string, km: KeyMaterial): Promise<boolean> {
+    const scope = this.keyScope(hubSlug);
+    try {
+      if (await hasKeys(scope)) return false;
+      await importKeyMaterial(scope, km);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** This device's full key material for the hub, or null if any part is missing (see exportKeyMaterial). */
   async getKeyMaterial(hubSlug: string): Promise<KeyMaterial | null> {
     return exportKeyMaterial(this.keyScope(hubSlug));
