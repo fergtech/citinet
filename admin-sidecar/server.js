@@ -23,6 +23,7 @@ const { findContainer, demuxDockerLog, ownComposeDir, HUB_SLUG } = require('./do
 const watchdog = require('./watchdog');
 const backupHealth = require('./backup-health');
 const remoteConfig = require('./remote-config');
+const updater = require('./updater');
 
 const PORT = process.env.PORT || 7070;
 const ADMIN_SIDECAR_TOKEN = process.env.ADMIN_SIDECAR_TOKEN || '';
@@ -98,6 +99,23 @@ app.post('/drill', (req, res) => {
   res.status(202).json({ started: true });
 });
 
+// Update watchdog: what's published vs. what's running (checked every few hours).
+app.get('/updates', (req, res) => res.json(updater.snapshot()));
+app.post('/updates/check', async (req, res) => {
+  try {
+    res.json(await updater.check());
+  } catch (err) {
+    console.error('POST /updates/check error:', err);
+    res.status(500).json({ error: 'Update check failed' });
+  }
+});
+// Apply an update. Always an explicit admin action — nothing here ever runs on its own.
+app.post('/update/:service', async (req, res) => {
+  const r = await updater.startApply(req.params.service);
+  if (!r.ok) return res.status(r.status).json({ error: r.error });
+  res.status(202).json({ started: true });
+});
+
 app.post('/restart/:service', async (req, res) => {
   const service = req.params.service;
   if (!RESTARTABLE_SERVICES.has(service)) {
@@ -118,5 +136,6 @@ app.listen(PORT, () => {
   remoteConfig.start();
   watchdog.start();
   backupHealth.start();
+  updater.start();
   console.log(`citinet-admin sidecar listening on ${PORT} (hub: ${HUB_SLUG || 'unknown'})`);
 });

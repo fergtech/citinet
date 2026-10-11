@@ -20,6 +20,7 @@
 const { findContainer } = require('./docker-util');
 const { raise, clear } = require('./alerts');
 const { getPingUrl, pingSource } = require('./remote-config');
+const updater = require('./updater');
 
 const WATCHED = ['citinet-db', 'citinet-storage', 'citinet-api', 'citinet-caddy', 'citinet-backup', 'citinet-livekit', 'citinet-ollama'];
 // What "the hub is up" means for the external heartbeat.
@@ -44,6 +45,8 @@ function recordEvent(e) {
 }
 
 async function checkService(service) {
+  // A container mid-update is deliberately stopped/parked — not a failure to heal.
+  if (updater.isBusy()) return { service, present: true, running: true };
   const found = await findContainer(service);
   if (!found) return { service, present: false, running: false };
 
