@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Loader2, X, Image, Film, Calendar, MapPin, ChevronDown, Send, BarChart2, Vote, Plus, Link2, Clock,
+  Loader2, X, Image, Calendar, MapPin, ChevronDown, Send, BarChart2, Vote, Plus, Link2, Clock,
 } from 'lucide-react';
 import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
@@ -25,6 +25,12 @@ export const QUICK_POST_CATEGORIES = [
   { value: 'PROJECT',      label: 'Proposal' },
   { value: 'REQUEST',      label: 'Request' },
 ] as const;
+
+/** Post types that need a headline: they're scanned in feeds, notifications
+ *  and search, and referenced by name afterwards. Discussion keeps its title
+ *  optional (behind an "Add a title" link) so a quick thought stays one box;
+ *  polls already use their question as the title. */
+export const TITLE_REQUIRED_CATEGORIES: readonly string[] = ['ANNOUNCEMENT', 'PROJECT', 'REQUEST', 'EVENT'];
 
 /** Whatever category tab the feed is currently filtered to becomes the
  *  composer's starting category too — e.g. opening the composer while
@@ -72,12 +78,19 @@ export interface PostComposerProps {
 export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, currentUserName, currentUserAvatarUrl, onPostCreated, onOpenFullComposer, autoFocus, activeFilter, spaceSlug, forceMode }: PostComposerProps) {
   const [mode, setMode] = useState<'idle' | 'poll' | 'event'>(forceMode ?? 'idle');
   const [body, setBody] = useState('');
+  // Headline (see TITLE_REQUIRED_CATEGORIES). `showTitle` reveals the optional
+  // Discussion title; required types always show it. Poll uses `body` as its
+  // question, so this is unused there.
+  const [title, setTitle] = useState('');
+  const [showTitle, setShowTitle] = useState(false);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState('');
   // true when postError is actually a "queued for later" notice (hub
   // unreachable), not a real failure -- styled differently in the JSX below.
   const [postQueued, setPostQueued] = useState(false);
   const bodyInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const eventTitleRef = useRef<HTMLInputElement>(null);
   const eventTextareaRef = useRef<HTMLTextAreaElement>(null);
   const pollTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -97,10 +110,17 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
   // party…B". Runs only on mode transitions (not every keystroke), so it
   // never yanks the caret away from someone editing mid-text afterward.
   useEffect(() => {
-    const el = mode === 'event' ? eventTextareaRef.current : mode === 'poll' ? pollTextareaRef.current : null;
+    // Switching into Event: whatever was typed in the one-line box is the
+    // event's name, so carry it into the title and leave details empty.
+    if (mode === 'event' && !title.trim() && body.trim()) {
+      setTitle(body.trim());
+      setBody('');
+    }
+    const el = mode === 'event' ? eventTitleRef.current : mode === 'poll' ? pollTextareaRef.current : null;
     if (!el) return;
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   // Idle-mode attachments — a plain post can carry a photo/video and/or a place
@@ -109,8 +129,9 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
   const [placeOpen, setPlaceOpen] = useState(false);
   const [placeQuery, setPlaceQuery] = useState('');
   const [place, setPlace] = useState<{ label: string; lat: number; lng: number } | null>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  // One picker for photos and videos — the file chooser (and the file's own
+  // type) is where the distinction gets made, not two separate buttons.
+  const mediaInputRef = useRef<HTMLInputElement>(null);
 
   // Idle-mode post intent — which of the feed's own category tabs this quick
   // post should land under. Starts out following the active feed tab.
@@ -168,7 +189,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
   const passVotesNeeded = passScenarioVoters && passPct > 0 ? Math.ceil((passScenarioVoters * passPct) / 100) : null;
 
   const reset = () => {
-    setMode('idle'); setBody(''); setPostError('');
+    setMode('idle'); setBody(''); setTitle(''); setShowTitle(false); setPostError('');
     setCategory(contextualDefaultCategory(activeFilter, QUICK_POST_CATEGORIES.map(c => c.value)));
     setCategoryMenuOpen(false);
     if (mediaPreview) URL.revokeObjectURL(mediaPreview);
@@ -190,7 +211,11 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
     setMediaPreview(null);
   }
 
-  const canQuickPost = !!(body.trim() || mediaFile || place);
+  const titleRequired = TITLE_REQUIRED_CATEGORIES.includes(category);
+  const titleVisible = titleRequired || showTitle || !!title.trim();
+  // Required-title types need the title (details optional); Discussion needs
+  // any of title/text/media/place, as before.
+  const canQuickPost = titleRequired ? !!title.trim() : !!(title.trim() || body.trim() || mediaFile || place);
 
   async function submitQuickPost() {
     if (!canQuickPost || posting) return;
@@ -200,6 +225,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
     try {
       const post = await createPostOrQueue(hubSlug, {
         category,
+        title: title.trim() || undefined,
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventLocation: place?.label,
@@ -217,13 +243,14 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
   }
 
   async function submitEvent() {
-    if (!body.trim() || !eventDate || posting) return;
+    if (!title.trim() || !eventDate || posting) return;
     setPosting(true);
     setPostError('');
     setPostQueued(false);
     try {
       const post = await createPostOrQueue(hubSlug, {
         category: 'EVENT',
+        title: title.trim(),
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventDate: new Date(eventDate).toISOString(),
@@ -280,11 +307,8 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
   const isVideoFile = mediaFile?.type.startsWith('video/') ?? false;
   const mediaChipsRow = (
     <div className="flex items-center gap-1">
-      <button onClick={() => photoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-        <Image className="w-3.5 h-3.5" />Photo
-      </button>
-      <button onClick={() => videoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-        <Film className="w-3.5 h-3.5" />Video
+      <button onClick={() => mediaInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+        <Image className="w-3.5 h-3.5" />Media
       </button>
     </div>
   );
@@ -415,12 +439,11 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
           </button>
         </div>
 
-        {/* mediaChipsRow's Photo/Video buttons click these — without them
+        {/* mediaChipsRow's Media button clicks this — without them
             here too, they only exist in the idle-mode return below, so
-            clicking Photo/Video while in poll mode silently does nothing
-            (photoInputRef.current is null, not just unmounted-and-stale). */}
-        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
-        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+            clicking Media while in poll mode silently does nothing
+            (mediaInputRef.current is null, not just unmounted-and-stale). */}
+        <input ref={mediaInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
       </div>
     );
   }
@@ -437,12 +460,20 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
+        <input
+          ref={eventTitleRef}
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          maxLength={200}
+          placeholder="Event name"
+          className={`${fieldCls} font-semibold`}
+        />
         <textarea
           ref={eventTextareaRef}
           value={body}
           onChange={e => setBody(e.target.value)}
           rows={2}
-          placeholder="What's the event? Add details for your neighbors…"
+          placeholder="Details for your neighbors (optional)…"
           className={`${fieldCls} resize-none !rounded-field`}
         />
         <input
@@ -472,7 +503,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
           <button onClick={reset} className="px-3.5 py-1.5 rounded-lg text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
           <button
             onClick={submitEvent}
-            disabled={!body.trim() || !eventDate || posting}
+            disabled={!title.trim() || !eventDate || posting}
             className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
           >
             {posting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />} Post event
@@ -481,8 +512,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
 
         {/* See the matching comment in the poll-mode return above — same
             reason these need to be duplicated here rather than shared. */}
-        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
-        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+        <input ref={mediaInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
       </div>
     );
   }
@@ -492,7 +522,21 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
     // that needs corner-clipping already clips itself (media preview), and the
     // category picker below needs to pop up past this card's own edge.
     <div className="cn-glass rounded-2xl">
-      <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
+      {/* Headline — always shown for the types that need one; Discussion
+          reveals it from the "Add a title" link in the toolbar below. */}
+      {titleVisible && (
+        <div className="px-4 pt-3.5">
+          <input
+            ref={titleInputRef}
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            maxLength={200}
+            placeholder={category === 'REQUEST' ? 'What do you need?' : 'Title'}
+            className="w-full bg-transparent text-[15px] font-semibold cn-text-1 placeholder:cn-text-4 placeholder:font-medium focus:outline-none"
+          />
+        </div>
+      )}
+      <div className={`flex items-center gap-3 px-4 ${titleVisible ? 'pt-2' : 'pt-3.5'} pb-3`}>
         <AvatarCircle
           authorId={currentUserId ?? ''}
           authorUsername={currentUserName}
@@ -523,6 +567,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
           placeholder={
             activeFilter === 'EVENT' ? "What's the event? Add details for your neighbors…"
               : activeFilter === 'POLL' ? 'Ask your neighbors something…'
+              : titleRequired ? 'Add details (optional)…'
               : 'Share something with your neighbors…'
           }
           className="flex-1 bg-transparent text-sm cn-text-1 placeholder:cn-text-4 focus:outline-none"
@@ -600,12 +645,18 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
-          <button onClick={() => photoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-            <Image className="w-3.5 h-3.5" />Photo
+        {!titleVisible && (
+          <button
+            type="button"
+            onClick={() => { setShowTitle(true); setTimeout(() => titleInputRef.current?.focus(), 0); }}
+            className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium cn-text-4 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+          >
+            Add title
           </button>
-          <button onClick={() => videoInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-            <Film className="w-3.5 h-3.5" />Video
+        )}
+        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0">
+          <button onClick={() => mediaInputRef.current?.click()} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cn-text-3 hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+            <Image className="w-3.5 h-3.5" />Media
           </button>
           <button
             onClick={() => {
@@ -618,7 +669,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
             <MapPin className="w-3.5 h-3.5" />Place
           </button>
           {/* Event/Poll switch into their own dedicated modes (own category),
-              so — unlike Photo/Video/Place — they pick up a thin ring whenever
+              so — unlike Media/Place — they pick up a thin ring whenever
               that's the feed tab you're currently viewing: a "you're probably
               looking for this" nudge, not a solid pill. A filled pill here
               would read as "already on" (that's what the tab bar's own
@@ -647,7 +698,13 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
         </div>
         <div className="flex-1" />
         <button
-          onClick={() => (canQuickPost ? submitQuickPost() : onOpenFullComposer(''))}
+          onClick={() => {
+            if (canQuickPost) { submitQuickPost(); return; }
+            // A title-required type with no title yet: point at the gap
+            // instead of popping the full modal.
+            if (titleRequired) { setPostError('Add a title first.'); titleInputRef.current?.focus(); return; }
+            onOpenFullComposer('');
+          }}
           disabled={posting}
           className="shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
         >
@@ -656,8 +713,7 @@ export function PostComposer({ hubSlug, hubCenter, isMod, currentUserId, current
       </div>
       {postError && <p className={`text-xs px-4 pb-2 flex items-center gap-1 ${postQueued ? 'text-amber-500' : 'text-rose-500'}`}>{postQueued && <Clock className="w-3 h-3" />}{postError}</p>}
 
-      <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
-      <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
+      <input ref={mediaInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleMediaFile(e.target.files[0]); e.target.value = ''; }} />
     </div>
   );
 }

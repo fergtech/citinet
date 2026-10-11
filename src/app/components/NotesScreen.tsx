@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -285,7 +285,7 @@ function NoteEditor({
   onSaveStatus: (s: 'idle' | 'saving' | 'saved' | 'error') => void;
 }) {
   const [titleValue, setTitleValue] = useState(note.title);
-  const titleRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const pendingPatch = useRef<Partial<HubNote>>({});
   const latestNote = useRef(note);
@@ -427,10 +427,26 @@ function NoteEditor({
     };
   }, [editor, hubSlug]);
 
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // The title wraps and grows to show everything you wrote (a one-line input
+  // scrolls sideways and hides the start/end of a long title). Height is
+  // re-measured whenever the text changes and when the editor column resizes.
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const fit = () => { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [titleValue]);
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (readOnly) return;
-    setTitleValue(e.target.value);
-    scheduleAutosave({ title: e.target.value });
+    // A title is a single logical line — soft-wrapped for display only.
+    const value = e.target.value.replace(/\r?\n/g, ' ');
+    setTitleValue(value);
+    scheduleAutosave({ title: value });
   };
 
   const editedDate = (() => {
@@ -444,13 +460,22 @@ function NoteEditor({
       {!readOnly && <FormatToolbar editor={editor} hubSlug={hubSlug} />}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 md:px-10 py-7">
-          <input
+          <textarea
             ref={titleRef}
             value={titleValue}
             onChange={handleTitleChange}
+            onKeyDown={e => {
+              // Enter finishes the title and drops you into the note body
+              // (what Notion/Apple Notes do) rather than inserting a newline.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                editor?.commands.focus('start');
+              }
+            }}
             readOnly={readOnly}
+            rows={1}
             placeholder="Title"
-            className="w-full text-2xl md:text-3xl font-bold bg-transparent outline-none text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-zinc-700 mb-1.5 leading-tight"
+            className="block w-full resize-none overflow-hidden break-words text-2xl md:text-3xl font-bold bg-transparent outline-none text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-zinc-700 mb-1.5 leading-tight"
           />
           <p className="text-[11px] text-slate-400 dark:text-zinc-600 mb-5">{editedDate}</p>
           <div className="tiptap-editor text-sm md:text-base text-slate-800 dark:text-zinc-200 leading-relaxed">

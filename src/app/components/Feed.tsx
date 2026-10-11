@@ -5,7 +5,7 @@ import { PostCard } from './PostCard';
 import { PollFeedCard } from './PollFeedCard';
 import { LocationSearchInput } from './LocationSearchInput';
 import { AvatarCircle } from './AvatarCircle';
-import { PostComposer, contextualDefaultCategory } from './PostComposer';
+import { PostComposer, contextualDefaultCategory, TITLE_REQUIRED_CATEGORIES } from './PostComposer';
 import {
   Loader2, AlertCircle, RefreshCw, X, Image, Film, Newspaper, ArrowDownUp,
   Calendar, MapPin, ChevronDown, Globe, Users, Lock,
@@ -458,7 +458,7 @@ export function PostDetailView({
   const [deleting, setDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editBody, setEditBody] = useState(post.body || '');
-  const [, setEditTitle] = useState(post.title);
+  const [editTitle, setEditTitle] = useState(post.title ?? '');
   const [editMediaFile, setEditMediaFile] = useState<File | null>(null);
   const [editMediaPreview, setEditMediaPreview] = useState<string | null>(null);
   const [editRemoveMedia, setEditRemoveMedia] = useState(false);
@@ -582,9 +582,16 @@ export function PostDetailView({
 
   async function handleSaveEdit() {
     if (post.category === 'EVENT' && !editEventDate) { alert('Event date is required'); return; }
+    // Same rule the composer applies: these types are referenced by name, so
+    // a title can't be edited away. (Older posts that never had one can stay
+    // untitled — only block clearing a title that's being actively edited.)
+    if (TITLE_REQUIRED_CATEGORIES.includes(post.category) && post.title?.trim() && !editTitle.trim()) {
+      alert('A title is required'); return;
+    }
     setSaving(true);
     try {
       const updated = await hubService.updatePost(hubSlug, post.id, {
+        title: editTitle.trim(),
         body: editBody.trim(),
         mediaFile: editMediaFile ?? undefined,
         removeMedia: editRemoveMedia,
@@ -609,7 +616,7 @@ export function PostDetailView({
 
   function handleCancelEdit() {
     setEditBody(post.body || '');
-    setEditTitle(post.title);
+    setEditTitle(post.title ?? '');
     setEditMediaFile(null);
     if (editMediaPreview) URL.revokeObjectURL(editMediaPreview);
     setEditMediaPreview(null);
@@ -698,6 +705,18 @@ export function PostDetailView({
             {isEditing ? (
               /* ── Edit mode ── */
               <div className="space-y-4">
+                {post.category !== 'POLL' && (
+                  <div>
+                    <label className="text-xs font-medium cn-text-3 mb-1 block">Title</label>
+                    <input
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      maxLength={200}
+                      placeholder={TITLE_REQUIRED_CATEGORIES.includes(post.category) ? 'Title' : 'Title (optional)'}
+                      className="w-full cn-surface-2 border cn-border rounded-field px-4 py-2.5 text-sm font-semibold cn-text-1 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs font-medium cn-text-3 mb-1 block">Caption</label>
                   <textarea
@@ -1068,8 +1087,14 @@ const VISIBILITY_OPTIONS: { value: PostVisibility; label: string; icon: ReactNod
   { value: 'private', label: 'Only me',  icon: <Lock   className="w-3.5 h-3.5" />, desc: 'Visible only to you' },
 ];
 
-function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = '', initialCategory = 'DISCUSSION' }: ComposeModalProps) {
+function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialTitle = '', initialBody = '', initialCategory = 'DISCUSSION' }: ComposeModalProps) {
   const [category, setCategory] = useState(initialCategory);
+  // Headline. Required for the types that get scanned/referenced by name
+  // (see TITLE_REQUIRED_CATEGORIES); optional for Discussion, where it hides
+  // behind an "Add a title" link so a quick thought stays one box.
+  const [title, setTitle] = useState(initialTitle);
+  const [showTitle, setShowTitle] = useState(!!initialTitle);
+  const titleRequired = TITLE_REQUIRED_CATEGORIES.includes(category);
   const [labelOpen, setLabelOpen] = useState(false);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const [visibility, setVisibility] = useState<PostVisibility>('inherit');
@@ -1109,13 +1134,15 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!body.trim() && !mediaFile) { setError('Add a caption or media'); return; }
+    if (titleRequired && !title.trim()) { setError(`Add a title for your ${postCategoryLabel(category).toLowerCase()}`); return; }
+    if (!titleRequired && !title.trim() && !body.trim() && !mediaFile) { setError('Add a caption or media'); return; }
     if (category === 'EVENT' && !eventDate) { setError('Pick a date and time for the event'); return; }
     setError('');
     setSubmitting(true);
     try {
       const post = await createPostOrQueue(hubSlug, {
         category,
+        title: title.trim() || undefined,
         body: body.trim(),
         mediaFile: mediaFile ?? undefined,
         eventDate: category === 'EVENT' && eventDate ? new Date(eventDate).toISOString() : undefined,
@@ -1165,11 +1192,26 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-6 overflow-y-auto max-h-[70vh]">
+            {(titleRequired || showTitle) ? (
+              <input
+                autoFocus={titleRequired}
+                placeholder={category === 'EVENT' ? 'Event name' : category === 'REQUEST' ? 'What do you need?' : 'Title'}
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                maxLength={200}
+                className="w-full cn-surface-2 border cn-border rounded-field px-4 py-3 cn-text-1 placeholder-zinc-500 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              />
+            ) : (
+              <button type="button" onClick={() => setShowTitle(true)}
+                className="self-start text-xs font-medium cn-text-3 hover:cn-text-1 transition-colors">
+                + Add a title
+              </button>
+            )}
             <textarea
-              placeholder="What's on your mind? (optional)"
+              placeholder={titleRequired ? 'Add details (optional)' : "What's on your mind? (optional)"}
               value={body}
               onChange={e => setBody(e.target.value)}
-              rows={5}
+              rows={titleRequired ? 4 : 5}
               className="w-full cn-surface-2 border cn-border rounded-field px-4 py-3 cn-text-1 placeholder-zinc-500 text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
 
@@ -1279,7 +1321,7 @@ function ComposeModal({ hubSlug, hubCenter, onClose, onCreated, initialBody = ''
               <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm cn-text-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 Cancel
               </button>
-              <button onClick={handleSubmit} disabled={submitting || (!body.trim() && !mediaFile)}
+              <button onClick={handleSubmit} disabled={submitting || (titleRequired ? !title.trim() : (!title.trim() && !body.trim() && !mediaFile))}
                 className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-opacity">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {submitting ? 'Posting…' : 'Post'}
@@ -1566,7 +1608,13 @@ function ComposePollModal({ hubSlug, editingPoll, isMod, onClose, onCreated, onU
  * fresh page doesn't mention (earlier-loaded pages) are kept. */
 function mergePosts(fresh: HubPost[], prev: HubPost[]): HubPost[] {
   const freshIds = new Set(fresh.map(p => p.id));
-  return [...fresh, ...prev.filter(p => !freshIds.has(p.id))];
+  const prevById = new Map(prev.map(p => [p.id, p]));
+  return [
+    // A post known to be seen never reverts to unseen from a response that
+    // raced the view being recorded.
+    ...fresh.map(p => (!p.my_viewed && prevById.get(p.id)?.my_viewed ? { ...p, my_viewed: true } : p)),
+    ...prev.filter(p => !freshIds.has(p.id)),
+  ];
 }
 
 /** Same ordering the server applies (unread-first optional, then newest). */
@@ -1858,6 +1906,42 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
       setLoading(false);
     }
   }, [hubSlug, feedOrder, feedCacheKey]);
+
+  // Returning from a post's detail view to the list is the moment the feed
+  // should reflect what you just did: the opened post counts as seen (so it
+  // drops out of the unseen group) and the order re-ranks from fresh server
+  // data — no manual page refresh needed. While you're *in* the list the
+  // order stays frozen (rankAtFirstSight) so nothing hops under your cursor.
+  const openedThisVisitRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (urlPostId) {
+      openedThisVisitRef.current.add(urlPostId);
+      return;
+    }
+    const opened = openedThisVisitRef.current;
+    if (opened.size === 0) return;
+    openedThisVisitRef.current = new Set();
+    setPosts(prev => prev.map(p => (opened.has(p.id) && !p.my_viewed ? { ...p, my_viewed: true } : p)));
+    rankAtFirstSight.current = new Map();
+    // Brief dim-and-restore on the posts that just moved, while every card
+    // glides to its new slot (see feedItemMotion) — so it reads as "that
+    // moved down" rather than a post silently vanishing.
+    setJustMovedIds(opened);
+    setTimeout(() => setJustMovedIds(new Set()), 1200);
+    // The list re-ranks instantly from the local seen-marks above; the
+    // server re-read waits for the view POST to land first, so a fast "back"
+    // can't fetch the pre-view state and put the post back on top.
+    void hubService.whenViewsSettled(opened).then(() => load(true));
+  }, [urlPostId, load]);
+
+  const [justMovedIds, setJustMovedIds] = useState<Set<string>>(new Set());
+  const feedItemMotion = (id: string) => ({
+    // position only (no scale) so card contents never distort mid-glide
+    layout: 'position' as const,
+    transition: { layout: { duration: 0.35, ease: 'easeOut' as const }, opacity: { duration: 0.6 } },
+    initial: false as const,
+    animate: { opacity: justMovedIds.has(id) ? [0.4, 1] : 1 },
+  });
 
   // Silent (no loading spinner) when cache already seeded `posts` above — a
   // background revalidation, not a first paint. A genuinely first-ever visit
@@ -2172,7 +2256,10 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
         />
       ) : (
       <>
-      <div className="max-w-6xl lg:max-w-[944px] mx-auto px-4 sm:px-6">
+      {/* Header on top; feed + right rail as a pair, capped at 944px of content (992px with padding) and
+          centred. The feed column is fluid (1fr beside a ≤320px rail) so the
+          pair scales with the window instead of snapping between fixed sizes. */}
+      <div className="max-w-6xl lg:max-w-[992px] mx-auto px-4 sm:px-6">
       {/* ── Header ── */}
       <div className="pt-3 pb-0">
           {/* Breadcrumb */}
@@ -2197,7 +2284,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
 
       {/* ── Main content ── */}
       <div className="pt-5 pb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[600px_320px] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)] gap-6 items-start">
 
             {/* Feed column */}
             <div className="flex flex-col gap-4 min-w-0">
@@ -2355,10 +2442,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
               {!loading && !error && filteredPosts.map(post => {
                 if (post.category === 'POLL') {
                   return (
-                    <div
+                    <motion.div
                       key={post.id}
                       className="cursor-pointer"
                       onClick={() => openPost(post)}
+                      {...feedItemMotion(post.id)}
                     >
                     <PollFeedCard
                       post={post}
@@ -2386,7 +2474,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       saved={savedPostIds.includes(post.id)}
                       onToggleSave={() => toggleSavedPost(post.id)}
                     />
-                    </div>
+                    </motion.div>
                   );
                 }
                 // Card view only ever needs a small preview — full
@@ -2397,10 +2485,11 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                   ? hubService.getPublicFileUrl(hubSlug, post.media_file_name, { thumb: true }) ?? undefined
                   : undefined;
                 return (
-                  <div
+                  <motion.div
                     key={post.id}
                     className="cursor-pointer"
                     onClick={() => openPost(post)}
+                    {...feedItemMotion(post.id)}
                   >
                     <PostCard
                       id={post.id}
@@ -2436,7 +2525,7 @@ export function Feed({ onBack, onNavigate }: FeedProps) {
                       saved={savedPostIds.includes(post.id)}
                       onToggleSave={() => toggleSavedPost(post.id)}
                     />
-                  </div>
+                  </motion.div>
                 );
               })}
 

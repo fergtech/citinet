@@ -2401,17 +2401,40 @@ class HubService {
   recordPostView(hubSlug: string, postId: string): void {
     seenPosts.markSeen(postId);
     const delays = [0, 3000, 12000];
-    const attempt = (i: number) => {
-      const conn = this.getHubConnection(hubSlug);
-      if (!conn?.hub.tunnelUrl || !conn.user?.authToken) return;
-      fetch(`${conn.hub.tunnelUrl}/api/posts/${encodeURIComponent(postId)}/view`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${conn.user.authToken}` },
-      })
-        .then((r) => { if (!r.ok) throw new Error(String(r.status)); })
-        .catch(() => { if (i + 1 < delays.length) setTimeout(() => attempt(i + 1), delays[i + 1]); });
-    };
-    attempt(0);
+    // Settles when the hub has acknowledged the view (or retries are
+    // exhausted) — lets a caller that is about to re-read the feed wait for
+    // it, so a fast "go back" doesn't re-fetch before the view has landed.
+    const done = new Promise<void>((resolve) => {
+      const attempt = (i: number) => {
+        const conn = this.getHubConnection(hubSlug);
+        if (!conn?.hub.tunnelUrl || !conn.user?.authToken) return resolve();
+        fetch(`${conn.hub.tunnelUrl}/api/posts/${encodeURIComponent(postId)}/view`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${conn.user.authToken}` },
+        })
+          .then((r) => { if (!r.ok) throw new Error(String(r.status)); resolve(); })
+          .catch(() => {
+            if (i + 1 < delays.length) setTimeout(() => attempt(i + 1), delays[i + 1]);
+            else resolve();
+          });
+      };
+      attempt(0);
+    });
+    this.pendingViews.set(postId, done);
+    void done.finally(() => { if (this.pendingViews.get(postId) === done) this.pendingViews.delete(postId); });
+  }
+
+  private pendingViews = new Map<string, Promise<void>>();
+
+  /** Resolves once any in-flight view recordings for these posts have been
+   * acknowledged by the hub, or after `timeoutMs` (never blocks for long). */
+  whenViewsSettled(postIds: Iterable<string>, timeoutMs = 2500): Promise<void> {
+    const pending = [...postIds].map((id) => this.pendingViews.get(id)).filter((p): p is Promise<void> => !!p);
+    if (pending.length === 0) return Promise.resolve();
+    return Promise.race([
+      Promise.all(pending).then(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
   }
 
   /** List replies for a post, oldest first. */

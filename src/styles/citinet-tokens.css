@@ -164,6 +164,13 @@
     inset: 0;
     z-index: 30;
   }
+
+  /* Full-screen map (see AtlasScreen toggleMapFullscreen): the bottom nav is
+     in a higher root stacking layer than the map's own, so hide it for the
+     duration instead of fighting z-index. */
+  .cn-atlas-map-fullscreen nav.fixed.bottom-0 {
+    display: none;
+  }
 }
 
 /* ============================================================
@@ -174,18 +181,40 @@
    and attribution widgets MapLibre renders on top. */
 
 .cn-atlas-map .maplibregl-ctrl-group {
-  background: var(--cn-surface);
-  border: 1px solid var(--cn-border);
-  box-shadow: none;
+  /* Same glass treatment as the map's other floating buttons (Layers, Full
+     screen: bg-white/90 · dark:bg-zinc-900/90, blur, slate/zinc border,
+     rounded-lg, shadow-lg) so the zoom pair reads as one family with them
+     instead of MapLibre's flat default widget. */
+  background: rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.dark .cn-atlas-map .maplibregl-ctrl-group {
+  background: rgba(24, 24, 27, 0.9);
+  border-color: #3f3f46;
 }
 .cn-atlas-map .maplibregl-ctrl-group button {
-  background: transparent;
+  width: 36px;
+  height: 36px;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+.cn-atlas-map .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  background-size: 18px 18px;
 }
 .cn-atlas-map .maplibregl-ctrl-group button:hover {
-  background: var(--cn-surface-2);
+  background-color: rgba(100, 116, 139, 0.12);
+}
+/* Hairline between + and − : 1px at low alpha, not a solid border. */
+.cn-atlas-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(100, 116, 139, 0.2);
 }
 .cn-atlas-map .maplibregl-ctrl-group button:not(:last-child) {
-  border-bottom: 1px solid var(--cn-border);
+  border-bottom: 0;
 }
 /* MapLibre's zoom icons are baked-in dark sprites — fine on the light
    theme's near-white control, invisible on the dark theme's near-black one. */

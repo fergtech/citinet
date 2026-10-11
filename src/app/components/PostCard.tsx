@@ -65,7 +65,7 @@ export interface PostCardProps {
 }
 
 export function PostCard({
-  variant, category, author, timestamp, content,
+  variant, category, author, timestamp, title, content,
   mediaUrl, replyCount, likeCount, myLiked, onLike, onCommentClick,
   eventDate, eventLocation, onOpenInAtlas, autoPlay,
   authorId, onNavigateToProfile, canDelete, onDelete, deleting, canEdit, onEdit, onShare, shareCopied,
@@ -134,9 +134,14 @@ export function PostCard({
           </div>
         )}
 
+        {/* Headline — what the post is called, when it has one */}
+        {title?.trim() && (
+          <h3 className="text-[15px] font-semibold cn-text-1 leading-snug mb-1.5 line-clamp-2">{title}</h3>
+        )}
+
         {/* Body */}
         {content && (
-          <p className="text-sm cn-text-2 leading-relaxed line-clamp-4">{content}</p>
+          <p className={`text-sm cn-text-2 leading-relaxed ${title?.trim() ? 'line-clamp-3' : 'line-clamp-4'}`}>{content}</p>
         )}
 
         {/* Media */}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import {
   ChevronLeft, ChevronRight, ChevronDown, Plus, X, Trash2, MapPin,
-  Navigation, Bookmark, Share2, Check, Pencil,
+  Navigation, Bookmark, Share2, Check, Pencil, Layers, Maximize2, Minimize2,
   Paperclip, File as FileIcon, Play,
   PanelRightClose, PanelRightOpen, ArrowUp,
   ImagePlus, Film, MessageCircle, Send, Loader2, CornerDownRight,
@@ -23,7 +23,7 @@ import { ATLAS_CATEGORIES, type AtlasPin, type AtlasPinAttachment, type AtlasPin
 import { buildReplyTree, countDescendants, AUTO_COLLAPSE_DEPTH, type ReplyNode } from '../utils/replyTree';
 import { LocationSearchInput } from './LocationSearchInput';
 import { geocodeLocation, reverseGeocode, distanceMeters } from '../utils/geocoding';
-import { getAtlasMapStyle } from '../utils/atlasMapStyle';
+import { getAtlasMapStyle, registerAtlasPoiImages, ATLAS_POI_LAYERS, DEFAULT_POI_LAYERS } from '../utils/atlasMapStyle';
 import { fetchPlacePhoto, type PlacePhoto } from '../utils/placePhoto';
 import { findNearestPanoramaxImage, panoramaxWebViewerUrl, type PanoramaxImage } from '../utils/panoramax';
 import { AtlasGlyph } from './icons';
@@ -55,10 +55,14 @@ function getPinHtml(category: AtlasPinCategory, selected: boolean): string {
   const s = selected ? 34 : 28;
   const iconPx = selected ? 16 : 13;
   const svg = renderToStaticMarkup(<cat.Icon size={iconPx} color="#fff" strokeWidth={2.5} />);
+  // Hairline edge: a single 1px border, no separate outer ring. Selection is
+  // carried by the larger size, the brighter border, and a deeper shadow —
+  // not by a second white outline stacked on the border (that doubled the
+  // visible edge to 2–5px).
   const ring = selected
-    ? 'box-shadow:0 0 0 3px #fff,0 3px 10px rgba(0,0,0,0.4);'
+    ? 'box-shadow:0 3px 10px rgba(0,0,0,0.45);'
     : 'box-shadow:0 2px 8px rgba(0,0,0,0.35);';
-  const html = `<div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;background:${cat.gradientCss};transform:rotate(45deg);${ring}border:2px solid rgba(255,255,255,${selected ? '1' : '0.55'});display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
+  const html = `<div style="width:${s}px;height:${s}px;border-radius:50% 50% 50% 0;background:${cat.gradientCss};transform:rotate(45deg);${ring}border:1px solid rgba(255,255,255,${selected ? '1' : '0.45'});display:flex;align-items:center;justify-content:center;cursor:pointer;">` +
     `<span style="transform:rotate(-45deg);display:flex">${svg}</span></div>`;
   _pinHtmlCache.set(key, html);
   return html;
@@ -96,6 +100,8 @@ interface AtlasMapProps {
   pendingPosition: [number, number] | null;
   createCategory: AtlasPinCategory;
   myLocation: [number, number] | null;
+  /** Enabled optional place layers (parking, schools, …) — see ATLAS_POI_LAYERS. */
+  poiLayers: string[];
   onDropHereCenterChange: (c: [number, number]) => void;
 }
 
@@ -110,8 +116,14 @@ export interface AtlasMapHandle {
 
 const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   center, zoom, fitPoints, dark, placingPin, pins, selectedPinId, onPinSelect,
-  pendingPosition, createCategory, myLocation, onDropHereCenterChange,
+  pendingPosition, createCategory, myLocation, poiLayers, onDropHereCenterChange,
 }, ref) {
+  // Latest enabled layers for the effects that rebuild the style (map init,
+  // theme swap) without making them re-run on every toggle.
+  const poiLayersRef = useRef(poiLayers);
+  poiLayersRef.current = poiLayers;
+  const darkRef = useRef(dark);
+  darkRef.current = dark;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const pinMarkersRef = useRef<Map<string, { marker: maplibregl.Marker; sig: string }>>(new Map());
@@ -145,7 +157,7 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
     if (!containerRef.current) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: getAtlasMapStyle(dark),
+      style: getAtlasMapStyle(dark, poiLayersRef.current),
       center: [center[1], center[0]],
       zoom,
       attributionControl: { compact: true },
@@ -182,6 +194,8 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
       const c = map.getCenter();
       onDropHereCenterChangeRef.current([c.lat, c.lng]);
     });
+    // Marker icons for the optional place layers are drawn on demand.
+    registerAtlasPoiImages(map, () => darkRef.current);
     mapRef.current = map;
     return () => {
       clearInterval(attribCloseInterval);
@@ -222,8 +236,21 @@ const AtlasMap = forwardRef<AtlasMapHandle, AtlasMapProps>(function AtlasMap({
   const isFirstStyleRef = useRef(true);
   useEffect(() => {
     if (isFirstStyleRef.current) { isFirstStyleRef.current = false; return; }
-    mapRef.current?.setStyle(getAtlasMapStyle(dark));
+    mapRef.current?.setStyle(getAtlasMapStyle(dark, poiLayersRef.current));
   }, [dark]);
+
+  // Layers control — flip visibility live (no style rebuild).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      for (const l of ATLAS_POI_LAYERS) {
+        const id = `poi-${l.id}`;
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', poiLayers.includes(l.id) ? 'visible' : 'none');
+      }
+    };
+    if (map.isStyleLoaded()) apply(); else map.once('idle', apply);
+  }, [poiLayers]);
 
   // Hides the zoom control while placing a pin, matching the old
   // zoomControl={!placingPin} — keeps the drop-here reticle uncluttered.
@@ -1833,6 +1860,66 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
   // be modeled as React state — see recenterOnMe/resetToOverview below.
   const atlasMapRef = useRef<AtlasMapHandle>(null);
 
+  // Optional place layers on the map (parking, schools, health, parks, civic).
+  // A per-device view preference, so localStorage (guarded — it can throw).
+  const [poiLayers, setPoiLayers] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('citinet-atlas-map-layers');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string');
+    } catch { /* fall through */ }
+    return DEFAULT_POI_LAYERS;
+  });
+  const [layersOpen, setLayersOpen] = useState(false);
+
+  // Full-screen map. Uses the browser Fullscreen API where it exists
+  // (desktop, Android) and falls back to a fixed full-viewport overlay where
+  // it doesn't (iPhone Safari only supports it for video). Either way the
+  // same map instance just gets a bigger box — nothing remounts, so camera
+  // and layer choices carry over. Esc exits both.
+  const mapBoxRef = useRef<HTMLDivElement>(null);
+  const [apiFullscreen, setApiFullscreen] = useState(false);
+  const [cssFullscreen, setCssFullscreen] = useState(false);
+  const mapFullscreen = apiFullscreen || cssFullscreen;
+  useEffect(() => {
+    const onChange = () => setApiFullscreen(document.fullscreenElement === mapBoxRef.current && !!mapBoxRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  useEffect(() => {
+    if (!cssFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCssFullscreen(false); };
+    document.addEventListener('keydown', onKey);
+    // The mobile bottom nav lives in a higher root stacking layer than the
+    // page content this map sits in, so no z-index here can cover it — the
+    // CSS in citinet-tokens.css hides it while this class is on <body>.
+    document.body.classList.add('cn-atlas-map-fullscreen');
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('cn-atlas-map-fullscreen');
+    };
+  }, [cssFullscreen]);
+  const toggleMapFullscreen = async () => {
+    if (mapFullscreen) {
+      if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
+      setCssFullscreen(false);
+      return;
+    }
+    const el = mapBoxRef.current;
+    setLayersOpen(false);
+    if (el?.requestFullscreen) {
+      try { await el.requestFullscreen(); return; } catch { /* fall through to CSS */ }
+    }
+    setCssFullscreen(true);
+  };
+  const togglePoiLayer = (id: string) => {
+    setPoiLayers(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      try { localStorage.setItem('citinet-atlas-map-layers', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (currentUser?.locationVisible === false) return;
     if (!navigator.geolocation) return;
@@ -2317,9 +2404,19 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
           <motion.div
             animate={{ x: mapVisible ? 0 : 1000 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
+            // Below md this wrapper is its own z-40 stacking context; lift it
+            // above the app's bottom nav while the map is full screen.
+            style={cssFullscreen ? { zIndex: 3000 } : undefined}
             className={`cn-atlas-map-mobile ${rightPanelActive ? 'md:block md:absolute md:top-7 md:right-16 cn-atlas-map-panel' : 'md:absolute md:top-7 md:right-16 cn-atlas-map-panel'}`}
           >
-            <div className="relative aspect-square rounded-2xl overflow-hidden border cn-border">
+            <div
+              ref={mapBoxRef}
+              className={cssFullscreen
+                ? 'fixed inset-0 z-[3000] w-screen h-[100dvh] overflow-hidden bg-[#0b0d10]'
+                : apiFullscreen
+                  ? 'relative w-full h-full overflow-hidden'
+                  : 'relative aspect-square rounded-2xl overflow-hidden border cn-border'}
+            >
               <div className="w-full h-full isolate cn-atlas-map">
                 <AtlasMap
                   ref={atlasMapRef}
@@ -2334,9 +2431,66 @@ export function AtlasScreen({ onBack }: AtlasScreenProps) {
                   pendingPosition={pendingPosition}
                   createCategory={createCategory}
                   myLocation={myLocation}
+                  poiLayers={poiLayers}
                   onDropHereCenterChange={handleDropHereCenterChange}
                 />
               </div>
+
+              {/* Map controls — full screen + optional "what's around" layers
+                  (parking, schools, health, parks, civic, …). The layers
+                  choice is a view preference, kept per device. */}
+              {!placingPin && (
+                <>
+                  <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-2">
+                    <button
+                      onClick={() => setLayersOpen(o => !o)}
+                      title="Map layers"
+                      aria-label="Map layers"
+                      aria-expanded={layersOpen}
+                      className="w-9 h-9 rounded-lg bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 shadow-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Layers className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={toggleMapFullscreen}
+                      title={mapFullscreen ? 'Exit full screen' : 'Full screen'}
+                      aria-label={mapFullscreen ? 'Exit full screen' : 'Full screen map'}
+                      className="w-9 h-9 rounded-lg bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 shadow-lg flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      {mapFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {layersOpen && (
+                    // Sibling of the buttons, anchored to the map box itself, so
+                    // its width/height are bounded by the map (never wider or
+                    // taller than the box it sits in) and it scrolls inside.
+                    <div className="absolute top-3 right-14 z-[1000] w-64 max-w-[calc(100%-4.5rem)] max-h-[calc(100%-1.5rem)] overflow-y-auto overscroll-contain rounded-xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 shadow-xl p-1.5">
+                      <p className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500">Show on map</p>
+                      {ATLAS_POI_LAYERS.map(l => {
+                        const on = poiLayers.includes(l.id);
+                        return (
+                          <button
+                            key={l.id}
+                            onClick={() => togglePoiLayer(l.id)}
+                            aria-pressed={on}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                          >
+                            <span className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[11px] font-bold text-white" style={{ background: l.color, opacity: on ? 1 : 0.35 }}>{l.glyph}</span>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-xs font-medium text-slate-800 dark:text-zinc-100">{l.label}</span>
+                              <span className="block text-[10px] text-slate-400 dark:text-zinc-500 truncate">{l.hint}</span>
+                            </span>
+                            <span className={`w-8 h-[18px] rounded-full shrink-0 relative transition-colors ${on ? 'bg-blue-600' : 'bg-slate-300 dark:bg-zinc-700'}`}>
+                              <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-all ${on ? 'left-[15px]' : 'left-0.5'}`} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <p className="px-2.5 pt-1 pb-1.5 text-[10px] text-slate-400 dark:text-zinc-500">Shown as you zoom in. Data from OpenStreetMap.</p>
+                    </div>
+                  )}
+                </>
+              )}
 
               {/* Same floating legend-chip component NetworkMap.tsx uses for
                   its Hub/Members/You key (translucent+blurred pill, small
