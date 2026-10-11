@@ -7,6 +7,9 @@
  * Dev mode: VITE_FORCE_HUB_SLUG=mytest npm run dev
  */
 
+import { isShellOrigin } from './shellOrigin';
+import { listMyHubs } from './myHubs';
+
 const HUB_SLUG_KEY = 'citinet-active-hub';
 const HUBS_KEY = 'citinet-hubs';
 // sessionStorage (not localStorage): tab-scoped on purpose. A genuinely new
@@ -14,6 +17,10 @@ const HUBS_KEY = 'citinet-hubs';
 // explicit "Switch Hub" click in THIS tab should suppress it, and closing
 // the tab is exactly when that intent should stop applying too.
 const BROWSING_KEY = 'citinet-browsing-hubs';
+// Set when this tab explicitly entered a hub on the shell (?hub=). Without it, the
+// shell's My Hubs launcher is the front door instead of silently re-entering the
+// last hub. Tab-scoped so a fresh visit to the shell always lands on the launcher.
+const EXPLICIT_HUB_KEY = 'citinet-explicit-hub';
 
 /** Returns the hub slug from environment variable or URL/storage cache.
  *  Falls back to the most recently connected hub from citinet-hubs if the
@@ -30,8 +37,18 @@ export function getSubdomain(): string | null {
   if (hub) {
     localStorage.setItem(HUB_SLUG_KEY, hub);
     sessionStorage.removeItem(BROWSING_KEY);
+    sessionStorage.setItem(EXPLICIT_HUB_KEY, '1');
     return hub;
   }
+
+  // The My Hubs launcher is hub-less by definition, and on the shell it is the
+  // front door once someone has opened a hub: don't silently re-enter the last
+  // one (an explicit ?hub= above still wins).
+  if (window.location.pathname === '/hubs') {
+    sessionStorage.removeItem(EXPLICIT_HUB_KEY);
+    return null;
+  }
+  if (isShellOrigin() && listMyHubs().length > 0 && !sessionStorage.getItem(EXPLICIT_HUB_KEY)) return null;
 
   // Explicitly browsing hubs right now (Switch Hub) -- don't auto-restore
   // below, or /join would bounce straight back into the hub just left.

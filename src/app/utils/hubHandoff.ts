@@ -20,14 +20,11 @@ import type { HubConnection } from '../types/hub';
 import type { KeyMaterial } from './crypto';
 import { hubService } from '../services/hubService';
 import { navigateToHub } from './subdomain';
-import { rememberHub } from './myHubs';
+import { rememberHub, type MyHubEntry } from './myHubs';
+import { isPrivateHost } from './shellOrigin';
 
 const FRAGMENT_KEY = 'cn_handoff';
 const PROBE_TIMEOUT_MS = 4000;
-
-/** Hostnames that are never reachable by anyone but the same machine/LAN. */
-const PRIVATE_HOST =
-  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|\[?::1\]?$)|\.(local|lan|internal)$/i;
 
 interface HandoffPayload {
   v: 1;
@@ -41,7 +38,7 @@ export function isPublicHttpsUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && !PRIVATE_HOST.test(u.hostname);
+    return u.protocol === 'https:' && !isPrivateHost(u.hostname);
   } catch {
     return false;
   }
@@ -50,7 +47,7 @@ export function isPublicHttpsUrl(url: string | undefined | null): boolean {
 function handoffDisabled(): boolean {
   if ((import.meta.env.VITE_HUB_HANDOFF as string | undefined) === 'off') return true;
   // Dev / LAN-served portal: never bounce a developer off localhost to the real hub.
-  return PRIVATE_HOST.test(window.location.hostname);
+  return isPrivateHost(window.location.hostname);
 }
 
 /**
@@ -141,4 +138,25 @@ export async function enterHub(slug: string, connection: HubConnection | null, f
   }
 
   navigateToHub(slug, connection ?? (fallbackHub ? { hub: fallbackHub } : undefined));
+}
+
+/**
+ * Opens a hub from the My Hubs launcher.
+ *  - This browser still holds a session for it → hand that session to the hub's origin.
+ *  - Known signed-in on the hub's own origin → just go there (the session lives there).
+ *  - Otherwise → the join flow, pre-filled with the hub's address.
+ */
+export async function openMyHub(entry: MyHubEntry, navigate: (path: string) => void): Promise<void> {
+  const connection = hubService.getHubConnection(entry.slug);
+  if (connection?.user?.authToken) {
+    await enterHub(entry.slug, connection);
+    return;
+  }
+  if (entry.state === 'signed-in' && isPublicHttpsUrl(entry.tunnelUrl)) {
+    const dest = new URL(entry.tunnelUrl.replace(/\/$/, '') + '/');
+    dest.searchParams.set('hub', entry.slug);
+    window.location.assign(dest.toString());
+    return;
+  }
+  navigate(`/join?url=${encodeURIComponent(entry.tunnelUrl)}`);
 }

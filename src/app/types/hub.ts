@@ -673,6 +673,36 @@ export interface StackDrillResult {
   detail?: string | null;
 }
 
+/** One container's published-vs-running image comparison (GET /api/admin/stack/updates). */
+export interface StackUpdateService {
+  service: string;
+  image: string | null;
+  updateAvailable: boolean;
+  /** The admin can swap this one in from the UI (otherwise it's report-only). */
+  canApply: boolean;
+  current: { digest: string | null; created: string | null } | null;
+  latest: { digest: string | null; created: string | null } | null;
+  note: string | null;
+}
+
+export interface StackUpdates {
+  available: boolean;
+  /** An older sidecar image that predates update checks. */
+  outdated?: boolean;
+  checkedAt?: string | null;
+  error?: string | null;
+  services?: StackUpdateService[];
+  apply?: {
+    running: boolean;
+    service: string | null;
+    step: 'pulling' | 'switching' | 'verifying' | 'done' | 'failed' | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    ok: boolean | null;
+    message: string | null;
+  };
+}
+
 /** Self-healing + backup-verification state (GET /api/admin/stack/health). */
 export interface StackHealth {
   available: boolean;

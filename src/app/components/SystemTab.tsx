@@ -3,6 +3,7 @@ import { Server, RefreshCw, Loader2, AlertCircle, CheckCircle2, XCircle, Chevron
 import { hubService } from '../services/hubService';
 import type { StackServiceStatus } from '../types/hub';
 import { StackHealthPanel } from './StackHealthPanel';
+import { UpdatesPanel } from './UpdatesPanel';
 import { QuickCommandsPanel } from './QuickCommandsPanel';
 import { EmailSetupCard } from './EmailSetupCard';
 import { MonitoringSetupCard } from './MonitoringSetupCard';
@@ -195,6 +196,7 @@ export function SystemTab({ hubSlug }: SystemTabProps) {
 
       {!loading && !error && available === true && (
         <div id="system-health" className={SECTION_SCROLL_MARGIN}>
+          <div className="mb-5"><UpdatesPanel hubSlug={hubSlug} /></div>
           <StackHealthPanel hubSlug={hubSlug} />
         </div>
       )}

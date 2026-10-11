@@ -44,6 +44,9 @@ import { HubProvider, useHub } from './context/HubContext';
 import { hubService } from './services/hubService';
 import { getSubdomain, navigateToHub, hubPath, clearSubdomainCache } from './utils/subdomain';
 import { enterHub } from './utils/hubHandoff';
+import { isShellOrigin } from './utils/shellOrigin';
+import { listMyHubs } from './utils/myHubs';
+import { MyHubsScreen } from './components/MyHubsScreen';
 import type { Hub, HubUser, HubVendor, HubListing } from './types/hub';
 
 const screenTitles: Record<string, string> = {
@@ -75,6 +78,9 @@ function WelcomeRoute() {
   // regardless of why getSubdomain() came up empty (no active-hub pointer,
   // mid-Switch-Hub browsing, etc.). Being logged into a hub should make the
   // welcome screen unreachable, full stop.
+  if (isShellOrigin() && listMyHubs().length > 0) {
+    return <Navigate to="/hubs" replace />;
+  }
   if (hubService.getJoinedHubs().length > 0) {
     return <Navigate to="/join" replace />;
   }
@@ -500,6 +506,7 @@ function OnboardingModeRoutes() {
     <Routes>
       <Route path="/" element={<WelcomeRoute />} />
       <Route path="/join" element={<JoinHubRoute />} />
+      <Route path="/hubs" element={<MyHubsScreen />} />
       <Route path="/create" element={<CreateHubRoute />} />
       {/* Public pages — no account required. Must be before the * catch-all. */}
       <Route path="/share/:hubSlug/:fileName" element={<ShareFilePage />} />
@@ -571,7 +578,7 @@ function AppInner() {
   // /join and /create are explicit requests to reach the multi-hub portal (e.g. after
   // "Switch Hub" clears the local connection) — the same-origin auto-rejoin below must not
   // silently override that by re-joining the hub this domain happens to be served from.
-  const isPortalPath = window.location.pathname === '/join' || window.location.pathname === '/create';
+  const isPortalPath = window.location.pathname === '/join' || window.location.pathname === '/create' || window.location.pathname === '/hubs';
   const subdomain = isSharePath ? null : getSubdomain();
   const { onHubJoined } = useHub();
   const [probing, setProbing] = useState(!subdomain && !isSharePath && !isPortalPath);

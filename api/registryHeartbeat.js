@@ -15,7 +15,7 @@ const { postJson } = require('./httpsPostJson');
 
 const HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-async function heartbeat() {
+async function heartbeat({ restarting = false } = {}) {
   const registryUrl = process.env.REGISTRY_URL;
   const tunnelUrl = process.env.TUNNEL_URL;
   const port = process.env.PORT || 9090;
@@ -44,6 +44,9 @@ async function heartbeat() {
       hub_icon_gradient_to: info.hub_icon_gradient_to,
       hub_icon_solid_color: info.hub_icon_solid_color,
       hub_icon_image_file_name: info.hub_icon_image_file_name,
+      // Only ever true for an announced, intentional restart; the next normal
+      // heartbeat (omitting it) clears the flag again.
+      ...(restarting ? { restarting: true } : {}),
     });
     if (!res.ok) {
       console.error('[registryHeartbeat] registration failed:', res.status, res.body.error || '');
@@ -75,4 +78,17 @@ function startRegistryHeartbeat() {
   }, HEARTBEAT_INTERVAL_MS);
 }
 
-module.exports = { startRegistryHeartbeat };
+/**
+ * Tells the public registry this hub is about to restart on purpose (an update),
+ * so the join list shows "restarting" rather than a generic offline. Best-effort:
+ * a no-op for hubs not opted into the registry, never throws.
+ */
+async function announceRestart() {
+  try {
+    await heartbeat({ restarting: true });
+  } catch (err) {
+    console.error('[registryHeartbeat] announceRestart failed:', err.message);
+  }
+}
+
+module.exports = { startRegistryHeartbeat, announceRestart };

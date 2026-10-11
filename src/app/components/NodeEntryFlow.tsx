@@ -1,3 +1,4 @@
+import { isPublicHubOrigin, goToShell } from '../utils/shellOrigin';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Shield, Users, FileText, User, Tag, LogIn, Eye, EyeOff, Download, Share, X, Lock, KeyRound, Copy, Check as CheckIcon, AlertTriangle } from 'lucide-react';
@@ -128,6 +129,12 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
   /** Full disconnect from this hub — for someone who landed here (e.g. after
    * sign-out or a session expiry) but actually wants a different hub entirely. */
   const handleSwitchHub = () => {
+    // On a hub's own origin this person isn't leaving the hub, just going back
+    // to the launcher — never wipe local keys for a plain "switch".
+    if (isPublicHubOrigin()) {
+      goToShell('/hubs');
+      return;
+    }
     hubService.leaveHub(hubSlug);
     clearSubdomainCache();
     window.location.href = window.location.origin + '/join';

@@ -81,7 +81,7 @@ async function emailAdmins(pool, { title, detail, severity }) {
 const escapeHtml = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function createStackHealth({ pool, authenticate, express, sidecarUrl, sidecarToken }) {
+function createStackHealth({ pool, authenticate, express, sidecarUrl, sidecarToken, announceRestart }) {
   const internal = express.Router();
   const admin = express.Router();
 
@@ -170,6 +170,31 @@ function createStackHealth({ pool, authenticate, express, sidecarUrl, sidecarTok
   };
   admin.get('/health', authenticate, proxy('GET', '/health'));
   admin.post('/drill', authenticate, proxy('POST', '/drill'));
+
+  // Update watchdog (see admin-sidecar/updater.js): what's published vs. running.
+  admin.get('/updates', authenticate, proxy('GET', '/updates'));
+  admin.post('/updates/check', authenticate, proxy('POST', '/updates/check'));
+  // Apply one service's update. Always an explicit admin action. Announces the
+  // restart to the public registry first so the join list says "restarting".
+  admin.post('/update/:service', authenticate, async (req, res) => {
+    if (!req.user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    if (!sidecarToken) return res.status(503).json({ error: 'Stack admin sidecar is not configured for this hub' });
+    try {
+      if (typeof announceRestart === 'function') {
+        await Promise.race([announceRestart(), new Promise((r) => setTimeout(r, 5000))]);
+      }
+      const r = await fetch(`${sidecarUrl}/update/${encodeURIComponent(req.params.service)}`, {
+        method: 'POST',
+        headers: { 'x-admin-token': sidecarToken },
+        signal: AbortSignal.timeout(15_000),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 404 && !data.error) return res.status(501).json({ error: 'The admin sidecar on this hub predates updates — update it from the host first.' });
+      res.status(r.status).json(data);
+    } catch {
+      res.status(502).json({ error: 'Could not reach the stack admin sidecar' });
+    }
+  });
 
   return { internal, admin };
 }

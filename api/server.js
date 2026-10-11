@@ -4164,7 +4164,7 @@ app.patch('/api/folders/:id', authenticate, async (req, res) => {
 app.use('/api/comms', createCommsRouter({ pool, authenticate, express }));
 registerCallEventHistoryRoute(app, pool, authenticate);
 app.use('/api/me/export', createAccountExportRouter({ pool, authenticate, express }));
-const stackHealth = createStackHealth({ pool, authenticate, express, sidecarUrl: ADMIN_SIDECAR_URL, sidecarToken: ADMIN_SIDECAR_TOKEN });
+const stackHealth = createStackHealth({ pool, authenticate, express, sidecarUrl: ADMIN_SIDECAR_URL, sidecarToken: ADMIN_SIDECAR_TOKEN, announceRestart: require('./registryHeartbeat').announceRestart });
 app.use('/api/internal', stackHealth.internal);
 app.use('/api/admin/stack', stackHealth.admin);
 const opsSettings = createOpsSettings({ pool, authenticate, express, sidecarToken: ADMIN_SIDECAR_TOKEN });

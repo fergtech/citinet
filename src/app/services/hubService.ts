@@ -7,7 +7,7 @@
  * Future: Will integrate with centralized hub registry
  */
 
-import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus, StackAlert, StackHealth, EmailSettingsStatus, EmailSettingsInput } from '../types/hub';
+import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus, StackAlert, StackHealth, StackUpdates, EmailSettingsStatus, EmailSettingsInput } from '../types/hub';
 import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted, decryptKeyBackup, exportKeyMaterial, importKeyMaterial } from '../utils/crypto';
 import type { KeyMaterial } from '../utils/crypto';
 import { seenPosts } from '../utils/seenStore';
@@ -3262,6 +3262,36 @@ class HubService {
     const response = await fetch(`${tunnelUrl}/api/admin/stack/health`, { headers });
     if (!response.ok) await this.parseErrorResponse(response, hubSlug);
     return (await response.json()) as StackHealth;
+  }
+
+  /** Published-vs-running image comparison from the update watchdog. GET /api/admin/stack/updates */
+  async getStackUpdates(hubSlug: string): Promise<StackUpdates> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/updates`, { headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return (await response.json()) as StackUpdates;
+  }
+
+  /** Re-check the registry now instead of waiting for the next scheduled check. POST /api/admin/stack/updates/check */
+  async checkStackUpdates(hubSlug: string): Promise<StackUpdates> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/updates/check`, { method: 'POST', headers });
+    if (!response.ok) await this.parseErrorResponse(response, hubSlug);
+    return { available: true, ...(await response.json()) } as StackUpdates;
+  }
+
+  /**
+   * Apply an update. Starts in the background — the API restarts briefly, so poll
+   * getStackUpdates (tolerating a few failures) for apply.step / apply.ok.
+   * POST /api/admin/stack/update/:service
+   */
+  async applyStackUpdate(hubSlug: string, service: string): Promise<void> {
+    const { headers, tunnelUrl } = this.getAuthHeaders(hubSlug);
+    const response = await fetch(`${tunnelUrl}/api/admin/stack/update/${encodeURIComponent(service)}`, { method: 'POST', headers });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: 'Update could not be started' }));
+      throw new Error((data as { error?: string }).error || 'Update could not be started');
+    }
   }
 
   /** Start a restore test now (it runs in the background; poll getStackHealth). POST /api/admin/stack/drill */

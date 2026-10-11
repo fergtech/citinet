@@ -35,6 +35,8 @@ import { BroadcastOverlay } from './comms/BroadcastOverlay';
 import { MinimizedBroadcastBar } from './comms/MinimizedBroadcastBar';
 import { HubIcon, hubIconRegistryFields } from './HubIcon';
 import { hubPath, clearSubdomainCache, beginHubBrowsing } from '../utils/subdomain';
+import { UpdateAvailableBanner } from './UpdateAvailableBanner';
+import { isPublicHubOrigin, goToShell } from '../utils/shellOrigin';
 import { APP_TILES, DOCK_PRIORITY_SCREENS, DEFAULT_ENABLED_APPS, CN_TILE_AI, CN_TILE_VENDOR, CN_TILE_SUGGEST } from '../data/appTiles';
 import { HUB_CATEGORIES } from '../data/hubCategories';
 import type { HubVendor } from '../types/hub';
@@ -453,6 +455,13 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
    * (still hubService.leaveHub, used elsewhere) -- not something a plain
    * "switch" should ever do. */
   const handleSwitchHub = () => {
+    // On a hub's own public origin, switching means passing back through the
+    // shell's My Hubs launcher — each hub keeps its own session on its own
+    // origin, so you stay signed in to all of them.
+    if (isPublicHubOrigin() && currentHub?.slug) {
+      goToShell('/hubs', { slug: currentHub.slug, url: window.location.origin });
+      return;
+    }
     clearSubdomainCache();
     beginHubBrowsing();
     window.location.href = window.location.origin + '/join';
@@ -1071,6 +1080,9 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 )}
               </button>
             </div>
+            {isAdmin && connectionStatus !== 'unreachable' && currentHub?.slug && (
+              <UpdateAvailableBanner hubSlug={currentHub.slug} onOpen={() => navigate(hubPath('/hub-management'))} />
+            )}
             {connectionStatus === 'unreachable' && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
                 <div className="flex items-center gap-2">
