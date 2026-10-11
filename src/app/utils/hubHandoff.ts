@@ -13,7 +13,7 @@
  * IndexedDB.
  *
  * Always falls back to the old same-origin navigation (shell hosts the UI) when
- * the hub has no public HTTPS URL, doesn't bundle a UI, or can't be reached.
+ * the hub has no public HTTPS URL, doesn't bundle a UI, or can't be reached — or runs an older UI build that predates the handoff.
  */
 
 import type { HubConnection } from '../types/hub';
@@ -54,17 +54,23 @@ function handoffDisabled(): boolean {
 }
 
 /**
- * The bundled UI exposes /manifest.webmanifest (a dynamic route that only exists
- * when dist/ is bundled), so it doubles as an unambiguous "this hub serves its own
- * UI" probe. Probing `/` instead would risk a PORTAL_URL redirect back to the shell.
+ * A hub's bundled UI is frozen at the time its image was built, so being "a hub
+ * that serves a UI" is not enough: an older image serves a UI that predates this
+ * handoff and would just drop the user on /onboard with a flood of 401s. Builds
+ * that can receive a handoff ship /citinet-ui.json ({"handoff":1}). On older
+ * images that path falls through to the SPA fallback (HTML), so the JSON parse
+ * fails and we correctly stay on the shell.
  */
-async function hubServesUi(tunnelUrl: string): Promise<boolean> {
+async function hubUiAcceptsHandoff(tunnelUrl: string): Promise<boolean> {
   try {
-    const res = await fetch(`${tunnelUrl.replace(/\/$/, '')}/manifest.webmanifest`, {
+    const res = await fetch(`${tunnelUrl.replace(/\/$/, '')}/citinet-ui.json`, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      headers: { Accept: 'application/manifest+json' },
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
     });
-    return res.ok && (res.headers.get('content-type') ?? '').includes('manifest');
+    if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return false;
+    const body = (await res.json()) as { handoff?: number };
+    return body?.handoff === 1;
   } catch {
     return false;
   }
@@ -124,7 +130,7 @@ export async function enterHub(slug: string, connection: HubConnection | null, f
     new URL(tunnelUrl!).origin !== window.location.origin &&
     !!connection.user?.authToken;
 
-  if (canHandOff && (await hubServesUi(tunnelUrl!))) {
+  if (canHandOff && (await hubUiAcceptsHandoff(tunnelUrl!))) {
     const keys = await hubService.getKeyMaterial(slug).catch(() => null);
     const payload: HandoffPayload = { v: 1, slug, connection: connection!, ...(keys ? { keys } : {}) };
     const dest = new URL(tunnelUrl!.replace(/\/$/, '') + '/');
