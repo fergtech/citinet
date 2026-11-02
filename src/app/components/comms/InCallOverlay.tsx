@@ -39,8 +39,24 @@ function RoomContent() {
   const remoteParticipants = useRemoteParticipants();
   const remote = remoteParticipants[0];
   const cameraTracks = useTracks([Track.Source.Camera]);
-  const localTrackRef = cameraTracks.find((t) => t.participant.isLocal);
-  const remoteTrackRef = cameraTracks.find((t) => !t.participant.isLocal);
+  const screenTracks = useTracks([Track.Source.ScreenShare]);
+  const localCameraRef = cameraTracks.find((t) => t.participant.isLocal);
+  const remoteCameraRef = cameraTracks.find((t) => !t.participant.isLocal);
+  const localScreenRef = screenTracks.find((t) => t.participant.isLocal);
+  const remoteScreenRef = screenTracks.find((t) => !t.participant.isLocal);
+  // A shared screen takes over the main stage (remote's wins if both share);
+  // cameras shrink to the PiP / second tile. Screens use `contain` so text
+  // isn't cropped, and are never mirrored.
+  const stageScreenRef = remoteScreenRef ?? localScreenRef;
+  const stageIsLocalScreen = !remoteScreenRef && !!localScreenRef;
+  const showVideoStage = call.mode === 'video' || !!stageScreenRef;
+  // Main tile = screen if any, else remote camera. Self tile = local camera,
+  // or (when remote is the one sharing) unchanged; when we share, the stage
+  // shows our own screen preview and the remote's camera moves to the PiP.
+  const mainRef = stageScreenRef ?? remoteCameraRef;
+  const mainIsScreen = !!stageScreenRef;
+  const pipRef = stageScreenRef ? (stageIsLocalScreen ? remoteCameraRef : localCameraRef) : localCameraRef;
+  const pipIsLocalCam = !(stageScreenRef && stageIsLocalScreen);
   const elapsed = useElapsedSeconds(call.startedAt);
 
   function handleToggleMic() {
@@ -63,7 +79,7 @@ function RoomContent() {
 
   return (
     <div className="absolute inset-0 bg-[#07060F] flex flex-col">
-      {call.mode === 'video' ? (
+      {showVideoStage ? (
         <div className={`flex-1 relative ${call.layout === 'split' ? 'flex items-center justify-center gap-3 p-3 pb-[190px]' : ''}`}>
           {call.layout === 'split' ? (
             <>
@@ -73,23 +89,26 @@ function RoomContent() {
                   centered in the available space, same as Discord/Zoom's
                   windowed call view. */}
               <div className="flex-1 max-w-[46%] aspect-video rounded-[20px] overflow-hidden bg-[#100E1C] relative">
-                {remoteTrackRef ? <VideoTrack trackRef={remoteTrackRef} style={videoStyle} /> : <FallbackTile name={call.peerName} />}
+                {mainRef ? <VideoTrack trackRef={mainRef} style={mainIsScreen ? screenStyle : videoStyle} /> : <FallbackTile name={call.peerName} />}
               </div>
               <div className="flex-1 max-w-[46%] aspect-video rounded-[20px] overflow-hidden bg-[#100E1C] relative">
-                {localTrackRef && isCameraEnabled ? <VideoTrack trackRef={localTrackRef} style={mirroredVideoStyle} /> : <SelfFallback />}
+                {pipRef && (pipIsLocalCam ? isCameraEnabled : true) ? <VideoTrack trackRef={pipRef} style={pipIsLocalCam ? mirroredVideoStyle : videoStyle} /> : pipIsLocalCam ? <SelfFallback /> : <FallbackTile name={call.peerName} />}
               </div>
             </>
           ) : (
             <>
-              <div className="absolute inset-0 bg-[#100E1C]">
-                {remoteTrackRef ? <VideoTrack trackRef={remoteTrackRef} style={videoStyle} /> : <FallbackTile name={call.peerName} />}
+              {/* While a screen is on stage, reserve room for the header and
+                  the control dock so nothing overlays the shared content
+                  (text/UI being read). Camera feeds stay full-bleed. */}
+              <div className={mainIsScreen ? 'absolute inset-x-0 top-[72px] bottom-[190px] bg-black' : 'absolute inset-0 bg-[#100E1C]'}>
+                {mainRef ? <VideoTrack trackRef={mainRef} style={mainIsScreen ? screenStyle : videoStyle} /> : <FallbackTile name={call.peerName} />}
               </div>
               {/* Landscape PiP (a laptop webcam is landscape, not a phone's
                   portrait selfie) in the bottom-right corner — the
                   Discord/FaceTime convention for a 1:1 call: one big feed,
                   one small self-thumbnail, not two equally-billed tiles. */}
-              <div className="absolute right-3 bottom-[196px] w-[180px] aspect-video rounded-2xl overflow-hidden bg-[#100E1C]">
-                {localTrackRef && isCameraEnabled ? <VideoTrack trackRef={localTrackRef} style={mirroredVideoStyle} /> : <SelfFallback compact />}
+              <div className={`absolute right-3 w-[180px] ${mainIsScreen ? 'bottom-6' : 'bottom-[196px]'} aspect-video rounded-2xl overflow-hidden bg-[#100E1C]`}>
+                {pipRef && (pipIsLocalCam ? isCameraEnabled : true) ? <VideoTrack trackRef={pipRef} style={pipIsLocalCam ? mirroredVideoStyle : videoStyle} /> : pipIsLocalCam ? <SelfFallback compact /> : <FallbackTile name={call.peerName} />}
               </div>
             </>
           )}
@@ -100,7 +119,7 @@ function RoomContent() {
         </div>
       )}
 
-      {call.sharingOn && (
+      {isScreenShareEnabled && (
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between bg-[#331CA7] px-4 pt-14 pb-2.5">
           <span className="text-white text-sm font-semibold">Sharing your screen</span>
           <button onClick={handleToggleShare} className="bg-white/20 rounded-full px-3 py-1 text-white text-xs font-bold">
@@ -139,7 +158,7 @@ function RoomContent() {
             <ControlButton icon={Video} active={false} label="Video" onClick={() => setMode('video')} />
           )}
           <ControlButton icon={call.speakerOn ? Volume2 : VolumeX} active={call.speakerOn} label={call.speakerOn ? 'Speaker' : 'Earpiece'} onClick={toggleSpeaker} />
-          <ControlButton icon={ScreenShare} active={call.sharingOn} label={call.sharingOn ? 'Sharing' : 'Share'} onClick={handleToggleShare} />
+          <ControlButton icon={ScreenShare} active={isScreenShareEnabled} label={isScreenShareEnabled ? 'Sharing' : 'Share'} onClick={handleToggleShare} />
         </div>
         <button onClick={end} aria-label="End call" className="w-16 h-16 rounded-full bg-[#DC2B2B] flex items-center justify-center">
           <PhoneOff className="w-6 h-6 text-white" />
@@ -150,6 +169,7 @@ function RoomContent() {
 }
 
 const videoStyle = { width: '100%', height: '100%', objectFit: 'cover' } as const;
+const screenStyle = { width: '100%', height: '100%', objectFit: 'contain' } as const;
 const mirroredVideoStyle = { ...videoStyle, transform: 'scaleX(-1)' } as const;
 
 function ControlButton({ icon: Icon, active, label, onClick }: { icon: React.ElementType; active: boolean; label: string; onClick: () => void }) {

@@ -18,10 +18,10 @@ export function MinimizedBroadcastBar() {
   return (
     <button
       onClick={restore}
-      className={`fixed left-4 right-4 z-[190] flex items-center gap-2 rounded-xl px-3 py-2.5 text-left shadow-lg ${hasPendingRequest ? 'bottom-20 bg-[#331CA7]' : 'bottom-4 bg-[#4A1616]'}`}
+      className={`fixed left-1/2 -translate-x-1/2 z-[190] flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-full pl-3 pr-3.5 py-1.5 text-left shadow-lg top-[calc(env(safe-area-inset-top)+2.75rem)] md:top-[5rem] ${hasPendingRequest ? 'bg-[#331CA7]' : 'bg-[#4A1616]'}`}
     >
-      <span className={`w-2 h-2 rounded-full ${hasPendingRequest ? 'bg-white' : 'bg-[#DC2B2B]'}`} />
-      <span className="flex-1 text-white text-sm font-semibold truncate">
+      <span className={`w-2 h-2 rounded-full shrink-0 ${hasPendingRequest ? 'bg-white' : 'bg-[#DC2B2B]'}`} />
+      <span className="text-white text-xs font-semibold truncate max-w-[50vw]">
         {hasPendingRequest ? `${broadcast.pendingRequest!.requesterName} wants to join in` : broadcast.role === 'host' ? 'Broadcasting live' : 'Watching live'}
       </span>
       <span className="text-white/85 text-xs tabular-nums">{formatCallDuration(elapsed)}</span>
