@@ -83,7 +83,32 @@ Recommendation: **community hub as the base, managed hosting as a bridge, portab
 3. Reframe "run a hub" as "one organizer runs it, everyone else just joins".
 4. Refresh the roadmap and feature list; fix the infrastructure file and repo links.
 
-## 6. Decisions still needed
+## 6. Alignment with global priorities (UN / WEF vocabulary)
+
+Recurring themes across the UN SDGs, Global Digital Compact and WEF materials, mapped to what Citinet actually has. For funder, grant and partner conversations only; the user-facing pitch stays utility-first (section 4).
+
+| Theme | Fit | Backed by | Gap |
+|---|---|---|---|
+| Local resilience | Strong | Exchange, Messages, broadcasts, Atlas; Tailscale mesh; Pi access point and local HTTPS for offline guests | No dedicated emergency/mutual-aid flow; "works when the internet is down" is not yet a told story |
+| Data governance | Strong | Per-hub data, E2E messages and notes, account export, portable accounts, off-site backup, no ranking algorithm | Consent/permission model is implicit, not presented as a feature |
+| Digital access (community-network layer) | Strong, with limits | Self-hosted hubs, mesh access, offline-capable LAN use | Does not address broadband, devices or affordability; gateway (hub creation, registry, shell) still needs the internet |
+| Smart cities / civic tech | Strong | Atlas, Projects/Proposals, events, local reporting | Bottom-up only; no city or institution integrations |
+| Financial inclusion | Partial | Exchange listings, vendors (local commerce) | No payments |
+| Cybersecurity and digital trust | Partial | E2E, security audit, admin moderation | No identity verification, reputation or deepfake tooling |
+| Sustainability | Weak | Reuses commodity hardware; local resource sharing | Not a real product claim |
+| AI | Opportunity | Assistant exists (outside E2E scope) | No local/community-owned AI story |
+| Workforce reskilling, health | None | | Out of scope; do not claim |
+
+**Framing:** Citinet is the application and governance layer for community networks. Mesh and municipal broadband solve getting connected; Citinet is what a community does once connected, with local comms, data and decisions it owns. Do not claim to close the digital divide.
+
+**Cautions:**
+1. Buzzword overlap is not differentiation. The edge is the architecture (self-hosted, federated, no central owner).
+2. UN/WEF framing is often top-down (public-private cooperation, centralized digital ID). The upside-down funnel is the opposite; avoid language that invites that reading.
+3. Resilience is the most under-used theme in current messaging.
+
+**Roadmap signal from the gaps:** local/community-owned AI is the largest open theme; an emergency/mutual-aid flow would turn resilience into a concrete feature.
+
+## 7. Decisions still needed
 
 - Is governance tooling the wedge? (Recommended, not yet confirmed.)
 - Do we offer managed hosting, and who runs it?

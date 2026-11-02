@@ -1,0 +1,15 @@
+name = "citinet-apps-edge"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+workers_dev = false
+
+# Every <app>.citinet.io. Reserved names (www, mail, ...) are handed straight back to the origin in code.
+routes = [{ pattern = "*.citinet.io/*", zone_name = "citinet.io" }]
+
+[vars]
+APPS_DOMAIN = "citinet.io"
+
+# Fill in after `wrangler kv namespace create APPS` (see README.md).
+[[kv_namespaces]]
+binding = "APPS"
+id = "REPLACE_WITH_NAMESPACE_ID"

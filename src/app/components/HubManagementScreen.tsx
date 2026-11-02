@@ -18,6 +18,7 @@ import { NetworkReachTab } from './NetworkReachTab';
 import { OffsiteBackupTab } from './OffsiteBackupTab';
 import { SystemTab } from './SystemTab';
 import { OutsideSourcesTab } from './OutsideSourcesTab';
+import { HostedAppsPanel } from './HostedAppsPanel';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -1818,6 +1819,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                 </div>
               </div>
             </div>
+
+            {/* ── Hosted apps: static web apps served by this hub ── */}
+            {hubSlug && <HostedAppsPanel hubSlug={hubSlug} />}
 
             {/* ── Section 2: External Integrations ── */}
             <div>

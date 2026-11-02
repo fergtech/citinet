@@ -46,6 +46,7 @@ const { createAccountExportRouter } = require('./accountExport');
 const { createStackHealth } = require('./stackHealth');
 const { createOpsSettings } = require('./opsSettings');
 const { createHubToolsRouter } = require('./hubTools');
+const { createHubApps } = require('./hubApps');
 const { createExternalFeeds } = require('./externalFeeds');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
@@ -4171,6 +4172,11 @@ const opsSettings = createOpsSettings({ pool, authenticate, express, sidecarToke
 app.use('/api/admin/ops', opsSettings.admin);
 app.use('/api/internal', opsSettings.internal);
 app.use('/api/tools', createHubToolsRouter({ express }));
+// Hub-hosted static apps (admin upload, public serve). Must stay above the SPA fallback.
+const hubApps = createHubApps({ pool, authenticate, express, getMinio: () => minioClient, bucket: STORAGE_BUCKET });
+app.use('/api/admin/hub-apps', hubApps.admin);
+app.use('/api/hub-apps', hubApps.member);
+app.use('/apps', hubApps.serve);
 const externalFeeds = createExternalFeeds({ pool, authenticate, express, ollamaUrl: OLLAMA_URL });
 app.use('/api/external', externalFeeds.member);
 app.use('/api/admin/external-sources', externalFeeds.admin);
@@ -11959,6 +11965,7 @@ async function start() {
   try {
     await initDb();
     await initCommsDb(pool);
+    await hubApps.init();
     console.log('Database tables ready');
   } catch (err) {
     console.warn('DB init failed (will retry on first request):', err.message);
@@ -11968,6 +11975,9 @@ async function start() {
 
   // Public-web feed sources + shared item cache (Outside cards); self-schedules.
   externalFeeds.start();
+
+  // Re-asserts each hosted app's <name>.citinet.io address with the broker (no-op unless opted in).
+  hubApps.start();
 
   // Non-blocking — discovers missing capabilities from already-connected apps
   backfillAppCapabilities().catch(() => {});
