@@ -1899,14 +1899,35 @@ class HubService {
     const url = this.getFileDownloadUrl(hubSlug, file.name);
     if (!url) throw new Error('Hub not connected');
     const { headers } = this.getAuthHeaders(hubSlug);
-    const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`Failed to read file (${res.status})`);
-    const buf = await res.arrayBuffer();
+    // Probe only the first few bytes (the encryption magic header) instead of
+    // downloading the whole file into memory. Files over the 100 MB upload
+    // encryption limit are never encrypted, and a multi-GB video would blow the
+    // browser's ArrayBuffer limit (and stall) if read in full — which made
+    // large uploads impossible to make hub/web visible.
+    const probe = await fetch(url, { headers: { ...headers, Range: 'bytes=0-3' } });
+    if (!probe.ok) throw new Error(`Failed to read file (${probe.status})`);
+    let head: ArrayBuffer;
+    if (probe.status === 206) {
+      head = await probe.arrayBuffer();
+    } else {
+      // Server ignored Range and is sending the whole body: read just the first
+      // chunk from the stream, then cancel — never buffer the full file.
+      const reader = probe.body?.getReader();
+      const first = reader ? await reader.read() : null;
+      if (reader) await reader.cancel().catch(() => {});
+      const chunk = first?.value ?? new Uint8Array(0);
+      head = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + Math.min(chunk.byteLength, 4)) as ArrayBuffer;
+    }
 
-    if (!isFileEncrypted(buf)) {
+    if (!isFileEncrypted(head)) {
       await this.patchFileVisibility(hubSlug, file.name, visibility);
       return;
     }
+
+    // Encrypted files are always ≤ 100 MB, so a full read is safe here.
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Failed to read file (${res.status})`);
+    const buf = await res.arrayBuffer();
 
     const plainBuf = await decryptFileBuffer(this.keyScope(hubSlug), buf);
     if (!plainBuf) {
