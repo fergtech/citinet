@@ -148,6 +148,12 @@ async function checkOne(service) {
   }
   const known = new Set([remote.digest, ...remote.children]);
   out.updateAvailable = !localDigests.some((d) => known.has(d));
+  // Different is not the same as newer: a hub running its own, later build must not be offered
+  // the older published one (applying it would quietly downgrade the hub).
+  if (out.updateAvailable && Date.parse(local.Created) > Date.parse(remote.created)) {
+    out.updateAvailable = false;
+    out.note = 'Newer than the published version, so there is nothing to update.';
+  }
   return out;
 }
 
@@ -176,7 +182,9 @@ async function check() {
             ? 'Open Hub Management → System to update it. Your data is not touched.'
             : 'Update it from the host (run the citinet update command).',
         });
-      } else if (!error) {
+      } else {
+        // This service was checked successfully (failed ones aren't listed), so its alert can go
+        // even if another service's check failed.
         clear(key);
       }
     }
