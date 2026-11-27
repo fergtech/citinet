@@ -15,6 +15,9 @@
 #   backup-now        take a backup right now
 #   restore-test      prove the newest backup can really be restored
 #   support-bundle    collect logs + settings (secrets removed) into one zip to send for help
+#   auto-address [off] keep the hub reachable when this machine's network address changes
+#   heal-address      one repair pass of the above (what the scheduled job runs)
+#   vault <cmd> <folder>  offline Knowledge Vault on any drive: create | init | check | import
 #   info              where things live
 #
 # Services: api db storage caddy backup admin livekit ollama
@@ -338,6 +341,67 @@ cmd_support_bundle() {
   say "  Passwords, keys and tokens were removed, but skim it before sharing publicly."
 }
 
+# ── address self-healing ───────────────────────────────────────────────────
+# The hub's network address is not a setting anyone should have to maintain. Wi-Fi↔Ethernet, a
+# DHCP change or a router reboot all move it, and when it does the hub silently becomes
+# unreachable. `heal-address` runs every couple of minutes from cron: it works out the machine's
+# real address and, only if that changed AND stayed changed (~60s, so a network that is still
+# settling can't make containers flap), updates .env and recreates just what publishes on it.
+# The hub API then re-publishes the address to the hostname's DNS record on startup.
+primary_lan_ip() {
+  ip=""
+  if command -v ip >/dev/null 2>&1; then
+    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src"){print $(i+1); exit}}')"
+  fi
+  if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then   # macOS / BSD
+    ifc="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
+    [ -n "$ifc" ] && ip="$(ipconfig getifaddr "$ifc" 2>/dev/null || true)"
+  fi
+  case "$ip" in 169.254.*|127.*) ip="";; esac
+  echo "$ip"
+}
+env_set() {
+  if grep -qE "^$1=" .env 2>/dev/null; then sed -i.bak "s|^$1=.*|$1=$2|" .env && rm -f .env.bak
+  else printf '%s=%s\n' "$1" "$2" >> .env; fi
+}
+cmd_heal_address() {
+  log="$HERE/address-watch.log"; state="$HERE/.address-watch.state"
+  wlog() { echo "$(date -u +%FT%TZ) $*" >> "$log"; }
+  [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 524288 ] && mv -f "$log" "$log.old"
+  docker info >/dev/null 2>&1 || return 0            # Docker not up yet - next run looks again
+  new_lan="$(primary_lan_ip)"; new_ts=""
+  command -v tailscale >/dev/null 2>&1 && new_ts="$(tailscale ip -4 2>/dev/null | head -1)"
+  cur_lan="$(env_get LAN_IP)"; cur_ts="$(env_get TAILSCALE_IP)"
+  changes=""
+  # No usable address right now (offline, mid-switch)? Do nothing - never blank out a setting.
+  [ -n "$new_lan" ] && [ "$new_lan" != "$cur_lan" ] && changes="LAN_IP=$new_lan"
+  if [ -n "$new_ts" ] && [ -n "$cur_ts" ] && [ "$new_ts" != "$cur_ts" ] && echo "$new_ts" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
+    changes="$changes TAILSCALE_IP=$new_ts"
+  fi
+  changes="$(echo $changes)"
+  if [ -z "$changes" ]; then rm -f "$state"; return 0; fi
+  now="$(date +%s)"
+  if [ ! -f "$state" ] || [ "$(sed -n 1p "$state")" != "$changes" ]; then
+    printf '%s\n%s\n' "$changes" "$now" > "$state"; wlog "address change noticed ($changes) - waiting to confirm it is stable"; return 0
+  fi
+  [ $(( now - $(sed -n 2p "$state") )) -lt 60 ] && return 0
+  wlog "address changed (LAN_IP $cur_lan -> ${new_lan:-?}) - healing"
+  for kv in $changes; do env_set "${kv%%=*}" "${kv#*=}"; done
+  wlog "docker compose up -d: $($DC up -d 2>&1 | tr '\n' ' ')"
+  pkill -f mdnsAdvertise.js 2>/dev/null || true
+  rm -f "$state"; wlog healed
+}
+cmd_auto_address() {
+  tag="# citinet-address-watch:$HERE"
+  others="$(crontab -l 2>/dev/null | grep -vF "$tag" || true)"
+  if [ "${1:-on}" = off ]; then
+    printf '%s\n' "$others" | crontab - && say "${G}✓ Automatic address repair is off.${N}"; return
+  fi
+  command -v crontab >/dev/null 2>&1 || die "cron isn't available here - run './citinet.sh heal-address' from your own scheduler every 2 minutes."
+  printf '%s\n*/2 * * * * PATH="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:$PATH" "%s/citinet.sh" heal-address >/dev/null 2>&1 %s\n' "$others" "$HERE" "$tag" | sed '/^$/d' | crontab -
+  say "${G}✓ Automatic address repair is on - this hub now follows its network address (checked every 2 minutes).${N}"
+}
+
 # ── info ────────────────────────────────────────────────────────────────────
 cmd_info() {
   head1 "${HUB_NAME:-Hub}"
@@ -349,7 +413,50 @@ cmd_info() {
   [ -n "$(env_get RESTIC_REPOSITORY)" ] && say "  Off-site:      configured" || say "  Off-site:      not set up"
 }
 
-cmd_help() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+# ── knowledge vault ─────────────────────────────────────────────────────────
+# Runs the vault tool (api/vaultCli.js) inside the citinet-api image with the chosen folder
+# mounted at /vault, so it works with ANY drive or folder on ANY OS — Docker is the only thing
+# that has to see the drive. check/import only read it; init/create write to it.
+cmd_vault() {
+  need_docker
+  sub="${1:-help}"; [ $# -gt 0 ] && shift
+  case "$sub" in
+    check|init|create|import) ;;
+    *) say "Knowledge Vault — offline reference library, carried on any drive or folder."; say
+       say "  $0 vault create <folder> --packs medical,repair   download content onto a drive (resumable)"
+       say "  $0 vault init   <folder> [--name \"...\"]      make manifest.json from folders of PDFs/EPUBs/sites/.zim"
+       say "  $0 vault check  <folder> [--deep]            verify a vault (--deep also checks every checksum)"
+       say "  $0 vault import <folder>                     put the vault into THIS hub (asks for an admin login)"
+       return 0;;
+  esac
+  dir="${1:-}"; [ -n "$dir" ] || die "Which drive or folder?  e.g.  $0 vault $sub /media/usb   (Windows: E:/ )"
+  shift
+  [ -d "$dir" ] || die "Folder not found: $dir"
+  abs="$(cd "$dir" && { pwd -W 2>/dev/null || pwd; })"
+  has_service citinet-api || die "This hub has no citinet-api service."
+  mode=ro; user_args=""
+  case "$sub" in init|create) mode=rw; user_args="--user $(id -u 2>/dev/null || echo 1000):$(id -g 2>/dev/null || echo 1000)";; esac
+  case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) user_args="";; esac   # Docker Desktop handles file ownership
+  MSYS_NO_PATHCONV=1 $DC run --rm --no-deps -T --entrypoint test citinet-api -f vaultCli.js >/dev/null 2>&1 \
+    || die "This hub's software predates the Knowledge Vault. Update it first:  $0 update api"
+  # Docker can silently see an empty stand-in instead of the real folder (e.g. an unshared USB drive).
+  # Writing there looks like success while the drive stays empty, so prove it sees the same folder first.
+  probe=".citinet-probe-$$-$RANDOM"
+  : 2>/dev/null > "$dir/$probe" || die "Can't write to $dir, so there is no way to confirm Docker sees it. Is the drive full or write-protected?"
+  seen=0
+  MSYS_NO_PATHCONV=1 $DC run --rm --no-deps -T -v "$abs:/vault:ro" --entrypoint test citinet-api -f "/vault/$probe" >/dev/null 2>&1 && seen=1
+  rm -f "$dir/$probe"
+  [ "$seen" = 1 ] || die "Docker can't see $abs, so nothing was done. Share that folder with Docker (or restart Docker with the drive plugged in), or copy the vault to this computer's own disk. On Windows use citinet.ps1, which connects the drive itself."
+  tty_flag="-T"; [ -t 0 ] && [ -t 1 ] && tty_flag=""
+  envs=""
+  for v in CITINET_TOKEN CITINET_ADMIN_USER CITINET_ADMIN_PASSWORD; do [ -n "${!v:-}" ] && envs="$envs -e $v"; done
+  # shellcheck disable=SC2086
+  MSYS_NO_PATHCONV=1 $DC run --rm --no-deps $tty_flag $user_args $envs \
+    -e HUB_URL="${HUB_URL:-http://citinet-api:9090}" \
+    -v "$abs:/vault:$mode" --entrypoint node citinet-api vaultCli.js "$sub" /vault "$@"
+}
+
+cmd_help() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
 
 c="${1:-help}"; [ $# -gt 0 ] && shift
 case "$c" in
@@ -358,5 +465,7 @@ case "$c" in
   update|upgrade) cmd_update "$@";; rollback) cmd_rollback "$@";;
   backup-now|backup) cmd_backup_now;; restore-test) cmd_restore_test;;
   support-bundle|bundle) cmd_support_bundle;; info) cmd_info;;
+  heal-address) cmd_heal_address;; auto-address) cmd_auto_address "$@";;
+  vault) cmd_vault "$@";;
   help|-h|--help) cmd_help;; *) echo "Unknown command: $c"; echo; cmd_help; exit 1;;
 esac

@@ -1,5 +1,7 @@
 # Stage 1 — Build the React portal
-FROM node:20-alpine AS portal-builder
+# $BUILDPLATFORM: the output is static files, the same for every processor, so build it once on the
+# build machine's own instead of emulating ARM.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS portal-builder
 WORKDIR /portal
 COPY package.json package-lock.json* ./
 RUN npm install --legacy-peer-deps

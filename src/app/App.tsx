@@ -15,6 +15,7 @@ import { VendorProfileScreen } from './components/VendorProfileScreen';
 import { marketplaceService } from './services/marketplaceService';
 import { MessagesScreen } from './components/MessagesScreen';
 import { ToolkitScreen } from './components/ToolkitScreen';
+import { LibraryScreen } from './components/LibraryScreen';
 import { FilesScreen } from './components/FilesScreen';
 import { NeighborsScreen } from './components/NeighborsScreen';
 import { MySubmissionsScreen } from './components/MySubmissionsScreen';
@@ -381,6 +382,11 @@ function HubToolkitRoute() {
   return <ToolkitScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
 }
 
+function HubLibraryRoute() {
+  const navigate = useNavigate();
+  return <LibraryScreen onBack={useSmartBack()} onNavigate={s => navigate(hubPath(`/${s}`))} />;
+}
+
 function HubMySubmissionsRoute() {
   return <MySubmissionsScreen onBack={useSmartBack()} />;
 }
@@ -536,6 +542,7 @@ function HubModeRoutes() {
       <Route path="/network" element={<HubGuard><HubLayout><HubNetworkRoute /></HubLayout></HubGuard>} />
       <Route path="/marketplace" element={<HubGuard><HubLayout><HubMarketplaceRoute /></HubLayout></HubGuard>} />
       <Route path="/vendor/:vendorId" element={<HubGuard><HubLayout><HubVendorProfileRoute /></HubLayout></HubGuard>} />
+      <Route path="/library" element={<HubGuard><HubLayout><HubLibraryRoute /></HubLayout></HubGuard>} />
       <Route path="/toolkit" element={<HubGuard><HubLayout><HubToolkitRoute /></HubLayout></HubGuard>} />
       <Route path="/toolkit/my-submissions" element={<HubGuard><HubLayout><HubMySubmissionsRoute /></HubLayout></HubGuard>} />
       <Route path="/toolkit/moderation" element={<HubGuard><HubLayout><HubModerationQueueRoute /></HubLayout></HubGuard>} />
@@ -603,12 +610,38 @@ function AppInner() {
       .then(r => r.ok ? r.json() : null)
       .then(async info => {
         if (!info?.hub_slug) return;
-        const hub = await hubService.joinHub(window.location.origin, info, undefined);
+        const hub = await hubService.joinHub(window.location.origin, info, undefined, { keepProbeUrl: true });
         onHubJoined(hub);
         navigateToHub(hub.slug, hubService.getHubConnection(hub.slug) ?? { hub });
       })
       .catch(() => {})
       .finally(() => setProbing(false));
+  }, []);
+
+  // Self-heal a stale saved hub URL. When the portal is served from a hub's own origin and
+  // that hub answers here, this origin is by definition reachable from this browser -- but a
+  // saved entry from an earlier session may still point at the hub's Funnel/tunnel URL, which
+  // a machine on the hub's own network often can't reach (login then hangs on "Failed to
+  // fetch"). The no-saved-hub branch above already stores the origin; this covers returning
+  // visitors, who skip it because getSubdomain() already has an active hub.
+  useEffect(() => {
+    if (!subdomain || isSharePath || isPortalPath) return;
+    fetch('/api/info', { signal: AbortSignal.timeout(3000) })
+      .then(r => r.ok ? r.json() : null)
+      .then(async info => {
+        if (!info?.hub_slug || String(info.hub_slug).toLowerCase() !== subdomain.toLowerCase()) return;
+        const saved = hubService.getHubConnection(subdomain)?.hub.tunnelUrl;
+        if (!saved || saved.replace(/\/$/, '') === window.location.origin) return;
+        // At most one self-heal reload per tab session, so a competing writer to the saved
+        // URL can never turn this into a reload loop.
+        try {
+          if (sessionStorage.getItem('citinet-url-healed')) return;
+          sessionStorage.setItem('citinet-url-healed', '1');
+        } catch { /* storage blocked: still heal below, just can't guard the reload */ return; }
+        await hubService.joinHub(window.location.origin, info, undefined, { keepProbeUrl: true });
+        window.location.reload();
+      })
+      .catch(() => {});
   }, []);
 
   if (probing) return <div className="min-h-screen bg-white dark:bg-zinc-950" />;

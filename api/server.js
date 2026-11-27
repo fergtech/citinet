@@ -47,6 +47,8 @@ const { createStackHealth } = require('./stackHealth');
 const { createOpsSettings } = require('./opsSettings');
 const { createHubToolsRouter } = require('./hubTools');
 const { createHubApps } = require('./hubApps');
+const { createKnowledgeVault } = require('./knowledgeVault');
+const { createKnowledgePacks } = require('./knowledgePacks');
 const { createExternalFeeds } = require('./externalFeeds');
 const { startCertAgent } = require('./certAgent');
 const { startRegistryHeartbeat } = require('./registryHeartbeat');
@@ -4177,6 +4179,15 @@ const hubApps = createHubApps({ pool, authenticate, express, getMinio: () => min
 app.use('/api/admin/hub-apps', hubApps.admin);
 app.use('/api/hub-apps', hubApps.member);
 app.use('/apps', hubApps.serve);
+// Knowledge Vault: portable offline reference content (own tables + knowledge/ MinIO prefix, never Files).
+const knowledgeVault = createKnowledgeVault({ pool, authenticate, express, getMinio: () => minioClient, bucket: STORAGE_BUCKET });
+// One-click content packs (download Kiwix archives directly). Mounted first: more specific path.
+const knowledgePacks = createKnowledgePacks({ pool, authenticate, express, vault: knowledgeVault });
+app.use('/api/admin/knowledge/packs', knowledgePacks.admin);
+app.use('/api/admin/knowledge', knowledgeVault.admin);
+app.use('/api/knowledge/f', knowledgeVault.serve); // capability URLs, no auth header (must precede member)
+app.use('/api/knowledge/k', knowledgeVault.archive); // same, for archive (.zim) pages via the kiwix proxy
+app.use('/api/knowledge', knowledgeVault.member);
 const externalFeeds = createExternalFeeds({ pool, authenticate, express, ollamaUrl: OLLAMA_URL });
 app.use('/api/external', externalFeeds.member);
 app.use('/api/admin/external-sources', externalFeeds.admin);
@@ -11966,6 +11977,8 @@ async function start() {
     await initDb();
     await initCommsDb(pool);
     await hubApps.init();
+    await knowledgeVault.init();
+    await knowledgePacks.init();
     console.log('Database tables ready');
   } catch (err) {
     console.warn('DB init failed (will retry on first request):', err.message);
@@ -11978,6 +11991,9 @@ async function start() {
 
   // Re-asserts each hosted app's <name>.citinet.io address with the broker (no-op unless opted in).
   hubApps.start();
+
+  // Carries on a content-pack download that a restart interrupted.
+  knowledgePacks.start();
 
   // Non-blocking — discovers missing capabilities from already-connected apps
   backfillAppCapabilities().catch(() => {});

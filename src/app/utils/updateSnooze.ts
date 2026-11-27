@@ -4,6 +4,9 @@
  * the admin already saw. Purely a convenience: storage may be unavailable.
  */
 
+/** Fired (detail: StackUpdates) whenever the Updates panel learns something, so the banner keeps up. */
+export const UPDATES_CHANGED = 'citinet-updates-changed';
+
 const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
 const key = (hubSlug: string, service: string) => `citinet-update-snooze:${hubSlug}:${service}`;
 

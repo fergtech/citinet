@@ -36,6 +36,14 @@ type AuthMode = 'signup' | 'login';
 
 const HUB_URL_HISTORY_KEY = 'hubUrlHistory';
 
+// A machine usually can't reach its own Tailscale/LAN address through the hub's
+// published port, so when a remote-style URL fails to connect we retry here.
+const LOCAL_HUB_URL = 'http://localhost:9090';
+
+function isLocalUrl(url: string): boolean {
+  return /^(https?:\/\/)?(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:|\/|$)/i.test(url.trim());
+}
+
 function getHubUrlHistory(): string[] {
   try {
     const raw = localStorage.getItem(HUB_URL_HISTORY_KEY);
@@ -86,6 +94,8 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
   const [probeStatus, setProbeStatus] = useState<HubStatusResponse | null>(null);
   const [probeError, setProbeError] = useState('');
   const [skipProbe, setSkipProbe] = useState(false);
+  // True once a failed probe was automatically retried against localhost.
+  const [triedLocalFallback, setTriedLocalFallback] = useState(false);
 
   // ── Auth state ──
   const [username, setUsername] = useState('');
@@ -121,6 +131,15 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
       const t = setTimeout(() => handleProbeUrl(prefilledUrl), 150);
       return () => clearTimeout(t);
     }
+    // Dev convenience: VITE_DEV_HUB_URL=http://localhost:9090 in .env.local
+    // pre-fills and auto-probes your local hub on `npm run dev`.
+    const devHubUrl = import.meta.env.DEV ? (import.meta.env.VITE_DEV_HUB_URL as string | undefined)?.trim() : '';
+    if (devHubUrl) {
+      setTunnelUrl(devHubUrl);
+      setUrlOpen(true);
+      const t = setTimeout(() => handleProbeUrl(devHubUrl), 150);
+      return () => clearTimeout(t);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -135,17 +154,34 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     } catch { return false; }
   };
 
-  const handleProbeUrl = async (url: string) => {
+  const handleProbeUrl = async (url: string, expectedSlug?: string, keepHubName = false) => {
     if (!isValidUrl(url)) return;
     addHubUrlToHistory(url);
     setUrlHistory(getHubUrlHistory());
-    setProbingHubName('');
+    if (!keepHubName) setProbingHubName('');
     setStep('probing');
     setProbeError('');
     setProbeInfo(null);
     setProbeStatus(null);
+    setTriedLocalFallback(false);
 
-    const result = await hubService.probeHub(url);
+    let result = await hubService.probeHub(url);
+
+    // Couldn't connect at all (timeout / network) to a non-local address: the
+    // hub may be on THIS machine, where its own Tailscale/LAN URL doesn't loop
+    // back. Quietly try localhost and, if it's the same hub, use that instead.
+    // An HTTP error status means something answered, so don't second-guess it.
+    if (!result.success && !isLocalUrl(url) && !/responded with status/i.test(result.error ?? '')) {
+      setTriedLocalFallback(true);
+      const local = await hubService.probeHub(LOCAL_HUB_URL);
+      const localSlug = local.info?.hub_slug;
+      const sameHub = !expectedSlug || !localSlug || localSlug.toLowerCase() === expectedSlug.toLowerCase();
+      if (local.success && local.info && sameHub) {
+        result = local;
+        setTunnelUrl(LOCAL_HUB_URL);
+      }
+    }
+
     if (result.success && result.info) {
       setProbeInfo(result.info);
       setProbeStatus(result.status || null);
@@ -162,7 +198,7 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
     rememberHub({ slug: hub.slug, name: hub.name, tunnelUrl: hub.tunnel_url });
     setProbingHubName(hub.name);
     setTunnelUrl(hub.tunnel_url);
-    await handleProbeUrl(hub.tunnel_url);
+    await handleProbeUrl(hub.tunnel_url, hub.slug, true);
   };
 
   // A hub we already have a valid session for (isOnboarded) shouldn't make
@@ -707,19 +743,20 @@ export function NodeDiscoveryScreen({ onNodeFound, onBack }: NodeDiscoveryScreen
               </p>
 
               {/* Localhost hint for Tailscale URLs when on the same machine */}
-              {tunnelUrl.includes('.ts.net') || tunnelUrl.includes('tailscale') ? (
+              {!isLocalUrl(tunnelUrl) && (tunnelUrl.includes('.ts.net') || tunnelUrl.includes('tailscale') || triedLocalFallback) ? (
                 <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 mb-5 text-left">
                   <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Hub owner on this machine?</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
-                    If you're on the same machine as the hub, use{' '}
-                    <button
-                      onClick={() => { setTunnelUrl('http://localhost:9090'); setStep('browse'); setUrlOpen(true); }}
-                      className="font-mono underline hover:no-underline"
-                    >
-                      http://localhost:9090
-                    </button>
-                    {' '}instead. The Tailscale URL is for external access.
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mb-2">
+                    {triedLocalFallback
+                      ? "We also looked for a hub on this computer and didn't find one. If it's running here, check that it has started, then try again."
+                      : "If the hub runs on this computer, connect to it directly. The Tailscale address is only for other devices."}
                   </p>
+                  <button
+                    onClick={() => handleProbeUrl(LOCAL_HUB_URL, undefined, true)}
+                    className="text-xs font-semibold text-amber-900 dark:text-amber-200 underline hover:no-underline"
+                  >
+                    Connect from this computer
+                  </button>
                 </div>
               ) : null}
 

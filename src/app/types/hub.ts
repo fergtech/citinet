@@ -61,6 +61,8 @@ export interface Hub extends HubIconFields {
   joinApprovalMode?: 'admin' | 'member_vote';
   /** Host machine's LAN IP for direct local network access (no internet required) */
   lanIp?: string;
+  /** Preferred address to return to while `tunnelUrl` is a temporary failover (see hubService.refreshHubStatus). */
+  homeUrl?: string;
   /**
    * Which app screens are enabled on this hub.
    * null = all apps enabled (default for existing hubs / no config set).

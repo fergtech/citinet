@@ -56,9 +56,14 @@ export default defineConfig({
         // than raising this indefinitely.
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
 
+        // Hub API and hosted-app URLs are real documents (Library PDFs and archive pages open in a
+        // frame or tab). Never answer them with the portal's own index.html.
+        navigateFallbackDenylist: [/^\/api\//, /^\/apps\//],
+
         runtimeCaching: [
           {
-            urlPattern: ({ request }) => request.mode === 'navigate',
+            urlPattern: ({ request, url }) => request.mode === 'navigate'
+              && !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/apps/'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'citinet-pages-cache',

@@ -40,6 +40,7 @@ import { Download } from 'lucide-react';
 import { OutsideSettings } from './OutsideSettings';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
+import { KeyBackupUnavailableError, normalizeRecoveryPhrase } from '../utils/crypto';
 import { preferencesService } from '../services/preferencesService';
 import { checkPasswordStrength } from '../utils/passwordStrength';
 import { clearSubdomainCache } from '../utils/subdomain';
@@ -99,7 +100,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
   const [hasBackup, setHasBackup] = useState<boolean | null>(null);
   const [restoreSecret, setRestoreSecret] = useState('');
   const [restoring, setRestoring] = useState(false);
-  const [restoreResult, setRestoreResult] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const [restoreResult, setRestoreResult] = useState<'idle' | 'ok' | 'fail' | 'error'>('idle');
+  // Set when the check couldn't run (not the same as a wrong phrase) -- shown instead of the "didn't match" text.
+  const [restoreProblem, setRestoreProblem] = useState('');
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
@@ -327,14 +330,25 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
     setRestoring(true);
     setRestoreResult('idle');
     try {
-      const normalized = restoreSecret.trim().toLowerCase().includes('-')
-        ? restoreSecret.trim().toLowerCase().replace(/\s+/g, '-')
-        : restoreSecret; // looks like a password, not a recovery phrase -- don't mangle it
-      const ok = await hubService.restoreFromKeyBackup(currentHub.slug, normalized);
+      // A recovery phrase is several words joined by hyphens, but people type or paste it with
+      // spaces too. Anything with a space or hyphen might be a phrase OR an old multi-word login
+      // password, so try the phrase spelling first and then exactly what was typed. (A password
+      // with no separators can only be itself.)
+      const candidates = /[\s-]/.test(restoreSecret.trim())
+        ? [normalizeRecoveryPhrase(restoreSecret), restoreSecret]
+        : [restoreSecret];
+      setRestoreProblem('');
+      const ok = await hubService.restoreFromKeyBackup(currentHub.slug, candidates);
       setRestoreResult(ok ? 'ok' : 'fail');
       if (ok) setRestoreSecret('');
-    } catch {
-      setRestoreResult('fail');
+    } catch (err) {
+      if (err instanceof KeyBackupUnavailableError) {
+        // The check itself couldn't run -- say so, rather than claiming the phrase was wrong.
+        setRestoreProblem(err.message);
+        setRestoreResult('error');
+      } else {
+        setRestoreResult('fail');
+      }
     } finally {
       setRestoring(false);
     }
@@ -974,6 +988,9 @@ export function AccountScreen({ onBack, onNavigate }: AccountScreenProps) {
         />
         {restoreResult === 'fail' && (
           <p className="text-xs text-red-500 dark:text-red-400 mt-3">Didn't match — check the spelling, or try the password from when the backup was last created.</p>
+        )}
+        {restoreResult === 'error' && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">{restoreProblem}</p>
         )}
         {restoreResult === 'ok' && (
           <p className="text-xs text-green-600 dark:text-green-400 mt-3">Restored. Refresh the page to see your content decrypt.</p>

@@ -137,6 +137,32 @@ async function ensureCert() {
   }
 }
 
+/**
+ * Keep the hostname's A record pointing at this hub's *current* LAN address.
+ * Runs at every start (the host-side `citinet heal-address` recreates this container
+ * whenever the machine's address changes) and every 30 min after, so the record can't drift.
+ * Independent of cert renewal -- a cert lasts months, an address can change in a minute.
+ */
+let lastSyncedIp = null;
+async function syncAddress() {
+  const slug = process.env.HUB_SLUG;
+  const secret = process.env.HUB_CERT_SECRET;
+  const lanIp = process.env.LAN_IP;
+  if (!slug || !secret || !lanIp || !process.env.HUB_HTTPS_HOSTNAME) return;
+  try {
+    const res = await postJson(BROKER_URL, { op: 'update-address', slug, secret, lanIp });
+    if (res.ok) {
+      if (lastSyncedIp !== lanIp) console.log(`[certAgent] hostname now points at ${lanIp}`);
+      lastSyncedIp = lanIp;
+    } else if (res.status !== 400) {
+      // 400 = an older broker without this op; stay quiet, the cert flow still refreshes the record.
+      console.warn('[certAgent] address sync failed:', res.status, res.body && res.body.error || '');
+    }
+  } catch (err) {
+    console.warn('[certAgent] address sync error (will retry):', err.message);
+  }
+}
+
 /** Call once at server startup. Checks immediately, then once a day. */
 function startCertAgent() {
   const hostname = process.env.HUB_HTTPS_HOSTNAME;
@@ -149,6 +175,8 @@ function startCertAgent() {
     }
   }
   ensureCert().catch(err => console.error('[certAgent] startup check failed:', err.message));
+  syncAddress();
+  setInterval(syncAddress, 30 * 60 * 1000);
   setInterval(() => {
     ensureCert().catch(err => console.error('[certAgent] periodic check failed:', err.message));
   }, CHECK_INTERVAL_MS);

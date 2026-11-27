@@ -15,6 +15,9 @@
 #   backup-now        take a backup right now
 #   restore-test      prove the newest backup can really be restored
 #   support-bundle    collect logs + settings (secrets removed) into one zip to send for help
+#   auto-address [off] keep the hub reachable when this machine's network address changes (on by default)
+#   heal-address      one repair pass of the above (what the scheduled task runs)
+#   vault <cmd> <folder>  offline Knowledge Vault on any drive: create | init | check | import
 #   info              where things live
 #
 # Services: api db storage caddy backup admin livekit ollama
@@ -385,6 +388,102 @@ function Cmd-SupportBundle {
   Say '  Passwords, keys and tokens were removed, but skim it before sharing publicly.'
 }
 
+# -- address self-healing ------------------------------------------------------------
+# The hub's network address is not a setting anyone should have to maintain. Wi-Fi <-> Ethernet,
+# a DHCP lease change or a router reboot all move it, and when it moves the hub silently becomes
+# unreachable (Docker can't bind the old address; the public hostname still points at it).
+# `heal-address` runs every couple of minutes from a scheduled task: it works out the machine's
+# real address, and only if that has changed (and stayed changed - see below) it updates .env,
+# recreates just the containers that publish on it, and restarts the LAN-discovery advertiser.
+# The hub API then re-publishes the new address to the hostname's DNS record on startup.
+function Get-PrimaryLanIp {
+  # The address on the interface that actually carries the default route - not "the first adapter",
+  # which is how a disconnected Ethernet port's old address can win over live Wi-Fi.
+  try {
+    $skip = 'Loopback|vEthernet|Tailscale|VPN|WSL|Bluetooth|Hyper-V|VMware|VirtualBox|Docker'
+    $routes = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object { $_.NextHop -ne '0.0.0.0' } |
+      ForEach-Object {
+        $if = Get-NetIPInterface -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+        [pscustomobject]@{ Index = $_.InterfaceIndex; Cost = ($_.RouteMetric + $(if ($if) { $if.InterfaceMetric } else { 0 })) }
+      } | Sort-Object Cost
+    foreach ($r in $routes) {
+      $a = Get-NetIPAddress -InterfaceIndex $r.Index -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.InterfaceAlias -notmatch $skip -and $_.IPAddress -notmatch '^169\.254\.' -and $_.PrefixOrigin -ne 'WellKnown' } |
+        Select-Object -First 1
+      if ($a) { return [string]$a.IPAddress }
+    }
+  } catch { }
+  return ''
+}
+function EnvSet($key, $value) {
+  $f = Join-Path $HubDir '.env'
+  $text = [System.IO.File]::ReadAllText($f)
+  if ($text -match "(?m)^$([regex]::Escape($key))=") { $text = [regex]::Replace($text, "(?m)^$([regex]::Escape($key))=.*$", "${key}=$value") }
+  else { $text = $text.TrimEnd() + "`r`n${key}=$value`r`n" }
+  [System.IO.File]::WriteAllText($f, $text, (New-Object System.Text.UTF8Encoding($false)))
+}
+function Cmd-HealAddress {
+  $log = Join-Path $HubDir 'address-watch.log'
+  $stateFile = Join-Path $HubDir '.address-watch.state'
+  function WLog($m) { "$(Get-Date -Format o) $m" | Out-File -Append -FilePath $log -Encoding utf8 }
+  if ((Test-Path -LiteralPath $log) -and (Get-Item -LiteralPath $log).Length -gt 512KB) { Move-Item -LiteralPath $log -Destination "$log.old" -Force }
+
+  $null = docker info 2>$null
+  if ($LASTEXITCODE -ne 0) { return }   # Docker not up yet - nothing to repair; next run will look again
+
+  $newLan = Get-PrimaryLanIp
+  $newTs = ''
+  if (Get-Command tailscale -ErrorAction SilentlyContinue) { $newTs = ([string](tailscale ip -4 2>$null | Select-Object -First 1)).Trim() }
+
+  $changes = @()
+  $curLan = (EnvGet 'LAN_IP').Trim('"').Trim("'")
+  $curTs  = (EnvGet 'TAILSCALE_IP').Trim('"').Trim("'")
+  # No usable address right now (offline, mid-switch)? Do nothing - never blank out a setting.
+  if ($newLan -and $newLan -ne $curLan) { $changes += "LAN_IP=$newLan" }
+  if ($newTs -and $newTs -match '^\d+\.\d+\.\d+\.\d+$' -and $curTs -and $newTs -ne $curTs) { $changes += "TAILSCALE_IP=$newTs" }
+
+  if ($changes.Count -eq 0) { if (Test-Path -LiteralPath $stateFile) { Remove-Item -LiteralPath $stateFile -Force }; return }
+
+  # Debounce: act only once the same new address has been seen on two runs at least ~60s apart,
+  # so a network that is still settling (DHCP renewal, VPN toggling, wake from sleep) can't make
+  # the hub's containers bounce back and forth.
+  $sig = $changes -join ';'
+  $prev = $null
+  if (Test-Path -LiteralPath $stateFile) { try { $prev = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json } catch { } }
+  if (-not $prev -or $prev.sig -ne $sig) {
+    @{ sig = $sig; since = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+    WLog "address change noticed ($sig) - waiting to confirm it is stable"
+    return
+  }
+  if (((Get-Date) - [datetime]$prev.since).TotalSeconds -lt 60) { return }
+
+  WLog "address changed ($curLan -> $newLan$(if ($changes -match 'TAILSCALE') { ", tailscale $curTs -> $newTs" })) - healing"
+  foreach ($c in $changes) { $k, $v = $c -split '=', 2; EnvSet $k $v }
+  $o = Dc up -d 2>&1 | Out-String
+  WLog ("docker compose up -d: " + ($o -replace '\s+', ' ').Trim())
+  # The LAN-discovery advertiser is a native process bound to the old address; stopping it lets its
+  # watchdog (or the next start) bring it back on the new one.
+  Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'mdnsAdvertise\.js' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue
+  WLog 'healed'
+}
+$script:AddrTask = 'CitinetAddressWatch'
+function Cmd-AutoAddress {
+  $mode = if ($Rest.Count -gt 0) { [string]$Rest[0] } else { 'on' }
+  if ($mode -eq 'off') {
+    Unregister-ScheduledTask -TaskName $script:AddrTask -Confirm:$false -ErrorAction SilentlyContinue
+    Say 'ok Automatic address repair is off.'; return
+  }
+  $ps = (Get-Command powershell.exe).Source
+  $action = New-ScheduledTaskAction -Execute $ps -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $PSCommandPath + '" heal-address') -WorkingDirectory $HubDir
+  $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2)
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -Hidden
+  Register-ScheduledTask -TaskName $script:AddrTask -Action $action -Trigger $trigger -Settings $settings -Description 'Keeps the Citinet hub reachable when this machine''s network address changes' -Force | Out-Null
+  Write-Host 'ok Automatic address repair is on - this hub now follows its network address (checked every 2 minutes).' -ForegroundColor Green
+}
+
 # -- info --------------------------------------------------------------------------
 function Cmd-Info {
   Head1 $(if ($HubName) { $HubName } else { 'Hub' })
@@ -394,7 +493,82 @@ function Cmd-Info {
   Say "  Files:         $(EnvGet 'FILES_DIR')"
   Say "  Off-site:      $(if (EnvGet 'RESTIC_REPOSITORY') { 'configured' } else { 'not set up' })"
 }
-function Cmd-Help { Get-Content -LiteralPath $PSCommandPath | Select-Object -First 22 | ForEach-Object { $_ -replace '^# ?', '' } }
+# -- knowledge vault -----------------------------------------------------------------
+# Runs the vault tool (api/vaultCli.js) inside the citinet-api image with the chosen folder
+# mounted at /vault, so it works with ANY drive or folder - Docker is the only thing that has
+# to see the drive. check/import only read it; init/create write to it.
+#
+# Docker can silently see an EMPTY STAND-IN instead of the real folder (Docker Desktop on Windows
+# does this for USB sticks and other drives plugged in after it started). Writing there looks like
+# success while the drive stays empty, so every run first proves Docker sees the same folder.
+function Test-DockerSees([string]$Dir, [string]$Mount) {
+  $name = '.citinet-probe-' + [guid]::NewGuid().ToString('N')
+  $probe = Join-Path $Dir $name
+  try { [IO.File]::WriteAllText($probe, 'probe') }
+  catch { Die "Can't write to $Dir, so there is no way to confirm Docker sees it. Is the drive full or write-protected?" }
+  try {
+    $null = Dc run --rm --no-deps -T -v "${Mount}:/vault:ro" --entrypoint test citinet-api -f "/vault/$name" 2>$null
+    return ($LASTEXITCODE -eq 0)
+  } finally { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+}
+
+function Cmd-Vault {
+  NeedDocker
+  $sub = if ($Rest.Count -gt 0) { [string]$Rest[0] } else { 'help' }
+  if ($sub -notin 'check', 'init', 'create', 'import') {
+    Say 'Knowledge Vault - offline reference library, carried on any drive or folder.'
+    Say ''
+    Say '  .\citinet.ps1 vault create <folder> --packs medical,repair   download content onto a drive (resumable)'
+    Say '  .\citinet.ps1 vault init   <folder> [--name "..."]      make manifest.json from folders of PDFs/EPUBs/sites/.zim'
+    Say '  .\citinet.ps1 vault check  <folder> [--deep]            verify a vault (--deep also checks every checksum)'
+    Say '  .\citinet.ps1 vault import <folder>                     put the vault into THIS hub (asks for an admin login)'
+    return
+  }
+  if ($Rest.Count -lt 2) { Die "Which drive or folder?  e.g.  .\citinet.ps1 vault $sub E:\" }
+  $dir = [string]$Rest[1]
+  if (-not (Test-Path -LiteralPath $dir -PathType Container)) { Die "Folder not found: $dir" }
+  $abs = (Resolve-Path -LiteralPath $dir).ProviderPath
+  # Docker wants forward slashes, and a trailing backslash would swallow the closing quote.
+  $mount = $abs.Replace('\', '/')
+  if ($mount.Length -gt 3) { $mount = $mount.TrimEnd('/') }
+  $extra = @(); if ($Rest.Count -gt 2) { $extra = @($Rest[2..($Rest.Count - 1)] | ForEach-Object { $_ -join ',' }) }
+  # (PowerShell reads  medical,repair  as a list; the -join above puts the comma back.)
+  $mode = if ($sub -in 'init', 'create') { 'rw' } else { 'ro' }
+
+  $null = Dc run --rm --no-deps -T --entrypoint test citinet-api -f vaultCli.js 2>$null
+  if ($LASTEXITCODE -ne 0) { Die "This hub's software predates the Knowledge Vault. Update it first:  .\citinet.ps1 update api" }
+
+  $envArgs = @()
+  foreach ($v in 'CITINET_TOKEN', 'CITINET_ADMIN_USER', 'CITINET_ADMIN_PASSWORD') {
+    if ([Environment]::GetEnvironmentVariable($v)) { $envArgs += @('-e', $v) }
+  }
+  $hubUrl = if ($env:HUB_URL) { $env:HUB_URL } else { 'http://citinet-api:9090' }
+  $tty = @(); if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) { $tty = @('-T') }
+  $connected = ''
+  $code = 1
+  try {
+    if (-not (Test-DockerSees $abs $mount)) {
+      # Connect the drive to Docker Desktop's Linux VM ourselves, for the length of this command.
+      if ($abs -match '^([A-Za-z]):' -and (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+        $letter = $Matches[1].ToLower()
+        Say "Docker can't see drive ${letter}: yet - connecting it..."
+        wsl.exe -d docker-desktop -e mount -t drvfs "$($letter.ToUpper()):\" "/mnt/host/$letter"
+        if ($LASTEXITCODE -eq 0) { $connected = $letter }
+      }
+      if (-not $connected -or -not (Test-DockerSees $abs $mount)) {
+        Die "Docker can't see $abs, so nothing was done. Try restarting Docker Desktop with the drive plugged in, or copy the vault to a folder on this computer's own disk."
+      }
+    }
+    Dc run --rm --no-deps @tty @envArgs -e "HUB_URL=$hubUrl" -v "${mount}:/vault:$mode" --entrypoint node citinet-api vaultCli.js $sub /vault @extra
+    $code = $LASTEXITCODE
+  } finally {
+    # Disconnect again so the drive can be ejected.
+    if ($connected) { wsl.exe -d docker-desktop -e umount "/mnt/host/$connected" }
+  }
+  if ($code -ne 0) { exit $code }
+}
+
+function Cmd-Help { Get-Content -LiteralPath $PSCommandPath | Select-Object -First 24 | ForEach-Object { $_ -replace '^# ?', '' } }
 
 switch ($Command) {
   'status'         { Cmd-Status }
@@ -409,6 +583,9 @@ switch ($Command) {
   { $_ -in 'backup-now', 'backup' }        { Cmd-BackupNow }
   'restore-test'   { Cmd-RestoreTest }
   { $_ -in 'support-bundle', 'bundle' }    { Cmd-SupportBundle }
+  'heal-address'   { Cmd-HealAddress }
+  'auto-address'   { Cmd-AutoAddress }
+  'vault'          { Cmd-Vault }
   'info'           { Cmd-Info }
   { $_ -in 'help', '-h', '--help' }        { Cmd-Help }
   default          { Write-Host "Unknown command: $Command"; Write-Host ''; Cmd-Help; exit 1 }

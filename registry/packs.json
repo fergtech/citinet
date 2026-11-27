@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "packs": [
+    {
+      "id": "medical-essentials",
+      "title": "Medical Essentials",
+      "description": "First aid and medicine references, safe water, food safety, and what to do after a disaster.",
+      "category": {
+        "id": "medical",
+        "label": "Medical"
+      },
+      "items": [
+        {
+          "id": "zimgit-medicine",
+          "title": "Medicine & First Aid",
+          "description": "Practical medical references and first-aid guides.",
+          "license": "Open and public-domain sources",
+          "tags": [
+            "medicine",
+            "first aid",
+            "health",
+            "emergency"
+          ],
+          "kiwix": {
+            "dir": "other",
+            "name": "zimgit-medicine_en"
+          }
+        },
+        {
+          "id": "zimgit-water",
+          "title": "Water: Purification & Safety",
+          "description": "Finding, treating and storing safe drinking water.",
+          "license": "Open and public-domain sources",
+          "tags": [
+            "water",
+            "purification",
+            "drinking water",
+            "emergency"
+          ],
+          "kiwix": {
+            "dir": "other",
+            "name": "zimgit-water_en"
+          }
+        },
+        {
+          "id": "zimgit-post-disaster",
+          "title": "After a Disaster",
+          "description": "Guides for the days and weeks after a storm, outage or other disaster.",
+          "license": "Open and public-domain sources",
+          "tags": [
+            "disaster",
+            "emergency",
+            "preparedness",
+            "survival"
+          ],
+          "kiwix": {
+            "dir": "other",
+            "name": "zimgit-post-disaster_en"
+          }
+        },
+        {
+          "id": "zimgit-food-preparation",
+          "title": "Food Preparation & Safety",
+          "description": "Preparing, preserving and storing food safely.",
+          "license": "Open and public-domain sources",
+          "tags": [
+            "food",
+            "cooking",
+            "preserving",
+            "safety"
+          ],
+          "kiwix": {
+            "dir": "other",
+            "name": "zimgit-food-preparation_en"
+          }
+        }
+      ]
+    },
+    {
+      "id": "repair-and-build",
+      "title": "Repair & Build",
+      "description": "Step-by-step repair guides for everyday devices, plus practical, low-cost building and DIY know-how.",
+      "category": {
+        "id": "repair",
+        "label": "Repair"
+      },
+      "items": [
+        {
+          "id": "ifixit",
+          "title": "iFixit Repair Guides",
+          "description": "Repair guides for phones, laptops, appliances, vehicles and more.",
+          "license": "CC BY-NC-SA 3.0",
+          "tags": [
+            "repair",
+            "fix",
+            "electronics",
+            "appliances",
+            "guides"
+          ],
+          "kiwix": {
+            "dir": "ifixit",
+            "name": "ifixit_en_all"
+          }
+        },
+        {
+          "id": "appropedia",
+          "title": "Appropedia: Sustainable Living & DIY",
+          "description": "Practical, low-cost solutions: energy, shelter, water, farming and building.",
+          "license": "CC BY-SA",
+          "tags": [
+            "diy",
+            "building",
+            "sustainability",
+            "energy",
+            "farming"
+          ],
+          "kiwix": {
+            "dir": "other",
+            "name": "appropedia_en_all_maxi"
+          }
+        }
+      ]
+    },
+    {
+      "id": "reference",
+      "title": "Reference",
+      "description": "An encyclopedia and free textbooks, for looking things up and learning when the internet is down.",
+      "category": {
+        "id": "reference",
+        "label": "Reference"
+      },
+      "items": [
+        {
+          "id": "wikipedia-mini",
+          "title": "Wikipedia (introductions)",
+          "description": "The opening section of every English Wikipedia article.",
+          "license": "CC BY-SA 4.0",
+          "tags": [
+            "wikipedia",
+            "encyclopedia",
+            "reference"
+          ],
+          "kiwix": {
+            "dir": "wikipedia",
+            "name": "wikipedia_en_all_mini"
+          }
+        },
+        {
+          "id": "wikibooks",
+          "title": "Wikibooks: Free Textbooks",
+          "description": "Open textbooks and manuals on hundreds of subjects.",
+          "license": "CC BY-SA 4.0",
+          "tags": [
+            "textbooks",
+            "education",
+            "learning",
+            "wikibooks"
+          ],
+          "kiwix": {
+            "dir": "wikibooks",
+            "name": "wikibooks_en_all_nopic"
+          }
+        }
+      ]
+    }
+  ]
+}

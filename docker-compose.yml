@@ -32,6 +32,9 @@ services:
       - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - KNOWLEDGE_DIR=/knowledge
+    volumes:
+      - ${DATA_DIR:-./data}/knowledge:/knowledge
     depends_on:
       citinet-db:
         condition: service_healthy
@@ -93,7 +96,7 @@ services:
 
   # MinIO Object Storage (S3-compatible)
   citinet-storage:
-    image: minio/minio:latest
+    image: ghcr.io/fergtech/citinet-storage:RELEASE.2026-11-12T00-00-00Z
     container_name: citinet-storage
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -141,6 +144,23 @@ services:
       # single neighborhood hub's realistic concurrency, not LiveKit's own
       # much wider default range meant for larger multi-tenant deployments.
       - "50000-50100:50000-50100/udp"
+    networks:
+      - citinet-network
+
+  # Archive reader for Library content (.zim archives such as Wikipedia). On by default: it is tiny
+  # and idle until someone opens an archive. citinet-api writes /data/library.xml (the list of
+  # installed archives) and proxies pages through its own access checks, so this container
+  # publishes no ports. It waits for the API so that library.xml exists before it starts.
+  citinet-kiwix:
+    image: ghcr.io/kiwix/kiwix-serve:latest
+    container_name: citinet-kiwix
+    restart: unless-stopped
+    command: ["--library", "--monitorLibrary", "/data/library.xml"]
+    volumes:
+      - ${DATA_DIR:-./data}/knowledge/zim:/data:ro
+    depends_on:
+      citinet-api:
+        condition: service_healthy
     networks:
       - citinet-network
 

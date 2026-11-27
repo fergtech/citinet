@@ -336,6 +336,8 @@ function getComposeYaml(config: HubScriptConfig): string {
   const dbVol      = vd('DATA_DIR', './data') + '/db';
   const storageVol = vd('FILES_DIR', './data/storage');
   const caddyVol   = vd('DATA_DIR', './data') + '/caddy';
+  // Knowledge Vault content that has to live on disk rather than in object storage (.zim archives).
+  const knowledgeVol = vd('DATA_DIR', './data') + '/knowledge';
   const ollamaVol  = vd('OLLAMA_DIR', './data/ollama');
   // Separate from DATA_DIR by default so it's at least a different directory than the
   // live DB volume -- operators who want real protection against a failed disk (not
@@ -388,6 +390,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - HUB_HTTPS_HOSTNAME=' + v('HUB_HTTPS_HOSTNAME'),
     '      - ADMIN_USERNAME=' + v('ADMIN_USERNAME'),
     '      - ADMIN_PASSWORD=' + v('ADMIN_PASSWORD'),
+    '      - KNOWLEDGE_DIR=/knowledge',
     ...(config.enableAi ? ['      - OLLAMA_URL=http://citinet-ollama:11434'] : []),
     ...(config.enableComms ? [
       // Internal URL is always the same Docker-network service address, so
@@ -400,6 +403,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     ] : []),
     '    volumes:',
     '      - ' + caddyVol + ':/app/caddy-data',
+    '      - ' + knowledgeVol + ':/knowledge',
     '    depends_on:',
     '      citinet-db:',
     '        condition: service_healthy',
@@ -435,7 +439,7 @@ function getComposeYaml(config: HubScriptConfig): string {
     '      - citinet-network',
     '',
     '  citinet-storage:',
-    '    image: minio/minio:latest',
+    '    image: ghcr.io/fergtech/citinet-storage:RELEASE.2026-11-12T00-00-00Z',
     '    container_name: citinet-storage-' + v('HUB_SLUG'),
     '    restart: unless-stopped',
     '    command: server /data --console-address ":9001"',
@@ -577,6 +581,23 @@ function getComposeYaml(config: HubScriptConfig): string {
     '    volumes:',
     '      - ./Caddyfile:/etc/caddy/Caddyfile:ro',
     '      - ' + caddyVol + ':/data/certs',
+    '    depends_on:',
+    '      citinet-api:',
+    '        condition: service_healthy',
+    '    networks:',
+    '      - citinet-network',
+    '',
+    // Archive reader for Library content (.zim archives, e.g. Wikipedia). On by default: it is tiny and
+    // idle until someone opens an archive. citinet-api writes /data/library.xml and proxies pages through
+    // its own access checks, so this container publishes no ports. It waits for the API so library.xml
+    // exists before it starts.
+    '  citinet-kiwix:',
+    '    image: ghcr.io/kiwix/kiwix-serve:latest',
+    '    container_name: citinet-kiwix-' + v('HUB_SLUG'),
+    '    restart: unless-stopped',
+    '    command: ["--library", "--monitorLibrary", "/data/library.xml"]',
+    '    volumes:',
+    '      - ' + knowledgeVol + '/zim:/data:ro',
     '    depends_on:',
     '      citinet-api:',
     '        condition: service_healthy',
@@ -842,7 +863,7 @@ function generateBashScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     'DATA_DIR="' + (config.dataDir ?? '$HUB_DIR/data') + '"',
-    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/caddy"',
+    'mkdir -p "$DATA_DIR/db" "$DATA_DIR/caddy" "$DATA_DIR/knowledge/zim"',
     'ok "DB + cache at: $DATA_DIR"',
     'FILES_DIR="$DATA_DIR/storage"',
     'mkdir -p "$FILES_DIR"',
@@ -1065,6 +1086,9 @@ function generateBashScript(config: HubScriptConfig): string {
     'echo ""',
     'ok "Hub is online!"',
     '',
+    '# Keep the hub reachable when the network address of this machine changes (Wi-Fi/Ethernet, DHCP, router reboot) --',
+    '# nobody running a hub should have to think about this. Safe to skip: only a convenience.',
+    '"$HUB_DIR/citinet.sh" auto-address >/dev/null 2>&1 && ok "Automatic address repair is on" || true',
     'echo ""',
     'echo "  ============================================"',
     'echo "  ' + config.hubName + ' is live!"',
@@ -1215,7 +1239,7 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '',
     '# === Create data directories (bind-mount targets) ===',
     '$DataDir = "' + (config.dataDir ?? '$HubDir\\data') + '"',
-    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\caddy" | Out-Null',
+    'New-Item -ItemType Directory -Force -Path "$DataDir\\db","$DataDir\\caddy","$DataDir\\knowledge\\zim" | Out-Null',
     'Ok "DB + cache at: $DataDir"',
     '$FilesDir = "$DataDir\\storage"',
     'New-Item -ItemType Directory -Force -Path $FilesDir | Out-Null',
@@ -1451,6 +1475,10 @@ function generatePowerShellScript(config: HubScriptConfig): string {
     '',
     'Write-Host ""',
     'Ok "Hub is online!"',
+    '',
+    '# Keep the hub reachable when the network address of this machine changes (Wi-Fi/Ethernet, DHCP, router reboot) --',
+    '# nobody running a hub should have to think about this. Only a convenience, so never fatal.',
+    'try { & powershell -NoProfile -ExecutionPolicy Bypass -File "$HubDir\\citinet.ps1" auto-address *> $null; Ok "Automatic address repair is on" } catch { }',
     'Write-Host ""',
     'Write-Host "  ============================================" -ForegroundColor Cyan',
     'Write-Host "  ' + config.hubName + ' is live!" -ForegroundColor Green',

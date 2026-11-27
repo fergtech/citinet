@@ -365,6 +365,39 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── update-address — verify ownership, refresh ONLY the A record ──────
+  // A hub's LAN address changes (Wi-Fi <-> Ethernet, DHCP, router reboot) far more often than its
+  // certificate needs renewing. Without this, the hostname kept pointing at the old address until
+  // the next cert renewal -- weeks -- and every client of the hub just hung. No cert is issued, so
+  // this is cheap and safe to call on every hub start.
+  if (op === 'update-address') {
+    if (!process.env.CF_API_TOKEN) return res.status(500).json({ error: 'Cert broker not configured (missing token)' });
+    if (!secret || !lanIp) return res.status(400).json({ error: 'secret and lanIp are required' });
+    // Only a private (RFC1918) IPv4 -- this record is a LAN pointer, never a way to aim the hostname elsewhere.
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(lanIp));
+    const o = m ? m.slice(1).map(Number) : null;
+    const privateV4 = o && o.every(n => n <= 255) &&
+      (o[0] === 10 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168));
+    if (!privateV4) return res.status(400).json({ error: 'lanIp must be a private IPv4 address' });
+    try {
+      const { content: claims } = await getJsonFile(CLAIMS_FILE, {});
+      const claim = claims[slug];
+      const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
+      if (!claim || claim.secretHash !== secretHash) {
+        log('update-address', slug, 'forbidden', req);
+        return res.status(403).json({ error: 'invalid slug/secret' });
+      }
+      const hostname = `${slug}.${CERT_SUFFIX}`;
+      const zoneId = await getZoneId();
+      await upsertDnsRecord(zoneId, { type: 'A', name: hostname, content: lanIp, ttl: 300 });
+      log('update-address', slug, 'ok', req);
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      log('update-address', slug, 'error', req);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   // ── issue — verify ownership, get a real cert + refresh the A record ──
   if (op === 'issue') {
     if (!process.env.CF_API_TOKEN) return res.status(500).json({ error: 'Cert broker not configured (missing token)' });
@@ -393,5 +426,5 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(400).json({ error: 'op must be "claim", "issue", "sync-app" or "release-app"' });
+  return res.status(400).json({ error: 'op must be "claim", "issue", "update-address", "sync-app" or "release-app"' });
 }

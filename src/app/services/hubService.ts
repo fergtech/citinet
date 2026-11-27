@@ -8,7 +8,7 @@
  */
 
 import type { Hub, HubConnection, HubConnectionStatus, HubInfoResponse, HubStatusResponse, HubUser, HubMeta, HubAuthCredentials, HubFile, HubFolder, HubMember, HubConversation, HubParticipant, HubMessage, HubMessageAttachment, HubMessageReaction, HubConversationMediaItem, HubPost, HubPostReply, HubNote, HubEventAttendee, HubIconFields, SearchResults, CallMode, CallTokenResponse, LiveCommsItem, HubCallEvent, StackServiceStatus, StackAlert, StackHealth, StackUpdates, EmailSettingsStatus, EmailSettingsInput } from '../types/hub';
-import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted, decryptKeyBackup, exportKeyMaterial, importKeyMaterial } from '../utils/crypto';
+import { generateUserKeys, hasKeys, clearKeys, getStoredPublicKeyJwk, generateRecoveryPhrase, encryptNoteBody, decryptNoteBody, isNoteEncrypted, createKeyBackup, restoreKeyBackup, encryptMessage, decryptMessage, isMessageEncrypted, encryptFileBuffer, decryptFileBuffer, isFileEncrypted, decryptKeyBackup, exportKeyMaterial, importKeyMaterial, KeyBackupUnavailableError } from '../utils/crypto';
 import type { KeyMaterial } from '../utils/crypto';
 import { seenPosts } from '../utils/seenStore';
 import type { KeyBackupPayload } from '../utils/crypto';
@@ -104,7 +104,8 @@ class HubService {
   async joinHub(
     tunnelUrl: string,
     probeInfo?: HubInfoResponse,
-    probeStatus?: HubStatusResponse
+    probeStatus?: HubStatusResponse,
+    opts?: { keepProbeUrl?: boolean }
   ): Promise<Hub> {
     const cleanUrl = this.normalizeTunnelUrl(tunnelUrl);
     const hubName = probeInfo?.name || this.extractNameFromUrl(cleanUrl);
@@ -115,7 +116,11 @@ class HubService {
     // If we probed via localhost/LAN, keep that as the stored URL — the machine can't
     // reach its own Tailscale funnel URL from the inside. Only prefer the API-reported
     // tunnel_url when we probed via a non-local address.
-    const isLocalProbe = /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\./.test(cleanUrl);
+    // keepProbeUrl: the caller already knows this address works from this browser
+    // (e.g. the portal is being served from the hub's own origin, which can be a
+    // domain like hub1.hub.citinet.cloud that the regex below doesn't recognise as local).
+    const isLocalProbe = opts?.keepProbeUrl
+      || /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\./.test(cleanUrl);
     const storedUrl = (!isLocalProbe && probeInfo?.tunnel_url)
       ? this.normalizeTunnelUrl(probeInfo.tunnel_url)
       : cleanUrl;
@@ -699,7 +704,28 @@ class HubService {
     const connection = this.getHubConnection(slug);
     if (!connection) return 'disconnected';
 
-    const result = await this.probeHub(connection.hub.tunnelUrl);
+    let result = await this.probeHub(connection.hub.tunnelUrl);
+
+    // Address failover. The saved address (a LAN name/IP, or this hub's own domain) can stop
+    // answering while the hub itself is fine -- its machine changed network address, a router
+    // rebooted, DNS hasn't caught up. The hub's public tunnel address doesn't depend on any of
+    // that, so when the saved one is down, try it, and keep `homeUrl` so we go back to the
+    // preferred (usually faster, local) address the moment it answers again.
+    const hub0 = connection.hub;
+    const home = hub0.homeUrl ? this.normalizeTunnelUrl(hub0.homeUrl) : '';
+    if (home && home !== this.normalizeTunnelUrl(hub0.tunnelUrl)) {
+      // Currently failed over: is the preferred address back?
+      const homeProbe = await this.probeHub(home);
+      if (homeProbe.success) { this.switchHubUrl(slug, home, ''); result = homeProbe; }
+    } else if (!result.success && hub0.publicTunnelUrl) {
+      const pub = this.normalizeTunnelUrl(hub0.publicTunnelUrl);
+      if (pub !== this.normalizeTunnelUrl(hub0.tunnelUrl)) {
+        const pubProbe = await this.probeHub(pub);
+        // Same hub, not just something that answers: the slug must match.
+        const sameHub = pubProbe.success && (!pubProbe.info?.hub_slug || String(pubProbe.info.hub_slug).toLowerCase() === slug.toLowerCase());
+        if (sameHub) { this.switchHubUrl(slug, pub, hub0.tunnelUrl); result = pubProbe; }
+      }
+    }
     const status: HubConnectionStatus = result.success ? 'connected' : 'unreachable';
 
     // Sync hub name and enabledApps from the API.
@@ -752,6 +778,16 @@ class HubService {
     return status;
   }
 
+  /** Point a hub at a different address; `homeUrl` remembers the preferred one to return to ('' clears it). */
+  private switchHubUrl(slug: string, url: string, homeUrl: string): void {
+    const connections = this.getAllHubConnections();
+    const c = connections[slug];
+    if (!c) return;
+    c.hub.tunnelUrl = url;
+    if (homeUrl) c.hub.homeUrl = homeUrl; else delete c.hub.homeUrl;
+    localStorage.setItem(STORAGE_KEYS.HUBS, JSON.stringify(connections));
+  }
+
   /**
    * Update the tunnel URL for an existing hub and re-probe.
    * Used when a Cloudflare tunnel rotates to a new URL.
@@ -767,6 +803,7 @@ class HubService {
     // Update the stored tunnel URL first
     const connections = this.getAllHubConnections();
     connections[slug].hub.tunnelUrl = cleanUrl;
+    delete connections[slug].hub.homeUrl; // an explicit address change ends any temporary failover
     connections[slug].hub.lastConnectedAt = new Date().toISOString();
 
     if (!skipProbe) {
@@ -2935,16 +2972,26 @@ class HubService {
   }
 
   /** Fetch the raw encrypted key backup blob from the server, or null if none exists. */
+  /**
+   * The server-side key backup, or null when there genuinely isn't one (404 / not signed in).
+   * Throws KeyBackupUnavailableError when the hub couldn't be asked -- that is NOT "no backup",
+   * and must not be shown to someone as "your phrase is wrong".
+   */
   private async fetchKeyBackup(hubSlug: string): Promise<KeyBackupPayload | null> {
+    const conn = this.getHubConnection(hubSlug);
+    if (!conn?.user?.authToken) return null;
+    const unreachable = () => new KeyBackupUnavailableError(
+      "Couldn't reach your hub to check the phrase. Check your connection and try again. Your phrase wasn't rejected.",
+    );
+    let res: Response;
     try {
-      const conn = this.getHubConnection(hubSlug);
-      if (!conn?.user?.authToken) return null;
-      const res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
+      res = await fetch(`${conn.hub.tunnelUrl}/api/keys/backup`, {
         headers: { Authorization: `Bearer ${conn.user.authToken}` },
       });
-      if (!res.ok) return null;
-      return await res.json() as KeyBackupPayload;
-    } catch { return null; }
+    } catch { throw unreachable(); }
+    if (res.status === 404) return null;
+    if (!res.ok) throw unreachable();
+    try { return await res.json() as KeyBackupPayload; } catch { throw unreachable(); }
   }
 
   /**
@@ -2953,10 +3000,15 @@ class HubService {
    * keypair — self-healing the server's copy in case an earlier bug (see
    * hasKeyBackup) let it drift out of sync with what backups/senders expect.
    */
-  async restoreFromKeyBackup(hubSlug: string, passphrase: string): Promise<boolean> {
+  async restoreFromKeyBackup(hubSlug: string, passphrase: string | string[]): Promise<boolean> {
     const backup = await this.fetchKeyBackup(hubSlug);
     if (!backup) return false;
-    const ok = await restoreKeyBackup(this.keyScope(hubSlug), backup, passphrase);
+    // Callers that can't tell a phrase from an old password pass both spellings; first match wins.
+    const candidates = [...new Set(Array.isArray(passphrase) ? passphrase : [passphrase])].filter((c) => c.length > 0);
+    let ok = false;
+    for (const candidate of candidates) {
+      if (await restoreKeyBackup(this.keyScope(hubSlug), backup, candidate)) { ok = true; break; }
+    }
     if (ok) {
       const storedJwk = await getStoredPublicKeyJwk(this.keyScope(hubSlug));
       if (storedJwk) await this.registerPublicKey(hubSlug, storedJwk);

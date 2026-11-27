@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Shield, Users, FileText, User, Tag, LogIn, Eye, EyeOff, Download, Share, X, Lock, KeyRound, Copy, Check as CheckIcon, AlertTriangle } from 'lucide-react';
 import { hubService } from '../services/hubService';
+import { KeyBackupUnavailableError, normalizeRecoveryPhrase } from '../utils/crypto';
 import { checkPasswordStrength } from '../utils/passwordStrength';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { OnboardingBackground } from './OnboardingBackground';
@@ -251,10 +252,14 @@ export function NodeEntryFlow({ onComplete, locationName, hubSlug, hub, defaultM
     setRecoveryBusy(true);
     setRecoveryError('');
     try {
-      const normalized = enteredPhrase.trim().toLowerCase().replace(/\s+/g, '-');
-      const ok = await hubService.restoreFromKeyBackup(hubSlug, normalized);
+      const ok = await hubService.restoreFromKeyBackup(hubSlug, normalizeRecoveryPhrase(enteredPhrase));
       if (ok) onComplete(pendingUserData);
       else setRecoveryError("That phrase didn't match. Check the spelling and try again.");
+    } catch (err) {
+      // The check couldn't run (hub unreachable, app piece failed to load) -- that is not a wrong phrase.
+      setRecoveryError(err instanceof KeyBackupUnavailableError
+        ? err.message
+        : "Something went wrong while checking the phrase. Reload the page and try again.");
     } finally {
       setRecoveryBusy(false);
     }

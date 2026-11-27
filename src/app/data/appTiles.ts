@@ -1,6 +1,6 @@
 import {
   Store, Newspaper,
-  Package, Radio, ScrollText, NotebookPen,
+  Package, Radio, ScrollText, NotebookPen, Library,
 } from 'lucide-react';
 import { FilesGlyph, MessagesGlyph, InitiativesGlyph, SpacesGlyph, SearchGlyph, AtlasGlyph } from '../components/icons';
 import type { NotificationFeature } from '../services/notificationsService';
@@ -24,6 +24,7 @@ export const APP_TILES: { Icon: React.ElementType; label: string; screen: string
   { Icon: Store,         label: 'Exchange',    screen: 'marketplace', gradient: CN_TILE_INDIGO },
   { Icon: FilesGlyph,    label: 'Files',       screen: 'files',       gradient: CN_TILE_SLATE },
   { Icon: InitiativesGlyph, label: 'Projects', screen: 'initiatives', gradient: CN_TILE_BLUE },
+  { Icon: Library,       label: 'Library',     screen: 'library',     gradient: CN_TILE_TEAL },
   { Icon: Package,       label: 'Resources',   screen: 'toolkit',     gradient: CN_TILE_TEAL },
   { Icon: Radio,         label: 'Network',     screen: 'network',     gradient: CN_TILE_SKY },
   { Icon: MessagesGlyph, label: 'Communications', screen: 'messages',    gradient: CN_TILE_INDIGO, notifyFeature: 'messages' },

@@ -132,6 +132,10 @@ export function HubProvider({ children }: { children: ReactNode }) {
         if (!stored) return;
         const isLocalUrl = /localhost|127\.0\.0\.1|192\.168\.|^10\.|172\.(1[6-9]|2\d|3[01])\./.test(stored.hub.tunnelUrl || '');
         if (isLocalUrl) return;
+        // The saved URL is this page's own origin (the portal is being served by the hub
+        // itself): by definition reachable from here, so never swap it for the registry's
+        // public tunnel URL -- a machine on the hub's own network often can't reach that.
+        if ((stored.hub.tunnelUrl || '').replace(/\/$/, '') === window.location.origin) return;
         if (stored.hub.tunnelUrl !== registryHub.tunnel_url) {
           hubService.updateTunnelUrl(slug, registryHub.tunnel_url, true).then(updatedHub => {
             setCurrentHub(updatedHub);

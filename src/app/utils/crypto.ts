@@ -530,6 +530,27 @@ async function deriveWrappingKeyLegacyPbkdf2(passphrase: string, salt: Uint8Arra
   );
 }
 
+/**
+ * The unlock check could not run at all (the Argon2 module failed to load, or the hub could not be
+ * reached) -- as opposed to running fine and the phrase being wrong. The message is written for
+ * people, so screens can show it as-is.
+ */
+export class KeyBackupUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KeyBackupUnavailableError';
+  }
+}
+
+/**
+ * One canonical form for a typed or pasted recovery phrase: lowercase, words joined by single
+ * hyphens. People type it with spaces, hyphens, extra spaces, or a trailing hyphen; the phrase that
+ * was generated is always words-joined-by-hyphens (see generateRecoveryPhrase).
+ */
+export function normalizeRecoveryPhrase(input: string): string {
+  return input.trim().toLowerCase().replace(/[\s-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 export interface KeyBackupPayload {
   encrypted_payload: string;
   salt: string;
@@ -576,23 +597,46 @@ export async function decryptKeyBackup(
   backup: KeyBackupPayload,
   passphrase: string,
 ): Promise<BackedUpKeys | null> {
+  // Web Crypto only exists on secure origins (https, or http://localhost). Opened any other way --
+  // e.g. a dev server reached by its LAN address -- crypto.subtle is simply undefined, and every
+  // attempt below would fail in a way that looks exactly like a wrong phrase. Say what's wrong instead.
+  if (!globalThis.crypto?.subtle) {
+    const where = typeof location !== 'undefined' ? ` (you're on ${location.origin})` : '';
+    throw new KeyBackupUnavailableError(
+      `This page isn't on a secure connection${where}, so the browser blocks encryption here. Open the hub over https, or at http://localhost, and try again. Your phrase wasn't rejected.`,
+    );
+  }
+
   const salt = b64dec(backup.salt);
   const iv   = b64dec(backup.iv);
   const ct   = b64dec(backup.encrypted_payload);
 
+  // Deriving the key is separate from decrypting with it: a derive failure means the Argon2 module
+  // never ran (not a wrong phrase), and must not be reported as one.
+  let argonDidNotRun = false;
   try {
     const wk = await deriveWrappingKey(passphrase, salt);
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wk, ct);
-    return JSON.parse(new TextDecoder().decode(plain)) as BackedUpKeys;
-  } catch {
-    // Not an Argon2id-wrapped backup -- try the pre-2026-08-05 PBKDF2 format
-    // before giving up, so backups created before that switch still restore.
+    try {
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wk, ct);
+      return JSON.parse(new TextDecoder().decode(plain)) as BackedUpKeys;
+    } catch {
+      // Ran fine, key just doesn't fit: wrong phrase, or an older backup (see below).
+    }
+  } catch (err) {
+    argonDidNotRun = true;
+    console.error('[e2e-keys] Argon2 unlock module did not run', err);
   }
+  // Pre-2026-08-05 backups were wrapped with PBKDF2 -- try that before giving up.
   try {
     const wk = await deriveWrappingKeyLegacyPbkdf2(passphrase, salt);
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, wk, ct);
     return JSON.parse(new TextDecoder().decode(plain)) as BackedUpKeys;
   } catch {
+    if (argonDidNotRun) {
+      throw new KeyBackupUnavailableError(
+        "Couldn't run the unlock check on this device — a piece of the app didn't load. Reload the page and try again. Your phrase wasn't rejected.",
+      );
+    }
     return null;
   }
 }

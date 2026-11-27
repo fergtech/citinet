@@ -1,6 +1,6 @@
 import { postCategoryLabel } from '../utils/postCategory';
 import { useState, useEffect, useRef } from 'react';
-import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw, CloudUpload, Server, Search, Globe } from 'lucide-react';
+import { Users, Settings, Crown, RefreshCw, Shield, Pencil, X, Check, Star, Trash2, Plus, Link, LayoutGrid, CheckCircle2, AlertCircle, Loader2, ImagePlus, ChevronUp, ChevronDown, ChevronLeft, ClipboardList, ChevronRight, Bot, Wifi, WifiOff, Download, ToggleLeft, ToggleRight, Newspaper, MessageCircle, Map, NotebookPen, Store, FolderOpen, Package, Target, Radio, ScrollText, RotateCw, CloudUpload, Server, Search, Globe, Library as LibraryIcon } from 'lucide-react';
 import { useHub } from '../context/HubContext';
 import { hubService } from '../services/hubService';
 import { aiService, SUGGESTED_MODELS, type AiStatus, type IndexStatus } from '../services/aiService';
@@ -19,6 +19,7 @@ import { OffsiteBackupTab } from './OffsiteBackupTab';
 import { SystemTab } from './SystemTab';
 import { OutsideSourcesTab } from './OutsideSourcesTab';
 import { HostedAppsPanel } from './HostedAppsPanel';
+import { LibraryAdminPanel } from './LibraryAdminPanel';
 
 interface HubManagementScreenProps {
   onBack: () => void;
@@ -35,6 +36,13 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
     if (deepLinkTab) sessionStorage.removeItem('citinet-deeplink-hub-tab');
     return (deepLinkTab as Tab) || 'info';
   });
+  // "Review" on the update banner, pressed while already on this screen.
+  useEffect(() => {
+    const onReview = () => { sessionStorage.removeItem('citinet-deeplink-hub-tab'); setActiveTab('system'); };
+    window.addEventListener('citinet-review-update', onReview);
+    return () => window.removeEventListener('citinet-review-update', onReview);
+  }, []);
+  const tabStripRef = useRef<HTMLDivElement>(null);
   const [members, setMembers] = useState<HubMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [membersError, setMembersError] = useState('');
@@ -314,6 +322,17 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
   // the AI tab once we've confirmed it's actually reachable (or was enabled
   // before), so admins on plain hubs don't see a tab that can never work.
   const aiTabAvailable = aiStatus != null && (aiStatus.ollamaReady || aiStatus.enabled);
+
+  // On phones the tabs scroll sideways, so keep the selected one in view. Also re-run when tabs
+  // appear late (AI, Network Reach), which pushes the ones after them off the edge.
+  useEffect(() => {
+    const strip = tabStripRef.current;
+    const pill = strip?.querySelector<HTMLElement>(`[data-tab="${activeTab}"]`);
+    if (!strip || !pill) return;
+    const s = strip.getBoundingClientRect();
+    const p = pill.getBoundingClientRect();
+    if (p.left < s.left || p.right > s.right) strip.scrollLeft += p.left - s.left - (s.width - p.width) / 2;
+  }, [activeTab, aiTabAvailable, isLocalHub]);
 
   const handleAiToggle = async () => {
     if (!aiStatus) return;
@@ -847,7 +866,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             stays put on scroll (via align-items:flex-start on the row it shares with the panel) —
             the header above scrolls away like everything else, same as the design system source. */}
         <nav className="w-full md:w-[210px] shrink-0 md:sticky md:top-4">
-          <div className="flex md:flex-col gap-2 md:gap-[3px] overflow-x-auto md:overflow-visible no-scrollbar">
+          <div ref={tabStripRef} className="flex md:flex-col gap-2 md:gap-[3px] overflow-x-auto md:overflow-visible no-scrollbar">
             {([
               { id: 'info' as const,     icon: <Settings className="w-[15px] h-[15px] md:w-4 md:h-4" />,      label: 'Hub Info' },
               { id: 'featured' as const, icon: <Star className="w-[15px] h-[15px] md:w-4 md:h-4" />,          label: 'Featured' },
@@ -862,6 +881,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
             ]).map(tab => (
               <button
                 key={tab.id}
+                data-tab={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`inline-flex items-center gap-1.5 md:gap-2.5 px-3.5 md:px-3 py-1.5 md:py-2.5 rounded-full md:rounded-lg text-xs md:text-[13px] font-semibold whitespace-nowrap shrink-0 md:shrink md:w-full text-left border md:border-0 transition-colors ${
                   activeTab === tab.id
@@ -1778,6 +1798,7 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
                     { screen: 'files',       label: 'Files',        Icon: FolderOpen },
                     { screen: 'discover',    label: 'Discover',     Icon: SearchGlyph },
                     { screen: 'toolkit',     label: 'Resources',    Icon: Package },
+                    { screen: 'library',     label: 'Library',      Icon: LibraryIcon },
                     { screen: 'initiatives', label: 'Projects',  Icon: Target },
                     { screen: 'network',     label: 'Network',      Icon: Radio },
                     { screen: 'mod-log',     label: 'Mod Log',      Icon: ScrollText },
@@ -1822,6 +1843,9 @@ export function HubManagementScreen({ onBack }: HubManagementScreenProps) {
 
             {/* ── Hosted apps: static web apps served by this hub ── */}
             {hubSlug && <HostedAppsPanel hubSlug={hubSlug} />}
+
+            {/* ── Library: offline reference vaults imported from a drive ── */}
+            {hubSlug && <LibraryAdminPanel hubSlug={hubSlug} />}
 
             {/* ── Section 2: External Integrations ── */}
             <div>

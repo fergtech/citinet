@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Download, RefreshCw, Loader2, CheckCircle2, AlertTriangle, ArrowUpCircle } from 'lucide-react';
 import { hubService } from '../services/hubService';
-import { snoozeUpdate } from '../utils/updateSnooze';
+import { snoozeUpdate, UPDATES_CHANGED } from '../utils/updateSnooze';
 import type { StackUpdates, StackUpdateService } from '../types/hub';
 
 const RECENT_RESULT_MS = 10 * 60 * 1000;
@@ -63,6 +63,26 @@ export function UpdatesPanel({ hubSlug }: { hubSlug: string }) {
   }, [hubSlug]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Keep the update banner in step with what this panel shows.
+  const announce = useCallback((d: StackUpdates) => {
+    window.dispatchEvent(new CustomEvent(UPDATES_CHANGED, { detail: d }));
+  }, []);
+  useEffect(() => { if (data) announce(data); }, [data, announce]);
+
+  // Arriving from the banner's "Review": bring this panel into view once it has something to show.
+  const ready = !!data;
+  useEffect(() => {
+    if (!ready) return;
+    const reveal = () => {
+      if (!sessionStorage.getItem('citinet-review-update')) return;
+      sessionStorage.removeItem('citinet-review-update');
+      requestAnimationFrame(() => document.getElementById('system-health')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    };
+    reveal();
+    window.addEventListener('citinet-review-update', reveal);
+    return () => window.removeEventListener('citinet-review-update', reveal);
+  }, [ready]);
 
   const applyRunning = !!data?.apply?.running;
   useEffect(() => {
@@ -182,7 +202,7 @@ export function UpdatesPanel({ hubSlug }: { hubSlug: string }) {
             Update
           </button>
           <button
-            onClick={() => { snoozeUpdate(hubSlug, s.service, s.latest?.digest ?? null); setConfirming(null); }}
+            onClick={() => { snoozeUpdate(hubSlug, s.service, s.latest?.digest ?? null); setConfirming(null); if (data) announce(data); }}
             className="px-2.5 py-1.5 rounded-lg cn-surface hover:bg-black/5 dark:hover:bg-white/5 border cn-border text-xs font-medium cn-text-2"
             title="Stop reminding me about this version for a few days"
           >
@@ -226,8 +246,8 @@ export function UpdatesPanel({ hubSlug }: { hubSlug: string }) {
         <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 flex items-center gap-2.5">
           <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
           <p className="text-xs text-blue-800 dark:text-blue-200">
-            {reconnecting && !applyRunning
-              ? 'Reconnecting to your hub as it restarts…'
+            {reconnecting
+              ?'Reconnecting to your hub as it restarts…'
               : STEP_TEXT[apply?.step ?? 'pulling'] ?? 'Updating…'}
           </p>
         </div>

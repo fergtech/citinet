@@ -75,7 +75,7 @@ services:
 
   # MinIO Object Storage (S3-compatible)
   citinet-storage:
-    image: minio/minio:latest
+    image: ghcr.io/fergtech/citinet-storage:RELEASE.2026-11-12T00-00-00Z
     container_name: citinet-storage
     restart: unless-stopped
     command: server /data --console-address ":9001"

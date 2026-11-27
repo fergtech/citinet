@@ -560,6 +560,7 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
       initiatives: 'Projects',
       projects: 'Projects',
       toolkit: 'Resources',
+      library: 'Library',
       network: 'Network',
       messages: 'Communications',
       account: 'Account',
@@ -1080,9 +1081,6 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
                 )}
               </button>
             </div>
-            {isAdmin && connectionStatus !== 'unreachable' && currentHub?.slug && (
-              <UpdateAvailableBanner hubSlug={currentHub.slug} onOpen={() => navigate(hubPath('/hub-management'))} />
-            )}
             {connectionStatus === 'unreachable' && (
               <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 space-y-3">
                 <div className="flex items-center gap-2">
@@ -1158,7 +1156,21 @@ export function HubLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Scrollable content zone — fills remaining height after mobile header */}
+        {/* Admin update notice — one copy, shown at every screen width (empty when there's nothing to say) */}
+        {isAdmin && connectionStatus !== 'unreachable' && currentHub?.slug && (
+          <div className="shrink-0 w-full max-w-6xl mx-auto px-3 pt-2 md:px-8 md:pt-3 empty:hidden">
+            <UpdateAvailableBanner hubSlug={currentHub.slug} onOpen={() => {
+              // Land on the Updates panel itself, not just on Hub Management. The flags cover a
+              // fresh visit; the event covers already being on that screen.
+              sessionStorage.setItem('citinet-deeplink-hub-tab', 'system');
+              sessionStorage.setItem('citinet-review-update', '1');
+              navigate(hubPath('/hub-management'));
+              window.dispatchEvent(new Event('citinet-review-update'));
+            }} />
+          </div>
+        )}
+
+        {/* Scrollable content zone — fills remaining height after the header and notice */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar pb-16 md:pb-0">
           {children}
         </div>
